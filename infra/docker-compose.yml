@@ -34,8 +34,11 @@ services:
       context: ..
       dockerfile: api/Dockerfile
     restart: unless-stopped
+    env_file:
+      - path: ../.env
+        required: false
     environment:
-      DATABASE_URL: postgresql://repolace:repolace@postgres:5432/repolace
+      DATABASE_URL: postgresql+asyncpg://repolace:repolace@postgres:5432/repolace
       REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
@@ -51,7 +54,7 @@ services:
       dockerfile: worker/Dockerfile
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://repolace:repolace@postgres:5432/repolace
+      DATABASE_URL: postgresql+asyncpg://repolace:repolace@postgres:5432/repolace
       REDIS_URL: redis://redis:6379/0
     depends_on:
       postgres:
