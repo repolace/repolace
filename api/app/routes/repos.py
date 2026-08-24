@@ -1,5 +1,6 @@
 from uuid import UUID
 
+import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -39,6 +40,16 @@ async def list_repo_issues(
     if repo is None or not repo.is_active:
         raise HTTPException(status_code=404, detail="repo not found")
 
-    issues = await github.list_repo_open_issues(repo.installation_id, repo.owner, repo.name)
+    try:
+        issues = await github.list_repo_open_issues(repo.installation_id, repo.owner, repo.name)
+    except httpx.HTTPStatusError as exc:
+        log.error(
+            "github.api.error", repo_id=str(repo_id), status_code=exc.response.status_code, url=str(exc.request.url)
+        )
+        raise HTTPException(status_code=502, detail="GitHub API error") from exc
+    except httpx.RequestError as exc:
+        log.error("github.api.unreachable", repo_id=str(repo_id), error=str(exc))
+        raise HTTPException(status_code=502, detail="GitHub API unreachable") from exc
+
     log.info("repos.issues.fetched", repo_id=str(repo_id), count=len(issues))
     return [{"number": issue.number, "title": issue.title, "html_url": issue.html_url} for issue in issues]

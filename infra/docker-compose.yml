@@ -5,15 +5,15 @@ services:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
-      POSTGRES_USER: repolace
-      POSTGRES_PASSWORD: repolace
-      POSTGRES_DB: repolace
+      POSTGRES_USER: ${POSTGRES_USER:-repolace}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-repolace}
+      POSTGRES_DB: ${POSTGRES_DB:-repolace}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U repolace"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-repolace}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -22,9 +22,24 @@ services:
     image: redis:7
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-repolace}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-repolace}
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -38,14 +53,23 @@ services:
       - path: ../.env
         required: false
     environment:
-      DATABASE_URL: postgresql+asyncpg://repolace:repolace@postgres:5432/repolace
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-repolace}:${POSTGRES_PASSWORD:-repolace}@postgres:5432/${POSTGRES_DB:-repolace}
       REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-repolace}:${RABBITMQ_PASSWORD:-repolace}@rabbitmq:5672//
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
 
   worker:
@@ -54,12 +78,21 @@ services:
       dockerfile: worker/Dockerfile
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://repolace:repolace@postgres:5432/repolace
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-repolace}:${POSTGRES_PASSWORD:-repolace}@postgres:5432/${POSTGRES_DB:-repolace}
       REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-repolace}:${RABBITMQ_PASSWORD:-repolace}@rabbitmq:5672//
+    healthcheck:
+      test: ["CMD-SHELL", "uv run --project worker celery -A app.celery_app inspect ping || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
 
 volumes:

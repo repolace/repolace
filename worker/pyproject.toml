@@ -4,7 +4,7 @@ version = "0.0.1"
 description = "Celery worker and sandbox execution logic for repolace"
 requires-python = ">=3.12"
 dependencies = [
-    "celery>=5.4",
+    "celery[redis]>=5.4",
     "docker>=7.1",
     "repolace-shared",
 ]

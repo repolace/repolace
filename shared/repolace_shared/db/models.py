@@ -2,7 +2,21 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    func,
+    text,
+    true,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -35,6 +49,7 @@ class GithubInstallation(Base):
 
 class RegisteredRepo(Base):
     __tablename__ = "registered_repos"
+    __table_args__ = (Index("ix_registered_repos_installation_id", "installation_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     installation_id: Mapped[int] = mapped_column(
@@ -46,7 +61,7 @@ class RegisteredRepo(Base):
     full_name: Mapped[str] = mapped_column(String, nullable=False)
     default_branch: Mapped[str] = mapped_column(String, nullable=False)
     private: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
     registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -58,6 +73,7 @@ class RegisteredRepo(Base):
 
 class Task(Base):
     __tablename__ = "tasks"
+    __table_args__ = (Index("ix_tasks_repo_id_created_at", "repo_id", text("created_at DESC")),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     repo_id: Mapped[uuid.UUID] = mapped_column(

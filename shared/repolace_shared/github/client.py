@@ -1,9 +1,13 @@
 import httpx
+import structlog
 
 from repolace_shared.github.auth import GITHUB_API_BASE, InstallationTokenCache, build_app_jwt
 from repolace_shared.github.schemas import Installation, Issue, Repository
 
+log = structlog.get_logger()
+
 _PAGE_SIZE = 100
+_MAX_PAGES = 50
 
 
 class GithubClient:
@@ -41,6 +45,9 @@ class GithubClient:
             if len(batch) < _PAGE_SIZE:
                 break
             page += 1
+            if page > _MAX_PAGES:
+                log.warning("github.pagination.max_pages_exceeded", installation_id=installation_id)
+                break
         return repos
 
     async def list_repo_open_issues(self, installation_id: int, owner: str, repo: str) -> list[Issue]:
@@ -59,4 +66,7 @@ class GithubClient:
             if len(batch) < _PAGE_SIZE:
                 break
             page += 1
+            if page > _MAX_PAGES:
+                log.warning("github.pagination.max_pages_exceeded", owner=owner, repo=repo)
+                break
         return [issue for issue in issues if not issue.is_pull_request]

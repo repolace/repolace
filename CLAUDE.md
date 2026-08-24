@@ -10,7 +10,7 @@ An autonomous software-engineering agent platform. A user registers a GitHub rep
 
 ## Product scope (decided)
 
-- User registers a repo (GitHub OAuth/App install) → repolace indexes it (RAG) and fetches its issue list
+- User registers a repo (GitHub App install) → repolace indexes it (RAG) and fetches its issue list
 - User picks one issue, specifies a target branch, enqueues a task
 - Agent pipeline runs: retrieve relevant code → plan → edit → run tests → (loop back on failure, bounded retries) → review
 - On success: PR opened against the specified branch
@@ -76,12 +76,12 @@ repolace/
 ## Build phases
 
 **Phase 0 — Scaffolding (~15–20h)**
-Monorepo setup, Docker Compose (Postgres + Redis), FastAPI skeleton, GitHub OAuth/App for repo registration + issue fetching. No agent logic yet.
+Monorepo setup, Docker Compose (Postgres + Redis + RabbitMQ), FastAPI skeleton, GitHub App install for repo registration + issue fetching. No agent logic yet. The `worker` service (Celery, broker=RabbitMQ, result backend=Redis) is also stood up in Phase 0 — ahead of when Phase 1 actually needs it, since Phase 1's pipeline runs synchronously inline in the API process (see below); the worker container sits unused until Phase 2 wires real task dispatch through it.
 
 **Phase 1 — MVP: single-agent loop (~100–120h) — the resume-worthy checkpoint**
 - One repo, repo-aware RAG (pgvector)
 - Single agent (not yet split by role) doing plan → edit → run tests → retry on failure, via LangGraph, bounded retries
-- Synchronous execution, one Docker sandbox, no queue yet
+- Synchronous execution, inline in the API process — one Docker sandbox, no queue dispatch yet (the Phase 0 worker/RabbitMQ/Redis containers exist but aren't used for pipeline execution until Phase 2)
 - Opens a real PR on success
 - Structured JSON logging with task IDs (see above)
 - Benchmark: 15–20 hand-picked real GitHub issues, tracked pass/fail, cost, latency
@@ -121,3 +121,4 @@ See replacement order above.
 - Exact "task completed successfully" definition (existing tests only, or does the agent add new tests for the fix? diff-scope constraints?) — needs to be pinned down before the benchmark can be meaningful
 - Issue-list filtering rule (label-based, e.g. only `bug`/`good-first-issue`) so users aren't picking from unfiltered noise
 - Single-flight vs. concurrent tasks per repo (affects whether Phase 1 needs to worry about two agents touching the same repo state)
+- Docker sandbox isolation mechanism (Docker-in-Docker, host socket mount, remote Docker daemon, or a stronger isolation layer like gVisor/Kata/Firecracker) — "isolated Docker sandboxes" is called mandatory in Architecture above, but the mechanism itself isn't picked yet. Matters because the naive shortcut (mounting the host's `/var/run/docker.sock` into the worker) lets sandboxed LLM-generated code escape to the host, defeating the isolation goal entirely. Decide when actually building the Verify stage's sandbox runner, not before.

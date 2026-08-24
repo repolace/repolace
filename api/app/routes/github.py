@@ -3,6 +3,7 @@ import hmac
 import json
 from datetime import UTC, datetime
 
+import httpx
 import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -31,7 +32,8 @@ async def callback(
     db: AsyncSession = Depends(get_db),
     github: GithubClient = Depends(get_github_client),
 ) -> dict[str, str]:
-    log.info("github.callback", installation_id=installation_id, setup_action=setup_action)
+    structlog.contextvars.bind_contextvars(installation_id=installation_id)
+    log.info("github.callback", setup_action=setup_action)
     if setup_action in ("install", "update"):
         await _sync_installation(installation_id, db, github)
     return {"status": "ok"}
@@ -50,6 +52,8 @@ async def webhook(
     _verify_signature(body, x_hub_signature_256, settings.github_app_webhook_secret)
     payload = json.loads(body)
 
+    installation_id = payload.get("installation", {}).get("id")
+    structlog.contextvars.bind_contextvars(installation_id=installation_id)
     log.info("github.webhook", event=x_github_event, action=payload.get("action"))
 
     if x_github_event == "installation":
@@ -96,17 +100,36 @@ async def _handle_installation_repositories_event(payload: dict, db: AsyncSessio
 
 
 async def _sync_installation(installation_id: int, db: AsyncSession, github: GithubClient) -> None:
-    installation = await github.get_installation(installation_id)
-    await db.merge(
-        GithubInstallation(
-            id=installation.id,
-            account_login=installation.account.login,
-            account_id=installation.account.id,
-            account_type=installation.account.type,
+    try:
+        installation = await github.get_installation(installation_id)
+        repos = await github.list_installation_repos(installation_id)
+    except httpx.HTTPStatusError as exc:
+        log.error(
+            "github.api.error",
+            installation_id=installation_id,
+            status_code=exc.response.status_code,
+            url=str(exc.request.url),
         )
-    )
+        raise HTTPException(status_code=502, detail="GitHub API error") from exc
+    except httpx.RequestError as exc:
+        log.error("github.api.unreachable", installation_id=installation_id, error=str(exc))
+        raise HTTPException(status_code=502, detail="GitHub API unreachable") from exc
 
-    repos = await github.list_installation_repos(installation_id)
+    existing = await db.get(GithubInstallation, installation.id)
+    if existing is None:
+        db.add(
+            GithubInstallation(
+                id=installation.id,
+                account_login=installation.account.login,
+                account_id=installation.account.id,
+                account_type=installation.account.type,
+            )
+        )
+    else:
+        existing.account_login = installation.account.login
+        existing.account_id = installation.account.id
+        existing.account_type = installation.account.type
+
     await _upsert_repos(installation_id, repos, db)
     await db.commit()
     log.info("github.installation.synced", installation_id=installation_id, repo_count=len(repos))
