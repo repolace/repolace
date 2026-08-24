@@ -60,10 +60,13 @@ repolace/
   worker/         # Celery worker + sandbox execution logic
   agents/         # LangGraph graph definitions, prompts
   gateway/        # LiteLLM config / wrapper
+  rag/            # AST chunking, embedding, pgvector indexing, hybrid retrieval
   shared/         # task schemas, OTel helpers, common types
   infra/          # docker-compose.yml, k8s manifests (later)
   eval/           # SWE-bench-style benchmark harness
 ```
+
+`rag/` is a separate workspace package from `shared/` (not nested inside it) so RAG-specific dependencies (tree-sitter, embedding client) don't leak into every service that imports `shared/` — same reasoning as why `gateway/` is its own package rather than living in `shared/`.
 
 ## Logging / observability timing (decided explicitly — don't relitigate)
 

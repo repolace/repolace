@@ -9,6 +9,7 @@ members = [
     "repolace-api",
     "repolace-eval",
     "repolace-gateway",
+    "repolace-rag",
     "repolace-shared",
     "repolace-worker",
 ]
@@ -2101,6 +2102,17 @@ requires-dist = [
     { name = "litellm", specifier = ">=1.50" },
     { name = "repolace-shared", editable = "shared" },
 ]
+
+[[package]]
+name = "repolace-rag"
+version = "0.0.1"
+source = { editable = "rag" }
+dependencies = [
+    { name = "repolace-shared" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "repolace-shared", editable = "shared" }]
 
 [[package]]
 name = "repolace-shared"

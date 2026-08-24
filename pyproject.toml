@@ -9,4 +9,4 @@ dependencies = []
 package = false
 
 [tool.uv.workspace]
-members = ["api", "worker", "agents", "gateway", "shared", "eval"]
+members = ["api", "worker", "agents", "gateway", "rag", "shared", "eval"]
