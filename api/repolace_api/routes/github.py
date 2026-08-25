@@ -10,8 +10,8 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import ApiSettings, get_settings
-from app.deps import get_db, get_github_client
+from repolace_api.config import ApiSettings, get_settings
+from repolace_api.deps import get_db, get_github_client
 from repolace_shared.db.models import GithubInstallation, RegisteredRepo
 from repolace_shared.github.client import GithubClient
 from repolace_shared.github.schemas import Repository

@@ -27,4 +27,4 @@ COPY --chown=repolace:repolace . .
 
 RUN uv sync --frozen --package repolace-worker
 
-CMD ["uv", "run", "--project", "worker", "celery", "-A", "app.celery_app", "worker", "--loglevel=info"]
+CMD ["uv", "run", "--project", "worker", "celery", "-A", "repolace_worker.celery_app", "worker", "--loglevel=info"]

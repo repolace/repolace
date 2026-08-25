@@ -82,7 +82,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-repolace}:${RABBITMQ_PASSWORD:-repolace}@rabbitmq:5672//
     healthcheck:
-      test: ["CMD-SHELL", "uv run --project worker celery -A app.celery_app inspect ping || exit 1"]
+      test: ["CMD-SHELL", "uv run --project worker celery -A repolace_worker.celery_app inspect ping || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 5

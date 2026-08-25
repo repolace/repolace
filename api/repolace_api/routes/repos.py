@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_db, get_github_client
+from repolace_api.deps import get_db, get_github_client
 from repolace_shared.db.models import RegisteredRepo
 from repolace_shared.github.client import GithubClient
 
