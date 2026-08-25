@@ -62,10 +62,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_code_chunks_embedding", table_name="code_chunks")
-    op.drop_index("ix_code_chunks_content_tsv", table_name="code_chunks")
-    op.drop_index("ix_code_chunks_repo_id_file_path", table_name="code_chunks")
-    op.drop_index("ix_code_chunks_repo_id_commit_sha", table_name="code_chunks")
+    # drop_table removes the table's indexes; no explicit drop_index needed.
     op.drop_table("code_chunks")
-    chunk_type.drop(op.get_bind())
-    op.execute("DROP EXTENSION IF EXISTS vector")
+    chunk_type.drop(op.get_bind(), checkfirst=True)
+    # Deliberately NOT dropping the vector extension: upgrade() used
+    # CREATE EXTENSION IF NOT EXISTS, so it may have pre-existed and may serve
+    # other objects. A downgrade should not remove database-wide state it did
+    # not necessarily create.

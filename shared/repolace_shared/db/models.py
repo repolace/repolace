@@ -117,6 +117,7 @@ class ChunkType(str, enum.Enum):
     FUNCTION = "function"
     METHOD = "method"
     CLASS_SKELETON = "class_skeleton"
+    MODULE = "module"
 
 
 class CodeChunk(Base):
@@ -130,6 +131,11 @@ class CodeChunk(Base):
     repo_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("registered_repos.id", ondelete="CASCADE"), nullable=False
     )
+    # The commit at which THIS ROW was last written -- not an index-version
+    # marker. After an incremental reindex, rows for unchanged files keep an
+    # older sha while registered_repos.indexed_commit_sha advances, so no single
+    # value here selects the complete index. Filter on repo_id; to ask "what is
+    # this repo indexed at", read RegisteredRepo.indexed_commit_sha.
     commit_sha: Mapped[str] = mapped_column(String, nullable=False)
     file_path: Mapped[str] = mapped_column(String, nullable=False)
     start_line: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -147,7 +153,7 @@ class CodeChunk(Base):
     symbol_name: Mapped[str] = mapped_column(String, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[list[float]] = mapped_column(Vector(CODE_CHUNK_EMBEDDING_DIM), nullable=False)
-    content_tsv: Mapped[str] = mapped_column(
+    content_tsv: Mapped[str | None] = mapped_column(
         TSVECTOR, Computed("to_tsvector('simple', content)", persisted=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

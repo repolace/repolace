@@ -42,6 +42,7 @@ Agents are split by role (planner/editor/reviewer/debugger/conflict-resolver) ra
 - Queue: RabbitMQ + Celery
 - LLM gateway: LiteLLM (model routing + cost tracking)
 - Vector store: pgvector (Postgres extension — repo-sized corpora don't need a dedicated vector DB; revisit only if deliberately demoing sharding under load)
+- Embeddings: **local**, via `sentence-transformers` (`flax-sentence-embeddings/st-codesearch-distilroberta-base`, 768-dim) — deliberately *not* routed through the LLM gateway. Indexing embeds every chunk in a repo, so a per-call API price would make reindexing the dominant cost of the whole system and make benchmark runs expensive to repeat. A local code-tuned model is free, deterministic across runs (which the benchmark needs), and has no rate limit. Cost: it pulls torch (~2–3 GB) into any image that installs `rag/`. Revisit if the image size becomes the binding constraint, or if retrieval quality plateaus below what a hosted embedding model would give.
 - DB: PostgreSQL (task/job/run state, issue metadata, cost/trace summaries)
 - Sandbox execution: Docker, via Python `docker` SDK in Phase 1–4
 - Observability: OpenTelemetry SDK → Grafana Tempo (traces) + Prometheus (metrics) + Loki (logs)
@@ -67,6 +68,12 @@ repolace/
 ```
 
 `rag/` is a separate workspace package from `shared/` (not nested inside it) so RAG-specific dependencies (tree-sitter, embedding client) don't leak into every service that imports `shared/` — same reasoning as why `gateway/` is its own package rather than living in `shared/`.
+
+**Amendment (the one exception):** `shared/` depends on `pgvector`. The `CodeChunk` ORM model has to live in `shared/repolace_shared/db/models.py` with every other table, because Alembic autogenerate works off a single `Base.metadata` — splitting models across packages means either a second migration chain or an import graph where `shared` reaches into `rag`. `pgvector` is a thin SQLAlchemy type adapter (its only dependency is numpy), so the leak is small and bounded. The rule still holds for what actually matters: tree-sitter and sentence-transformers/torch stay in `rag/` and never reach services that only import `shared/`.
+
+**Package naming:** every workspace package uses a distinct top-level import name (`repolace_api`, `repolace_worker`, `repolace_agents`, `repolace_gateway`, `repolace_shared`, `retrieval`, `harness`). They previously all used `app`, which silently broke both the API and the worker under `uv sync --all-packages` — editable installs append each package root to `sys.path`, so four `app/` directories shadowed each other in .pth order. Do not reintroduce a shared top-level name.
+
+**Note:** `uv sync` alone prunes workspace members, because the root package declares no dependencies. Use `uv sync --all-packages`.
 
 ## Logging / observability timing (decided explicitly — don't relitigate)
 
@@ -121,4 +128,6 @@ See replacement order above.
 - Exact "task completed successfully" definition (existing tests only, or does the agent add new tests for the fix? diff-scope constraints?) — needs to be pinned down before the benchmark can be meaningful
 - Issue-list filtering rule (label-based, e.g. only `bug`/`good-first-issue`) so users aren't picking from unfiltered noise
 - Single-flight vs. concurrent tasks per repo (affects whether Phase 1 needs to worry about two agents touching the same repo state)
+- **Embedding truncation.** The chosen model's `max_seq_length` is **128 tokens**. Indexing this repo produced 191 chunks, of which **50 (26%) exceeded that budget** and were silently truncated — they are embedded from their opening lines alone. This blunts the class-skeleton chunks specifically, since those are the longest. Options: a model with a longer context, splitting oversized chunks, or embedding a signature/docstring summary instead of the full body. Needs deciding before the benchmark, since it directly caps retrieval quality.
+- **Unauthenticated `/github/callback`.** It takes `installation_id` from a query param with no `state` or signature check, then mints a token and writes to the DB. Because `_upsert_repos` sets `is_active=True` unconditionally, this can re-activate repos that a `suspend`/`deleted` webhook deactivated. RBAC is deferred to Phase 4, but this specific endpoint is a write path, not just a read, so it may deserve fixing sooner.
 - Docker sandbox isolation mechanism (Docker-in-Docker, host socket mount, remote Docker daemon, or a stronger isolation layer like gVisor/Kata/Firecracker) — "isolated Docker sandboxes" is called mandatory in Architecture above, but the mechanism itself isn't picked yet. Matters because the naive shortcut (mounting the host's `/var/run/docker.sock` into the worker) lets sandboxed LLM-generated code escape to the host, defeating the isolation goal entirely. Decide when actually building the Verify stage's sandbox runner, not before.

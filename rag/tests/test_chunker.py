@@ -1,16 +1,9 @@
 """Unit tests for tree-sitter AST chunking.
 
 Pure parsing — no database, no embedding model.
-
-Several tests are marked `xfail(strict=True)`: they encode the behaviour the
-chunker *should* have, and are expected to fail against the initial commit.
-They are the acceptance criteria for the H1/H3 fixes, and strict mode means
-they will fail loudly once fixed rather than silently passing as xpass.
 """
 
 import textwrap
-
-import pytest
 
 from retrieval.chunker import chunk_python_file
 
@@ -142,12 +135,15 @@ class TestClasses:
         assert "def x(self)" in result["Point"].content
 
 
-class TestKnownGaps:
-    """Behaviour the chunker should have but does not yet. See H1/H3."""
+class TestModuleLevelAndNestedConstructs:
+    """Constructs reachable only by walking past the top level, or past methods.
 
-    @pytest.mark.xfail(strict=True, reason="H3: module-level code produces no chunks")
+    These were the H1/H3 gaps: without them a constants module is invisible to
+    retrieval and a schema class indexes as a bare header line.
+    """
+
     def test_module_level_constants_are_indexed(self):
-        chunks = chunks_for(
+        result = by_symbol(
             """
             import os
 
@@ -156,9 +152,12 @@ class TestKnownGaps:
             """
         )
 
-        assert chunks, "a constants-only module is currently invisible to retrieval"
+        module = result["sample.py"]
+        assert module.chunk_type == "module"
+        assert module.class_name is None
+        assert "MAX_RETRIES = 3" in module.content
+        assert "import os" in module.content
 
-    @pytest.mark.xfail(strict=True, reason="H3: only top-level nodes are walked")
     def test_definitions_guarded_by_type_checking_are_indexed(self):
         result = by_symbol(
             """
@@ -170,7 +169,6 @@ class TestKnownGaps:
 
         assert "helper" in result
 
-    @pytest.mark.xfail(strict=True, reason="H3: only top-level nodes are walked")
     def test_definitions_inside_a_try_block_are_indexed(self):
         result = by_symbol(
             """
@@ -184,7 +182,6 @@ class TestKnownGaps:
 
         assert "parse" in result
 
-    @pytest.mark.xfail(strict=True, reason="H1: skeletons keep only methods")
     def test_attributes_only_class_indexes_more_than_its_bare_header(self):
         skeleton = by_symbol(
             """
@@ -199,7 +196,6 @@ class TestKnownGaps:
         assert "host" in skeleton.content
         assert "port" in skeleton.content
 
-    @pytest.mark.xfail(strict=True, reason="H1: nested classes are dropped entirely")
     def test_nested_classes_are_reachable(self):
         result = by_symbol(
             """
@@ -214,12 +210,12 @@ class TestKnownGaps:
 
         assert "Meta" in result or "Meta" in result["Outer"].content
 
-    @pytest.mark.xfail(strict=True, reason="off-by-decorator in the fold threshold")
     def test_decorator_does_not_change_whether_a_short_method_folds(self):
-        """The threshold measures the decorated span, not the method's own length.
+        """The fold threshold measures the definition, not the decorated wrapper.
 
-        So `@property def x` measures 2 lines and gets a standalone chunk, while
-        the identical undecorated method measures 1 and folds away.
+        Measuring the wrapper made `@property def x` span 2 lines and earn a
+        standalone chunk, while the identical undecorated method spanned 1 and
+        folded away.
         """
         undecorated = by_symbol(
             """
