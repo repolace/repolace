@@ -108,6 +108,34 @@ def _signature_and_docstring(source: bytes, outer_node: Node, func_node: Node) -
     return "\n".join(parts)
 
 
+def extract_signature_docstring(content: str) -> str | None:
+    """Decorators + signature + docstring for a chunk that is a single definition.
+
+    Returns None when `content` is not one definition (a module chunk, or a
+    fragment that does not parse), so callers can fall back.
+    """
+    source = content.encode("utf-8")
+    root = _PARSER.parse(source).root_node
+    if len(root.children) != 1:
+        return None
+
+    outer = root.children[0]
+    actual = _unwrap_decorated(outer)
+    if actual.type not in ("function_definition", "class_definition"):
+        return None
+
+    parts = []
+    decorators = _decorator_text(source, outer, actual)
+    if decorators:
+        parts.append(decorators)
+    parts.append(_header_text(source, actual))
+
+    docstring = _docstring(source, actual)
+    if docstring:
+        parts.append(docstring)
+    return "\n".join(parts)
+
+
 def _iter_definitions(node: Node):
     """Yield (outer, actual) definition pairs reachable without entering a def or class body.
 
