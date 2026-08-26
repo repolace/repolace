@@ -140,13 +140,23 @@ When a task starts work on an issue:
 
 Implemented in `rag/retrieval/index.py::reindex_if_stale`, single-flight per repo via a transaction-scoped advisory lock.
 
-**What this forces about checkouts.** Step 3 needs `<indexed_sha>` to still be reachable in the clone, so:
+## Checkout lifecycle (decided)
 
-- **Clones are persistent and reused across tasks**, not created and destroyed per task.
-- **Clones are not shallow.** A `--depth 1` clone cannot resolve the old commit, so every index would silently degrade to a full reindex and `indexed_commit_sha` would never save any work.
-- When the old commit *is* unreachable anyway — force-push, or an aggressive `gc` — `reindex_if_stale` catches the failed diff and falls back to a full reindex rather than erroring forever. That is a safety net, not the expected path.
+**One ephemeral clone per task. No persistent clone cache.**
 
-**Still open:** where the clone cache lives and how it is evicted; and whether the Verify sandbox runs against that same working tree or a copy. It should not be the same tree — Verify executes LLM-generated code and the repo's own test suite, which can mutate or delete files, and corrupting the canonical checkout would silently poison the index that retrieval depends on. A `git worktree` per task, or a copy into the sandbox, keeps the cache clean.
+At the start of a task: clone the repo to a temp directory, index from it, let the agents work in it, and delete it when the task ends. Nothing is kept between tasks.
+
+Why this works despite incremental indexing needing the previously-indexed commit: **chunks and embeddings live in Postgres, not in the checkout.** Throwing the tree away does not throw the index away, so re-cloning still skips re-embedding every unchanged file — which is the expensive part. And a *full* clone contains complete history, so `git diff <indexed_sha> <current_sha>` resolves in a brand-new clone. Persistence would only save download time, not correctness.
+
+The one hard constraint: **the clone must not be shallow.** `--depth 1` cannot resolve the previously-indexed commit, so every index would silently degrade to a full reindex and `indexed_commit_sha` would never save any work. If clone cost becomes a problem on large repos, the thing to reach for is a partial clone (`--filter=blob:none`, paired with `--no-renames` on the diff so rename detection does not pull blobs back down): full commit history, deferred file contents. Measure before adopting — untested here.
+
+**Ordering within a task matters.** Index first, from the clean checkout, *before* any agent edits it. Otherwise a reindex would capture the agent's own uncommitted work as if it were repo state and write it into the index.
+
+Because each task gets its own clone, two concurrent tasks on one repo are isolated at the filesystem level for free. The advisory lock in `reindex_if_stale` is still needed — it protects the shared `code_chunks` rows in Postgres, which separate checkouts do not.
+
+When the previously-indexed commit is genuinely unreachable — force-push, or an upstream `gc` — `reindex_if_stale` catches the failed diff and falls back to a full reindex rather than erroring permanently.
+
+**Still open:** whether Verify runs directly in that checkout or a copy. Verify executes LLM-generated code and the repo's own test suite, either of which can mutate or delete files. Since the clone is per-task and discarded, the blast radius is one task rather than a shared cache — so sharing it is defensible here in a way it would not be with a persistent cache. Settle it when picking the sandbox isolation mechanism.
 
 ## Task success criteria (decided)
 
