@@ -130,6 +130,24 @@ See replacement order above.
 - Enqueue flow: pick issue → pick target branch → confirm screen (shows PR target branch + a real computed cost estimate, not a static placeholder) → start
 - Pipeline trace view: horizontal stage strip (Retrieve/Plan/Edit/Test/Review) with per-stage status color and duration — in Phase 2 this is backed by logs; in Phase 3 it's backed by real OTel spans
 
+## Index freshness protocol (decided)
+
+When a task starts work on an issue:
+
+1. Read the repo's last indexed commit (`registered_repos.indexed_commit_sha`).
+2. If it equals the checkout's current commit, the index is current — use it as is.
+3. Otherwise index incrementally from that commit: `git diff <indexed_sha> <current_sha>`, then delete and re-chunk **only** the files that changed. Untouched files keep their existing chunks and embeddings.
+
+Implemented in `rag/retrieval/index.py::reindex_if_stale`, single-flight per repo via a transaction-scoped advisory lock.
+
+**What this forces about checkouts.** Step 3 needs `<indexed_sha>` to still be reachable in the clone, so:
+
+- **Clones are persistent and reused across tasks**, not created and destroyed per task.
+- **Clones are not shallow.** A `--depth 1` clone cannot resolve the old commit, so every index would silently degrade to a full reindex and `indexed_commit_sha` would never save any work.
+- When the old commit *is* unreachable anyway — force-push, or an aggressive `gc` — `reindex_if_stale` catches the failed diff and falls back to a full reindex rather than erroring forever. That is a safety net, not the expected path.
+
+**Still open:** where the clone cache lives and how it is evicted; and whether the Verify sandbox runs against that same working tree or a copy. It should not be the same tree — Verify executes LLM-generated code and the repo's own test suite, which can mutate or delete files, and corrupting the canonical checkout would silently poison the index that retrieval depends on. A `git worktree` per task, or a copy into the sandbox, keeps the cache clean.
+
 ## Task success criteria (decided)
 
 A task counts as successful when **the issue is resolved and the test suite passes without the agent having edited the tests** — the one exception being where editing a test is genuinely part of resolving the issue, because the test itself was wrong.
