@@ -123,12 +123,37 @@ See replacement order above.
 - Enqueue flow: pick issue → pick target branch → confirm screen (shows PR target branch + a real computed cost estimate, not a static placeholder) → start
 - Pipeline trace view: horizontal stage strip (Retrieve/Plan/Edit/Test/Review) with per-stage status color and duration — in Phase 2 this is backed by logs; in Phase 3 it's backed by real OTel spans
 
+## Task success criteria (decided)
+
+A task counts as successful when **the issue is resolved and the test suite passes without the agent having edited the tests** — the one exception being where editing a test is genuinely part of resolving the issue, because the test itself was wrong.
+
+Operationally, scored as fail-to-pass plus pass-to-pass:
+
+1. **Baseline.** Before applying any patch, run the suite in the sandbox and record which tests pass and which fail. Without this, "the tests pass" is unfalsifiable — a repo with pre-existing failures would score as a failure no matter what the agent did.
+2. **Fail-to-pass.** The tests targeting the issue must go from failing to passing.
+3. **Pass-to-pass.** Everything that passed at baseline must still pass. This is what catches a fix that trades one bug for another.
+4. **No test edits**, by default. A diff touching test files fails the task.
+
+**The exception is the hard part.** "Unless the test itself was wrong" is not machine-checkable — an agent that cannot pass a test can always claim the test is at fault, and that is precisely the loophole it will find. An unfalsifiable escape hatch would quietly destroy the credibility of the benchmark number, which is the project's whole differentiation claim.
+
+So the exception is a **separately tracked outcome, never a silent pass**:
+
+| outcome | meaning |
+|---|---|
+| `passed` | fail-to-pass + pass-to-pass, source changes only |
+| `passed_with_test_edit` | as above, but the diff touched tests; requires the agent to state why, and human sign-off before it counts |
+| `failed` | anything else |
+
+The headline benchmark figure is **`passed` only**. `passed_with_test_edit` is reported alongside it, never folded in. If that second bucket grows, it is a signal the agent is learning to argue with tests rather than fix code — worth watching as its own metric.
+
+Still to pin down: whether the agent may *add* new tests covering its fix (leaning yes, since it does not weaken the fail-to-pass check and is good practice), and whether diff scope should be capped by file count or line count.
+
 ## Open questions / not yet decided
 
-- Exact "task completed successfully" definition (existing tests only, or does the agent add new tests for the fix? diff-scope constraints?) — needs to be pinned down before the benchmark can be meaningful
+- ~~Exact "task completed successfully" definition~~ — **decided, see "Task success criteria" below.**
 - Issue-list filtering rule (label-based, e.g. only `bug`/`good-first-issue`) so users aren't picking from unfiltered noise
 - Single-flight vs. concurrent tasks per repo (affects whether Phase 1 needs to worry about two agents touching the same repo state)
-- **Embedding truncation — the most serious known limit on retrieval quality.** The chosen model's `max_seq_length` is **128 tokens**, which is very small for code. Measured by real tokenization over this repo's own 191 chunks: **91 (47.6%) exceed the budget** and are silently truncated, embedded from their opening tokens alone. Median chunk is 123 tokens — i.e. the *typical* chunk only just fits. By type: functions 56% over (median 137, already past the limit), method 44%, module 43%, class_skeleton 37%. The longest chunk is 1328 tokens, ~10x the budget; `CodeChunk`'s own skeleton is 771 tokens, so roughly 6/7 of it never reaches the encoder — which cancels most of the benefit of enriching class skeletons.
+- **Embedding truncation — the most serious known limit on retrieval quality.** The chosen model's `max_seq_length` is **128 tokens**, which is very small for code. Measured by real tokenization over this repo's own 238 chunks: **99 (41.6%) exceed the budget** and are silently truncated, embedded from their opening tokens alone. Median chunk is 105 tokens — the *typical* chunk sits just under the ceiling, so the corpus is crowded against it. By type: functions 52.7% over (median 131, already past the limit), module 46.9%, class_skeleton 33.3%, method 30.4%. The longest chunk is 1328 tokens, 10.4x the budget; `CodeChunk`'s own skeleton is 771 tokens, of which the encoder sees 128 — **83.4% never reaches it**, cancelling most of the benefit of enriching class skeletons. (An earlier revision of this note said 191 chunks / 47.6%; that was a smaller corpus snapshot taken before `strategies.py` and its tests were added. Both are correct for their snapshot — measure again rather than quoting either.)
 
   **This is set up as a benchmark variable, not a guess.** `rag/retrieval/strategies.py` implements four interchangeable strategies, selected via `embed_texts(..., strategy=...)`; the eval harness should run the grid and pick on measured retrieval quality. Measured over this repo (238 chunks, limit 128) — "still truncated" is the share of embedded texts still over budget, "encoder tokens" is tokens fed to the encoder as a share of original content, which exceeds 100% for `windows` because overlap feeds some tokens twice:
 
