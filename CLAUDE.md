@@ -67,6 +67,13 @@ repolace/
   eval/           # SWE-bench-style benchmark harness
 ```
 
+**Indexing is Python-only for Phase 1 — deliberate, with multi-language support planned later.** The chunker uses `tree-sitter-python` and Python node types (`function_definition`, `class_definition`, `decorated_definition`), and `find_python_files` matches `*.py`. A repo in any other language indexes to zero chunks and retrieval returns nothing. Two consequences to hold onto:
+
+- **The Phase 1 benchmark repos must be Python.** A non-Python issue in the 15–20 hand-picked set would score as a failure for reasons that have nothing to do with the agent.
+- The empty-index case is logged (`rag.index.no_python_files`) rather than passing silently, since zero chunks otherwise looks exactly like a successful index.
+
+Extending is a contained change, not a rewrite: add the grammar package, and map that language's node types onto the same function/method/class-skeleton/module shape the chunker already emits. The storage, embedding, retrieval and RRF layers are language-agnostic already.
+
 `rag/` is a separate workspace package from `shared/` (not nested inside it) so RAG-specific dependencies (tree-sitter, embedding client) don't leak into every service that imports `shared/` — same reasoning as why `gateway/` is its own package rather than living in `shared/`.
 
 **Amendment (the one exception):** `shared/` depends on `pgvector`. The `CodeChunk` ORM model has to live in `shared/repolace_shared/db/models.py` with every other table, because Alembic autogenerate works off a single `Base.metadata` — splitting models across packages means either a second migration chain or an import graph where `shared` reaches into `rag`. `pgvector` is a thin SQLAlchemy type adapter (its only dependency is numpy), so the leak is small and bounded. The rule still holds for what actually matters: tree-sitter and sentence-transformers/torch stay in `rag/` and never reach services that only import `shared/`.

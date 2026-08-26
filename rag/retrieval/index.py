@@ -53,11 +53,26 @@ async def _acquire_repo_lock(db: AsyncSession, repo_id: uuid.UUID) -> None:
 
 
 def find_python_files(repo_path: Path) -> list[Path]:
-    """Walk the checkout, pruning ignored directories instead of filtering after."""
+    """Walk the checkout, pruning ignored directories instead of filtering after.
+
+    Indexing is Python-only for now (see CLAUDE.md). A repo in another language
+    yields no chunks, which is indistinguishable from a successful index unless
+    it is called out, so the ratio is logged and an empty result warns.
+    """
     found: list[Path] = []
+    total_files = 0
     for dirpath, dirnames, filenames in os.walk(repo_path):
         dirnames[:] = [d for d in dirnames if d not in _IGNORED_DIR_NAMES]
+        total_files += len(filenames)
         found.extend(Path(dirpath) / name for name in filenames if name.endswith(".py"))
+
+    if not found:
+        log.warning(
+            "rag.index.no_python_files",
+            repo_path=str(repo_path),
+            total_files=total_files,
+            detail="indexing supports Python only; this repo will have an empty index",
+        )
     return sorted(found)
 
 
