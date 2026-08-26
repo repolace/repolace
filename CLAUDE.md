@@ -158,6 +158,25 @@ When the previously-indexed commit is genuinely unreachable — force-push, or a
 
 **Still open:** whether Verify runs directly in that checkout or a copy. Verify executes LLM-generated code and the repo's own test suite, either of which can mutate or delete files. Since the clone is per-task and discarded, the blast radius is one task rather than a shared cache — so sharing it is defensible here in a way it would not be with a persistent cache. Settle it when picking the sandbox isolation mechanism.
 
+## Branch and PR flow within a task (decided)
+
+Inside the per-task clone:
+
+1. **Clone** at the target branch; this is the base commit.
+2. **Index** from the clean tree (before any edits — see above).
+3. **Baseline test run** at the base commit, recording the pass/fail set the success criteria compare against.
+4. **`git checkout -b`** an agent branch. Plain branch, not a worktree: a worktree exists to share one object store across several trees, which the persistent-cache design needed and this one does not.
+5. **Agent works on that branch, committing each edit attempt.** The commits are checkpoints, not history for humans — they let the Debugger `git reset` back to a prior attempt instead of trying to un-edit a bad state, and give the trace UI a per-attempt diff.
+6. **Verify** on the branch; loop back to Edit on failure, bounded retries.
+7. **Review** the branch against the base: `git diff <base>...<agent-branch>` is exactly what the Reviewer reads and what the PR will show.
+8. **Squash** to a single clean commit, so the PR is not "attempt 1, attempt 2, fix debug output".
+9. **Push the branch to the remote and open the PR** against the target branch.
+10. **Delete the clone.**
+
+**Step 9 is the part that is easy to overlook:** the branch has to exist on GitHub for a PR to reference it, so it must be pushed before the temp directory is discarded. That requires the App installation to hold `contents: write`, and the clone remote to carry the installation token (`https://x-access-token:<token>@github.com/...`). Installation tokens expire after an hour and a retry loop can outlive one, so the token must be refreshed immediately before the push rather than minted once at task start and assumed valid.
+
+If the target branch moved while the task ran, the PR conflicts — this is where the conflict-resolution agent comes in. The per-task clone keeps that window small but not zero.
+
 ## Task success criteria (decided)
 
 A task counts as successful when **the issue is resolved and the test suite passes without the agent having edited the tests** — the one exception being where editing a test is genuinely part of resolving the issue, because the test itself was wrong.
