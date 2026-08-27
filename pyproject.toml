@@ -15,5 +15,5 @@ package = false
 members = ["api", "worker", "agents", "gateway", "rag", "shared", "eval"]
 
 [tool.pytest.ini_options]
-testpaths = ["rag/tests"]
+testpaths = ["rag/tests", "shared/tests"]
 addopts = "-q"

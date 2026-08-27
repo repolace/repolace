@@ -1,8 +1,13 @@
 import httpx
 import structlog
 
-from repolace_shared.github.auth import GITHUB_API_BASE, InstallationTokenCache, build_app_jwt
-from repolace_shared.github.schemas import Installation, Issue, Repository
+from repolace_shared.github.auth import (
+    DEFAULT_MIN_TTL_SECONDS,
+    GITHUB_API_BASE,
+    InstallationTokenCache,
+    build_app_jwt,
+)
+from repolace_shared.github.schemas import Installation, Issue, PullRequest, Repository
 
 log = structlog.get_logger()
 
@@ -19,6 +24,17 @@ class GithubClient:
 
     async def aclose(self) -> None:
         await self._http.aclose()
+
+    async def get_installation_token(
+        self, installation_id: int, min_ttl_seconds: float = DEFAULT_MIN_TTL_SECONDS
+    ) -> str:
+        """Mint (or reuse) an installation token.
+
+        Public because `git push` needs one outside of any API call, and needs
+        it minted at push time rather than at task start -- see
+        ``repolace_shared.git.workspace.installation_token_provider``.
+        """
+        return await self._token_cache.get_token(installation_id, self._http, min_ttl_seconds=min_ttl_seconds)
 
     async def get_installation(self, installation_id: int) -> Installation:
         app_jwt = build_app_jwt(self._app_id, self._private_key)
@@ -70,3 +86,36 @@ class GithubClient:
                 log.warning("github.pagination.max_pages_exceeded", owner=owner, repo=repo)
                 break
         return [issue for issue in issues if not issue.is_pull_request]
+
+    async def create_pull_request(
+        self,
+        installation_id: int,
+        owner: str,
+        repo: str,
+        head: str,
+        base: str,
+        title: str,
+        body: str,
+    ) -> PullRequest:
+        """Open a PR from the agent branch against the task's target branch.
+
+        ``head`` must already exist on the remote: GitHub resolves it server
+        side, so the branch has to be pushed before this is called.
+        """
+        token = await self._token_cache.get_token(installation_id, self._http)
+        response = await self._http.post(
+            f"/repos/{owner}/{repo}/pulls",
+            headers={"Authorization": f"token {token}"},
+            json={"title": title, "body": body, "head": head, "base": base},
+        )
+        response.raise_for_status()
+        pull_request = PullRequest.model_validate(response.json())
+        log.info(
+            "github.pull_request.created",
+            owner=owner,
+            repo=repo,
+            number=pull_request.number,
+            head=head,
+            base=base,
+        )
+        return pull_request

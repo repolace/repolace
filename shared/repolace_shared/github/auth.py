@@ -7,6 +7,9 @@ import jwt
 
 GITHUB_API_BASE = "https://api.github.com"
 
+#: Default freshness margin: enough for one API call to complete.
+DEFAULT_MIN_TTL_SECONDS = 60.0
+
 
 def build_app_jwt(app_id: str, private_key: str) -> str:
     now = int(time.time())
@@ -26,9 +29,21 @@ class InstallationTokenCache:
         self._private_key = private_key
         self._tokens: dict[int, _CachedToken] = {}
 
-    async def get_token(self, installation_id: int, client: httpx.AsyncClient) -> str:
+    async def get_token(
+        self,
+        installation_id: int,
+        client: httpx.AsyncClient,
+        min_ttl_seconds: float = DEFAULT_MIN_TTL_SECONDS,
+    ) -> str:
+        """Return a token guaranteed to outlive ``min_ttl_seconds``.
+
+        The margin is a parameter because callers need different ones. A single
+        API call is fine with seconds; a `git push` is a network round-trip
+        that can stall, and one that expires mid-transfer fails the last step
+        of a task that has already done all of its work.
+        """
         cached = self._tokens.get(installation_id)
-        if cached and cached.expires_at - time.time() > 60:
+        if cached and cached.expires_at - time.time() > min_ttl_seconds:
             return cached.token
 
         app_jwt = build_app_jwt(self._app_id, self._private_key)

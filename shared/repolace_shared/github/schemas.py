@@ -36,3 +36,9 @@ class Issue(BaseModel):
     @property
     def is_pull_request(self) -> bool:
         return self.pull_request is not None
+
+
+class PullRequest(BaseModel):
+    number: int
+    html_url: str
+    state: str
