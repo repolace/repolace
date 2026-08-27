@@ -12,8 +12,8 @@ dev = ["pytest>=8"]
 package = false
 
 [tool.uv.workspace]
-members = ["api", "worker", "agents", "gateway", "rag", "shared", "eval"]
+members = ["api", "worker", "agents", "gateway", "rag", "shared", "eval", "pipeline"]
 
 [tool.pytest.ini_options]
-testpaths = ["rag/tests", "shared/tests"]
+testpaths = ["rag/tests", "shared/tests", "pipeline/tests"]
 addopts = "-q"

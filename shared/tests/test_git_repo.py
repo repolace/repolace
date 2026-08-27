@@ -29,7 +29,7 @@ from repolace_shared.git.repo import (
     run_git,
 )
 
-from support import git, write
+from shared_support import git, write
 
 pytestmark = pytest.mark.anyio
 

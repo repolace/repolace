@@ -19,7 +19,7 @@ from repolace_shared.git.workspace import (
     task_workspace,
 )
 
-from support import git, git_check_ref, write
+from shared_support import git, git_check_ref, write
 
 pytestmark = pytest.mark.anyio
 

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from support import git, write
+from shared_support import git, write
 
 
 @pytest.fixture

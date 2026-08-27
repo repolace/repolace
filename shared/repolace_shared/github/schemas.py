@@ -11,6 +11,11 @@ class Installation(BaseModel):
     id: int
     account: InstallationAccount
     suspended_at: str | None = None
+    #: What this installation actually granted, e.g. {"contents": "write"}.
+    #: Declared permissions on the App and granted permissions on an
+    #: installation are different things: changing the former does not update
+    #: the latter until the account owner accepts the request.
+    permissions: dict[str, str] = {}
 
 
 class RepoOwner(BaseModel):

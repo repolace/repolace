@@ -9,6 +9,7 @@ members = [
     "repolace-api",
     "repolace-eval",
     "repolace-gateway",
+    "repolace-pipeline",
     "repolace-rag",
     "repolace-shared",
     "repolace-worker",
@@ -2539,6 +2540,29 @@ dependencies = [
 requires-dist = [
     { name = "litellm", specifier = ">=1.50" },
     { name = "repolace-shared", editable = "shared" },
+]
+
+[[package]]
+name = "repolace-pipeline"
+version = "0.0.1"
+source = { editable = "pipeline" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic-settings" },
+    { name = "repolace-rag" },
+    { name = "repolace-shared" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "structlog" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "pydantic-settings", specifier = ">=2.5" },
+    { name = "repolace-rag", editable = "rag" },
+    { name = "repolace-shared", editable = "shared" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
+    { name = "structlog", specifier = ">=24.1" },
 ]
 
 [[package]]
