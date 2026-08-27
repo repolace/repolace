@@ -97,10 +97,15 @@ async def _claim(state: AsyncSession, task_id: uuid.UUID) -> tuple[Task, Registe
     )
     if result.rowcount == 0:
         existing = await state.get(Task, task_id)
+        # Read the status *before* rolling back. `rollback()` expires every
+        # loaded instance regardless of `expire_on_commit=False` -- that flag
+        # only governs commit -- so touching an attribute afterwards triggers a
+        # lazy refresh outside the greenlet and raises MissingGreenlet.
+        status = existing.status.value if existing is not None else None
         await state.rollback()
-        if existing is None:
+        if status is None:
             raise TaskNotFound(task_id)
-        raise TaskNotClaimable(task_id, existing.status.value)
+        raise TaskNotClaimable(task_id, status)
 
     await state.commit()
 
