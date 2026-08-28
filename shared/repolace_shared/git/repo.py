@@ -412,6 +412,42 @@ class GitRepo:
         out = await self._run("diff", "--name-only", "-z", f"{base_sha}...HEAD")
         return [path for path in out.split("\0") if path]
 
+    async def index_matches_head(self) -> bool:
+        """Whether the staged tree is exactly HEAD's tree.
+
+        `checkout-index` reads the *index*, not a commit, so exporting while the
+        two disagree would hand the sandbox a tree that no commit describes --
+        and the resulting pass/fail sets would be attributed to a sha that never
+        contained that code.
+        """
+        try:
+            await self._run("diff-index", "--quiet", "--cached", "HEAD", "--")
+        except GitCommandError:
+            return False
+        return True
+
+    async def export_index_to(self, destination: Path) -> None:
+        """Write the tracked tree into ``destination``, without ``.git``.
+
+        ``checkout-index`` rather than ``git archive`` for two reasons. It works
+        from the index, so ``.git`` is excluded by construction and so are
+        untracked and ignored build artifacts -- which matters because
+        ``reset_hard`` cleans with ``-fd`` rather than ``-fdx``, leaving a stale
+        ``.so`` or ``.pyc`` in the checkout between attempts that would
+        otherwise be tested instead of the source.
+
+        And ``git archive`` honours ``export-ignore`` in ``.gitattributes``,
+        which would let a repository hide its own test files from the run that
+        establishes ground truth. That is an attack on the benchmark number
+        rather than on the host, and it is the kind that would never look like
+        an attack. ``checkout-index`` honours neither ``export-ignore`` nor
+        ``export-subst``.
+
+        The trailing separator is required: ``--prefix`` is a literal string
+        prefix, not a directory argument.
+        """
+        await self._run("checkout-index", "--all", "--force", f"--prefix={destination}{os.sep}")
+
     async def push_branch(self, branch: str, remote: str = "origin") -> None:
         await self._run(
             "push",

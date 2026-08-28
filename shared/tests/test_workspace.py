@@ -187,3 +187,96 @@ class TestAgentFlow:
         async with workspace_for(origin_url) as workspace:
             with pytest.raises(RuntimeError, match="no agent branch"):
                 await workspace.push()
+
+
+class TestExportTree:
+    """The `.git`-less export is the confused-deputy mitigation.
+
+    Its value is entirely in what it leaves *out*, so these tests are mostly
+    assertions of absence -- which is the kind of test that quietly stops
+    meaning anything if the export silently starts producing nothing at all.
+    Hence the positive assertions alongside each one.
+    """
+
+    async def test_the_source_is_exported(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            export = await workspace.export_tree(0)
+
+            assert (export / "src" / "app.py").is_file()
+            assert (export / "README.md").is_file()
+
+    async def test_git_is_not_exported(self, origin_url):
+        """The whole point: no .git means no hooks to plant and no config to poison."""
+        async with workspace_for(origin_url) as workspace:
+            export = await workspace.export_tree(0)
+
+            assert not (export / ".git").exists()
+            assert list(export.rglob(".git")) == []
+
+    async def test_untracked_files_are_left_behind(self, origin_url):
+        """A test run's artifacts must not become the next attempt's input."""
+        async with workspace_for(origin_url) as workspace:
+            write(workspace.path / "junk.log", "debug output\n")
+            write(workspace.path / ".pytest_cache" / "lastfailed", "{}\n")
+
+            export = await workspace.export_tree(0)
+
+            assert not (export / "junk.log").exists()
+            assert not (export / ".pytest_cache").exists()
+
+    async def test_ignored_build_artifacts_are_left_behind(self, origin_url):
+        """`reset_hard` cleans with -fd, not -fdx, so ignored artifacts survive
+        in the checkout between attempts. Exporting from the index drops them."""
+        async with workspace_for(origin_url) as workspace:
+            write(workspace.path / ".gitignore", "*.so\n")
+            write(workspace.path / "stale.so", "compiled last attempt\n")
+
+            export = await workspace.export_tree(0)
+
+            assert not (export / "stale.so").exists()
+            assert (export / "src" / "app.py").is_file()
+
+    async def test_committed_changes_are_exported(self, origin_url):
+        """The export must reflect the attempt, or the results describe the wrong code."""
+        async with workspace_for(origin_url) as workspace:
+            await workspace.start_agent_branch(ISSUE_NUMBER, TASK_ID)
+            write(workspace.path / "src" / "app.py", "def add(a, b):\n    return a + b\n")
+            await workspace.record_attempt("fix")
+
+            export = await workspace.export_tree(1)
+
+            assert "return a + b" in (export / "src" / "app.py").read_text()
+
+    async def test_a_dirty_index_is_refused(self, origin_url):
+        """`checkout-index` reads the index, so exporting while it disagrees with
+        HEAD would attribute results to a commit that never held that code."""
+        async with workspace_for(origin_url) as workspace:
+            write(workspace.path / "src" / "app.py", "def add(a, b):\n    return 0\n")
+            await workspace.repo._run("add", "--all")
+
+            with pytest.raises(RuntimeError, match="index does not match HEAD"):
+                await workspace.export_tree(0)
+
+    async def test_each_attempt_gets_its_own_directory(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            first = await workspace.export_tree(0)
+            second = await workspace.export_tree(1)
+
+            assert first != second
+            assert first.is_dir() and second.is_dir()
+
+    async def test_the_sandbox_can_write_into_the_export(self, origin_url):
+        """It runs as a different uid; without this it cannot even create a pycache."""
+        async with workspace_for(origin_url) as workspace:
+            export = await workspace.export_tree(0)
+
+            assert stat.S_IMODE(export.stat().st_mode) == 0o777
+
+    async def test_exports_are_cleaned_up_with_the_workspace(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            root = workspace.root
+            export = await workspace.export_tree(0)
+            results = await workspace.results_dir(0)
+            assert export.exists() and results.exists()
+
+        assert not root.exists()

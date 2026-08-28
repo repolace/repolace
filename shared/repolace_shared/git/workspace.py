@@ -34,6 +34,12 @@ log = structlog.get_logger()
 PUSH_TOKEN_MIN_TTL_SECONDS = 300.0
 
 _CHECKOUT_DIR_NAME = "repo"
+_EXPORT_DIR_PREFIX = "export"
+
+#: The sandbox runs as an unprivileged uid that is not ours, so it needs to be
+#: able to write into the exported tree. Not a host exposure: the workspace root
+#: is created by `mkdtemp` with mode 0700, so no other user can traverse to it.
+_SANDBOX_DIR_MODE = 0o777
 
 
 def github_clone_url(owner: str, name: str) -> str:
@@ -75,7 +81,11 @@ class TaskWorkspace:
 
     @property
     def path(self) -> Path:
-        """The checkout itself. What indexing walks and what the sandbox mounts."""
+        """The checkout itself. What indexing walks and what the agent edits.
+
+        **Not** what the sandbox mounts -- that is `export_tree`, deliberately,
+        because this directory contains `.git`.
+        """
         return self.repo.path
 
     async def start_agent_branch(self, issue_number: int, task_id: uuid.UUID) -> str:
@@ -90,6 +100,52 @@ class TaskWorkspace:
         self.agent_branch = name
         log.info("workspace.agent_branch", branch=name, base_sha=self.base_sha)
         return name
+
+    async def export_tree(self, attempt: int) -> Path:
+        """Copy the tracked tree out for the sandbox, without ``.git``.
+
+        This is the whole confused-deputy mitigation, and it is structural
+        rather than defensive. ``.git`` is executable configuration: hooks fire
+        on the host during ordinary commits and pushes, ``core.fsmonitor`` fires
+        on every status, and ``remote.origin.url`` decides where a push sends
+        the installation token. Sandboxed code that can write into ``.git``
+        needs no escape -- the host reads those files afterwards and acts on
+        them.
+
+        Handing over a directory with no ``.git`` in it does not block those
+        tricks one at a time; it removes the thing they all require. That
+        matters because the list of dangerous config keys grows with every git
+        release.
+
+        Lives under ``root`` beside the checkout, so ``task_workspace``'s
+        existing cleanup removes it -- including the case where the sandbox
+        left files this process does not own.
+        """
+        if not await self.repo.index_matches_head():
+            raise RuntimeError(
+                "refusing to export: the index does not match HEAD, so the exported "
+                "tree would not be the commit the results get attributed to"
+            )
+
+        destination = self.root / f"{_EXPORT_DIR_PREFIX}-{attempt}"
+        destination.mkdir(parents=True, exist_ok=True)
+        # Explicitly, because mkdir's mode is masked by the process umask.
+        os.chmod(destination, _SANDBOX_DIR_MODE)
+
+        await self.repo.export_index_to(destination)
+        log.info("workspace.exported", attempt=attempt, destination=str(destination))
+        return destination
+
+    async def results_dir(self, attempt: int) -> Path:
+        """Somewhere for the sandbox to write its report, outside the source tree.
+
+        Separate from the export so a suite that scribbles over its own working
+        directory cannot destroy the report that says what it did.
+        """
+        destination = self.root / f"results-{attempt}"
+        destination.mkdir(parents=True, exist_ok=True)
+        os.chmod(destination, _SANDBOX_DIR_MODE)
+        return destination
 
     async def record_attempt(self, message: str) -> str | None:
         """Step 5. Commit one edit attempt as a checkpoint.
