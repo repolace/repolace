@@ -17,7 +17,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
-from repolace_shared.db.models import BASELINE_ATTEMPT, Task, TaskOutcome, TaskTestRun
+from repolace_shared.db.models import BASELINE_ATTEMPT, Task, TaskOutcome, TaskStatus, TaskTestRun
 
 from db_support import seed_task
 
@@ -196,3 +196,76 @@ class TestOpenPrOnFailure:
 
         stored = (await db_session.execute(select(Task))).scalar_one()
         assert stored.open_pr_on_failure is True
+
+
+class TestCompletedStatus:
+    async def test_a_task_can_finish_without_a_pr(self, db_session):
+        """The pipeline ran to the end and the agent lost. Not a pipeline failure.
+
+        `failed` stays reserved for "repolace itself broke", which is what keeps
+        `error_message` meaning exactly one thing.
+        """
+        task = await seed_task(db_session)
+        task.status = TaskStatus.COMPLETED
+        task.outcome = TaskOutcome.FAILED
+        await db_session.commit()
+
+        stored = (await db_session.execute(select(Task))).scalar_one()
+        assert stored.status is TaskStatus.COMPLETED
+        assert stored.outcome is TaskOutcome.FAILED
+        assert stored.error_message is None
+
+
+class TestRunDetailSets:
+    async def test_the_extra_sets_round_trip(self, db_session):
+        """Kept because scoring asks about them: a pass turned into a skip is a
+        regression, and a baseline failure silenced rather than fixed is a
+        disqualification. Neither is derivable if the set was discarded."""
+        task = await seed_task(db_session)
+        db_session.add(
+            TaskTestRun(
+                task_id=task.id,
+                attempt=0,
+                commit_sha="abc",
+                passed=["t::a"],
+                failed=["t::b"],
+                skipped=["t::c"],
+                did_not_run=["t::d"],
+                collect_failures=["tests/broken.py"],
+            )
+        )
+        await db_session.commit()
+
+        run = (await db_session.execute(select(TaskTestRun))).scalar_one()
+        assert run.skipped == ["t::c"]
+        assert run.did_not_run == ["t::d"]
+        assert run.collect_failures == ["tests/broken.py"]
+
+    async def test_they_default_to_empty_not_null(self, db_session):
+        """Proving migration 0009's server_default, not the Python-side default."""
+        task = await seed_task(db_session)
+        db_session.add(TaskTestRun(task_id=task.id, attempt=0, commit_sha="abc"))
+        await db_session.commit()
+
+        run = (await db_session.execute(select(TaskTestRun))).scalar_one()
+        assert run.skipped == [] and run.did_not_run == [] and run.collect_failures == []
+
+
+class TestPatchProvenance:
+    async def test_a_patch_can_be_recorded_for_later_audit(self, db_session):
+        """The clone is deleted when the task ends; without this a PASSED
+        verdict cannot be re-examined."""
+        task = await seed_task(db_session)
+        task.patch_sha = "deadbeef"
+        task.changed_files = ["src/config.py"]
+        await db_session.commit()
+
+        stored = (await db_session.execute(select(Task))).scalar_one()
+        assert stored.patch_sha == "deadbeef"
+        assert stored.changed_files == ["src/config.py"]
+
+    async def test_null_means_never_got_that_far(self, db_session):
+        """Distinct from a patch that changed no files, which is an empty list."""
+        task = await seed_task(db_session)
+
+        assert task.patch_sha is None and task.changed_files is None

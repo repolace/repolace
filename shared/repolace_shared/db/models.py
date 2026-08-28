@@ -44,6 +44,10 @@ class TaskStatus(str, enum.Enum):
     QUEUED = "queued"
     RUNNING = "running"
     PR_OPENED = "pr_opened"
+    #: The pipeline ran to the end and opened no PR -- read `outcome` for why.
+    #: Distinct from FAILED, which stays reserved for "repolace itself broke",
+    #: so `error_message` keeps exactly one meaning.
+    COMPLETED = "completed"
     CONFLICTING = "conflicting"
     FAILED = "failed"
 
@@ -178,6 +182,13 @@ class Task(Base):
     open_pr_on_failure: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=false()
     )
+    #: What the agent actually produced. The clone is deleted when the task
+    #: ends, so without these a PASSED verdict cannot be re-examined afterwards
+    #: -- and a benchmark nobody can audit is a benchmark nobody should believe.
+    #: NULL means the task never got this far, which is not the same as a patch
+    #: that changed nothing.
+    patch_sha: Mapped[str | None] = mapped_column(String, nullable=True)
+    changed_files: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     pr_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     pr_url: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -227,6 +238,15 @@ class TaskTestRun(Base):
     commit_sha: Mapped[str] = mapped_column(String, nullable=False)
     passed: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, server_default="{}")
     failed: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, server_default="{}")
+    #: In neither set, and kept because the scoring rule asks about them: a test
+    #: that passed at baseline and is skipped afterwards is a regression, and a
+    #: baseline failure that is silenced rather than fixed is a disqualification.
+    #: Deriving either later is impossible if the sets were discarded.
+    skipped: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, server_default="{}")
+    did_not_run: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, server_default="{}")
+    collect_failures: Mapped[list[str]] = mapped_column(
+        ARRAY(String), nullable=False, server_default="{}"
+    )
     exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     duration_seconds: Mapped[float | None] = mapped_column(Numeric(10, 3), nullable=True)
     #: Set when the suite produced no usable result at all -- an import error,
