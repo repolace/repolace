@@ -24,7 +24,10 @@ def jsonl(*records: dict) -> str:
     return "".join(json.dumps(r, ensure_ascii=True, sort_keys=True) + "\n" for r in records)
 
 
-def test_record(nodeid: str, when: str, outcome: str, **extra) -> dict:
+def report(nodeid: str, when: str, outcome: str, **extra) -> dict:
+    """Named `report`, not `test_record`: pytest collects test_* functions out of
+    the importing module's namespace, so a helper with that prefix becomes a
+    spurious test with unfillable fixture arguments."""
     return {
         "kind": "test",
         "nodeid": nodeid,
