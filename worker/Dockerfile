@@ -19,6 +19,7 @@ COPY --chown=repolace:repolace rag/pyproject.toml rag/pyproject.toml
 COPY --chown=repolace:repolace shared/pyproject.toml shared/pyproject.toml
 COPY --chown=repolace:repolace eval/pyproject.toml eval/pyproject.toml
 COPY --chown=repolace:repolace pipeline/pyproject.toml pipeline/pyproject.toml
+COPY --chown=repolace:repolace verify/pyproject.toml verify/pyproject.toml
 
 USER repolace
 

@@ -1,0 +1,24 @@
+# Per-repo overrides live beside this file, named <owner>__<name>.toml
+# (lowercase, "/" replaced by "__"). This file ships as documentation: every key
+# is commented out, so it parses to {} and the install heuristic runs.
+#
+# A key that is present overrides that key only -- except `install`, which
+# replaces the heuristic wholesale, because partially merging shell command
+# lists is meaningless.
+#
+# An unknown key raises SpecError rather than being ignored. A typo'd key that
+# is silently dropped is how a spec quietly stops applying, and the symptom
+# arrives weeks later as an unexplained unscoreable run.
+
+# base_image = "python:3.11-slim"
+# system_packages = ["libxml2-dev"]
+# install = [
+#   "python -m pip install -r requirements-dev.txt",
+#   "python -m pip install -e .",
+#   "python -m pip install pytest",
+# ]
+# test_targets = ["tests"]
+# extra_pytest_args = ["--import-mode=importlib"]
+# keep_addopts = false
+# repo_readonly = false
+# timeout_seconds = 2400

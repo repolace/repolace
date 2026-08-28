@@ -12,6 +12,7 @@ members = [
     "repolace-pipeline",
     "repolace-rag",
     "repolace-shared",
+    "repolace-verify",
     "repolace-worker",
 ]
 
@@ -2551,6 +2552,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "repolace-rag" },
     { name = "repolace-shared" },
+    { name = "repolace-verify" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "structlog" },
 ]
@@ -2561,6 +2563,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.5" },
     { name = "repolace-rag", editable = "rag" },
     { name = "repolace-shared", editable = "shared" },
+    { name = "repolace-verify", editable = "verify" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
     { name = "structlog", specifier = ">=24.1" },
 ]
@@ -2608,6 +2611,21 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.5" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.9" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
+    { name = "structlog", specifier = ">=24.1" },
+]
+
+[[package]]
+name = "repolace-verify"
+version = "0.0.1"
+source = { editable = "verify" }
+dependencies = [
+    { name = "repolace-shared" },
+    { name = "structlog" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "repolace-shared", editable = "shared" },
     { name = "structlog", specifier = ">=24.1" },
 ]
 

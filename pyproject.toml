@@ -12,10 +12,10 @@ dev = ["pytest>=8"]
 package = false
 
 [tool.uv.workspace]
-members = ["api", "worker", "agents", "gateway", "rag", "shared", "eval", "pipeline"]
+members = ["api", "worker", "agents", "gateway", "rag", "shared", "eval", "pipeline", "verify"]
 
 [tool.pytest.ini_options]
-testpaths = ["rag/tests", "shared/tests", "pipeline/tests"]
+testpaths = ["rag/tests", "shared/tests", "pipeline/tests", "verify/tests"]
 addopts = "-q"
 markers = [
     "db: needs a live PostgreSQL; skipped unless one is reachable",
