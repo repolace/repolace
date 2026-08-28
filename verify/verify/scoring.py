@@ -1,0 +1,292 @@
+"""Whether a task actually fixed the issue.
+
+This module is the benchmark. A rule that is subtly wrong produces a number that
+is confidently wrong, which is worse than no number at all, so two things are
+deliberate throughout:
+
+**It errs toward FAILED.** A false negative costs one point. A false positive
+costs the claim -- anyone can open a PASSED task's pull request and read the
+diff, and one indefensible pass discredits the whole figure.
+
+**It reports `None` (inadmissible) rather than a verdict when the instrument
+failed.** "We never found out" is not "the agent lost", and folding the two
+together lets infrastructure flakiness masquerade as capability.
+
+What this module cannot do, stated plainly so nobody assumes otherwise: it
+cannot tell a real fix from a patch that satisfies the test from the source side
+-- special-casing the input, returning the literal the assertion wants. No
+path-based rule can. That needs curated per-instance ground truth
+(`expected_fail_to_pass`) and a human reading the diff.
+"""
+
+from dataclasses import dataclass, field
+from pathlib import PurePosixPath
+
+from repolace_shared.db.models import TaskOutcome
+from verify.protocol import SuiteResult
+
+#: Directory names that mean "this is test infrastructure".
+_TEST_DIR_PARTS = frozenset({"test", "tests", "testing", "unit_tests", "regression_tests", "spec", "qa"})
+
+#: Directories whose *contents* are test fixtures whatever the extension.
+#: Editing a golden file or a recorded cassette is the cheapest possible fake
+#: fix, and none of these match a `test_*.py` heuristic.
+_FIXTURE_DIR_PARTS = frozenset({"__snapshots__", "cassettes", "testdata", "snapshots", "fixtures"})
+
+#: Files that change what runs, or whether it passes, without being tests.
+#: `-o addopts=` clears only `addopts`; everything else in a pytest config still
+#: applies, so relaxing `filterwarnings` here turns a real failure into a real
+#: pass with a diff that touches no test path.
+_CONFIG_FILES = frozenset({
+    "pytest.ini", "tox.ini", "setup.cfg", "pyproject.toml", ".coveragerc",
+    "conftest.py",
+    # Imported by the interpreter before pytest exists, whenever the repo root
+    # is on sys.path -- which a legacy-mode editable install arranges.
+    "sitecustomize.py", "usercustomize.py",
+    # Can change the bytes checked out without changing the blob, so what runs
+    # stops matching what the diff shows.
+    ".gitattributes",
+})
+
+
+def is_test_path(path: str) -> bool:
+    """Heuristic: does this path look like test infrastructure?
+
+    Used as one input to `disqualifying_paths`, never alone. It necessarily both
+    over- and under-matches: `django/test/client.py` is a shipped module, not a
+    test, and `myapp/tests.py` is a test that matches no `test_*.py` pattern.
+    The collected-file set from the baseline run resolves both.
+    """
+    parts = PurePosixPath(path).parts
+    if not parts:
+        return False
+    name = parts[-1]
+    if name in _CONFIG_FILES:
+        return True
+    if any(part in _TEST_DIR_PARTS or part in _FIXTURE_DIR_PARTS for part in parts[:-1]):
+        return True
+    if not name.endswith(".py"):
+        return False
+    stem = name[:-3]
+    return name == "tests.py" or stem.startswith("test_") or stem.endswith("_test")
+
+
+def disqualifying_paths(
+    changed_files: list[str] | tuple[str, ...],
+    baseline: SuiteResult,
+    baseline_files: tuple[str, ...] | None = None,
+) -> tuple[str, ...]:
+    """Which changed files are off-limits.
+
+    Combines what pytest actually collected -- authoritative for this repo -- with
+    a path heuristic that is still needed for test files the baseline never saw,
+    since a file the agent *adds* cannot appear in the collected set.
+
+    ``baseline_files`` is what resolves the heuristic's false positives. Django
+    ships ``django/test/client.py``; the heuristic flags it, and disqualifying a
+    fix that legitimately lands there would fail honest work for reasons
+    unrelated to the agent. The discriminator is existence: a file that was
+    present at the base commit and that pytest did *not* collect from is not a
+    test, whatever it is called. A file absent at baseline is new, so the
+    heuristic applies.
+
+    Config files are disqualified regardless -- ``pyproject.toml`` exists at
+    baseline and is never collected, but relaxing ``filterwarnings`` in it turns
+    a real failure into a real pass.
+    """
+    collected = {p.lstrip("./") for p in baseline.collected_files}
+    conftests = {PurePosixPath(p).name for p in baseline.conftests}
+    fixture_dirs = {str(PurePosixPath(p).parent) for p in collected}
+    existed = {p.lstrip("./") for p in baseline_files} if baseline_files is not None else None
+
+    disqualified = []
+    for path in changed_files:
+        normalised = path.lstrip("./")
+        name = PurePosixPath(normalised).name
+
+        if normalised in collected:
+            disqualified.append(path)
+        elif normalised.endswith("conftest.py") and name in conftests:
+            disqualified.append(path)
+        elif name in _CONFIG_FILES:
+            disqualified.append(path)
+        elif str(PurePosixPath(normalised).parent) in fixture_dirs and not normalised.endswith(".py"):
+            # A data file beside collected tests: a golden file or a recorded
+            # cassette, which is a test in everything but extension.
+            disqualified.append(path)
+        elif is_test_path(normalised):
+            # Only when we cannot prove otherwise. If the file existed at
+            # baseline and pytest ignored it, it is not test infrastructure.
+            if existed is not None and normalised in existed:
+                continue
+            disqualified.append(path)
+    return tuple(sorted(set(disqualified)))
+
+
+def fail_to_pass(baseline: SuiteResult, attempt: SuiteResult) -> tuple[str, ...]:
+    """Tests that were failing and now pass.
+
+    Includes xfail -> xpass. A mature repository records a known bug as
+    `@pytest.mark.xfail`, which pytest reports as a skip; under a rule that only
+    looked at `failed` that transition was invisible in both directions, which
+    removed the most likely form of a legitimately-red test.
+    """
+    became_passing = set(baseline.failed) & set(attempt.passed)
+    xfail_fixed = set(baseline.skipped) & set(attempt.passed)
+    return tuple(sorted(became_passing | xfail_fixed))
+
+
+def regressions(baseline: SuiteResult, attempt: SuiteResult) -> tuple[str, ...]:
+    """Tests that were passing and no longer are.
+
+    A set difference against `passed`, not a lookup in `failed`. That is what
+    makes a *deleted* test, a test turned into a skip, and a test whose module
+    stopped collecting all count -- none of which appear in `attempt.failed`,
+    and all of which are ways to make an inconvenient test stop objecting.
+    """
+    return tuple(sorted(set(baseline.passed) - set(attempt.passed)))
+
+
+def neutralized(baseline: SuiteResult, attempt: SuiteResult) -> tuple[str, ...]:
+    """Baseline-failing tests that were silenced rather than fixed.
+
+    Without this the incentive is plain: turn one red test green by any means,
+    and make everything else you broke stop running. A skipped or uncollected
+    test is in neither `passed` nor `failed`, so it costs nothing under the
+    other two rules. Only previously-*passing* tests were protected.
+    """
+    silenced = set(attempt.skipped) | set(attempt.did_not_run)
+    observed = set(attempt.passed) | set(attempt.failed) | silenced
+    vanished = set(baseline.failed) - observed
+    return tuple(sorted((set(baseline.failed) & silenced) | vanished))
+
+
+def fingerprint_changed(baseline: SuiteResult, attempt: SuiteResult) -> str | None:
+    """Did the run's configuration shift underneath the comparison?
+
+    node ids are relative to rootdir, ini options decide whether a warning is an
+    error, and a conftest-registered plugin can reorder the suite. If any of
+    those differ between baseline and attempt, the two result sets are not
+    comparable and the diff is not the only thing that changed.
+    """
+    for key in ("rootdir", "ini", "plugins"):
+        before, after = baseline.fingerprint.get(key), attempt.fingerprint.get(key)
+        if before != after:
+            return f"{key} changed between baseline and attempt"
+    return None
+
+
+@dataclass(frozen=True)
+class Score:
+    outcome: TaskOutcome | None
+    reason: str
+    fail_to_pass: tuple[str, ...] = ()
+    regressions: tuple[str, ...] = ()
+    neutralized: tuple[str, ...] = ()
+    disqualified: tuple[str, ...] = ()
+    #: True when the instrument failed rather than the agent. Excluded from the
+    #: headline figure, and reported as its own count so exclusions stay visible.
+    inadmissible: bool = False
+
+
+def _inadmissible(reason: str, **fields) -> Score:
+    return Score(outcome=None, reason=reason, inadmissible=True, **fields)
+
+
+def score(
+    baseline: SuiteResult,
+    attempt: SuiteResult,
+    changed_files: list[str] | tuple[str, ...],
+    *,
+    baseline_files: tuple[str, ...] | None = None,
+    expected_fail_to_pass: tuple[str, ...] | None = None,
+    attempt_infrastructure_error: bool = False,
+) -> Score:
+    """Decide one attempt's outcome. First match wins; order is load-bearing.
+
+    `expected_fail_to_pass` is the curated per-instance ground truth -- the tests
+    the fixing PR added. When present, all of them must pass; "some baseline
+    failure went green" is not evidence about *this* issue. When absent the rule
+    degrades to that weaker claim, which is why an uncurated figure overstates.
+    """
+    disqualified = disqualifying_paths(changed_files, baseline, baseline_files)
+    if disqualified:
+        # First, deliberately. A disqualifying diff is a property of the diff and
+        # needs no run at all -- so crashing the harness cannot launder a test
+        # edit into an exclusion, which is what the old ordering allowed.
+        return Score(
+            outcome=TaskOutcome.FAILED,
+            reason=f"diff touches test or config files: {', '.join(disqualified[:3])}",
+            disqualified=disqualified,
+        )
+
+    if baseline.error:
+        return _inadmissible(f"baseline unscoreable: {baseline.error}")
+
+    if attempt_infrastructure_error:
+        # The host or the daemon failed. Not a property of the patch, so not a
+        # verdict about the agent -- this is a retry signal.
+        return _inadmissible(f"infrastructure failure: {attempt.error}")
+
+    if attempt.error:
+        # The environment is identical across attempts because the image is
+        # built once, so a suite that now fails to collect, times out, or is
+        # OOM-killed is the patch's doing. That is a bad patch, not an excuse.
+        return Score(outcome=TaskOutcome.FAILED, reason=f"attempt unscoreable: {attempt.error}")
+
+    drift = fingerprint_changed(baseline, attempt)
+    if drift:
+        return Score(outcome=TaskOutcome.FAILED, reason=drift)
+
+    if expected_fail_to_pass is None and not baseline.failed and not baseline.skipped:
+        # Nothing was red at the base commit, so `F0 ∩ Pn` is empty whatever the
+        # agent does. Charging that to the agent would attribute an instrument
+        # limitation to it; the instance simply cannot be scored this way.
+        return _inadmissible(
+            "no test failed at the base commit and no curated fail-to-pass list was supplied; "
+            "this instance cannot demonstrate a fix"
+        )
+
+    fixed = fail_to_pass(baseline, attempt)
+    broke = regressions(baseline, attempt)
+    silenced = neutralized(baseline, attempt)
+    sets = {"fail_to_pass": fixed, "regressions": broke, "neutralized": silenced}
+
+    if silenced:
+        return Score(
+            outcome=TaskOutcome.FAILED,
+            reason=f"{len(silenced)} baseline failure(s) silenced rather than fixed: "
+                   f"{', '.join(silenced[:3])}",
+            **sets,
+        )
+
+    if broke:
+        return Score(
+            outcome=TaskOutcome.FAILED,
+            reason=f"{len(broke)} pass-to-pass regression(s): {', '.join(broke[:3])}",
+            **sets,
+        )
+
+    if expected_fail_to_pass is not None:
+        missing = tuple(sorted(set(expected_fail_to_pass) - set(attempt.passed)))
+        if missing:
+            return Score(
+                outcome=TaskOutcome.FAILED,
+                reason=f"{len(missing)} expected fail-to-pass test(s) still not passing: "
+                       f"{', '.join(missing[:3])}",
+                **sets,
+            )
+        return Score(outcome=TaskOutcome.PASSED,
+                     reason=f"all {len(expected_fail_to_pass)} expected tests pass, no regressions",
+                     **sets)
+
+    if not fixed:
+        return Score(outcome=TaskOutcome.FAILED,
+                     reason="no baseline-failing test now passes", **sets)
+
+    return Score(
+        outcome=TaskOutcome.PASSED,
+        reason=f"{len(fixed)} fail-to-pass, no regressions "
+               f"(uncurated: not evidence this issue specifically was fixed)",
+        **sets,
+    )

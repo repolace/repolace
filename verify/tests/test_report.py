@@ -235,3 +235,61 @@ class TestCollectFailures:
         ), returncode=1)
 
         assert result.error is not None and "collection failed" in result.error
+
+
+class TestForgeryDetection:
+    """A cheap consistency check, not a security control.
+
+    The code under test shares an interpreter with the plugin that writes these
+    records. A patch that monkeypatches the recorder can rewrite the exit status
+    alongside the outcomes and defeat everything here. That is not a gap to be
+    closed -- there is no in-sandbox measurement of untrusted code that is
+    forgery-proof. What these catch is the accidental and the careless.
+    """
+
+    def test_a_report_claiming_no_failures_while_pytest_failed_is_refused(self, tmp_path):
+        result = parse(tmp_path, jsonl(
+            start_record(),
+            report("t.py::a", "call", "passed"),
+            session_record(1),
+        ), returncode=1)
+
+        assert result.error is not None and "no failure" in result.error
+
+    def test_a_report_claiming_failures_while_pytest_passed_is_refused(self, tmp_path):
+        result = parse(tmp_path, jsonl(
+            start_record(),
+            report("t.py::a", "call", "failed"),
+            session_record(0),
+        ))
+
+        assert result.error is not None and "exited 0" in result.error
+
+    def test_max_warnings_is_exempt_from_the_cross_check(self, tmp_path):
+        """Exit 6 can accompany a passing or a failing session."""
+        result = parse(tmp_path, jsonl(
+            start_record(),
+            report("t.py::a", "call", "passed"),
+            session_record(6),
+        ), returncode=6)
+
+        assert result.error is None
+
+
+class TestOversizedReport:
+    def test_a_report_above_the_cap_is_refused_without_being_read(self, tmp_path, monkeypatch):
+        """The container's memory limit does not constrain this process.
+
+        Reading an arbitrarily large report would OOM the worker rather than the
+        sandbox, so the size is checked before anything is parsed.
+        """
+        from verify import report as report_module
+
+        monkeypatch.setattr(report_module, "MAX_REPORT_BYTES", 64)
+        result = parse(tmp_path, jsonl(
+            start_record(),
+            *[report(f"t.py::t{i}", "call", "passed") for i in range(50)],
+            session_record(0),
+        ))
+
+        assert result.error is not None and "above the" in result.error

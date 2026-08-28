@@ -63,6 +63,15 @@ class SuiteResult:
     skipped: tuple[str, ...] = ()
     did_not_run: tuple[str, ...] = ()
     collect_failures: tuple[str, ...] = ()
+    #: Files pytest actually collected tests from, and the conftests it loaded.
+    #: Authoritative for this repo in a way a path heuristic cannot be.
+    collected_files: tuple[str, ...] = ()
+    conftests: tuple[str, ...] = ()
+    #: rootdir, watched ini options and registered plugins. Scoring requires
+    #: these identical between baseline and attempt, so an agent cannot relax
+    #: `filterwarnings` in pyproject.toml to turn a real failure into a real
+    #: pass without touching a test file.
+    fingerprint: Mapping[str, object] = field(default_factory=dict)
     exit_code: int | None = None
     duration_seconds: float | None = None
     stdout_tail: str = ""

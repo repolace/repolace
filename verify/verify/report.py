@@ -29,6 +29,13 @@ SCHEMA_VERSION = 1
 #: looks like a result is worse than no number.
 MAX_TEST_IDS = 20_000
 
+#: Hard cap on the report file itself, checked before anything is read.
+#: MAX_TEST_IDS bounds ids *after* parsing, which is too late -- the container's
+#: memory limit does not apply to the host process doing the reading, so an
+#: oversized report would OOM the worker rather than the sandbox. Generous:
+#: 20k tests x 3 phases x ~400 bytes is roughly 24 MB.
+MAX_REPORT_BYTES = 64 * 1024 * 1024
+
 #: pytest exit codes that still describe a complete, scoreable session.
 #: 0 all passed, 1 tests failed, 6 max-warnings (the session finished first).
 #: Deliberately excludes 5 (NO_TESTS_COLLECTED): a suite we could not find is
@@ -66,25 +73,55 @@ def _verdict(reports: list[dict]) -> str:
 
 
 def _read_records(path: Path) -> tuple[list[dict], str | None]:
-    """Parse the file, tolerating exactly one truncated trailing line.
+    """Parse the file line-wise, tolerating exactly one truncated trailing line.
+
+    Streamed rather than slurped, and size-capped first: the report is written
+    by untrusted code, and the container's memory limit does not constrain this
+    process. `read_text` on an arbitrarily large file would OOM the worker
+    rather than the sandbox.
 
     Per-line flushing means a killed run leaves at most one partial line. A
     malformed line anywhere else is real corruption and must not be silently
-    skipped.
+    skipped -- tolerating it would let a forged report hide behind a deliberate
+    syntax error.
     """
+    size = path.stat().st_size
+    if size > MAX_REPORT_BYTES:
+        return [], f"report is {size} bytes, above the {MAX_REPORT_BYTES} cap"
+
     records: list[dict] = []
-    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    for number, line in enumerate(lines, start=1):
-        if not line.strip():
-            continue
-        try:
-            records.append(json.loads(line))
-        except json.JSONDecodeError:
-            if number == len(lines):
-                log.warning("verify.report.truncated_tail", line=number)
+    pending: tuple[int, str] | None = None
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        for number, line in enumerate(handle, start=1):
+            if pending is not None:
+                # The previous bad line was not the last one after all.
+                return records, f"corrupt report at line {pending[0]}"
+            if not line.strip():
                 continue
-            return records, f"corrupt report at line {number}"
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                pending = (number, line)
+
+    if pending is not None:
+        log.warning("verify.report.truncated_tail", line=pending[0])
     return records, None
+
+
+def _exitstatus_disagrees(
+    exitstatus: int | None, failed: tuple[str, ...], collect_failures: tuple[str, ...]
+) -> str | None:
+    """Compare pytest's own verdict with the one derived from the records.
+
+    Only the two unambiguous codes are checked. Exit 6 (max warnings) can
+    accompany either, and anything else has already been refused above.
+    """
+    trouble = bool(failed) or bool(collect_failures)
+    if exitstatus == 0 and trouble:
+        return f"report claims {len(failed)} failures but pytest exited 0"
+    if exitstatus == 1 and not trouble:
+        return "pytest exited 1 but the report contains no failure"
+    return None
 
 
 def parse_report(path: Path, process: ProcessResult, elapsed: float) -> SuiteResult:
@@ -118,7 +155,8 @@ def parse_report(path: Path, process: ProcessResult, elapsed: float) -> SuiteRes
     if versions - {SCHEMA_VERSION, None}:
         return unscoreable(f"report schema {sorted(versions)}, expected {SCHEMA_VERSION}")
 
-    if not any(r["kind"] == "session" for r in records):
+    sessions = [r for r in records if r["kind"] == "session"]
+    if not sessions:
         # The one thing exit codes cannot express: a collection error under
         # --continue-on-collection-errors exits 1, exactly like a test failure.
         return unscoreable(f"suite did not finish (exit {exit_code}); report has no session record")
@@ -129,6 +167,16 @@ def parse_report(path: Path, process: ProcessResult, elapsed: float) -> SuiteRes
             by_node[record["nodeid"]].append(record)
 
     collect_failures = tuple(sorted(r["nodeid"] for r in records if r["kind"] == "collect"))
+
+    files = next((r for r in records if r["kind"] == "files"), {})
+    collected_files = tuple(sorted(files.get("collected", ())))
+    conftests = tuple(sorted(files.get("conftests", ())))
+    start = next((r for r in records if r["kind"] == "start"), {})
+    fingerprint = {
+        "rootdir": start.get("rootdir"),
+        "ini": start.get("ini", {}),
+        "plugins": start.get("plugins", []),
+    }
 
     buckets: dict[str, list[str]] = defaultdict(list)
     for nodeid, reports in by_node.items():
@@ -142,6 +190,9 @@ def parse_report(path: Path, process: ProcessResult, elapsed: float) -> SuiteRes
         "skipped": tuple(sorted(buckets["skipped"])),
         "did_not_run": tuple(sorted(buckets["did_not_run"])),
         "collect_failures": collect_failures,
+        "collected_files": collected_files,
+        "conftests": conftests,
+        "fingerprint": fingerprint,
     }
 
     if len(by_node) > MAX_TEST_IDS:
@@ -153,6 +204,18 @@ def parse_report(path: Path, process: ProcessResult, elapsed: float) -> SuiteRes
         return unscoreable(
             f"collection failed for {len(collect_failures)} module(s) and no test ran", **sets
         )
+
+    mismatch = _exitstatus_disagrees(sessions[-1].get("exitstatus"), failed, collect_failures)
+    if mismatch:
+        # pytest's own exit status is produced by the process, the sets by the
+        # records. They should agree, and a disagreement means the report does
+        # not describe the run that happened.
+        #
+        # This is a cheap consistency check, NOT a security control. The code
+        # under test shares an interpreter with the plugin that writes these
+        # records, so a determined patch can rewrite both. It catches the
+        # accidental and the careless; see the module docstring.
+        return unscoreable(mismatch, **sets)
 
     # A collection failure with tests still running is deliberately NOT an
     # error. At baseline those tests are in neither set; at an attempt their

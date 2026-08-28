@@ -24,6 +24,17 @@ import os
 SCHEMA_VERSION = 1
 DEFAULT_REPORT_PATH = "/results/report.jsonl"
 
+#: ini options that change what runs or whether it passes, without touching a
+#: test file. `-o addopts=` clears only addopts, so these are recorded and the
+#: host requires them identical between baseline and attempt -- otherwise an
+#: agent relaxes `filterwarnings` in pyproject.toml and a real failure becomes a
+#: real pass with a source-shaped diff.
+_WATCHED_INI = (
+    "addopts", "filterwarnings", "xfail_strict", "testpaths", "norecursedirs",
+    "python_files", "python_functions", "python_classes", "minversion",
+    "required_plugins", "usefixtures", "markers",
+)
+
 #: Enough to identify a failure; not so much that one exception fills the file.
 _LONGREPR_LIMIT = 2000
 
@@ -76,11 +87,41 @@ def pytest_configure(config):
         _recorder.write({
             "kind": "start",
             "v": SCHEMA_VERSION,
-            "pytest": getattr(config, "_repolace_version", None) or _pytest_version(),
+            "pytest": _pytest_version(),
+            # rootdir as data rather than as an argv convention: node ids are
+            # relative to it, so a shift silently renames every test.
             "rootdir": str(config.rootpath),
+            "inipath": str(config.inipath) if config.inipath else None,
+            "ini": _watched_ini(config),
+            "plugins": _plugin_names(config),
         })
     except Exception:
         _recorder = None
+
+
+def _watched_ini(config):
+    values = {}
+    for name in _WATCHED_INI:
+        try:
+            value = config.getini(name)
+        except (ValueError, KeyError):
+            continue
+        values[name] = [str(v) for v in value] if isinstance(value, (list, tuple)) else str(value)
+    return values
+
+
+def _plugin_names(config):
+    """Registered plugin names.
+
+    PYTEST_DISABLE_PLUGIN_AUTOLOAD stops entry-point autoload, but a conftest
+    can still import an installed plugin and register it by hand -- which is how
+    `pytest-randomly` reorders a suite that was supposed to be deterministic.
+    """
+    try:
+        names = [name for name, _ in config.pluginmanager.list_name_plugin()]
+    except Exception:
+        return []
+    return sorted(n for n in names if n and not n.startswith("/"))
 
 
 def _pytest_version():
@@ -131,6 +172,36 @@ def pytest_collectreport(report):
             "longrepr": str(longrepr)[:_LONGREPR_LIMIT] if longrepr is not None else None,
         })
         _recorder._collect_failures += 1
+    except Exception:
+        pass
+
+
+def pytest_collection_finish(session):
+    """The files pytest actually collected tests from, and the conftests it loaded.
+
+    Authoritative for this repository, which a path heuristic cannot be: it
+    neither misses `tests.py` nor wrongly disqualifies a shipped module like
+    `django/test/client.py`. The host unions it with the heuristic, which is
+    still needed to catch test files the baseline never saw.
+    """
+    if _recorder is None:
+        return
+    try:
+        files = set()
+        for item in session.items:
+            location = getattr(item, "location", None)
+            if location and location[0]:
+                files.add(str(location[0]))
+        conftests = set()
+        for plugin in session.config.pluginmanager.get_plugins():
+            path = getattr(plugin, "__file__", None) or ""
+            if os.path.basename(path) == "conftest.py":
+                conftests.add(path)
+        _recorder.write({
+            "kind": "files",
+            "collected": sorted(files),
+            "conftests": sorted(conftests),
+        })
     except Exception:
         pass
 

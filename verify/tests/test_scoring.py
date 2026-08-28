@@ -1,0 +1,300 @@
+"""Unit tests for the scoring rule.
+
+This is the benchmark's definition, so these tests are the specification. Each
+one below corresponds to a way the rule could be gamed or could be wrong; two
+expert audits produced the list, and several are cases where the earlier design
+would have returned PASSED or silently excluded a task.
+
+What is deliberately NOT tested, because it cannot be: that a PASSED verdict
+means the issue was really fixed. A patch that satisfies the assertion from the
+source side -- special-casing the input, returning the literal the test wants --
+is indistinguishable here. That needs curated ground truth and a human reading
+the diff.
+"""
+
+import pytest
+
+from repolace_shared.db.models import TaskOutcome
+from verify.protocol import SuiteResult
+from verify.scoring import (
+    disqualifying_paths,
+    fail_to_pass,
+    is_test_path,
+    neutralized,
+    regressions,
+    score,
+)
+
+
+def suite(**overrides) -> SuiteResult:
+    fields = {"passed": (), "failed": (), "skipped": (), "did_not_run": (),
+              "collect_failures": (), "collected_files": (), "conftests": (),
+              "fingerprint": {"rootdir": "/repo", "ini": {}, "plugins": []}}
+    return SuiteResult(**{**fields, **overrides})
+
+
+class TestIsTestPath:
+    @pytest.mark.parametrize("path", [
+        "tests/test_x.py", "src/tests/helper.py", "pkg/conftest.py",
+        "myapp/tests.py",                       # Django: matches no test_*.py pattern
+        "tests/data/expected.json",             # data under a test dir
+        "__snapshots__/render.ambr",            # syrupy
+        "cassettes/api.yaml",                   # vcrpy
+        "pyproject.toml", "tox.ini", "setup.cfg", "pytest.ini", ".coveragerc",
+        "sitecustomize.py",                     # imported before pytest exists
+        ".gitattributes",                       # changes checked-out bytes
+        "latest_test.py",
+    ])
+    def test_disqualifying(self, path):
+        assert is_test_path(path) is True
+
+    @pytest.mark.parametrize("path", [
+        "src/contest.py",          # contains "test" but is not one
+        "src/latest_.py",          # ends with "test" before the underscore
+        "src/testing_utils.py",    # "testi" is not "test_"
+        "src/app.py",
+        "README.md",
+    ])
+    def test_not_disqualifying(self, path):
+        assert is_test_path(path) is False
+
+
+class TestDisqualifyingPaths:
+    def test_a_file_pytest_collected_from_is_disqualified(self):
+        baseline = suite(collected_files=("myapp/checks.py",))
+
+        assert disqualifying_paths(["myapp/checks.py"], baseline) == ("myapp/checks.py",)
+
+    def test_a_shipped_module_named_test_is_not_disqualified(self):
+        """django/test/client.py is a shipped module, not a test.
+
+        The heuristic alone flags it and would fail honest work. Existence at
+        baseline plus absence from the collected set is what exonerates it.
+        """
+        baseline = suite(collected_files=("tests/test_client.py",))
+
+        assert disqualifying_paths(
+            ["django/test/client.py"], baseline,
+            baseline_files=("django/test/client.py", "tests/test_client.py"),
+        ) == ()
+
+    def test_without_a_baseline_file_list_the_heuristic_stays_conservative(self):
+        """No evidence to exonerate with, so it errs toward disqualifying --
+        a false negative costs a point, a false positive costs the claim."""
+        baseline = suite(collected_files=("tests/test_client.py",))
+
+        assert disqualifying_paths(["django/test/client.py"], baseline) == ("django/test/client.py",)
+
+    def test_a_config_file_is_disqualified_even_though_it_existed_at_baseline(self):
+        """pyproject.toml is never collected, but relaxing filterwarnings in it
+        turns a real failure into a real pass."""
+        baseline = suite(collected_files=("tests/test_x.py",))
+
+        assert disqualifying_paths(
+            ["pyproject.toml"], baseline, baseline_files=("pyproject.toml",)
+        ) == ("pyproject.toml",)
+
+    def test_a_newly_added_test_file_is_disqualified(self):
+        """It cannot appear in the baseline's collected set, so the heuristic
+        is still needed alongside it."""
+        baseline = suite(collected_files=("tests/test_old.py",))
+
+        assert disqualifying_paths(["tests/test_new.py"], baseline) == ("tests/test_new.py",)
+
+    def test_a_golden_file_beside_collected_tests_is_disqualified(self):
+        """Editing the expected output is the cheapest possible fake fix."""
+        baseline = suite(collected_files=("tests/test_render.py",))
+
+        assert disqualifying_paths(["tests/expected.json"], baseline) == ("tests/expected.json",)
+
+
+class TestDecisionOrder:
+    def test_a_test_edit_disqualifies_even_when_the_attempt_crashed(self):
+        """The incentive bug, and the cheapest fix in the whole audit.
+
+        Under the old ordering an error check came first, so an agent that
+        edited tests AND broke the harness was *excluded* from the figure rather
+        than failed -- making sabotage strictly better than losing honestly.
+        """
+        result = score(
+            suite(failed=("t::a",)),
+            suite(error="verify: suite did not finish"),
+            ["tests/test_x.py"],
+        )
+
+        assert result.outcome is TaskOutcome.FAILED
+        assert result.inadmissible is False
+
+    def test_an_unscoreable_baseline_is_inadmissible_not_failed(self):
+        """The instrument failed before measuring; that is not the agent's verdict."""
+        result = score(suite(error="verify: no report"), suite(), [])
+
+        assert result.outcome is None and result.inadmissible is True
+
+    def test_a_patch_that_breaks_the_suite_is_failed_not_excluded(self):
+        """The image is built once, so the environment is identical across
+        attempts -- a suite that now fails to collect is the patch's doing."""
+        result = score(
+            suite(failed=("t::a",)),
+            suite(error="verify: collection failed for 1 module(s) and no test ran"),
+            ["src/app.py"],
+        )
+
+        assert result.outcome is TaskOutcome.FAILED
+        assert result.inadmissible is False
+
+    def test_an_infrastructure_failure_is_inadmissible(self):
+        result = score(
+            suite(failed=("t::a",)),
+            suite(error="verify: docker daemon unavailable"),
+            ["src/app.py"],
+            attempt_infrastructure_error=True,
+        )
+
+        assert result.inadmissible is True
+
+
+class TestFailToPass:
+    def test_a_failing_test_that_now_passes_counts(self):
+        assert fail_to_pass(suite(failed=("t::a",)), suite(passed=("t::a",))) == ("t::a",)
+
+    def test_xfail_becoming_xpass_counts(self):
+        """A mature repo records a known bug as xfail, which pytest reports as a
+        skip. Ignoring that transition removes the likeliest form of a
+        legitimately-red test."""
+        assert fail_to_pass(suite(skipped=("t::known",)), suite(passed=("t::known",))) == ("t::known",)
+
+    def test_a_test_the_agent_added_cannot_count(self):
+        """It is not in the baseline, so the intersection excludes it by construction."""
+        assert fail_to_pass(suite(failed=()), suite(passed=("t::new",))) == ()
+
+
+class TestRegressions:
+    def test_a_test_that_now_fails_counts(self):
+        assert regressions(suite(passed=("t::a",)), suite(failed=("t::a",))) == ("t::a",)
+
+    def test_a_deleted_test_counts(self):
+        """Set difference against `passed`, so a vanished test is caught."""
+        assert regressions(suite(passed=("t::a",)), suite()) == ("t::a",)
+
+    def test_a_test_turned_into_a_skip_counts(self):
+        """Otherwise skipping is a way to silence an inconvenient test."""
+        assert regressions(suite(passed=("t::a",)), suite(skipped=("t::a",))) == ("t::a",)
+
+
+class TestNeutralized:
+    def test_silencing_a_baseline_failure_is_caught(self):
+        """Previously-failing tests were the unprotected set: not a regression,
+        no fail-to-pass, no cost. Turning one into a skip was free."""
+        assert neutralized(suite(failed=("t::a",)), suite(skipped=("t::a",))) == ("t::a",)
+
+    def test_a_baseline_failure_that_vanishes_is_caught(self):
+        assert neutralized(suite(failed=("t::a",)), suite()) == ("t::a",)
+
+    def test_it_disqualifies_the_attempt(self):
+        result = score(
+            suite(failed=("t::a", "t::b")),
+            suite(passed=("t::a",), skipped=("t::b",)),
+            ["src/app.py"],
+        )
+
+        assert result.outcome is TaskOutcome.FAILED
+        assert "silenced" in result.reason
+
+
+class TestFingerprint:
+    def test_relaxing_an_ini_option_is_caught(self):
+        """`-o addopts=` clears only addopts. Relaxing `filterwarnings` in
+        pyproject.toml turns a real failure into a real pass with a
+        source-shaped diff, so the config is compared instead."""
+        baseline = suite(failed=("t::a",), fingerprint={"rootdir": "/repo",
+                                                        "ini": {"filterwarnings": ["error"]},
+                                                        "plugins": []})
+        attempt = suite(passed=("t::a",), fingerprint={"rootdir": "/repo",
+                                                       "ini": {"filterwarnings": []},
+                                                       "plugins": []})
+
+        result = score(baseline, attempt, ["src/app.py"])
+
+        assert result.outcome is TaskOutcome.FAILED and "ini changed" in result.reason
+
+    def test_a_conftest_registered_plugin_is_caught(self):
+        baseline = suite(failed=("t::a",), fingerprint={"rootdir": "/r", "ini": {}, "plugins": []})
+        attempt = suite(passed=("t::a",),
+                        fingerprint={"rootdir": "/r", "ini": {}, "plugins": ["randomly"]})
+
+        assert score(baseline, attempt, ["src/app.py"]).outcome is TaskOutcome.FAILED
+
+
+class TestAdmissibility:
+    def test_an_all_green_baseline_is_inadmissible_not_failed(self):
+        """With nothing red at base, `F0 ∩ Pn` is empty whatever the agent does.
+
+        Scoring that FAILED would charge an instrument limitation to the agent
+        and deflate the figure by an amount uncorrelated with capability.
+        """
+        result = score(suite(passed=("t::a",)), suite(passed=("t::a",)), ["src/app.py"])
+
+        assert result.outcome is None and result.inadmissible is True
+
+    def test_a_curated_list_makes_an_all_green_baseline_admissible(self):
+        """With the fixing PR's tests injected, the baseline is green by design
+        and the curated list is what defines success."""
+        result = score(
+            suite(passed=("t::a",)),
+            suite(passed=("t::a", "t::new")),
+            ["src/app.py"],
+            expected_fail_to_pass=("t::new",),
+        )
+
+        assert result.outcome is TaskOutcome.PASSED
+
+
+class TestCuratedGroundTruth:
+    def test_all_expected_tests_must_pass_not_just_one(self):
+        result = score(
+            suite(passed=()),
+            suite(passed=("t::one",)),
+            ["src/app.py"],
+            expected_fail_to_pass=("t::one", "t::two"),
+        )
+
+        assert result.outcome is TaskOutcome.FAILED and "still not passing" in result.reason
+
+    def test_an_uncurated_pass_says_so_in_its_reason(self):
+        """The weaker claim should be visible in the record, not implied."""
+        result = score(suite(failed=("t::a",)), suite(passed=("t::a",)), ["src/app.py"])
+
+        assert result.outcome is TaskOutcome.PASSED
+        assert "uncurated" in result.reason
+
+
+class TestOrdinaryOutcomes:
+    def test_a_clean_fix_passes(self):
+        result = score(
+            suite(passed=("t::keep",), failed=("t::target",)),
+            suite(passed=("t::keep", "t::target")),
+            ["src/app.py"],
+        )
+
+        assert result.outcome is TaskOutcome.PASSED
+        assert result.fail_to_pass == ("t::target",)
+
+    def test_a_fix_that_breaks_something_else_fails(self):
+        result = score(
+            suite(passed=("t::keep",), failed=("t::target",)),
+            suite(passed=("t::target",), failed=("t::keep",)),
+            ["src/app.py"],
+        )
+
+        assert result.outcome is TaskOutcome.FAILED and "regression" in result.reason
+
+    def test_changing_nothing_relevant_fails(self):
+        result = score(
+            suite(passed=("t::keep",), failed=("t::target",)),
+            suite(passed=("t::keep",), failed=("t::target",)),
+            ["src/app.py"],
+        )
+
+        assert result.outcome is TaskOutcome.FAILED
+        assert "no baseline-failing test now passes" in result.reason
