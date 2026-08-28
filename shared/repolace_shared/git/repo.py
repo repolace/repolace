@@ -15,12 +15,13 @@ Credentials are never written to disk or passed on the command line. See
 import asyncio
 import os
 import re
-import signal
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 import structlog
+
+from repolace_shared.process import REAP_TIMEOUT_SECONDS, kill_process_tree
 
 log = structlog.get_logger()
 
@@ -29,8 +30,6 @@ TokenProvider = Callable[[], Awaitable[str]]
 DEFAULT_TIMEOUT_SECONDS = 120.0
 CLONE_TIMEOUT_SECONDS = 900.0
 PUSH_TIMEOUT_SECONDS = 300.0
-#: How long to wait for a killed process group to actually die.
-REAP_TIMEOUT_SECONDS = 5.0
 
 COMMITTER_NAME = "repolace"
 COMMITTER_EMAIL = "noreply@repolace.dev"
@@ -208,39 +207,6 @@ def _git_env(token: str | None, credential_host: str) -> dict[str, str]:
     return env
 
 
-def _kill_process_tree(pgid: int, command: Sequence[str]) -> None:
-    """SIGKILL the whole process group, not just git itself.
-
-    git delegates to helpers -- git-remote-https, and the credential helper,
-    which is literally a shell we hand it. Killing only git leaves those
-    children holding the stdout/stderr pipe write-ends open, which strands the
-    command in one of two ways depending on timing:
-
-    * If git has not been reaped yet, ``Process.wait()`` waits on the
-      transport, and the transport only finishes once the process has exited
-      *and* every pipe is disconnected -- so the orphan holds it open.
-    * If git has already exited and been reaped, ``wait()`` short-circuits on
-      the recorded return code and comes back instantly. That is the dangerous
-      case: the timing looks perfect while the orphan quietly survives.
-
-    ``pgid`` is passed in rather than looked up with ``os.getpgid`` precisely
-    because of the second case -- git's pid is gone by then and the lookup
-    raises, which is exactly when the kill is needed most. ``start_new_session``
-    makes git a group leader, so its pid *is* the pgid, and the group stays
-    addressable while any member is alive even after the leader is reaped.
-    """
-    if pgid == os.getpgrp():
-        # start_new_session did not take effect; killing this group would take
-        # the worker down with it.
-        log.error("git.kill.refused_own_group", command=list(command), pgid=pgid)
-        return
-
-    try:
-        os.killpg(pgid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError) as exc:
-        log.warning("git.kill.group_failed", command=list(command), error=str(exc))
-
-
 async def run_git(
     *args: str,
     cwd: Path | None = None,
@@ -281,7 +247,7 @@ async def run_git(
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout)
     except TimeoutError:
-        _kill_process_tree(pgid, args)
+        kill_process_tree(pgid, args)
         try:
             await asyncio.wait_for(process.wait(), REAP_TIMEOUT_SECONDS)
         except TimeoutError:
@@ -293,7 +259,7 @@ async def run_git(
         # A cancelled task must not leave a clone or a push running behind it.
         # No await while unwinding a cancellation: the group is already
         # SIGKILLed and the child watcher will reap it.
-        _kill_process_tree(pgid, args)
+        kill_process_tree(pgid, args)
         raise
 
     if process.returncode != 0:
