@@ -17,3 +17,7 @@ members = ["api", "worker", "agents", "gateway", "rag", "shared", "eval", "pipel
 [tool.pytest.ini_options]
 testpaths = ["rag/tests", "shared/tests", "pipeline/tests"]
 addopts = "-q"
+markers = [
+    "db: needs a live PostgreSQL; skipped unless one is reachable",
+    "docker: needs a live Docker daemon; skipped unless one is reachable",
+]

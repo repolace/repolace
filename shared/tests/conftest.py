@@ -16,12 +16,6 @@ from shared_support import git, write
 
 
 @pytest.fixture
-def anyio_backend() -> str:
-    """Pin anyio's parametrisation to asyncio; there is no trio in this project."""
-    return "asyncio"
-
-
-@pytest.fixture
 def source_repo(tmp_path: Path) -> Path:
     """A repo with three commits on `main` and a divergent `develop` branch."""
     repo = tmp_path / "source"
