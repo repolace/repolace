@@ -67,6 +67,8 @@ class CreateTaskRequest(BaseModel):
     issue_number: int = Field(gt=0)
     #: Defaults to the repo's default branch. The PR is opened against this.
     target_branch: str | None = None
+    #: Open a PR even if the agent could not make the tests pass.
+    open_pr_on_failure: bool = False
 
 
 @router.post("/{repo_id}/tasks", status_code=201)
@@ -115,6 +117,7 @@ async def create_task(
         issue_url=issue.html_url,
         target_branch=target_branch.strip(),
         status=TaskStatus.QUEUED,
+        open_pr_on_failure=body.open_pr_on_failure,
     )
     db.add(task)
     await db.commit()
@@ -133,6 +136,7 @@ async def create_task(
         "issue_title": task.issue_title,
         "target_branch": task.target_branch,
         "status": task.status.value,
+        "open_pr_on_failure": task.open_pr_on_failure,
     }
 
 

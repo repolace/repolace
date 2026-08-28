@@ -177,3 +177,22 @@ class TestTaskDefaults:
 
         with pytest.raises((IntegrityError, DBAPIError, LookupError, ValueError)):
             await db_session.commit()
+
+
+class TestOpenPrOnFailure:
+    async def test_it_defaults_to_false(self, db_session):
+        """Proves migration 0008's server_default, not just the Python default.
+
+        The insert omits the column entirely, so a missing server_default would
+        surface here as a NOT NULL violation rather than as False.
+        """
+        task = await seed_task(db_session)
+
+        stored = (await db_session.execute(select(Task))).scalar_one()
+        assert stored.open_pr_on_failure is False
+
+    async def test_it_can_be_set(self, db_session):
+        task = await seed_task(db_session, open_pr_on_failure=True)
+
+        stored = (await db_session.execute(select(Task))).scalar_one()
+        assert stored.open_pr_on_failure is True

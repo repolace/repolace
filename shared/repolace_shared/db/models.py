@@ -17,6 +17,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
     func,
     text,
     true,
@@ -172,6 +173,11 @@ class Task(Base):
     #: recorded but does not count towards anything.
     test_edit_approved_by: Mapped[str | None] = mapped_column(String, nullable=True)
     test_edit_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Whether to open a PR even when verification failed. False by default, so
+    #: a repolace PR means the tests passed unless someone opted out.
+    open_pr_on_failure: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     pr_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     pr_url: Mapped[str | None] = mapped_column(String, nullable=True)
