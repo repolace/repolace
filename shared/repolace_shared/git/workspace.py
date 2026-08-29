@@ -169,6 +169,16 @@ class TaskWorkspace:
         """Step 7, for the no-test-edits criterion."""
         return await self.repo.changed_files_from(self.base_sha)
 
+    async def baseline_files(self) -> tuple[str, ...]:
+        """Every tracked path at the base commit.
+
+        The other half of the no-test-edits criterion: `disqualifying_paths`
+        uses it to tell a test file the agent *added* from a shipped module that
+        merely looks like one. Answers about the base commit whatever the tree
+        currently holds, so it may be called at any point in the task.
+        """
+        return await self.repo.files_at(self.base_sha)
+
     async def squash(self, message: str) -> str | None:
         """Step 8, so the PR is not 'attempt 1, attempt 2, fix debug output'."""
         return await self.repo.squash_onto(self.base_sha, message)

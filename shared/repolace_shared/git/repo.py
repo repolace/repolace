@@ -618,6 +618,30 @@ class GitRepo:
         out = await self._run("diff", "--name-only", "-z", f"{base_sha}...HEAD")
         return [path for path in out.split("\0") if path]
 
+    async def files_at(self, sha: str) -> tuple[str, ...]:
+        """Every tracked path at ``sha``. Feeds the success criteria's exemption rule.
+
+        ``disqualifying_paths`` needs to know whether a changed file *existed at
+        the base commit*: a test-named path that shipped in the repository is
+        usually not test infrastructure -- Django's ``django/test/client.py`` --
+        while one the agent added is exactly what the heuristic is for. Without
+        this list the heuristic has no discriminator and fails honest work.
+
+        Read from the commit rather than from the index, so it keeps answering
+        about the base commit after the agent has edited the tree.
+
+        ``-z`` and bytes, then a lossy decode: a repository may hold a filename
+        that is not valid UTF-8, and these paths are only ever compared against
+        strings that came out of the same decode. Quoting would be worse -- git
+        would escape the name and it would then match nothing at all.
+        """
+        raw = await run_git_bytes(
+            "ls-tree", "-r", "--name-only", "-z", sha, cwd=self.path, timeout=EXPORT_TIMEOUT_SECONDS
+        )
+        return tuple(
+            part.decode("utf-8", errors="replace") for part in raw.split(b"\0") if part
+        )
+
     async def tree_matches_head(self) -> bool:
         """Whether the index *and* the working tree are exactly HEAD's tree.
 

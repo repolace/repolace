@@ -504,6 +504,40 @@ class TestDiff:
         assert sorted(await repo.changed_files_from(base)) == ["src/app.py", "tests/test_app.py"]
 
 
+class TestFilesAt:
+    """`files_at` is the discriminator the no-test-edits rule needs.
+
+    `disqualifying_paths` exempts a test-named path that *existed at the base
+    commit* -- Django ships `django/test/client.py` -- and applies the heuristic
+    to one the agent added. Without this list there is no discriminator, and
+    honest work lands on a shipped module gets failed.
+    """
+
+    async def test_it_lists_the_tracked_paths_at_the_base_commit(self, origin_url, tmp_path):
+        repo = await clone_into(origin_url, tmp_path / "work")
+
+        assert sorted(await repo.files_at(await repo.head_sha())) == ["README.md", "src/app.py"]
+
+    async def test_it_keeps_answering_about_the_base_after_the_agent_edits(
+        self, origin_url, tmp_path
+    ):
+        """Read from the commit, not the index -- otherwise a file the agent adds
+        would look like one that shipped, and exempt itself from the heuristic."""
+        repo = await clone_into(origin_url, tmp_path / "work")
+        base = await repo.head_sha()
+        await repo.create_branch("agent")
+        write(repo.path / "tests" / "test_new.py", "def test_x():\n    assert True\n")
+        await repo.commit_all("add a test")
+
+        assert "tests/test_new.py" not in await repo.files_at(base)
+
+    async def test_an_untracked_file_is_not_listed(self, origin_url, tmp_path):
+        repo = await clone_into(origin_url, tmp_path / "work")
+        write(repo.path / "scratch.txt", "not committed\n")
+
+        assert "scratch.txt" not in await repo.files_at(await repo.head_sha())
+
+
 class TestRedact:
     def test_installation_tokens_are_masked(self):
         assert redact(f"remote: rejected {TOKEN}") == "remote: rejected <redacted-secret>"
