@@ -281,6 +281,35 @@ class TestCollectFailures:
         assert result.error is not None and "collection failed" in result.error
 
 
+class TestCollectFailureIds:
+    def test_a_session_level_collect_report_is_not_a_node_id(self, tmp_path):
+        """The plugin filters collect reports on `outcome`, not on nodeid, so a
+        *failing* session-level report -- whose nodeid is the empty string --
+        reaches the host. Left in, it inflates the failure count and prefixes
+        nothing."""
+        result = parse(tmp_path, jsonl(
+            start_record(),
+            report("t.py::ok", "call", "passed"),
+            collect_record(""),
+            session_record(1),
+        ))
+
+        assert result.collect_failures == ()
+
+    def test_duplicate_collect_records_for_one_module_are_deduped(self, tmp_path):
+        """The plugin emits one record per failing collector and does not
+        dedupe, so a module failing at two levels appears twice."""
+        result = parse(tmp_path, jsonl(
+            start_record(),
+            report("t.py::ok", "call", "passed"),
+            collect_record("tests/broken.py"),
+            collect_record("tests/broken.py"),
+            session_record(1),
+        ))
+
+        assert result.collect_failures == ("tests/broken.py",)
+
+
 class TestForgeryDetection:
     """A cheap consistency check, not a security control.
 

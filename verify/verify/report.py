@@ -181,7 +181,15 @@ def parse_report(path: Path, process: ProcessResult, elapsed: float) -> SuiteRes
         if record["kind"] == "test":
             by_node[record["nodeid"]].append(record)
 
-    collect_failures = tuple(sorted(r["nodeid"] for r in records if r["kind"] == "collect"))
+    # Deduped, and empty ids dropped. The plugin filters collect reports on
+    # `outcome`, not on nodeid, so a *failing* session-level report -- whose
+    # nodeid is the empty string -- reaches us; and it emits one record per
+    # failing collector without deduping, so a module that fails at two levels
+    # appears twice. Both are fixed here rather than in the plugin: the plugin
+    # runs inside the sandbox, and the host must not depend on its filtering.
+    collect_failures = tuple(sorted(
+        {r["nodeid"] for r in records if r["kind"] == "collect" and r["nodeid"]}
+    ))
 
     files = next((r for r in records if r["kind"] == "files"), {})
     collected_files = tuple(sorted(files.get("collected", ())))

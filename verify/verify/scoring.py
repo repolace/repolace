@@ -16,7 +16,10 @@ What this module cannot do, stated plainly so nobody assumes otherwise: it
 cannot tell a real fix from a patch that satisfies the test from the source side
 -- special-casing the input, returning the literal the assertion wants. No
 path-based rule can. That needs curated per-instance ground truth
-(`expected_fail_to_pass`) and a human reading the diff.
+(`expected_fail_to_pass`) and a human reading the diff. `collection_fixed` adds
+one more instance of the same limit: an agent can make a module import by
+swallowing the failing import rather than fixing it, and collect credit for the
+now-trivially-passing tests. That is a source-side edit, so no path rule sees it.
 """
 
 from dataclasses import dataclass, field
@@ -134,6 +137,50 @@ def _candidate_fail_to_pass(baseline: SuiteResult) -> set[str]:
     return set(baseline.failed) | set(baseline.xfailed)
 
 
+def _collect_failure_prefixes(collect_failures: tuple[str, ...]) -> tuple[str, ...]:
+    """Node-id prefixes for modules that would not import at baseline.
+
+    `::` is part of the prefix on purpose. Without it `tests/test_api.py` also
+    prefix-matches `tests/test_api_v2.py::test_x`, crediting a sibling module
+    the agent never touched.
+
+    Only file-shaped ids are handled. pytest also emits a collect failure for a
+    directory or a package, whose id contains no `.py` and whose tests are
+    `<dir>/<file>.py::<name>` rather than `<dir>::<name>` -- so a prefix rule
+    would either miss them or, matched on `<dir>/`, credit every test in the
+    subtree for one module starting to import. Missing them is the safer half,
+    and it is the direction this module errs in everywhere else.
+    """
+    return tuple(f"{nodeid}::" for nodeid in collect_failures if nodeid.endswith(".py"))
+
+
+def collection_fixed(baseline: SuiteResult, attempt: SuiteResult) -> tuple[str, ...]:
+    """Tests that now pass in a module that would not import at baseline.
+
+    A module that fails to collect is as red as a failing test and arguably
+    redder: every test in it was lost, and none of them appears in
+    `baseline.failed`, because none of them ran. "The module raises ImportError
+    at import time" is also one of the commonest shapes a real GitHub issue
+    takes. Without this the agent can genuinely repair one and score nothing --
+    the instance is unscoreable for a reason that has nothing to do with it.
+
+    Known limits, none of which can produce a false pass:
+
+    * A module fixed by *moving* it lands under a different prefix and is
+      uncredited. Moving a test file is very likely disqualified anyway.
+    * Every test in a recovered module counts, not only the one targeting the
+      issue. That is the same weakness the uncurated path already carries, and
+      it does not arise when `expected_fail_to_pass` is supplied.
+    * A baseline collect failure that *persists* stays invisible: not
+      neutralized (it was already silent at baseline) and not a regression.
+      Correct, but worth saying.
+    """
+    prefixes = _collect_failure_prefixes(baseline.collect_failures)
+    if not prefixes:
+        return ()
+    return tuple(sorted(n for n in attempt.passed if n.startswith(prefixes)))
+
+
 def fail_to_pass(baseline: SuiteResult, attempt: SuiteResult) -> tuple[str, ...]:
     """Tests that were failing and now pass.
 
@@ -147,7 +194,8 @@ def fail_to_pass(baseline: SuiteResult, attempt: SuiteResult) -> tuple[str, ...]
     PASSED with **nothing red at baseline**. That is a false positive, and by
     the reasoning at the top of this module a false positive costs the claim.
     """
-    return tuple(sorted(_candidate_fail_to_pass(baseline) & set(attempt.passed)))
+    became_passing = _candidate_fail_to_pass(baseline) & set(attempt.passed)
+    return tuple(sorted(became_passing | set(collection_fixed(baseline, attempt))))
 
 
 def regressions(baseline: SuiteResult, attempt: SuiteResult) -> tuple[str, ...]:
@@ -257,7 +305,11 @@ def score(
     if drift:
         return Score(outcome=TaskOutcome.FAILED, reason=drift)
 
-    if expected_fail_to_pass is None and not _candidate_fail_to_pass(baseline):
+    if (
+        expected_fail_to_pass is None
+        and not _candidate_fail_to_pass(baseline)
+        and not _collect_failure_prefixes(baseline.collect_failures)
+    ):
         # Nothing that *could* go green was red at the base commit, so
         # `F0 ∩ Pn` is empty whatever the agent does. Charging that to the agent
         # would attribute an instrument limitation to it; the instance simply
@@ -272,8 +324,8 @@ def score(
         # expression as `fail_to_pass` joins on, via one function, so the two
         # cannot drift apart again.
         return _inadmissible(
-            "nothing was failing or xfailed at the base commit and no curated fail-to-pass "
-            "list was supplied; this instance cannot demonstrate a fix"
+            "nothing was failing, xfailed or uncollectable at the base commit and no curated "
+            "fail-to-pass list was supplied; this instance cannot demonstrate a fix"
         )
 
     fixed = fail_to_pass(baseline, attempt)

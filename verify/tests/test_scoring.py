@@ -17,6 +17,7 @@ import pytest
 from repolace_shared.db.models import TaskOutcome
 from verify.protocol import SuiteResult
 from verify.scoring import (
+    collection_fixed,
     disqualifying_paths,
     fail_to_pass,
     is_test_path,
@@ -179,6 +180,45 @@ class TestFailToPass:
         assert fail_to_pass(suite(failed=()), suite(passed=("t::new",))) == ()
 
 
+class TestCollectionFixed:
+    """A module that would not import is as red as a failing test, and redder:
+    every test in it was lost, and none appears in `baseline.failed` because
+    none ran. "Module raises ImportError at import time" is one of the
+    commonest shapes a real GitHub issue takes."""
+
+    def test_a_module_that_would_not_import_and_now_passes_counts(self):
+        baseline = suite(passed=("tests/test_core.py::test_a",),
+                         collect_failures=("tests/test_api.py",))
+        attempt = suite(passed=("tests/test_core.py::test_a", "tests/test_api.py::test_b"))
+
+        assert collection_fixed(baseline, attempt) == ("tests/test_api.py::test_b",)
+
+    def test_a_prefix_does_not_match_a_sibling_module(self):
+        """`::` belongs inside the prefix: without it `tests/test_api.py` also
+        prefixes `tests/test_api_v2.py::test_x`, crediting a module the agent
+        never touched."""
+        baseline = suite(collect_failures=("tests/test_api.py",))
+        attempt = suite(passed=("tests/test_api_v2.py::test_x",))
+
+        assert collection_fixed(baseline, attempt) == ()
+
+    def test_a_directory_level_collect_failure_is_not_credited(self):
+        """Pins the documented gap. A directory id has no `.py` and its tests
+        are `<dir>/<file>.py::<name>`, so matching on `<dir>/` would credit an
+        entire subtree for one module starting to import. Missing them is the
+        safe half; changing that should be a deliberate decision."""
+        baseline = suite(collect_failures=("tests/integration",))
+        attempt = suite(passed=("tests/integration/test_x.py::test_a",))
+
+        assert collection_fixed(baseline, attempt) == ()
+
+    def test_a_persisting_collect_failure_credits_nothing(self):
+        baseline = suite(collect_failures=("tests/test_api.py",))
+        attempt = suite(collect_failures=("tests/test_api.py",))
+
+        assert collection_fixed(baseline, attempt) == ()
+
+
 class TestRegressions:
     def test_a_test_that_now_fails_counts(self):
         assert regressions(suite(passed=("t::a",)), suite(failed=("t::a",))) == ("t::a",)
@@ -288,6 +328,18 @@ class TestAdmissibility:
 
         assert result.outcome is TaskOutcome.PASSED
         assert result.fail_to_pass == ("t::known",)
+
+    def test_a_baseline_whose_only_red_is_a_collect_failure_is_admissible(self):
+        """Nothing is in `failed` -- the tests never ran -- so the gate would
+        otherwise exclude exactly the instances this shape describes."""
+        result = score(
+            suite(passed=("tests/test_core.py::test_a",), collect_failures=("tests/test_api.py",)),
+            suite(passed=("tests/test_core.py::test_a", "tests/test_api.py::test_b")),
+            ["src/api.py"],
+        )
+
+        assert result.outcome is TaskOutcome.PASSED
+        assert result.fail_to_pass == ("tests/test_api.py::test_b",)
 
     def test_a_curated_list_makes_an_all_green_baseline_admissible(self):
         """With the fixing PR's tests injected, the baseline is green by design
