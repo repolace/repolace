@@ -76,10 +76,25 @@ _CREDENTIAL_HELPER = (
     "fi; }; f"
 ) % (GIT_HOST_ENV_VAR, GIT_TOKEN_ENV_VAR)
 
-_BASE_ARGS: tuple[str, ...] = (
-    # Same reason as retrieval.index: without it git C-quotes non-ASCII paths,
-    # which then match neither the index nor an on-disk lookup.
+#: The config every git invocation against an untrusted tree must carry.
+#: Exported so `retrieval.index` can reuse it without also taking on the async
+#: wrapper below. Deliberately not the whole of `_BASE_ARGS`: no credential
+#: helper and no committer identity, because that module neither authenticates
+#: nor commits, and handing it a credential helper would widen its blast radius
+#: for no benefit.
+UNTRUSTED_TREE_CONFIG_ARGS: tuple[str, ...] = (
+    # Without it git C-quotes non-ASCII paths, which then match neither the
+    # index nor an on-disk lookup.
     "-c", "core.quotepath=false",
+    # Both are arbitrary commands git runs on the host, and `.git` sits inside
+    # the tree the sandbox writes to. `git diff` refreshes the index, so
+    # core.fsmonitor fires on a command that looks purely read-only.
+    "-c", "core.hooksPath=/dev/null",
+    "-c", "core.fsmonitor=",
+)
+
+_BASE_ARGS: tuple[str, ...] = (
+    *UNTRUSTED_TREE_CONFIG_ARGS,
     "-c", "advice.detachedHead=false",
     # Empty value clears the inherited helper list, so a developer's global
     # osxkeychain/store helper cannot answer with the wrong account before ours
@@ -95,16 +110,13 @@ _BASE_ARGS: tuple[str, ...] = (
     "-c", "commit.gpgsign=false",
     # Keep git from forking a background gc partway through a task.
     "-c", "gc.auto=0",
-    # Verify writes into the checkout, and .git is inside it. git treats parts
-    # of .git as executable configuration, so a hook or a config-named command
-    # dropped there would run on the *host* the next time the worker touches
-    # the repo -- post-commit on an attempt, post-checkout on a branch,
-    # pre-push at the end, core.fsmonitor on every status. These two shut the
-    # cheapest doors. They are not the real fix: see the note in CLAUDE.md
-    # about the .git trust boundary, which is an architectural decision tied to
-    # how the sandbox is built.
-    "-c", "core.hooksPath=/dev/null",
-    "-c", "core.fsmonitor=",
+    # `core.hooksPath` and `core.fsmonitor` come from UNTRUSTED_TREE_CONFIG_ARGS
+    # above. They shut the cheapest doors into the .git trust boundary -- a hook
+    # dropped in the checkout would run on the *host* on the next commit,
+    # checkout or push -- but they are not the real fix, because enumerating
+    # dangerous keys is a losing game. The structural halves are the config-file
+    # pins in `sanitized_git_env` and the export rewrite in `export_index_to`.
+    # See the .git trust boundary note in CLAUDE.md.
 )
 
 #: Environment passed through to git. An allowlist, not a filter: the process
@@ -189,19 +201,45 @@ class GitTimeoutError(GitError):
         super().__init__(redact(f"git {' '.join(self.command)} exceeded {timeout}s"))
 
 
-def _git_env(token: str | None, credential_host: str) -> dict[str, str]:
+def sanitized_git_env() -> dict[str, str]:
     """Build git's environment from an allowlist rather than by subtracting from ours.
 
     Subtracting means every new secret added to the service environment is
     inherited by git and its helpers by default, and only stops being inherited
     if someone remembers to come back here. An allowlist fails the safe way.
-    It also drops the GIT_CONFIG_* family, which is a config-injection route.
+
+    The allowlist drops an inherited `GIT_CONFIG_*`, which closes the route
+    where our *caller* injects config. That is not the same as closing config
+    injection, and an audit found the difference the hard way: `HOME` has to be
+    on the allowlist, so git still reads the operator's own `~/.gitconfig`.
+    A **tracked** `.gitattributes` saying `*.py filter=x` -- an ordinary file in
+    the repository, present in every clone, that the sandbox never has to touch
+    -- pairs with a `filter.x.smudge` there and runs a command on the host
+    during `checkout-index`; `diff=x` plus `diff.x.textconv` runs one during the
+    Reviewer's diff. `_BASE_ARGS` does not stop either, because it clears the
+    keys it enumerates and this is the enumeration game CLAUDE.md already calls
+    unwinnable.
+
+    So the config *files* are pinned, not just the variables. git then reads no
+    configuration it was not handed on the command line, which is structural --
+    it needs no key list and covers keys nobody has thought of yet.
     """
     env = {name: value for name, value in os.environ.items() if name in _ENV_ALLOWLIST}
     # Without this an expired or wrong token makes git block on a credential
     # prompt forever. In a worker that is indistinguishable from a hung task,
     # and the timeout would be the only thing that ever ended it.
     env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GIT_CONFIG_GLOBAL"] = os.devnull
+    env["GIT_CONFIG_SYSTEM"] = os.devnull
+    # The pre-2.32 spelling of the line above. Harmless alongside it, and the
+    # only thing that works on an older git.
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    return env
+
+
+def _git_env(token: str | None, credential_host: str) -> dict[str, str]:
+    """`sanitized_git_env` plus the credential helper's two inputs."""
+    env = sanitized_git_env()
     env[GIT_TOKEN_ENV_VAR] = token or ""
     env[GIT_HOST_ENV_VAR] = credential_host
     return env

@@ -508,3 +508,69 @@ class TestRedact:
         assert redact("fatal: could not read from remote repository") == (
             "fatal: could not read from remote repository"
         )
+
+
+class TestConfigIsolation:
+    """git reads config files, and a config value can be a command.
+
+    `_BASE_ARGS` clears the keys it enumerates, which is a losing game -- the
+    list grows with every git release. These tests pin the structural half:
+    git is handed no config file at all, so a key nobody has thought of yet is
+    covered too.
+
+    Note the operator's own `~/.gitconfig` is the live route, not an injected
+    environment variable. `HOME` has to stay on the allowlist for other
+    reasons, so before this the suite itself ran against whatever the developer
+    had configured.
+    """
+
+    async def test_a_smudge_filter_from_the_operators_config_does_not_run_on_checkout(
+        self, origin_url, tmp_path, monkeypatch
+    ):
+        """The reproduction: a *tracked* .gitattributes plus a global filter.
+
+        Neither half needs the sandbox. `.gitattributes` ships in the repo and
+        arrives with the clone; the command comes from the host's own config.
+        `git lfs install` writes exactly this shape into a real developer's
+        ~/.gitconfig, so this is not a contrived pairing.
+        """
+        home = tmp_path / "home"
+        home.mkdir()
+        sentinel = tmp_path / "smudge-ran"
+        write(home / ".gitconfig", f'[filter "evil"]\n\tsmudge = sh -c "echo owned > {sentinel}; cat"\n')
+        monkeypatch.setenv("HOME", str(home))
+
+        repo = await clone_into(origin_url, tmp_path / "work")
+        write(repo.path / ".gitattributes", "*.py filter=evil\n")
+        git(repo.path, "add", "-A")
+        git(repo.path, "commit", "-m", "add gitattributes")
+
+        # Delete first: `checkout -- .` only rewrites files that differ from the
+        # index, so without this nothing is re-materialised and no filter runs
+        # whether or not the fix is in place.
+        target = repo.path / "src" / "app.py"
+        before = target.read_bytes()
+        target.unlink()
+        await run_git("checkout", "--", "src/app.py", cwd=repo.path)
+
+        assert not sentinel.exists(), "a filter from the operator's config ran on the host"
+        assert target.read_bytes() == before, "a filter from the operator's config rewrote the bytes"
+
+    async def test_a_global_alias_cannot_reach_a_git_invocation(self, source_repo, tmp_path, monkeypatch):
+        home = tmp_path / "home"
+        home.mkdir()
+        write(home / ".gitconfig", "[alias]\n\tboom = status\n")
+        monkeypatch.setenv("HOME", str(home))
+
+        with pytest.raises(GitCommandError):
+            await run_git("boom", cwd=source_repo)
+
+    async def test_the_config_pins_are_set_not_merely_absent(self, monkeypatch):
+        """Dropping an inherited GIT_CONFIG_GLOBAL closes the caller-injection
+        route only. Overwriting it is what stops git reading ~/.gitconfig."""
+        monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/tmp/attacker-controlled")
+
+        env = _git_env(None, "github.com")
+
+        assert env["GIT_CONFIG_GLOBAL"] == os.devnull
+        assert env["GIT_CONFIG_SYSTEM"] == os.devnull

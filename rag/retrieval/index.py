@@ -9,6 +9,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from repolace_shared.db.models import CodeChunk, RegisteredRepo
+from repolace_shared.git.repo import UNTRUSTED_TREE_CONFIG_ARGS, sanitized_git_env
 from retrieval.chunker import Chunk, chunk_python_file
 from retrieval.config import EMBED_BATCH_SIZE
 from retrieval.embed import embed_texts
@@ -171,13 +172,36 @@ async def index_repo(db: AsyncSession, repo_id: uuid.UUID, repo_path: Path, comm
         raise
 
 
+#: These two commands finish in milliseconds on any repo; a minute means git is
+#: wedged, not slow.
+GIT_TIMEOUT_SECONDS = 60.0
+
+
 def _git(repo_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run git against the checkout with the same config pins and environment
+    allowlist `repolace_shared.git.repo` uses, minus its async wrapper.
+
+    The environment is the sharper half. This used to inherit all of
+    `os.environ` -- so git, and anything git spawned, held the GitHub App
+    private key and the database URL. The private key is worse than any single
+    token: it mints installation tokens for every installation, and rotating
+    tokens does not revoke it.
+
+    Deliberately still synchronous and still `check=True`. The caller's
+    `CalledProcessError` handling is load-bearing (`reindex_if_stale` falls back
+    to a full reindex on it), and converting to the async `run_git` would change
+    the exception type across that boundary. Unifying the two wrappers is a
+    known duplication and a deliberate deferral, recorded in CLAUDE.md.
+    """
     return subprocess.run(
-        ["git", "-c", "core.quotepath=false", *args],
+        ["git", *UNTRUSTED_TREE_CONFIG_ARGS, *args],
         cwd=repo_path,
         capture_output=True,
         text=True,
         check=True,
+        env=sanitized_git_env(),
+        stdin=subprocess.DEVNULL,
+        timeout=GIT_TIMEOUT_SECONDS,
     )
 
 
