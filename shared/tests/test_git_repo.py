@@ -21,12 +21,16 @@ from repolace_shared.git.repo import (
     GIT_TOKEN_ENV_VAR,
     _BASE_ARGS,
     _git_env,
+    _parse_index_entries,
+    _refuse_unsupported_modes,
     GitCommandError,
+    GitExportError,
     GitRepo,
     GitTimeoutError,
     clone,
     redact,
     run_git,
+    run_git_bytes,
 )
 
 from shared_support import git, write
@@ -574,3 +578,71 @@ class TestConfigIsolation:
 
         assert env["GIT_CONFIG_GLOBAL"] == os.devnull
         assert env["GIT_CONFIG_SYSTEM"] == os.devnull
+
+
+class TestExportIndex:
+    """The parsing half, where a malformed record must fail loudly.
+
+    Everything here comes from this repository's own index moments earlier, so
+    an unexpected shape means the object store or the index is damaged -- and
+    exporting over that would hand the sandbox a tree no commit describes while
+    looking like an ordinary success.
+    """
+
+    def test_a_merge_stage_entry_is_refused(self):
+        """Stages 1/2/3 are an unresolved merge: three entries for one path,
+        none of which is "the commit"."""
+        raw = b"100644 abc123 1\tsrc/app.py\0"
+
+        with pytest.raises(GitExportError, match="merge stage"):
+            _parse_index_entries(raw)
+
+    def test_a_malformed_record_is_refused(self):
+        with pytest.raises(GitExportError, match="unparseable"):
+            _parse_index_entries(b"not-a-record\0")
+
+    def test_a_record_without_a_tab_is_refused(self):
+        with pytest.raises(GitExportError, match="unparseable"):
+            _parse_index_entries(b"100644 abc123 0 src/app.py\0")
+
+    def test_an_absolute_path_is_refused(self):
+        with pytest.raises(GitExportError, match="unsafe"):
+            _parse_index_entries(b"100644 abc123 0\t/etc/passwd\0")
+
+    def test_a_parent_reference_is_refused(self):
+        with pytest.raises(GitExportError, match="parent reference"):
+            _parse_index_entries(b"100644 abc123 0\t../escape.py\0")
+
+    def test_paths_are_kept_as_bytes(self):
+        """Decoding with errors="replace" would write a *different* filename
+        than the commit contains."""
+        entries = _parse_index_entries(b"100644 abc123 0\tsrc/caf\xe9.py\0")
+
+        assert entries == [("100644", "abc123", b"src/caf\xe9.py")]
+
+    def test_a_symlink_and_a_submodule_are_both_named_in_one_error(self):
+        """A rejected benchmark repo should be diagnosable at a glance rather
+        than one re-run at a time."""
+        entries = [
+            ("120000", "a", b"link.py"),
+            ("160000", "b", b"vendor/lib"),
+            ("100644", "c", b"src/app.py"),
+        ]
+
+        with pytest.raises(GitExportError) as caught:
+            _refuse_unsupported_modes(entries)
+
+        assert "link.py" in str(caught.value) and "vendor/lib" in str(caught.value)
+        assert "src/app.py" not in str(caught.value)
+
+
+class TestRunGitBytes:
+    async def test_it_does_not_decode(self, source_repo):
+        """run_git decodes with errors="replace", which is right for messages
+        and irreversibly wrong for blob content and for non-UTF-8 paths."""
+        oid = git(source_repo, "hash-object", "-w", "--stdin", input_text="café\n")
+
+        raw = await run_git_bytes("cat-file", "blob", oid, cwd=source_repo)
+
+        assert raw == "café\n".encode()
+        assert isinstance(raw, bytes)

@@ -121,18 +121,18 @@ class TaskWorkspace:
         existing cleanup removes it -- including the case where the sandbox
         left files this process does not own.
         """
-        if not await self.repo.index_matches_head():
+        if not await self.repo.tree_matches_head():
             raise RuntimeError(
-                "refusing to export: the index does not match HEAD, so the exported "
+                "refusing to export: the working tree does not match HEAD, so the exported "
                 "tree would not be the commit the results get attributed to"
             )
 
         destination = self.root / f"{_EXPORT_DIR_PREFIX}-{attempt}"
-        destination.mkdir(parents=True, exist_ok=True)
-        # Explicitly, because mkdir's mode is masked by the process umask.
-        os.chmod(destination, _SANDBOX_DIR_MODE)
-
-        await self.repo.export_index_to(destination)
+        # The mode goes all the way down, not just onto the root: the sandbox
+        # runs as an unprivileged uid that is not ours, and a suite writing a
+        # `__pycache__` or a sqlite fixture beside its own code needs the
+        # *containing* directory writable.
+        await self.repo.export_index_to(destination, dir_mode=_SANDBOX_DIR_MODE)
         log.info("workspace.exported", attempt=attempt, destination=str(destination))
         return destination
 

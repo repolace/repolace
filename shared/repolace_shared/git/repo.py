@@ -245,24 +245,24 @@ def _git_env(token: str | None, credential_host: str) -> dict[str, str]:
     return env
 
 
-async def run_git(
+def _spawn_git(
     *args: str,
-    cwd: Path | None = None,
-    token: str | None = None,
-    credential_host: str = DEFAULT_CREDENTIAL_HOST,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
-) -> str:
-    """Run one git command, returning stdout. Raises on non-zero exit or timeout.
+    cwd: Path | None,
+    token: str | None,
+    credential_host: str,
+    stdin: int = asyncio.subprocess.DEVNULL,
+):
+    """Start git with the base args, the sanitized environment and its own
+    process group. Shared so every git this module spawns -- one-shot commands
+    and the streaming `cat-file --batch` alike -- gets identical treatment.
 
-    Always checks the exit status: callers that need to tolerate a specific
-    failure ask a question first (``git status --porcelain`` for "is there
-    anything to commit") rather than reading a return code, which keeps the
-    tolerated cases explicit instead of swallowing every error alike.
+    Returns the coroutine; the caller awaits it and is responsible for caching
+    the pgid and killing the group on timeout or cancellation.
     """
-    command = [*_BASE_ARGS, *args]
-    process = await asyncio.create_subprocess_exec(
+    return asyncio.create_subprocess_exec(
         "git",
-        *command,
+        *_BASE_ARGS,
+        *args,
         cwd=cwd,
         env=_git_env(token, credential_host),
         stdout=asyncio.subprocess.PIPE,
@@ -271,12 +271,29 @@ async def run_git(
         # an argument is missing. Inheriting ours means such a command blocks
         # until the timeout instead of failing immediately -- and in a worker
         # there is nothing on the other end to answer it.
-        stdin=asyncio.subprocess.DEVNULL,
+        stdin=stdin,
         # Puts git in its own process group so the whole tree can be killed as
         # one. It also detaches from the controlling terminal, which backs up
         # GIT_TERMINAL_PROMPT=0: there is no tty left to prompt on.
         start_new_session=True,
     )
+
+
+async def run_git_bytes(
+    *args: str,
+    cwd: Path | None = None,
+    token: str | None = None,
+    credential_host: str = DEFAULT_CREDENTIAL_HOST,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> bytes:
+    """Run one git command, returning stdout **undecoded**.
+
+    `run_git` decodes with `errors="replace"`, which is right for messages and
+    irreversibly wrong for content: a blob would be corrupted, and a path that
+    is not valid UTF-8 would name a *different* file. A repository is entitled
+    to both, so anything reading either goes through here.
+    """
+    process = await _spawn_git(*args, cwd=cwd, token=token, credential_host=credential_host)
     # Captured now, while the pid is certainly still valid: start_new_session
     # makes git its own group leader, so the pgid equals the pid, and this
     # stays killable after git itself has been reaped.
@@ -308,7 +325,158 @@ async def run_git(
             stdout.decode("utf-8", errors="replace"),
         )
 
+    return stdout
+
+
+async def run_git(
+    *args: str,
+    cwd: Path | None = None,
+    token: str | None = None,
+    credential_host: str = DEFAULT_CREDENTIAL_HOST,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> str:
+    """Run one git command, returning stdout. Raises on non-zero exit or timeout.
+
+    Always checks the exit status: callers that need to tolerate a specific
+    failure ask a question first (``git status --porcelain`` for "is there
+    anything to commit") rather than reading a return code, which keeps the
+    tolerated cases explicit instead of swallowing every error alike.
+    """
+    stdout = await run_git_bytes(
+        *args, cwd=cwd, token=token, credential_host=credential_host, timeout=timeout
+    )
     return stdout.decode("utf-8", errors="replace")
+
+
+#: A large repository's export is not a `rev-parse`; the default is far too
+#: tight for one and far too loose as a hang detector for the other.
+EXPORT_TIMEOUT_SECONDS = 300.0
+
+#: Index modes we will materialise, mapped to the filesystem mode they get.
+#: Everything else is refused loudly rather than approximated.
+_BLOB_MODES = {"100644": 0o644, "100755": 0o755}
+
+
+class GitExportError(GitError):
+    """The index holds an entry the export cannot faithfully represent."""
+
+
+def _parse_index_entries(raw: bytes) -> list[tuple[str, str, bytes]]:
+    """``(mode, oid, path)`` for every entry in the index.
+
+    ``-s -z``: NUL-terminated records carrying literal path bytes, so nothing is
+    C-quoted and no path is ever decoded on the way through. Paths stay ``bytes``
+    all the way to the filesystem call, because a repository is entitled to a
+    filename that is not valid UTF-8 and decoding one with ``errors="replace"``
+    would write a *different* file than the commit contains.
+    """
+    entries: list[tuple[str, str, bytes]] = []
+    for record in raw.split(b"\0"):
+        if not record:
+            continue
+        meta, separator, path = record.partition(b"\t")
+        fields = meta.split(b" ")
+        if not separator or len(fields) != 3:
+            raise GitExportError(f"unparseable ls-files record: {meta!r}")
+        mode, oid, stage = (field.decode("ascii", errors="replace") for field in fields)
+        if stage != "0":
+            # Stages 1/2/3 are an unresolved merge: three entries for one path,
+            # none of which is "the commit". Nothing in the recorded task flow
+            # produces one, so this means something went wrong upstream, and
+            # exporting an arbitrary stage would hide it.
+            raise GitExportError(f"index entry {path!r} is at merge stage {stage}")
+        if not path or path.startswith(b"/") or b"\0" in path:
+            raise GitExportError(f"refusing an unsafe index path: {path!r}")
+        # Compared as bytes throughout: decoding to compare would be a second
+        # place the path could change shape on the way to the filesystem.
+        if b".." in path.split(b"/"):
+            raise GitExportError(f"refusing an index path with a parent reference: {path!r}")
+        entries.append((mode, oid, path))
+    return entries
+
+
+def _refuse_unsupported_modes(entries: Sequence[tuple[str, str, bytes]]) -> None:
+    """Refuse symlinks and submodules, naming every offender at once.
+
+    Both are refused rather than approximated, and for the same reason: the
+    export's whole claim is that its bytes are the commit's bytes.
+
+    * ``160000`` (gitlink) has no blob to write. ``checkout-index`` silently left
+      an empty directory, so the suite ran against missing sources -- a
+      confidently wrong benchmark number rather than an error.
+    * ``120000`` (symlink) is not a file with content, so "the bytes match the
+      commit" stops being a well-formed claim; and materialising one puts a path
+      that resolves outside the export into a tree the host later deletes.
+
+    The cost is real and accepted: a repository containing any symlink cannot be
+    exported, and some real Python projects have one. Every offender is listed so
+    a rejected benchmark repo is diagnosable at a glance rather than one
+    re-run at a time, and the distinct exception type keeps a future
+    ``RepoSpec`` opt-in a contained addition.
+    """
+    offenders = [(mode, path) for mode, _oid, path in entries if mode not in _BLOB_MODES]
+    if not offenders:
+        return
+    described = ", ".join(f"{path.decode('utf-8', errors='replace')} (mode {mode})"
+                          for mode, path in offenders[:10])
+    raise GitExportError(
+        f"{len(offenders)} index entr{'y' if len(offenders) == 1 else 'ies'} cannot be exported "
+        f"faithfully: {described}"
+    )
+
+
+def _write_blob(destination: Path, path: bytes, content: bytes, mode: int,
+                made: set[bytes], dir_mode: int) -> None:
+    parts = path.split(b"/")
+    current = destination
+    prefix = b""
+    for part in parts[:-1]:
+        current = current / os.fsdecode(part)
+        prefix = prefix + b"/" + part
+        if prefix not in made:
+            current.mkdir(exist_ok=True)
+            # Explicitly, because mkdir's mode argument is masked by the umask.
+            os.chmod(current, dir_mode)
+            made.add(prefix)
+    target = current / os.fsdecode(parts[-1])
+    target.write_bytes(content)
+    os.chmod(target, mode)
+
+
+async def _write_blobs(process, entries: Sequence[tuple[str, str, bytes]],
+                       destination: Path, dir_mode: int) -> None:
+    """Feed oids to ``cat-file --batch`` and write each blob as it arrives.
+
+    Feeding and draining run concurrently on purpose: writing every oid first
+    deadlocks as soon as git's stdout pipe fills, which on any real repository is
+    almost immediately. Writing each blob straight to disk keeps peak memory at
+    one blob rather than one repository.
+    """
+    async def feed() -> None:
+        for _mode, oid, _path in entries:
+            process.stdin.write(f"{oid}\n".encode("ascii"))
+        await process.stdin.drain()
+        process.stdin.close()
+
+    async def drain() -> None:
+        made: set[bytes] = set()
+        destination.mkdir(parents=True, exist_ok=True)
+        os.chmod(destination, dir_mode)
+        for mode, oid, path in entries:
+            # `<oid> <type> <size>\n`, then <size> bytes, then a newline.
+            # readuntil is limit-bound but a header never approaches it;
+            # readexactly is not, so a large blob is fine.
+            header = (await process.stdout.readuntil(b"\n")).decode("ascii", errors="replace").split()
+            if len(header) != 3 or header[1] != "blob":
+                # The other shape is `<oid> missing`. These oids came from this
+                # repository's own index moments ago, so either means the object
+                # store is damaged -- which must not be silently exported over.
+                raise GitExportError(f"cat-file did not return a blob for {oid}: {' '.join(header)}")
+            content = await process.stdout.readexactly(int(header[2]))
+            await process.stdout.readexactly(1)
+            _write_blob(destination, path, content, _BLOB_MODES[mode], made, dir_mode)
+
+    await asyncio.gather(feed(), drain())
 
 
 @dataclass(frozen=True)
@@ -450,41 +618,105 @@ class GitRepo:
         out = await self._run("diff", "--name-only", "-z", f"{base_sha}...HEAD")
         return [path for path in out.split("\0") if path]
 
-    async def index_matches_head(self) -> bool:
-        """Whether the staged tree is exactly HEAD's tree.
+    async def tree_matches_head(self) -> bool:
+        """Whether the index *and* the working tree are exactly HEAD's tree.
 
-        `checkout-index` reads the *index*, not a commit, so exporting while the
-        two disagree would hand the sandbox a tree that no commit describes --
-        and the resulting pass/fail sets would be attributed to a sha that never
-        contained that code.
+        The export reads tracked content at HEAD, so two different disagreements
+        matter and the previous implementation only asked about one. It passed
+        `diff-index --cached`, which compares the index to HEAD and **ignores
+        the working tree** -- and the agent edits the working tree directly, with
+        staging happening later in `record_attempt`. So an unstaged edit passed
+        the guard, the export handed over HEAD's content, and the resulting
+        pass/fail sets were attributed to an attempt whose changes were never in
+        the tree that ran. A confidently wrong measurement rather than an error,
+        which is the worst shape this stage can fail in.
+
+        `status --porcelain` rather than `diff-index`: it refreshes the index
+        itself, so a file whose mtime moved but whose content did not cannot read
+        as modified, and it needs no exit-code interpretation. `diff-index
+        --quiet` exits 1 for "differs" and 128 for a genuine failure, and the old
+        code swallowed both alike -- so a corrupt repository reported "index
+        differs", a true-looking answer to a question that was never asked. Any
+        non-zero exit now raises, as everywhere else here.
+
+        `--untracked-files=no` because untracked files are not a disagreement
+        with HEAD: a test run leaves `.pytest_cache` and `__pycache__` behind,
+        and neither belongs in the export or in this decision.
         """
-        try:
-            await self._run("diff-index", "--quiet", "--cached", "HEAD", "--")
-        except GitCommandError:
-            return False
-        return True
+        return not (await self._run("status", "--porcelain", "--untracked-files=no")).strip()
 
-    async def export_index_to(self, destination: Path) -> None:
-        """Write the tracked tree into ``destination``, without ``.git``.
+    async def export_index_to(self, destination: Path, *, dir_mode: int = 0o755) -> None:
+        """Write the tracked tree into ``destination`` as the bytes HEAD holds.
 
-        ``checkout-index`` rather than ``git archive`` for two reasons. It works
-        from the index, so ``.git`` is excluded by construction and so are
-        untracked and ignored build artifacts -- which matters because
+        Reads the object store directly -- ``ls-files -s -z`` to enumerate,
+        ``cat-file --batch`` to fetch -- rather than asking git to materialise a
+        working tree. Every alternative applies some transformation, and each
+        transformation is a way for what the sandbox runs to differ from what the
+        commit contains and the Reviewer reads:
+
+        * ``git archive`` honours ``export-ignore`` in ``.gitattributes``, which
+          would let a repository hide its own test files from the run that
+          establishes ground truth. An attack on the benchmark number rather than
+          on the host, and the kind that would never look like an attack.
+        * ``checkout-index`` -- the previous implementation -- honours neither
+          ``export-ignore`` nor ``export-subst``, but *does* run clean/smudge
+          filters, ``text``/``eol`` conversion and ``ident`` expansion. A tracked
+          ``.gitattributes`` saying ``*.py text eol=crlf`` was enough to change
+          the bytes; a ``filter`` driver runs an arbitrary command on the host.
+          Pinning git's config files closed the half of that which came from the
+          operator's ``~/.gitconfig``; it does **not** close the checkout's own
+          ``.git/config``, which the sandbox can write. Reading blobs consults no
+          attribute or filter machinery at all, so it closes both.
+
+        Only index entries are listed, so ``.git`` is excluded by construction
+        and so are untracked and ignored build artifacts -- which matters because
         ``reset_hard`` cleans with ``-fd`` rather than ``-fdx``, leaving a stale
-        ``.so`` or ``.pyc`` in the checkout between attempts that would
-        otherwise be tested instead of the source.
+        ``.so`` or ``.pyc`` that would otherwise be tested instead of the source.
 
-        And ``git archive`` honours ``export-ignore`` in ``.gitattributes``,
-        which would let a repository hide its own test files from the run that
-        establishes ground truth. That is an attack on the benchmark number
-        rather than on the host, and it is the kind that would never look like
-        an attack. ``checkout-index`` honours neither ``export-ignore`` nor
-        ``export-subst``.
+        ``dir_mode`` is the caller's, because this module is a generic git
+        wrapper and has no business knowing the sandbox's uid. It is applied to
+        every directory created, not just the root: ``mkdir``'s mode argument is
+        masked by the process umask, and the previous implementation chmodded
+        only the top level, so ``checkout-index`` left ``0755`` subdirectories
+        under a ``0777`` root and a sandbox running as an unprivileged uid got
+        ``EACCES`` creating a ``__pycache__`` beside its own code. Files keep
+        ``0644``/``0755`` from their index mode: what the sandbox needs is
+        permission to create entries *in a directory*, and the executable bit has
+        to survive for suites that shell out to a tracked script.
 
-        The trailing separator is required: ``--prefix`` is a literal string
-        prefix, not a directory argument.
+        Deliberately uncapped in total size. The content is already in the
+        repository and already on this disk, so a cap would refuse large but
+        legitimate repositories for no gain.
         """
-        await self._run("checkout-index", "--all", "--force", f"--prefix={destination}{os.sep}")
+        raw = await run_git_bytes(
+            "ls-files", "-s", "-z", cwd=self.path, timeout=EXPORT_TIMEOUT_SECONDS
+        )
+        entries = _parse_index_entries(raw)
+        _refuse_unsupported_modes(entries)
+        if not entries:
+            return
+
+        process = await _spawn_git(
+            "cat-file", "--batch",
+            cwd=self.path,
+            token=None,
+            credential_host=self.credential_host,
+            stdin=asyncio.subprocess.PIPE,
+        )
+        pgid = process.pid
+        try:
+            await asyncio.wait_for(
+                _write_blobs(process, entries, destination, dir_mode), EXPORT_TIMEOUT_SECONDS
+            )
+        except TimeoutError:
+            kill_process_tree(pgid, ("cat-file", "--batch"))
+            raise GitTimeoutError(("cat-file", "--batch"), EXPORT_TIMEOUT_SECONDS) from None
+        except asyncio.CancelledError:
+            kill_process_tree(pgid, ("cat-file", "--batch"))
+            raise
+        finally:
+            if process.returncode is None:
+                kill_process_tree(pgid, ("cat-file", "--batch"))
 
     async def push_branch(self, branch: str, remote: str = "origin") -> None:
         await self._run(

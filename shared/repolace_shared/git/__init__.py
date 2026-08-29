@@ -1,6 +1,7 @@
 from repolace_shared.git.repo import (
     GitCommandError,
     GitError,
+    GitExportError,
     GitRepo,
     GitTimeoutError,
     TokenProvider,
@@ -8,6 +9,7 @@ from repolace_shared.git.repo import (
     clone,
     redact,
     run_git,
+    run_git_bytes,
     sanitized_git_env,
 )
 from repolace_shared.git.workspace import (
@@ -23,6 +25,7 @@ __all__ = [
     "PUSH_TOKEN_MIN_TTL_SECONDS",
     "GitCommandError",
     "GitError",
+    "GitExportError",
     "GitRepo",
     "GitTimeoutError",
     "TaskWorkspace",
@@ -34,6 +37,7 @@ __all__ = [
     "installation_token_provider",
     "redact",
     "run_git",
+    "run_git_bytes",
     "sanitized_git_env",
     "task_workspace",
 ]

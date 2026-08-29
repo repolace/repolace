@@ -13,9 +13,23 @@ from pathlib import Path
 AUTHOR_ARGS = ("-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false")
 
 
-def git(cwd: Path, *args: str) -> str:
-    result = subprocess.run(["git", *AUTHOR_ARGS, *args], cwd=cwd, check=True, capture_output=True, text=True)
+def git(cwd: Path, *args: str, input_text: str | None = None) -> str:
+    result = subprocess.run(
+        ["git", *AUTHOR_ARGS, *args],
+        cwd=cwd, check=True, capture_output=True, text=True, input=input_text,
+    )
     return result.stdout.strip()
+
+
+def git_bytes(cwd: Path, *args: str) -> bytes:
+    """Like `git`, but undecoded and unstripped.
+
+    Needed wherever the assertion is about *bytes* -- blob content, or a path
+    that is not valid UTF-8 -- because `git` strips, which silently eats the
+    trailing newline or CR the test is actually checking for.
+    """
+    result = subprocess.run(["git", *AUTHOR_ARGS, *args], cwd=cwd, check=True, capture_output=True)
+    return result.stdout
 
 
 def write(path: Path, content: str) -> None:

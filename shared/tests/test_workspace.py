@@ -6,6 +6,7 @@ remote before the directory is discarded, and that discarding it can never
 swallow the reason a task failed.
 """
 
+import os
 import shutil
 import stat
 import uuid
@@ -13,13 +14,14 @@ from pathlib import Path
 
 import pytest
 
+from repolace_shared.git.repo import GitExportError
 from repolace_shared.git.workspace import (
     agent_branch_name,
     github_clone_url,
     task_workspace,
 )
 
-from shared_support import git, git_check_ref, write
+from shared_support import git, git_bytes, git_check_ref, write
 
 pytestmark = pytest.mark.anyio
 
@@ -247,15 +249,157 @@ class TestExportTree:
 
             assert "return a + b" in (export / "src" / "app.py").read_text()
 
-    async def test_a_dirty_index_is_refused(self, origin_url):
-        """`checkout-index` reads the index, so exporting while it disagrees with
-        HEAD would attribute results to a commit that never held that code."""
+    async def test_a_staged_edit_is_refused(self, origin_url):
+        """Exporting while the index disagrees with HEAD would attribute results
+        to a commit that never held that code."""
         async with workspace_for(origin_url) as workspace:
             write(workspace.path / "src" / "app.py", "def add(a, b):\n    return 0\n")
             await workspace.repo._run("add", "--all")
 
-            with pytest.raises(RuntimeError, match="index does not match HEAD"):
+            with pytest.raises(RuntimeError, match="does not match HEAD"):
                 await workspace.export_tree(0)
+
+    async def test_an_unstaged_edit_is_refused(self, origin_url):
+        """The finding. The guard passed `diff-index --cached`, which compares
+        the index to HEAD and ignores the working tree -- and the edit stage
+        writes the working tree directly, with staging happening later in
+        `record_attempt`. So an unstaged edit exported HEAD's content, the
+        sandbox tested code the agent had not written, and the pass/fail sets
+        were attributed to the attempt anyway. A wrong measurement, not an
+        error."""
+        async with workspace_for(origin_url) as workspace:
+            write(workspace.path / "src" / "app.py", "def add(a, b):\n    return 0\n")
+
+            with pytest.raises(RuntimeError, match="does not match HEAD"):
+                await workspace.export_tree(0)
+
+    async def test_untracked_test_artifacts_do_not_block_the_export(self, origin_url):
+        """A test run leaves .pytest_cache and __pycache__ behind, and neither
+        is a disagreement with HEAD. `-uno` is what keeps a second attempt from
+        being refused for the first attempt's litter."""
+        async with workspace_for(origin_url) as workspace:
+            write(workspace.path / ".pytest_cache" / "v" / "lastfailed", "{}\n")
+            write(workspace.path / "src" / "__pycache__" / "app.pyc", "junk\n")
+
+            export = await workspace.export_tree(0)
+
+            assert (export / "src" / "app.py").is_file()
+
+    async def test_the_exported_bytes_are_the_committed_bytes(self, origin_url):
+        """The whole claim of the rewrite, and it fails under `checkout-index`.
+
+        The `hazards` branch ships `.gitattributes` with `*.py text eol=crlf`.
+        checkout-index honours that, so the sandbox ran CRLF while the commit
+        and the PR diff showed LF -- what was tested was not what was reviewed.
+        Reading blobs consults no attribute machinery at all.
+        """
+        async with workspace_for(origin_url, branch="hazards") as workspace:
+            export = await workspace.export_tree(0)
+
+            content = (export / "src" / "app.py").read_bytes()
+            assert b"\r\n" not in content
+            assert content == b"def add(a, b):\n    return a - b\n"
+
+    async def test_a_repo_local_smudge_filter_does_not_run_during_export(self, origin_url, tmp_path):
+        """Pinning git's config files closed the operator-config half of this.
+        It does not close the checkout's own .git/config -- which is precisely
+        what the sandbox can write. Reading the object store closes both, which
+        is why the rewrite is structural rather than another key to clear."""
+        sentinel = tmp_path / "smudge-ran"
+        async with workspace_for(origin_url, branch="hazards") as workspace:
+            await workspace.repo._run(
+                "config", "filter.evil.smudge", f'sh -c "echo owned > {sentinel}; cat"'
+            )
+            await workspace.repo._run("config", "filter.evil.required", "false")
+            write(workspace.path / ".gitattributes", "*.py filter=evil\n")
+            await workspace.repo._run("add", "--all")
+            await workspace.repo.commit_all("use the filter")
+
+            export = await workspace.export_tree(0)
+            blob = git_bytes(workspace.path, "cat-file", "blob", "HEAD:src/app.py")
+
+            assert not sentinel.exists(), "a filter from the checkout's own config ran on the host"
+            # Against the blob, not a literal: this branch also carries
+            # `text eol=crlf`, and replacing .gitattributes to install the
+            # filter drops that rule, so what the blob holds depends on history.
+            # The invariant under test is fidelity to the object store, whatever
+            # it happens to contain.
+            assert (export / "src" / "app.py").read_bytes() == blob
+
+    async def test_the_executable_bit_survives_the_export(self, origin_url):
+        """Suites that shell out to a tracked script need it, and the mode is
+        now set by us rather than inherited from a checkout."""
+        async with workspace_for(origin_url, branch="hazards") as workspace:
+            export = await workspace.export_tree(0)
+
+            assert os.access(export / "bin" / "run.sh", os.X_OK)
+            assert not os.access(export / "src" / "app.py", os.X_OK)
+            assert stat.S_IMODE((export / "src" / "app.py").stat().st_mode) == 0o644
+
+    async def test_the_sandbox_can_write_into_a_subdirectory_of_the_export(self, origin_url):
+        """The regression test for the mode bug. Only the export *root* was ever
+        chmodded, and checkout-index created subdirectories at 0755 owned by the
+        worker -- so a sandbox running as an unprivileged uid got EACCES writing
+        a __pycache__ beside its own code, which surfaces as an unscoreable run
+        and silently drops the instance from the benchmark."""
+        async with workspace_for(origin_url, branch="hazards") as workspace:
+            export = await workspace.export_tree(0)
+
+            nested = export / "deep" / "nested"
+            assert stat.S_IMODE(nested.stat().st_mode) == 0o777
+            assert stat.S_IMODE((export / "deep").stat().st_mode) == 0o777
+            (nested / "__pycache__").mkdir()
+
+    async def test_a_committed_symlink_is_refused(self, origin, origin_url, repo_with_symlink, tmp_path):
+        """A symlink is not a file with content, so "the bytes match the commit"
+        stops being a well-formed claim -- and materialising one puts a path
+        resolving outside the export into a tree the host later deletes."""
+        source = repo_with_symlink()
+        # `origin` was cloned from `source_repo` at fixture setup, before this
+        # body ran, so the new commit has to be pushed for the clone to see it.
+        git(source, "push", "--force", str(origin), "hazards")
+        victim = tmp_path / "victim"
+        victim.write_text("UNTOUCHED\n")
+
+        async with workspace_for(origin_url, branch="hazards") as workspace:
+            with pytest.raises(GitExportError, match="link.py"):
+                await workspace.export_tree(0)
+
+        assert victim.read_text() == "UNTOUCHED\n"
+
+    async def test_a_submodule_is_refused(self, origin, origin_url, source_repo):
+        """checkout-index left an empty directory, so the suite ran against
+        silently missing sources -- a confidently wrong number, not an error."""
+        git(source_repo, "checkout", "hazards")
+        # A real commit sha: git refuses an all-zero one, and any commit object
+        # will do -- nothing resolves the gitlink, it only has to be present.
+        sha = git(source_repo, "rev-parse", "HEAD")
+        git(source_repo, "update-index", "--add", "--cacheinfo", f"160000,{sha},vendor/lib")
+        git(source_repo, "commit", "-m", "add gitlink")
+        git(source_repo, "push", "--force", str(origin), "hazards")
+        git(source_repo, "checkout", "main")
+
+        async with workspace_for(origin_url, branch="hazards") as workspace:
+            with pytest.raises(GitExportError, match="160000"):
+                await workspace.export_tree(0)
+
+    async def test_a_non_utf8_path_round_trips(self, origin, origin_url, source_repo):
+        """What keeping paths as bytes all the way to the filesystem buys. A
+        repository is entitled to a filename that is not valid UTF-8, and
+        decoding one with errors="replace" would write a *different* file."""
+        git(source_repo, "checkout", "hazards")
+        name = b"src/caf\xe9.py"
+        oid = git(source_repo, "hash-object", "-w", "--stdin", input_text="VALUE = 3\n")
+        git(source_repo, "update-index", "--add", "--cacheinfo",
+            f"100644,{oid},{os.fsdecode(name)}")
+        git(source_repo, "commit", "-m", "latin-1 filename")
+        git(source_repo, "push", "--force", str(origin), "hazards")
+        git(source_repo, "checkout", "main")
+
+        async with workspace_for(origin_url, branch="hazards") as workspace:
+            export = await workspace.export_tree(0)
+
+            assert (export / os.fsdecode(name)).read_bytes() == b"VALUE = 3\n"
 
     async def test_each_attempt_gets_its_own_directory(self, origin_url):
         async with workspace_for(origin_url) as workspace:
