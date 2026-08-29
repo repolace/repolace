@@ -75,16 +75,60 @@ class TestVerdicts:
         assert result.failed == ("t.py::leaky",)
         assert result.passed == ()
 
-    def test_xfail_is_skipped_not_failed(self, tmp_path):
-        """pytest reports xfail as skipped carrying wasxfail."""
+    def test_xfail_is_its_own_bucket_not_a_skip(self, tmp_path):
+        """pytest reports xfail as skipped carrying wasxfail, so the two are
+        indistinguishable by outcome alone -- and the scoring rule treats them
+        oppositely, an xfail being red at baseline and a skip not."""
         result = parse(tmp_path, jsonl(
             start_record(),
             report("t.py::known_bug", "call", "skipped", xfail=True),
             session_record(0),
         ))
 
-        assert result.skipped == ("t.py::known_bug",)
+        assert result.xfailed == ("t.py::known_bug",)
+        assert result.skipped == ()
         assert result.passed == () and result.failed == ()
+
+    def test_a_non_strict_xpass_is_a_pass_not_an_xfail(self, tmp_path):
+        """pytest sets wasxfail on a *passed* record for a non-strict xpass, so
+        `xfail` is not exclusive to skips. A rule reading the flag off the node
+        rather than off the skipping record would file a genuine pass as
+        silenced -- and `neutralized` counts xfailed as silenced."""
+        result = parse(tmp_path, jsonl(
+            start_record(),
+            report("t.py::fixed_bug", "call", "passed", xfail=True),
+            session_record(0),
+        ))
+
+        assert result.passed == ("t.py::fixed_bug",)
+        assert result.xfailed == () and result.skipped == ()
+
+    def test_setup_and_teardown_phases_do_not_dilute_the_xfail_flag(self, tmp_path):
+        """wasxfail rides on the call report only, so the sibling phases carry
+        False. An `all()` over the node's records would never fire."""
+        result = parse(tmp_path, jsonl(
+            start_record(),
+            report("t.py::known_bug", "setup", "passed", xfail=False),
+            report("t.py::known_bug", "call", "skipped", xfail=True),
+            report("t.py::known_bug", "teardown", "passed", xfail=False),
+            session_record(0),
+        ))
+
+        assert result.xfailed == ("t.py::known_bug",)
+        assert result.skipped == ()
+
+    def test_a_skip_mark_on_an_xfail_test_is_an_ordinary_skip(self, tmp_path):
+        """The skip short-circuits before xfail evaluation, so no wasxfail is
+        set. Correct to file as an ordinary skip: an agent that adds a skip mark
+        must not thereby move a test into the fail-to-pass candidate set."""
+        result = parse(tmp_path, jsonl(
+            start_record(),
+            report("t.py::known_bug", "setup", "skipped", xfail=False),
+            session_record(0),
+        ))
+
+        assert result.skipped == ("t.py::known_bug",)
+        assert result.xfailed == ()
 
     def test_strict_xpass_is_failed(self, tmp_path):
         """Reported as failed with longrepr a plain str, so it falls out of the failed rule."""

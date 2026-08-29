@@ -126,8 +126,17 @@ class TestAgainstRealPytest:
     def test_a_skip_is_neither_passed_nor_failed(self, parsed):
         assert any(n.endswith("::test_skipped") for n in parsed.skipped)
 
-    def test_xfail_is_skipped(self, parsed):
-        assert any(n.endswith("::test_xfail") for n in parsed.skipped)
+    def test_xfail_is_its_own_bucket(self, parsed):
+        """Against real pytest: wasxfail rides on the call report, and the
+        surrounding setup/teardown reports carry xfail=False."""
+        assert any(n.endswith("::test_xfail") for n in parsed.xfailed)
+        assert not any(n.endswith("::test_xfail") for n in parsed.skipped)
+
+    def test_a_non_strict_xpass_is_a_pass(self, parsed):
+        """It carries wasxfail on a *passed* record, so a rule keyed on the
+        xfail flag alone would misfile a genuine pass as silenced."""
+        assert any(n.endswith("::test_xpass") for n in parsed.passed)
+        assert not any(n.endswith("::test_xpass") for n in parsed.xfailed)
 
     def test_strict_xpass_is_failed(self, parsed):
         assert any(n.endswith("::test_xpass_strict") for n in parsed.failed)

@@ -123,17 +123,31 @@ def disqualifying_paths(
     return tuple(sorted(set(disqualified)))
 
 
+def _candidate_fail_to_pass(baseline: SuiteResult) -> set[str]:
+    """The only nodes that could possibly count as fail-to-pass.
+
+    Shared with the admissibility gate deliberately. If the gate ever admitted
+    an instance whose baseline holds nothing this set can match, the task would
+    be scored FAILED for an instrument limitation -- which is the exact defect
+    the gate exists to prevent, reintroduced by the two drifting apart.
+    """
+    return set(baseline.failed) | set(baseline.xfailed)
+
+
 def fail_to_pass(baseline: SuiteResult, attempt: SuiteResult) -> tuple[str, ...]:
     """Tests that were failing and now pass.
 
-    Includes xfail -> xpass. A mature repository records a known bug as
-    `@pytest.mark.xfail`, which pytest reports as a skip; under a rule that only
-    looked at `failed` that transition was invisible in both directions, which
-    removed the most likely form of a legitimately-red test.
+    `xfailed`, not `skipped`. A mature repository records a known bug as
+    `@pytest.mark.xfail`, and that going green is the likeliest honest form of a
+    legitimately-red test, so it has to count. But pytest reports an *ordinary*
+    skip the same way, and a real suite is full of them -- `importorskip` for an
+    optional dependency, a platform guard, a marker gate. Joining on `skipped`
+    meant a baseline skip that started passing for any reason at all (a
+    dependency appearing in the image, an install-step change) scored the task
+    PASSED with **nothing red at baseline**. That is a false positive, and by
+    the reasoning at the top of this module a false positive costs the claim.
     """
-    became_passing = set(baseline.failed) & set(attempt.passed)
-    xfail_fixed = set(baseline.skipped) & set(attempt.passed)
-    return tuple(sorted(became_passing | xfail_fixed))
+    return tuple(sorted(_candidate_fail_to_pass(baseline) & set(attempt.passed)))
 
 
 def regressions(baseline: SuiteResult, attempt: SuiteResult) -> tuple[str, ...]:
@@ -154,8 +168,13 @@ def neutralized(baseline: SuiteResult, attempt: SuiteResult) -> tuple[str, ...]:
     and make everything else you broke stop running. A skipped or uncollected
     test is in neither `passed` nor `failed`, so it costs nothing under the
     other two rules. Only previously-*passing* tests were protected.
+
+    `xfailed` counts as silenced alongside `skipped`, and must: marking a
+    baseline failure `@pytest.mark.xfail` is the cheapest possible way to make
+    it stop objecting, and separating the two buckets for `fail_to_pass` would
+    otherwise have opened a wider hole here than it closed there.
     """
-    silenced = set(attempt.skipped) | set(attempt.did_not_run)
+    silenced = set(attempt.skipped) | set(attempt.xfailed) | set(attempt.did_not_run)
     observed = set(attempt.passed) | set(attempt.failed) | silenced
     vanished = set(baseline.failed) - observed
     return tuple(sorted((set(baseline.failed) & silenced) | vanished))
@@ -238,13 +257,23 @@ def score(
     if drift:
         return Score(outcome=TaskOutcome.FAILED, reason=drift)
 
-    if expected_fail_to_pass is None and not baseline.failed and not baseline.skipped:
-        # Nothing was red at the base commit, so `F0 ∩ Pn` is empty whatever the
-        # agent does. Charging that to the agent would attribute an instrument
-        # limitation to it; the instance simply cannot be scored this way.
+    if expected_fail_to_pass is None and not _candidate_fail_to_pass(baseline):
+        # Nothing that *could* go green was red at the base commit, so
+        # `F0 ∩ Pn` is empty whatever the agent does. Charging that to the agent
+        # would attribute an instrument limitation to it; the instance simply
+        # cannot be scored this way.
+        #
+        # The condition used to read `not baseline.failed and not
+        # baseline.skipped`, which looks equivalent and is not: once xfails
+        # moved out of `skipped`, an *ordinary* skip -- a platform guard, an
+        # `importorskip`, which essentially every real suite has at least one of
+        # -- made an unscoreable instance look scoreable. It then fell through
+        # to "no baseline-failing test now passes" and scored FAILED. Same
+        # expression as `fail_to_pass` joins on, via one function, so the two
+        # cannot drift apart again.
         return _inadmissible(
-            "no test failed at the base commit and no curated fail-to-pass list was supplied; "
-            "this instance cannot demonstrate a fix"
+            "nothing was failing or xfailed at the base commit and no curated fail-to-pass "
+            "list was supplied; this instance cannot demonstrate a fix"
         )
 
     fixed = fail_to_pass(baseline, attempt)

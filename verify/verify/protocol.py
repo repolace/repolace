@@ -60,7 +60,18 @@ class SuiteResult:
     failed: tuple[str, ...] = ()
     #: Neither passed nor failed. Kept so "a passing test became a skip" can be
     #: seen as the regression it is, rather than silently vanishing.
+    #:
+    #: **Ordinary** skips only -- `@pytest.mark.skip`, `skipif`, a module-level
+    #: `pytest.skip`, `importorskip` for a missing dependency. These are not red
+    #: at baseline and one of them going green is evidence of nothing.
     skipped: tuple[str, ...] = ()
+    #: Expected failures. pytest reports these as skips too, which is why they
+    #: have to be separated here rather than by the scoring rule: an xfail is a
+    #: *known bug the repository has written down*, so it is red at baseline and
+    #: it going green is the likeliest honest form of fail-to-pass. Folding the
+    #: two together let an `importorskip` that started passing score a task
+    #: PASSED with nothing red at baseline at all.
+    xfailed: tuple[str, ...] = ()
     did_not_run: tuple[str, ...] = ()
     collect_failures: tuple[str, ...] = ()
     #: Files pytest actually collected tests from, and the conftests it loaded.

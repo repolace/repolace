@@ -243,6 +243,13 @@ class TaskTestRun(Base):
     #: baseline failure that is silenced rather than fixed is a disqualification.
     #: Deriving either later is impossible if the sets were discarded.
     skipped: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, server_default="{}")
+    #: Expected failures, separated from `skipped` because pytest reports both
+    #: the same way and the scoring rule treats them oppositely: an xfail is red
+    #: at baseline and counts toward fail-to-pass, an ordinary skip is not and
+    #: does not. Stored rather than derived for the reason 0009 gives for the
+    #: sets it added -- a dropped set cannot be recovered, and "was this an xfail
+    #: or a skip" is exactly the question the next revision of the rule asks.
+    xfailed: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, server_default="{}")
     did_not_run: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, server_default="{}")
     collect_failures: Mapped[list[str]] = mapped_column(
         ARRAY(String), nullable=False, server_default="{}"

@@ -334,6 +334,16 @@ Operationally, scored as fail-to-pass plus pass-to-pass:
 3. **Pass-to-pass.** Everything that passed at baseline must still pass. This is what catches a fix that trades one bug for another.
 4. **No test edits**, by default. A diff touching test files fails the task.
 
+**Amendment (a false PASSED, found by audit and reproduced).** "Fail-to-pass" was implemented as `baseline.failed ∪ baseline.skipped` intersected with `attempt.passed`, on the reasoning that pytest reports an xfail as a skip. It does — but so does every *ordinary* skip, and a real suite is full of them: `importorskip` for an optional dependency, a platform guard, a marker gate. A baseline skip that started passing for any reason at all — a dependency appearing in the image, an install-step change — then scored the task **PASSED with nothing red at the base commit**. That is the failure mode this whole section exists to prevent: not a point lost, but a pass nobody could defend.
+
+The report parser now separates `xfailed` from `skipped`, using the `xfail` flag the plugin already recorded and the host discarded. The flag is **per-phase** (pytest sets `wasxfail` on the `call` report, so the surrounding phases carry False) and is **also** set on a non-strict xpass, which is a `passed` record — so the rule reads it only off the record that carried the skip. Three consequences, load-bearing *together*:
+
+- **fail-to-pass** joins on `failed ∪ xfailed`. An ordinary skip going green is no longer evidence of anything.
+- **neutralized** counts `xfailed` as silenced. Marking a baseline failure `@pytest.mark.xfail` is the cheapest possible way to make it stop objecting, and separating the buckets without this would have opened a wider hole than it closed.
+- **admissibility** gates on the same `failed ∪ xfailed` expression, through one shared function so the two cannot drift. The old gate read `not failed and not skipped`, so a single ordinary skip made an unscoreable instance look scoreable; it then fell through to "no baseline-failing test now passes" and scored FAILED — an instrument limitation charged to the agent, on most real repositories.
+
+`task_test_runs.xfailed` (migration 0010) exists for the reason 0009 gives for the sets it added: a dropped set cannot be recovered, and "was this an xfail or an ordinary skip" is exactly the question this revision had to ask.
+
 **The exception is the hard part.** "Unless the test itself was wrong" is not machine-checkable — an agent that cannot pass a test can always claim the test is at fault, and that is precisely the loophole it will find. An unfalsifiable escape hatch would quietly destroy the credibility of the benchmark number, which is the project's whole differentiation claim.
 
 So the exception is a **separately tracked outcome, never a silent pass**:

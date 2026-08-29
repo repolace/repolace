@@ -27,7 +27,7 @@ from verify.scoring import (
 
 
 def suite(**overrides) -> SuiteResult:
-    fields = {"passed": (), "failed": (), "skipped": (), "did_not_run": (),
+    fields = {"passed": (), "failed": (), "skipped": (), "xfailed": (), "did_not_run": (),
               "collect_failures": (), "collected_files": (), "conftests": (),
               "fingerprint": {"rootdir": "/repo", "ini": {}, "plugins": []}}
     return SuiteResult(**{**fields, **overrides})
@@ -162,7 +162,17 @@ class TestFailToPass:
         """A mature repo records a known bug as xfail, which pytest reports as a
         skip. Ignoring that transition removes the likeliest form of a
         legitimately-red test."""
-        assert fail_to_pass(suite(skipped=("t::known",)), suite(passed=("t::known",))) == ("t::known",)
+        assert fail_to_pass(suite(xfailed=("t::known",)), suite(passed=("t::known",))) == ("t::known",)
+
+    def test_an_ordinary_skip_that_starts_passing_does_not_count(self):
+        """The false PASSED, reproduced and pinned.
+
+        Baseline: `pytest.importorskip("ujson")` skips one test, nothing fails.
+        Attempt: the agent adds a stub module, the test now runs and passes.
+        Under the old rule that scored PASSED with nothing red at baseline, no
+        test file touched, and no evidence the issue was fixed.
+        """
+        assert fail_to_pass(suite(skipped=("t::optional",)), suite(passed=("t::optional",))) == ()
 
     def test_a_test_the_agent_added_cannot_count(self):
         """It is not in the baseline, so the intersection excludes it by construction."""
@@ -180,6 +190,12 @@ class TestRegressions:
     def test_a_test_turned_into_a_skip_counts(self):
         """Otherwise skipping is a way to silence an inconvenient test."""
         assert regressions(suite(passed=("t::a",)), suite(skipped=("t::a",))) == ("t::a",)
+
+
+    def test_a_passing_test_turned_into_an_xfail_counts(self):
+        """A set difference against `passed`, so it does not matter which
+        non-passing bucket the test landed in."""
+        assert regressions(suite(passed=("t::a",)), suite(xfailed=("t::a",))) == ("t::a",)
 
 
 class TestNeutralized:
@@ -200,6 +216,13 @@ class TestNeutralized:
 
         assert result.outcome is TaskOutcome.FAILED
         assert "silenced" in result.reason
+
+
+    def test_marking_a_baseline_failure_xfail_is_caught(self):
+        """The hole that separating the buckets could have opened. Marking a red
+        test `@pytest.mark.xfail` is the cheapest possible silencing, and it now
+        lands in `xfailed` rather than `skipped`."""
+        assert neutralized(suite(failed=("t::a",)), suite(xfailed=("t::a",))) == ("t::a",)
 
 
 class TestFingerprint:
@@ -236,6 +259,35 @@ class TestAdmissibility:
         result = score(suite(passed=("t::a",)), suite(passed=("t::a",)), ["src/app.py"])
 
         assert result.outcome is None and result.inadmissible is True
+
+    def test_a_baseline_with_only_an_ordinary_skip_is_inadmissible(self):
+        """Reproduced and pinned. The gate used to read `not baseline.failed and
+        not baseline.skipped`, so one ordinary skip -- a platform guard, an
+        `importorskip`, which essentially every real suite has -- made an
+        unscoreable instance look scoreable. It then fell straight through to
+        "no baseline-failing test now passes" and scored FAILED: an instrument
+        limitation charged to the agent, on most real repositories.
+        """
+        result = score(
+            suite(passed=("t::a",), skipped=("t::needs_torch",)),
+            suite(passed=("t::a",), skipped=("t::needs_torch",)),
+            ["src/app.py"],
+        )
+
+        assert result.outcome is None and result.inadmissible is True
+
+    def test_a_baseline_xfail_keeps_the_instance_admissible(self):
+        """The other direction. An xfail *is* red, so the gate must not close on
+        it -- over-tightening here would silently exclude the instances the
+        benchmark most wants to score."""
+        result = score(
+            suite(passed=("t::a",), xfailed=("t::known",)),
+            suite(passed=("t::a", "t::known")),
+            ["src/app.py"],
+        )
+
+        assert result.outcome is TaskOutcome.PASSED
+        assert result.fail_to_pass == ("t::known",)
 
     def test_a_curated_list_makes_an_all_green_baseline_admissible(self):
         """With the fixing PR's tests injected, the baseline is green by design

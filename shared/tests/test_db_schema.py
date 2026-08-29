@@ -230,6 +230,7 @@ class TestRunDetailSets:
                 passed=["t::a"],
                 failed=["t::b"],
                 skipped=["t::c"],
+                xfailed=["t::x"],
                 did_not_run=["t::d"],
                 collect_failures=["tests/broken.py"],
             )
@@ -238,6 +239,9 @@ class TestRunDetailSets:
 
         run = (await db_session.execute(select(TaskTestRun))).scalar_one()
         assert run.skipped == ["t::c"]
+        # Separate from `skipped` because pytest reports both the same way and
+        # the scoring rule treats them oppositely -- see migration 0010.
+        assert run.xfailed == ["t::x"]
         assert run.did_not_run == ["t::d"]
         assert run.collect_failures == ["tests/broken.py"]
 
@@ -249,6 +253,7 @@ class TestRunDetailSets:
 
         run = (await db_session.execute(select(TaskTestRun))).scalar_one()
         assert run.skipped == [] and run.did_not_run == [] and run.collect_failures == []
+        assert run.xfailed == []
 
 
 class TestPatchProvenance:

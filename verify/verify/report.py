@@ -58,15 +58,30 @@ def _verdict(reports: list[dict]) -> str:
     * `failed` first catches a setup error (which emits no `call` report at all,
       so a call-keyed parser loses it) and a teardown failure on a test whose
       call phase passed (which a call-keyed parser would record as a pass).
-    * `skipped` second covers module-level skips and xfail, which pytest reports
-      as skipped carrying a `wasxfail` attribute.
+    * `xfailed` before `skipped`, and read off the *skipping* record rather than
+      off the node. Two properties of pytest make that scoping necessary rather
+      than fussy. `xfail` is **per-phase** -- pytest sets `wasxfail` on the
+      `call` report, so setup and teardown of the same node carry False and an
+      `all()` would never fire. And it is **not exclusive to skips** -- a
+      non-strict xpass is `outcome: passed` with `xfail: True`, and that node is
+      a genuine pass that must stay in `passed`, not a silenced one. Reading the
+      flag only off the record that carried the skip handles both without a
+      special case. (A strict xpass carries no `wasxfail` at all and arrives as
+      `failed`, which the first rule takes.)
+
+      A `@pytest.mark.skip` layered on an xfail-marked test produces a skip
+      *without* `wasxfail`, so it classifies as an ordinary skip -- correct, and
+      deliberately so: an agent that adds a skip mark must stay in the
+      disqualifying bucket.
+    * `skipped` covers module-level skips and every ordinary skip.
     * requiring a `call` phase for `passed` is what leaves `did_not_run`
       reachable rather than a dead branch.
     """
     if any(r["outcome"] == "failed" for r in reports):
         return "failed"
-    if any(r["outcome"] == "skipped" for r in reports):
-        return "skipped"
+    skips = [r for r in reports if r["outcome"] == "skipped"]
+    if skips:
+        return "xfailed" if any(r.get("xfail") for r in skips) else "skipped"
     if any(r["when"] == "call" and r["outcome"] == "passed" for r in reports):
         return "passed"
     return "did_not_run"
@@ -188,6 +203,7 @@ def parse_report(path: Path, process: ProcessResult, elapsed: float) -> SuiteRes
         "passed": passed,
         "failed": failed,
         "skipped": tuple(sorted(buckets["skipped"])),
+        "xfailed": tuple(sorted(buckets["xfailed"])),
         "did_not_run": tuple(sorted(buckets["did_not_run"])),
         "collect_failures": collect_failures,
         "collected_files": collected_files,
