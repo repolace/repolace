@@ -111,17 +111,52 @@ def _watched_ini(config):
 
 
 def _plugin_names(config):
-    """Registered plugin names.
+    """Registered plugin names, with unnameable registrations counted, not named.
 
     PYTEST_DISABLE_PLUGIN_AUTOLOAD stops entry-point autoload, but a conftest
     can still import an installed plugin and register it by hand -- which is how
     `pytest-randomly` reorders a suite that was supposed to be deterministic.
+
+    Two kinds of registration have no stable name, and the host compares this
+    list between the baseline and every attempt:
+
+    * A conftest is registered under its **path**, which moves with rootdir.
+    * pytest names a plugin `getattr(plugin, "__name__", None) or str(id(plugin))`,
+      so anything registered as a plain object is named by its **memory
+      address**. `PytestPluginManager` registers itself exactly that way, on
+      every run, so this list held a fresh random string every time.
+
+    The second one was found by running the sandbox for the first time, and it
+    was not survivable: `fingerprint_changed` would have reported "plugins
+    changed between baseline and attempt" for **every task on every
+    repository**, and `score` returns FAILED on that before it looks at a single
+    test result. A benchmark of uniform, confident, spurious failures -- which
+    no unit test on either side of the boundary could have caught, because both
+    sides were individually behaving as written.
+
+    Counted rather than dropped: the count is stable for a given pytest, so an
+    *extra* anonymous plugin -- a conftest registering some object of its own --
+    still shows up as a difference, which is the signal worth keeping.
     """
     try:
         names = [name for name, _ in config.pluginmanager.list_name_plugin()]
     except Exception:
         return []
-    return sorted(n for n in names if n and not n.startswith("/"))
+    stable = []
+    anonymous = 0
+    for name in names:
+        if not name or name.startswith("/"):
+            continue
+        if name.isdigit():
+            # str(id(plugin)). A real __name__ is an identifier and cannot be
+            # all digits, so this cannot swallow a genuine plugin.
+            anonymous += 1
+            continue
+        stable.append(name)
+    stable.sort()
+    if anonymous:
+        stable.append("<anonymous:%d>" % anonymous)
+    return stable
 
 
 def _pytest_version():

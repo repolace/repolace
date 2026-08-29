@@ -26,6 +26,11 @@ class RepoSpec:
     #: Shell commands run at build time, with network. Empty means "use the heuristic".
     install: tuple[str, ...] = ()
     system_packages: tuple[str, ...] = ()
+    #: Used as the container's entrypoint, so a base image that ships its own
+    #: ENTRYPOINT cannot swallow the pytest invocation. `python` rather than
+    #: `python3` because that is what the `python:*` images provide; a repo
+    #: pinned to a bare `debian`/`ubuntu` base needs `python3` here.
+    python_executable: str = "python"
     #: Empty is the safest default: with no ini file pytest derives rootdir from
     #: the argv, so passing nothing keeps node IDs stable between baseline and
     #: attempts. See `dockerfile`/`backends.docker` for why that matters.
@@ -33,6 +38,12 @@ class RepoSpec:
     extra_pytest_args: tuple[str, ...] = ()
     #: Drop `-o addopts=` for a repo that genuinely needs its own addopts.
     keep_addopts: bool = False
+    #: Off by default, and that is the safe direction. Disabling entry-point
+    #: autoload makes a run reproducible, but a suite built on `pytest-django`,
+    #: `pytest-asyncio` or `pytest-mock` then fails to collect -- unscoreable,
+    #: for a reason that has nothing to do with the agent. Turn it on per repo
+    #: when a plugin is what makes a run non-deterministic.
+    disable_plugin_autoload: bool = False
     repo_readonly: bool = False
     timeout_seconds: float | None = None
     extra_env: Mapping[str, str] = field(default_factory=dict)

@@ -8,6 +8,7 @@ copies are gone; this is the single definition.
 """
 
 import asyncio
+import functools
 import os
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -40,16 +41,62 @@ REQUIRE_DB_ENV_VAR = "REPOLACE_TEST_DB_REQUIRED"
 TEST_DB_SUFFIX = "_test"
 
 
-def _skip_or_fail(reason: str) -> None:
-    """Skip, unless the caller has declared a database mandatory.
+def _skip_or_fail(reason: str, required_env_var: str = REQUIRE_DB_ENV_VAR) -> None:
+    """Skip, unless the caller has declared the dependency mandatory.
 
     A silent skip is how a CI misconfiguration turns into a green build with
     zero database coverage -- which is the exact hole these fixtures were added
     to close. Setting REPOLACE_TEST_DB_REQUIRED=1 makes that impossible.
     """
-    if os.environ.get(REQUIRE_DB_ENV_VAR):
-        pytest.fail(f"{reason} (and {REQUIRE_DB_ENV_VAR} is set)")
+    if os.environ.get(required_env_var):
+        pytest.fail(f"{reason} (and {required_env_var} is set)")
     pytest.skip(reason)
+
+
+# --- docker marker -----------------------------------------------------------
+#
+# Same argument as the database fixtures above, one layer up. The `docker`
+# marker was declared in pyproject.toml before anything implemented it, so a
+# daemon-backed test would have *passed* on a machine with no daemon -- which
+# is worse than not having the test, because the containment assertions are
+# exactly the ones that must never pass vacuously.
+
+REQUIRE_DOCKER_ENV_VAR = "REPOLACE_TEST_DOCKER_REQUIRED"
+_DOCKER_PROBE_TIMEOUT_SECONDS = 20
+
+
+@functools.lru_cache(maxsize=1)
+def _docker_unavailable() -> str | None:
+    """Why the daemon cannot be used, or None if it can. Probed once per session."""
+    import subprocess
+
+    binary = os.environ.get("REPOLACE_TEST_DOCKER_BINARY", "docker")
+    try:
+        probe = subprocess.run(
+            [binary, "version", "--format", "{{.Server.Version}}"],
+            capture_output=True,
+            timeout=_DOCKER_PROBE_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"{type(exc).__name__}: {exc}"
+    if probe.returncode != 0:
+        return probe.stderr.decode("utf-8", errors="replace").strip()[:300]
+    return None
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    """Skip a `docker`-marked test when no daemon answers.
+
+    In the hook rather than a fixture so the marker itself is what gates the
+    test -- a fixture can be forgotten, and a forgotten one here means an
+    integration test that quietly never ran.
+    """
+    if item.get_closest_marker("docker") is None:
+        return
+    reason = _docker_unavailable()
+    if reason:
+        _skip_or_fail(f"docker unavailable: {reason}", REQUIRE_DOCKER_ENV_VAR)
 
 
 def _create_database(admin_dsn: str, name: str) -> None:

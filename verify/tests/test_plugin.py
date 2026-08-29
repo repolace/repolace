@@ -153,6 +153,62 @@ class TestAgainstRealPytest:
         assert parsed.error is None
 
 
+@pytest.fixture(scope="module")
+def two_runs(tmp_path_factory):
+    """The same suite, twice, in the *same* directory.
+
+    The same directory on purpose: rootdir is part of the fingerprint and is
+    supposed to differ when the tree does, so running in two temp dirs would
+    manufacture a difference production never sees -- the sandbox mounts every
+    attempt at `/repo`. The report is removed between runs because the recorder
+    opens it in append mode, and a second run appending to the first would parse
+    as one run with duplicate records.
+    """
+    tmp_path = tmp_path_factory.mktemp("stability")
+    results = []
+    for _ in range(2):
+        report, process = run_suite(tmp_path, "def test_ok():\n    assert True\n")
+        results.append(parse_report(report, process, elapsed=1.0))
+        report.unlink()
+    return results
+
+
+class TestFingerprintStability:
+    """The fingerprint must be identical across two runs of an identical environment.
+
+    `score` refuses to compare two runs whose fingerprints differ and returns
+    FAILED without looking at a single test result. So an unstable fingerprint
+    is not a degraded measurement -- it is a uniform, confident, wrong one on
+    every task and every repository.
+
+    This regressed once, and neither side was misbehaving: pytest names an
+    anonymously-registered plugin by `id()`, `PytestPluginManager` registers
+    itself that way on every run, and the host faithfully compared the addresses.
+    It took actually running the sandbox twice to see it, which is why the check
+    now lives here in a subprocess test that needs no daemon.
+    """
+
+    def test_the_whole_fingerprint_is_stable(self, two_runs):
+        first, second = two_runs
+
+        assert first.fingerprint == second.fingerprint
+
+    def test_no_plugin_name_is_a_memory_address(self, two_runs):
+        """The specific defect, pinned separately so a future change that makes
+        the fingerprints merely *equal* by dropping the field still fails."""
+        plugins = two_runs[0].fingerprint["plugins"]
+
+        assert plugins, "the plugin list must not be empty -- that is not a fix"
+        assert not any(name.isdigit() for name in plugins), plugins
+
+    def test_an_anonymous_registration_is_still_counted(self, two_runs):
+        """Dropping them silently would hide a conftest registering its own
+        object, which genuinely changes what runs."""
+        plugins = two_runs[0].fingerprint["plugins"]
+
+        assert any(name.startswith("<anonymous:") for name in plugins), plugins
+
+
 class TestCollectionFailure:
     def test_a_broken_import_is_recorded_and_does_not_hide_the_rest(self, tmp_path):
         (tmp_path / "test_broken.py").write_text("import definitely_not_a_real_module_xyz\n")
