@@ -22,7 +22,7 @@ from sqlalchemy import (
     text,
     true,
 )
-from sqlalchemy.dialects.postgresql import TSVECTOR, UUID
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 
@@ -254,6 +254,25 @@ class TaskTestRun(Base):
     collect_failures: Mapped[list[str]] = mapped_column(
         ARRAY(String), nullable=False, server_default="{}"
     )
+    #: The files pytest actually collected tests from, and the conftests it
+    #: loaded. Authoritative for this repository in a way the path heuristic
+    #: cannot be, and read by `disqualifying_paths` -- so a run stored without
+    #: it cannot be rescored, only re-run.
+    collected_files: Mapped[list[str]] = mapped_column(
+        ARRAY(String), nullable=False, server_default="{}"
+    )
+    conftests: Mapped[list[str]] = mapped_column(
+        ARRAY(String), nullable=False, server_default="{}"
+    )
+    #: rootdir, the watched ini options and the registered plugins. `score`
+    #: refuses to compare two runs whose fingerprints differ, because node ids
+    #: are relative to rootdir and an ini option decides whether a warning is an
+    #: error -- so an agent could turn a real failure into a real pass without
+    #: touching a test file. Kept so that refusal is reproducible after the fact.
+    fingerprint: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    #: The tail of what the container printed. The only human-readable account
+    #: of an unscoreable run, and the first thing anyone asks for.
+    stdout_tail: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     duration_seconds: Mapped[float | None] = mapped_column(Numeric(10, 3), nullable=True)
     #: Set when the suite produced no usable result at all -- an import error,

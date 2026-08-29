@@ -23,6 +23,9 @@ from repolace_shared.db.session import create_engine, create_session_factory
 from repolace_shared.github.client import GithubClient
 from repolace_shared.logging import configure_logging
 
+from verify.backends.docker import DockerBackend
+from verify.spec import load_specs
+
 from repolace_pipeline.config import get_settings
 from repolace_pipeline.errors import TaskNotClaimable, TaskNotFound
 from repolace_pipeline.run import run_task
@@ -39,8 +42,15 @@ async def _run(task_id: uuid.UUID) -> int:
     settings = get_settings()
     engine = create_engine(settings.database_url)
     github = GithubClient(settings.github_app_id, settings.github_app_private_key)
+    # Constructed here rather than inside `run_task`, like the engine and the
+    # client: the sandbox backend is a process-level resource, and Phase 2's
+    # worker will build one per process and reuse it across tasks.
+    backend = DockerBackend()
+    specs = load_specs(settings.verify_specs_path)
     try:
-        result = await run_task(task_id, create_session_factory(engine), github)
+        result = await run_task(
+            task_id, create_session_factory(engine), github, backend, specs
+        )
     except TaskNotFound:
         log.error("pipeline.task.not_found", task_id=str(task_id))
         return EXIT_NOT_FOUND
@@ -53,6 +63,11 @@ async def _run(task_id: uuid.UUID) -> int:
         await github.aclose()
         await engine.dispose()
 
+    # The exit code reports whether *repolace* worked, not whether the issue
+    # was fixed. A task that ran to the end and scored FAILED is a successful
+    # run of the pipeline with a negative result, and a benchmark harness that
+    # treated it as a crash would be unable to tell the two apart. The outcome
+    # is on the task row and in `pipeline.score`.
     return EXIT_OK if result.error_message is None else EXIT_TASK_FAILED
 
 

@@ -5,15 +5,22 @@
 lift the body into a Celery task unchanged: the worker brings a process-level
 engine and client, the CLI brings per-invocation ones, and this stays the same.
 
-The Verify stage is deliberately absent. Its sandbox isolation mechanism is an
-open decision in CLAUDE.md, so nothing here runs the repo's test suite, nothing
-is scored, and no `task_test_runs` row is written.
+Verify runs twice: once at the base commit for the baseline, once after the
+edit. Both go through `verify.stage.Verifier`, so nothing here knows that
+containers exist -- swapping Docker for gVisor or a remote executor is a
+different `SandboxBackend`, not a change to this file.
+
+The ordering is load-bearing and matches CLAUDE.md's branch/PR flow: index from
+the clean tree, then baseline, then branch, then edit. Baseline before the
+branch because it is what "the tests pass" is measured against -- without it a
+repo with pre-existing failures scores as a failure whatever the agent does.
 """
 
 import asyncio
 import subprocess
 import uuid
 from contextlib import AsyncExitStack, asynccontextmanager
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import httpx
@@ -22,12 +29,23 @@ from sqlalchemy import func, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from repolace_shared.db.models import RegisteredRepo, Task, TaskStatus
+from repolace_shared.db.models import (
+    BASELINE_ATTEMPT,
+    RegisteredRepo,
+    Task,
+    TaskOutcome,
+    TaskStatus,
+)
 from repolace_shared.git import GitError, installation_token_provider, redact, task_workspace
 from repolace_shared.github.client import GithubClient
 from retrieval.embed import get_embedder
 from retrieval.index import RepoIndexInProgress, get_current_chunk_count, reindex_if_stale
 from retrieval.retrieve import hybrid_search
+from verify.errors import SandboxError, SandboxUnavailable
+from verify.protocol import RepoSpec, SandboxBackend, SuiteResult
+from verify.scoring import Score, score
+from verify.spec import resolve_spec
+from verify.stage import Verifier
 
 from repolace_pipeline.context import RetrievedChunk
 from repolace_pipeline.edit import (
@@ -38,10 +56,15 @@ from repolace_pipeline.edit import (
     render_pr_body,
 )
 from repolace_pipeline.errors import PipelineError, StageFailed, TaskNotClaimable, TaskNotFound
+from repolace_pipeline.testruns import record_test_run
 
 log = structlog.get_logger()
 
 RETRIEVE_LIMIT = 8
+#: The single edit attempt Phase 1 makes. The stub editor is deterministic, so
+#: re-running it produces the identical diff; the bounded retry loop arrives
+#: with the Debugger in Phase 2, which is the first thing able to revise one.
+FIRST_ATTEMPT = BASELINE_ATTEMPT + 1
 MAX_ERROR_CHARS = 4000
 REQUIRED_PERMISSIONS = {"contents": "write", "pull_requests": "write"}
 
@@ -53,12 +76,20 @@ class RunResult:
     pr_number: int | None = None
     pr_url: str | None = None
     error_message: str | None = None
+    #: How the task scored. `None` means it was never scored -- either repolace
+    #: broke before Verify, or the instance was inadmissible. Deliberately not
+    #: collapsed into `FAILED`: an instrument limitation charged to the agent is
+    #: the exact mistake the success criteria are written to avoid.
+    outcome: TaskOutcome | None = None
+    score_reason: str | None = None
 
 
 def _describe(exc: BaseException) -> str:
     """Turn an exception into something readable in a `tasks.error_message` column."""
     if isinstance(exc, RepoIndexInProgress):
         return "another task is indexing this repo; retry shortly"
+    if isinstance(exc, SandboxError):
+        return str(exc)  # already redacted and tail-capped at construction
     if isinstance(exc, GitError):
         return str(exc)  # GitError already redacts itself
     if isinstance(exc, httpx.HTTPStatusError):
@@ -179,7 +210,16 @@ async def run_task(
     task_id: uuid.UUID,
     session_factory: async_sessionmaker[AsyncSession],
     github: GithubClient,
+    backend: SandboxBackend,
+    specs: Mapping[str, RepoSpec] | None = None,
 ) -> RunResult:
+    """Run one task. `backend` and `specs` are the caller's, like everything else.
+
+    `backend` is injected rather than constructed here for the same reason the
+    engine and the client are: the CLI builds a `DockerBackend`, Phase 2's
+    worker will build one per process, and a test can pass a fake and exercise
+    the whole pipeline without a daemon.
+    """
     async with session_factory() as state:
         task, repo = await _claim(state, task_id)
 
@@ -189,7 +229,9 @@ async def run_task(
             task_id=str(task_id), repo=repo.full_name, issue_number=task.issue_number
         ):
             try:
-                return await _execute(state, session_factory, github, task, repo)
+                return await _execute(
+                    state, session_factory, github, task, repo, backend, specs or {}
+                )
             except StageFailed as exc:
                 return await _fail(state, task_id, exc.stage, exc.message)
             except Exception as exc:
@@ -201,12 +243,50 @@ async def run_task(
                 raise
 
 
+async def _verify(verifier: Verifier, workspace, attempt: int) -> tuple[SuiteResult, bool]:
+    """Run one suite, turning a sandbox failure into an unscoreable result.
+
+    Returns the result and whether the failure was *infrastructure*. The
+    distinction decides who gets blamed: `SandboxUnavailable` means the daemon
+    was not there, which `score` excludes from the benchmark as an instrument
+    failure, while a suite that timed out or was OOM-killed under a patch is the
+    patch's doing and scores FAILED.
+
+    Anything that is not a `SandboxError` is left to propagate. An `OSError`
+    writing the export is repolace being broken, and it should fail the task
+    loudly rather than be laundered into an unscoreable run.
+    """
+    try:
+        return await verifier.run(workspace, attempt), False
+    except SandboxUnavailable as exc:
+        log.error("pipeline.verify.unavailable", attempt=attempt, error=str(exc))
+        return SuiteResult(error=redact(str(exc))), True
+    except SandboxError as exc:
+        log.error("pipeline.verify.failed", attempt=attempt, error=str(exc))
+        return SuiteResult(error=redact(str(exc))), False
+
+
+def _log_score(scored: Score) -> None:
+    log.info(
+        "pipeline.score",
+        outcome=scored.outcome.value if scored.outcome else None,
+        inadmissible=scored.inadmissible,
+        reason=scored.reason,
+        fail_to_pass=list(scored.fail_to_pass[:10]),
+        regressions=list(scored.regressions[:10]),
+        neutralized=list(scored.neutralized[:10]),
+        disqualified=list(scored.disqualified[:10]),
+    )
+
+
 async def _execute(
     state: AsyncSession,
     session_factory,
     github: GithubClient,
     task: Task,
     repo: RegisteredRepo,
+    backend: SandboxBackend,
+    specs: Mapping[str, RepoSpec],
 ) -> RunResult:
     async with _stage("preflight"):
         await _preflight(github, repo)
@@ -254,6 +334,19 @@ async def _execute(
             top_score=round(retrieved[0].rrf_score, 5),
         )
 
+        verifier = Verifier(backend, resolve_spec(specs, repo.full_name), task.id)
+
+        # Before the agent branch, and before any edit: this is what "the tests
+        # pass" is measured against. Without it a repo with pre-existing
+        # failures scores as a failure whatever the agent did, and "the suite
+        # passes" is an unfalsifiable claim.
+        async with _stage("verify_baseline"):
+            baseline, _ = await _verify(verifier, workspace, BASELINE_ATTEMPT)
+        async with _stage("record_baseline"):
+            await record_test_run(
+                session_factory, task.id, BASELINE_ATTEMPT, workspace.base_sha, baseline
+            )
+
         request = StubEditRequest(
             task_id=task.id,
             issue_number=task.issue_number,
@@ -273,25 +366,58 @@ async def _execute(
         log.info("pipeline.edit.applied", file=str(edited.relative_to(workspace.path)))
 
         async with _stage("commit"):
-            attempt = await workspace.record_attempt(commit_message(request))
-        if attempt is None:
+            attempt_sha = await workspace.record_attempt(commit_message(request))
+        if attempt_sha is None:
             raise StageFailed(
                 "commit",
                 "the stub edit produced no committable change; check whether the "
                 "repo's .gitignore covers the edited file",
             )
 
+        async with _stage("verify_attempt"):
+            if verifier.prepared:
+                attempt_result, infrastructure_error = await _verify(
+                    verifier, workspace, FIRST_ATTEMPT
+                )
+            else:
+                # The environment never got built, so there is nothing to run
+                # the patch in. Recorded as its own unscoreable run rather than
+                # skipped: an attempt with no row would look like a task that
+                # never got this far.
+                attempt_result = SuiteResult(
+                    error="verify: skipped, the environment never built (see the baseline run)"
+                )
+                infrastructure_error = False
+        async with _stage("record_attempt"):
+            await record_test_run(
+                session_factory, task.id, FIRST_ATTEMPT, attempt_sha, attempt_result
+            )
+
         async with _stage("review"):
             changed = await workspace.changed_files()
             diff = await workspace.review_diff()
-        # Verify is skipped, so this is observation only. Logged explicitly so
-        # the record cannot be mistaken for a scored result later.
-        log.info(
-            "pipeline.review.unscored",
-            changed_files=changed,
-            diff_bytes=len(diff),
-            detail="no test suite was run; nothing scored",
+            baseline_files = await workspace.baseline_files()
+        log.info("pipeline.review.done", changed_files=changed, diff_bytes=len(diff))
+
+        scored = score(
+            baseline,
+            attempt_result,
+            changed,
+            baseline_files=baseline_files,
+            # No curated ground truth in Phase 1. The rule degrades to "some
+            # baseline failure went green", which `score` itself flags as not
+            # evidence about *this* issue -- the eval harness supplies the
+            # per-instance list that makes the claim specific.
+            expected_fail_to_pass=None,
+            attempt_infrastructure_error=infrastructure_error,
         )
+        _log_score(scored)
+
+        if not (scored.outcome is TaskOutcome.PASSED or task.open_pr_on_failure):
+            # The pipeline ran to the end and opened no PR. COMPLETED rather
+            # than FAILED, which stays reserved for "repolace itself broke" so
+            # that `error_message` keeps exactly one meaning.
+            return await _complete(state, task.id, scored)
 
         async with _stage("squash"):
             squashed = await workspace.squash(commit_message(request))
@@ -317,11 +443,49 @@ async def _execute(
         .where(Task.id == task.id)
         .values(
             status=TaskStatus.PR_OPENED,
+            outcome=scored.outcome,
             pr_number=pull_request.number,
             pr_url=pull_request.html_url,
             completed_at=func.now(),
         )
     )
     await state.commit()
-    log.info("pipeline.task.pr_opened", pr_number=pull_request.number, pr_url=pull_request.html_url)
-    return RunResult(task.id, TaskStatus.PR_OPENED, pull_request.number, pull_request.html_url)
+    log.info(
+        "pipeline.task.pr_opened",
+        pr_number=pull_request.number,
+        pr_url=pull_request.html_url,
+        outcome=scored.outcome.value if scored.outcome else None,
+    )
+    return RunResult(
+        task.id,
+        TaskStatus.PR_OPENED,
+        pull_request.number,
+        pull_request.html_url,
+        outcome=scored.outcome,
+        score_reason=scored.reason,
+    )
+
+
+async def _complete(state: AsyncSession, task_id: uuid.UUID, scored: Score) -> RunResult:
+    """Finish a task that ran to the end and opened no PR.
+
+    `outcome` is written even when it is None -- an inadmissible instance has no
+    outcome, and recording that as FAILED would charge an instrument limitation
+    to the agent, which is the precise mistake the success criteria exist to
+    prevent. `error_message` is left alone: nothing broke.
+    """
+    await state.execute(
+        update(Task)
+        .where(Task.id == task_id)
+        .values(status=TaskStatus.COMPLETED, outcome=scored.outcome, completed_at=func.now())
+    )
+    await state.commit()
+    log.info(
+        "pipeline.task.completed",
+        outcome=scored.outcome.value if scored.outcome else None,
+        inadmissible=scored.inadmissible,
+        reason=scored.reason,
+    )
+    return RunResult(
+        task_id, TaskStatus.COMPLETED, outcome=scored.outcome, score_reason=scored.reason
+    )

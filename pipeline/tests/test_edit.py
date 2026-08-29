@@ -169,6 +169,20 @@ class TestPullRequestText:
         for keyword in ("closes #", "fixes #", "resolves #"):
             assert keyword not in body
 
+    def test_body_does_not_claim_the_suite_was_skipped(self):
+        """It said so truthfully until Verify was wired in, and then went on
+        saying it. The marker and the body are the only parts of a task a human
+        reads on GitHub, so a stale claim there is the expensive kind."""
+        body = render_pr_body(request())
+
+        assert "skipped" not in body.lower()
+        assert "nothing was scored" not in body.lower()
+
+    def test_the_marker_does_not_claim_the_suite_was_skipped(self):
+        marker = render_marker(request())
+
+        assert "skipped" not in marker.lower()
+
     def test_body_says_it_is_not_a_fix_and_asks_for_a_close(self):
         body = render_pr_body(request())
 

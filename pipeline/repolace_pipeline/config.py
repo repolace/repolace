@@ -24,6 +24,10 @@ class PipelineSettings(BaseSettings):
     database_url: str
     github_app_id: str
     github_app_private_key_base64: str
+    #: Per-repo build and run overrides for the Verify sandbox. A missing file
+    #: is fine -- every repo then gets the default spec and the install
+    #: heuristic, which is the state a repo starts in.
+    verify_specs_path: Path = _REPO_ROOT_ENV_FILE.parent / "verify" / "specs.toml"
 
     @property
     def github_app_private_key(self) -> str:
