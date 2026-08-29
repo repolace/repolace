@@ -248,7 +248,12 @@ class TestUnscoreable:
         assert result.error is not None and "exceeds" in result.error
 
     def test_an_unknown_schema_version_is_refused(self, tmp_path):
-        result = parse(tmp_path, jsonl({"kind": "start", "v": 99}, {"kind": "session", "v": 99}))
+        result = parse(tmp_path, jsonl(
+            {"kind": "start", "v": 99},
+            # exitstatus supplied so shape validation passes and the *version*
+            # gate is what refuses this, which is the thing under test.
+            {"kind": "session", "v": 99, "exitstatus": 1},
+        ))
 
         assert result.error is not None and "schema" in result.error
 
@@ -347,6 +352,137 @@ class TestForgeryDetection:
         ), returncode=6)
 
         assert result.error is None
+
+
+class TestMalformedRecords:
+    """The report is written by code sharing an interpreter with the repository
+    under test, so its *shape* is attacker-controlled even though it is not a
+    trust boundary in the usual sense. A conftest appending one line at
+    collection time is enough.
+
+    The point is not to prevent scoring manipulation -- `error` already scores
+    FAILED. It is that the one function whose entire job is turning untrusted
+    bytes into a trustworthy SuiteResult must honour its documented contract:
+    set `error`, never raise. Honest plugin/pytest version skew produces the
+    same shapes.
+    """
+
+    def good(self, *extra):
+        return (start_record(), report("t.py::ok", "call", "passed"), *extra, session_record(0))
+
+    def test_a_bare_json_scalar_line_is_refused(self, tmp_path):
+        result = parse(tmp_path, jsonl(*self.good()) + "3\n")
+
+        assert result.error is not None and "not a report record" in result.error
+
+    def test_a_json_array_line_is_refused(self, tmp_path):
+        result = parse(tmp_path, jsonl(*self.good()) + "[1, 2]\n")
+
+        assert result.error is not None
+
+    def test_a_json_null_line_is_refused(self, tmp_path):
+        result = parse(tmp_path, jsonl(*self.good()) + "null\n")
+
+        assert result.error is not None
+
+    def test_a_record_without_a_kind_is_refused(self, tmp_path):
+        result = parse(tmp_path, jsonl(*self.good({"hello": "world"})))
+
+        assert result.error is not None and "not a report record" in result.error
+
+    def test_a_test_record_without_a_nodeid_is_refused(self, tmp_path):
+        result = parse(tmp_path, jsonl(*self.good({"kind": "test", "when": "call", "outcome": "passed"})))
+
+        assert result.error is not None and "nodeid" in result.error
+
+    def test_a_numeric_nodeid_is_refused(self, tmp_path):
+        """Would corrupt the by_node join silently rather than crash loudly."""
+        result = parse(tmp_path, jsonl(*self.good(
+            {"kind": "test", "nodeid": 7, "when": "call", "outcome": "passed"}
+        )))
+
+        assert result.error is not None and "nodeid" in result.error
+
+    def test_a_session_record_with_a_string_exitstatus_is_refused(self, tmp_path):
+        """`"0"` compares unequal to 0, so the exit-status cross-check silently
+        took the wrong branch instead of catching a forged report."""
+        result = parse(tmp_path, jsonl(
+            start_record(), report("t.py::ok", "call", "passed"),
+            {"kind": "session", "v": 1, "exitstatus": "0"},
+        ))
+
+        assert result.error is not None and "exitstatus" in result.error
+
+    def test_a_boolean_where_an_integer_belongs_is_refused(self, tmp_path):
+        """bool subclasses int, so True would otherwise arrive as exitstatus 1."""
+        result = parse(tmp_path, jsonl(
+            start_record(), report("t.py::ok", "call", "passed"),
+            {"kind": "session", "v": 1, "exitstatus": True},
+        ))
+
+        assert result.error is not None and "exitstatus" in result.error
+
+    def test_a_non_boolean_xfail_is_refused(self, tmp_path):
+        """`xfail` decides which bucket a skip lands in, and therefore PASSED
+        from FAILED. A truthy `"no"` must not slip through as True."""
+        result = parse(tmp_path, jsonl(*self.good(
+            {"kind": "test", "nodeid": "t.py::x", "when": "call", "outcome": "skipped", "xfail": "no"}
+        )))
+
+        assert result.error is not None and "xfail" in result.error
+
+    def test_a_start_record_without_a_version_is_refused(self, tmp_path):
+        """The version gate used to allow None through explicitly, so a record
+        with no `v` passed a check whose whole job is refusing wrong ones."""
+        result = parse(tmp_path, jsonl(
+            {"kind": "start"}, report("t.py::ok", "call", "passed"), session_record(0),
+        ))
+
+        assert result.error is not None and "v" in result.error
+
+    def test_an_unknown_record_kind_is_ignored(self, tmp_path):
+        """Forward compatibility, and the reason validation is per-kind rather
+        than whole-file: the plugin must be able to add a record type without
+        breaking a host that predates it."""
+        result = parse(tmp_path, jsonl(*self.good({"kind": "future", "whatever": [1, 2]})))
+
+        assert result.error is None
+        assert result.passed == ("t.py::ok",)
+
+    def test_a_files_record_with_non_string_members_does_not_crash_the_sort(self, tmp_path):
+        """sorted() raises on mixed types. A stray member is not evidence the
+        run is untrustworthy, so these are filtered rather than refused."""
+        result = parse(tmp_path, jsonl(*self.good(
+            {"kind": "files", "collected": ["a.py", 7], "conftests": ["conftest.py"]}
+        )))
+
+        assert result.error is None
+        assert result.collected_files == ("a.py",)
+
+    def test_an_unreadable_report_is_unscoreable(self, tmp_path, monkeypatch):
+        """stat and open can race the sandbox still deleting the file."""
+        path = write(tmp_path, jsonl(*self.good()))
+
+        def boom(self, *args, **kwargs):
+            raise OSError("device disappeared")
+
+        monkeypatch.setattr(Path, "open", boom)
+        result = parse_report(path, run(0), elapsed=1.0)
+
+        assert result.error is not None and "could not be parsed" in result.error
+
+    def test_an_unexpected_error_is_reported_as_unscoreable_not_raised(self, tmp_path, monkeypatch):
+        """Without this the outer guard is untested code, and the contract in
+        parse_report's docstring stays a claim rather than a property."""
+        monkeypatch.setattr(
+            "verify.report._read_records", lambda path: (_ for _ in ()).throw(RuntimeError("boom"))
+        )
+        path = write(tmp_path, jsonl(*self.good()))
+
+        result = parse_report(path, run(0), elapsed=1.0)
+
+        assert result.error is not None
+        assert "RuntimeError" in result.error and "boom" in result.error
 
 
 class TestOversizedReport:

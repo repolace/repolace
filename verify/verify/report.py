@@ -114,13 +114,61 @@ def _read_records(path: Path) -> tuple[list[dict], str | None]:
             if not line.strip():
                 continue
             try:
-                records.append(json.loads(line))
+                record = json.loads(line)
             except json.JSONDecodeError:
                 pending = (number, line)
+                continue
+            if not isinstance(record, dict) or not isinstance(record.get("kind"), str):
+                # Well-formed JSON that is not a record: a bare `3`, `null`,
+                # `[]`, or an object with no `kind`. Treated exactly like
+                # corruption rather than skipped, for the same reason the
+                # docstring gives above -- a forged report must not be able to
+                # hide behind a bare scalar any more than behind a syntax error.
+                return records, f"line {number} is not a report record"
+            records.append(record)
 
     if pending is not None:
         log.warning("verify.report.truncated_tail", line=pending[0])
     return records, None
+
+
+#: Required key -> expected type, per record kind. A record of a *known* kind
+#: that does not match is refused rather than skipped: this file is written by
+#: untrusted code, and a record we cannot read is a report we cannot trust.
+#: Validating once here is what lets everything downstream read these keys by
+#: bracket, so the reading code stays about pytest semantics rather than about
+#: defensive access -- scattering `.get()` would turn crashes into wrong answers,
+#: which is strictly worse.
+#:
+#: An unknown `kind` is ignored entirely, so the plugin can add a record type
+#: without breaking a host that predates it.
+_REQUIRED: dict[str, dict[str, type]] = {
+    "test": {"nodeid": str, "when": str, "outcome": str},
+    "collect": {"nodeid": str, "outcome": str},
+    "session": {"v": int, "exitstatus": int},
+    "start": {"v": int},
+    "files": {"collected": list, "conftests": list},
+}
+
+#: Present-or-absent, but typed when present. `xfail` decides which bucket a
+#: skipped node lands in, and therefore PASSED from FAILED, so a truthy `"no"`
+#: must not slip through as True.
+_OPTIONAL: dict[str, dict[str, type]] = {"test": {"xfail": bool}}
+
+
+def _malformed(record: dict) -> str | None:
+    """Why this record cannot be read, or None if it can."""
+    kind = record["kind"]
+    for key, expected in _REQUIRED.get(kind, {}).items():
+        value = record.get(key)
+        # bool is a subclass of int, so `True` would otherwise satisfy an int
+        # check and arrive as exitstatus 1.
+        if not isinstance(value, expected) or (expected is int and isinstance(value, bool)):
+            return f"{kind} record has a missing or malformed {key!r}"
+    for key, expected in _OPTIONAL.get(kind, {}).items():
+        if key in record and not isinstance(record[key], expected):
+            return f"{kind} record has a malformed {key!r}"
+    return None
 
 
 def _exitstatus_disagrees(
@@ -140,7 +188,31 @@ def _exitstatus_disagrees(
 
 
 def parse_report(path: Path, process: ProcessResult, elapsed: float) -> SuiteResult:
-    """Build a SuiteResult. Never raises for a bad report -- it sets `error`."""
+    """Build a SuiteResult. Never raises for a bad report -- it sets `error`.
+
+    The explicit checks in `_parse_report` are what *should* catch a bad report,
+    and each one names what it caught. This wrapper exists because the promise
+    in that first sentence is otherwise a claim rather than a property: the file
+    is written by untrusted code inside the sandbox, and one unanticipated shape
+    reaching this far would raise into the pipeline and turn a scoreable task
+    into a crash. It also covers the OSError paths -- `stat` and `open` racing a
+    file the sandbox is still deleting.
+
+    Logged at error level deliberately. A bug here must be visible as a bug, not
+    disappear into the unscoreable bucket alongside ordinary flakiness.
+    """
+    try:
+        return _parse_report(path, process, elapsed)
+    except Exception as exc:
+        log.error("verify.report.unexpected", path=str(path), exc_info=True)
+        return SuiteResult(
+            exit_code=process.returncode,
+            duration_seconds=round(elapsed, 3),
+            error=redact(f"verify: report could not be parsed ({type(exc).__name__}: {exc})"),
+        )
+
+
+def _parse_report(path: Path, process: ProcessResult, elapsed: float) -> SuiteResult:
     tail = redact(process.stdout.decode("utf-8", errors="replace"))[-_STDOUT_TAIL:]
     exit_code = process.returncode
     base = {"exit_code": exit_code, "duration_seconds": round(elapsed, 3), "stdout_tail": tail}
@@ -166,8 +238,16 @@ def parse_report(path: Path, process: ProcessResult, elapsed: float) -> SuiteRes
     if corruption:
         return unscoreable(corruption)
 
-    versions = {r.get("v") for r in records if r["kind"] in ("start", "session")}
-    if versions - {SCHEMA_VERSION, None}:
+    for record in records:
+        problem = _malformed(record)
+        if problem:
+            return unscoreable(problem)
+
+    # Every start/session record is now guaranteed an int `v`, so this cannot
+    # raise on a mixed None/int set -- and a record missing `v` entirely is
+    # refused above rather than passing the gate as None.
+    versions = {r["v"] for r in records if r["kind"] in ("start", "session")}
+    if versions - {SCHEMA_VERSION}:
         return unscoreable(f"report schema {sorted(versions)}, expected {SCHEMA_VERSION}")
 
     sessions = [r for r in records if r["kind"] == "session"]
@@ -192,8 +272,11 @@ def parse_report(path: Path, process: ProcessResult, elapsed: float) -> SuiteRes
     ))
 
     files = next((r for r in records if r["kind"] == "files"), {})
-    collected_files = tuple(sorted(files.get("collected", ())))
-    conftests = tuple(sorted(files.get("conftests", ())))
+    # The lists are guaranteed lists, but not lists *of strings*, and sorted()
+    # raises on mixed types. Filtering rather than refusing: a stray member is
+    # not evidence the run is untrustworthy, unlike a malformed record.
+    collected_files = tuple(sorted(p for p in files.get("collected", ()) if isinstance(p, str)))
+    conftests = tuple(sorted(p for p in files.get("conftests", ()) if isinstance(p, str)))
     start = next((r for r in records if r["kind"] == "start"), {})
     fingerprint = {
         "rootdir": start.get("rootdir"),
@@ -229,7 +312,7 @@ def parse_report(path: Path, process: ProcessResult, elapsed: float) -> SuiteRes
             f"collection failed for {len(collect_failures)} module(s) and no test ran", **sets
         )
 
-    mismatch = _exitstatus_disagrees(sessions[-1].get("exitstatus"), failed, collect_failures)
+    mismatch = _exitstatus_disagrees(sessions[-1]["exitstatus"], failed, collect_failures)
     if mismatch:
         # pytest's own exit status is produced by the process, the sets by the
         # records. They should agree, and a disagreement means the report does
