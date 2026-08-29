@@ -109,6 +109,31 @@ class TestDisqualifyingPaths:
         assert disqualifying_paths(["tests/expected.json"], baseline) == ("tests/expected.json",)
 
 
+class TestPathNormalisation:
+    """The seam between `is_test_path` and its caller.
+
+    `TestIsTestPath` above already asserts `is_test_path(".gitattributes") is
+    True`, and passed the whole time this was broken, because `is_test_path`
+    never sees the normalisation. Testing each side of a seam is not testing
+    the seam.
+    """
+
+    @pytest.mark.parametrize("path", [".gitattributes", ".coveragerc"])
+    def test_a_dotted_config_file_is_not_mangled_by_normalisation(self, path):
+        """`lstrip("./")` strips characters, so these became `gitattributes`
+        and `coveragerc` and matched no config name -- at the repo root only,
+        while the same file one directory down was caught."""
+        baseline = suite(collected_files=("tests/test_x.py",))
+
+        assert disqualifying_paths([path], baseline, baseline_files=(path,)) == (path,)
+
+    def test_a_leading_dot_slash_is_still_stripped(self):
+        """The behaviour the old code was reaching for, kept deliberately."""
+        baseline = suite(collected_files=("src/app.py",))
+
+        assert disqualifying_paths(["./src/app.py"], baseline) == ("./src/app.py",)
+
+
 class TestDecisionOrder:
     def test_a_test_edit_disqualifies_even_when_the_attempt_crashed(self):
         """The incentive bug, and the cheapest fix in the whole audit.

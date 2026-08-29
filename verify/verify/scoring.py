@@ -74,6 +74,30 @@ def is_test_path(path: str) -> bool:
     return name == "tests.py" or stem.startswith("test_") or stem.endswith("_test")
 
 
+def _normalise(path: str) -> str:
+    """Strip a leading `./` without eating the leading dot of a dotfile.
+
+    `lstrip("./")` strips *characters*, not a prefix: it turned
+    `.gitattributes` into `gitattributes` and `.coveragerc` into `coveragerc`,
+    so neither matched `_CONFIG_FILES` and both were freely editable at the repo
+    root -- while the same files one directory down were caught. Those are the
+    only two dotted entries in that set, and they are the two an agent most
+    wants: one changes the bytes checked out, the other turns off coverage
+    gates.
+
+    The existing unit test asserted `is_test_path(".gitattributes") is True` and
+    passed throughout, because `is_test_path` does not normalise. The bug lived
+    entirely in the seam between the two functions.
+
+    Nothing upstream is known to emit a `./` prefix -- neither
+    `git diff --name-only` nor pytest's `item.location[0]` does -- so this is
+    defensive. The mangling was not: it applied to every path unconditionally.
+    Note it does not resolve `..` either, so `src/../tests/test_x.py` matches
+    nothing and falls through to the heuristic; git does not emit that shape.
+    """
+    return path.removeprefix("./")
+
+
 def disqualifying_paths(
     changed_files: list[str] | tuple[str, ...],
     baseline: SuiteResult,
@@ -97,14 +121,14 @@ def disqualifying_paths(
     baseline and is never collected, but relaxing ``filterwarnings`` in it turns
     a real failure into a real pass.
     """
-    collected = {p.lstrip("./") for p in baseline.collected_files}
+    collected = {_normalise(p) for p in baseline.collected_files}
     conftests = {PurePosixPath(p).name for p in baseline.conftests}
     fixture_dirs = {str(PurePosixPath(p).parent) for p in collected}
-    existed = {p.lstrip("./") for p in baseline_files} if baseline_files is not None else None
+    existed = {_normalise(p) for p in baseline_files} if baseline_files is not None else None
 
     disqualified = []
     for path in changed_files:
-        normalised = path.lstrip("./")
+        normalised = _normalise(path)
         name = PurePosixPath(normalised).name
 
         if normalised in collected:
