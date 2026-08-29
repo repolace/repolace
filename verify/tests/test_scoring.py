@@ -109,6 +109,67 @@ class TestDisqualifyingPaths:
         assert disqualifying_paths(["tests/expected.json"], baseline) == ("tests/expected.json",)
 
 
+class TestFixtureEscape:
+    """Test infrastructure that defines no test of its own.
+
+    A helper module, a snapshot and a cassette are all never collected by
+    pytest and all present at baseline -- which is exactly the signature the
+    existence exemption keyed on, so it handed every one of them over.
+
+    The last two tests pin the *fix*, not the bug. Narrowing only the existence
+    exemption keeps them safe by construction -- `is_test_path` is False for
+    both, so neither reaches the exemption at all. They are here because the
+    obvious alternative shape, a new top-level "disqualify anything under a
+    collected directory" branch, fails both, and it is the shape someone
+    simplifying this later would reach for.
+    """
+
+    BASELINE = dict(collected_files=("tests/test_x.py",), conftests=())
+
+    def test_a_helper_beside_collected_tests_cannot_be_edited(self):
+        """Weaken `assert_matches` in tests/helpers.py and every assertion using
+        it goes green, with the diff touching no collected file."""
+        baseline = suite(**self.BASELINE)
+        changed = "tests/helpers.py"
+
+        assert disqualifying_paths([changed], baseline, baseline_files=(changed,)) == (changed,)
+
+    def test_a_snapshot_under_a_collected_test_tree_is_disqualified(self):
+        """One level below the collected file, so the `parent in fixture_dirs`
+        branch never sees it."""
+        baseline = suite(**self.BASELINE)
+        changed = "tests/__snapshots__/render.ambr"
+
+        assert disqualifying_paths([changed], baseline, baseline_files=(changed,)) == (changed,)
+
+    def test_a_recorded_cassette_under_a_collected_test_tree_is_disqualified(self):
+        baseline = suite(**self.BASELINE)
+        changed = "tests/cassettes/api.yaml"
+
+        assert disqualifying_paths([changed], baseline, baseline_files=(changed,)) == (changed,)
+
+    def test_a_django_style_app_module_beside_a_collected_tests_py_is_not_disqualified(self):
+        """`myapp/models.py` sits beside `myapp/tests.py` in every Django
+        project. Safe here because `is_test_path` is False for it, so the
+        exemption is never consulted -- but a rule keyed on the collected
+        directory alone would disqualify it and fail every honest fix."""
+        baseline = suite(collected_files=("myapp/tests.py",))
+
+        assert disqualifying_paths(
+            ["myapp/models.py"], baseline, baseline_files=("myapp/models.py", "myapp/tests.py")
+        ) == ()
+
+    def test_tests_at_the_repo_root_do_not_disqualify_the_whole_project(self):
+        """The repo root is an ancestor of everything, so a tree rule that
+        admitted it would put every source file off-limits. Dropped from the
+        collected-dir set for that reason, and pinned here."""
+        baseline = suite(collected_files=("test_main.py",))
+
+        assert disqualifying_paths(
+            ["src/app.py"], baseline, baseline_files=("src/app.py", "test_main.py")
+        ) == ()
+
+
 class TestPathNormalisation:
     """The seam between `is_test_path` and its caller.
 

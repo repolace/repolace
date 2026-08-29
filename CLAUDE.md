@@ -344,6 +344,14 @@ The report parser now separates `xfailed` from `skipped`, using the `xfail` flag
 
 `task_test_runs.xfailed` (migration 0010) exists for the reason 0009 gives for the sets it added: a dropped set cannot be recovered, and "was this an xfail or an ordinary skip" is exactly the question this revision had to ask.
 
+**Amendment (the exemption was too wide).** Point 4, "no test edits", is enforced by `disqualifying_paths`, which combines what pytest actually collected with a path heuristic and then *exempts* a heuristic match that existed at the base commit — so a shipped module like `django/test/client.py` is not mistaken for a test. That exemption was exempting far too much. `tests/helpers.py`, `tests/__snapshots__/*` and `tests/cassettes/*` all existed at baseline and pytest collects tests from none of them, which is exactly the signature the exemption keyed on — so all three were freely editable, and editing a golden file or a recorded cassette is the cheapest fake fix there is. `_FIXTURE_DIR_PARTS` was protecting nothing whenever `baseline_files` was supplied.
+
+The exemption now applies only when no *test-named ancestor directory of the file* is one pytest collected tests from. `django/test/client.py` is readmitted (nothing was collected at or under `django/test`); the three above are refused.
+
+Two boundaries in that rule are deliberate, and loosening either breaks honest work rather than catching cheating: the directory must be **test-named**, or `myapp/models.py` beside Django's `myapp/tests.py` would be disqualified; and the repository root is excluded from the collected-directory set, because it is an ancestor of everything. Narrowing the *exemption* rather than adding a new disqualifying branch keeps both safe by construction — `is_test_path` is False for those two paths, so they never reach the exemption at all — but the tests pin them anyway, because the alternative shape is what someone simplifying this later would reach for.
+
+The acknowledged gap: a repository whose tests sit at the top level gets no tree rule, only the heuristic and the collected-file set.
+
 **The exception is the hard part.** "Unless the test itself was wrong" is not machine-checkable — an agent that cannot pass a test can always claim the test is at fault, and that is precisely the loophole it will find. An unfalsifiable escape hatch would quietly destroy the credibility of the benchmark number, which is the project's whole differentiation claim.
 
 So the exception is a **separately tracked outcome, never a silent pass**:

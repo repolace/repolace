@@ -98,6 +98,35 @@ def _normalise(path: str) -> str:
     return path.removeprefix("./")
 
 
+def _in_a_collected_test_tree(path: str, collected_dirs: set[PurePosixPath]) -> bool:
+    """Is this file under a *test-named* directory pytest collected tests from?
+
+    This is what narrows the existence exemption below. Two boundaries, and both
+    are load-bearing in the direction of not failing honest work:
+
+    * **The directory must be test-named.** `myapp/models.py` sits beside a
+      collected `myapp/tests.py` in every Django project ever written, and
+      disqualifying it would fail every honest fix in such a repo.
+    * **pytest must actually have collected from it, or from below it.**
+      `django/test` is test-named and pytest collects nothing there -- that is
+      precisely the case the exemption exists for.
+
+    What is left is what the exemption was wrongly covering: `tests/helpers.py`,
+    `tests/__snapshots__/render.ambr`, `tests/cassettes/api.yaml`. All are test
+    infrastructure that defines no test of its own, so pytest never lists them;
+    all existed at baseline, because a fixture by definition does; and editing a
+    golden file or a recorded cassette is the cheapest possible fake fix.
+    """
+    for ancestor in PurePosixPath(path).parents:
+        if ancestor == PurePosixPath("."):
+            continue
+        if ancestor.name not in _TEST_DIR_PARTS and ancestor.name not in _FIXTURE_DIR_PARTS:
+            continue
+        if any(d == ancestor or ancestor in d.parents for d in collected_dirs):
+            return True
+    return False
+
+
 def disqualifying_paths(
     changed_files: list[str] | tuple[str, ...],
     baseline: SuiteResult,
@@ -125,6 +154,17 @@ def disqualifying_paths(
     conftests = {PurePosixPath(p).name for p in baseline.conftests}
     fixture_dirs = {str(PurePosixPath(p).parent) for p in collected}
     existed = {_normalise(p) for p in baseline_files} if baseline_files is not None else None
+    # `.` is dropped defensively. It cannot over-match as the rule is written --
+    # the ancestor loop skips `.`, and a non-`.` ancestor never matches it -- but
+    # a repository whose tests sit at the top level would put the repo root here,
+    # and the root is an ancestor of everything. Any future loosening of the
+    # match would then disqualify every source file in the project. The cost of
+    # dropping it is that such a repo gets no tree rule at all, only the
+    # heuristic and the collected-file set: a real gap, acknowledged not fixed.
+    collected_dirs = {
+        parent for parent in (PurePosixPath(p).parent for p in collected)
+        if parent != PurePosixPath(".")
+    }
 
     disqualified = []
     for path in changed_files:
@@ -142,9 +182,18 @@ def disqualifying_paths(
             # cassette, which is a test in everything but extension.
             disqualified.append(path)
         elif is_test_path(normalised):
-            # Only when we cannot prove otherwise. If the file existed at
-            # baseline and pytest ignored it, it is not test infrastructure.
-            if existed is not None and normalised in existed:
+            # Only when we cannot prove otherwise. A file that existed at
+            # baseline and that pytest ignored is usually not test
+            # infrastructure -- unless it sits under a test-named directory
+            # pytest *did* collect from, which is what a helper module, a
+            # snapshot and a cassette all look like. Those existed at baseline
+            # and are never collected, so existence alone exonerated exactly
+            # the files this rule most needs to catch.
+            if (
+                existed is not None
+                and normalised in existed
+                and not _in_a_collected_test_tree(normalised, collected_dirs)
+            ):
                 continue
             disqualified.append(path)
     return tuple(sorted(set(disqualified)))
