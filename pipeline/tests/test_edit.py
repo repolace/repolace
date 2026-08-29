@@ -182,3 +182,70 @@ class TestPullRequestText:
 
     def test_commit_message_says_not_a_fix(self):
         assert "Not a fix" in commit_message(request())
+
+
+class TestApplyStubEditConfinement:
+    """`file_path` is untrusted input to a filesystem write.
+
+    Today it comes from a `code_chunks` row, which the indexer wrote -- so the
+    stub cannot actually be steered. These tests are for the shape of the
+    function, because the real Editor writes model-chosen paths, and at that
+    point `repo_path / file_path` becomes a one-string traversal into `.git`.
+    """
+
+    def write_source(self, tmp_path):
+        path = tmp_path / "src" / "app.py"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(SOURCE)
+        return path
+
+    def test_an_absolute_retrieved_path_is_refused(self, tmp_path):
+        """pathlib discards the left operand entirely for an absolute right
+        one, so `repo_path / "/etc/passwd"` *is* `/etc/passwd`. No `..`, nothing
+        in the string that looks wrong."""
+        self.write_source(tmp_path)
+        victim = tmp_path / "victim.py"
+        victim.write_text("UNTOUCHED = True\n")
+
+        with pytest.raises(ValueError, match="not usable in this checkout"):
+            apply_stub_edit(tmp_path / "repo", request(chunk(file_path=str(victim))))
+
+        assert victim.read_text() == "UNTOUCHED = True\n"
+
+    def test_a_retrieved_path_that_climbs_out_is_refused(self, tmp_path):
+        repo = tmp_path / "repo"
+        (repo / "src").mkdir(parents=True)
+        (repo / "src" / "app.py").write_text(SOURCE)
+        victim = tmp_path / "victim.py"
+        victim.write_text("UNTOUCHED = True\n")
+
+        with pytest.raises(ValueError, match="not usable in this checkout"):
+            apply_stub_edit(repo, request(chunk(file_path="../victim.py")))
+
+        assert victim.read_text() == "UNTOUCHED = True\n"
+
+    def test_the_editor_will_not_write_through_a_symlink(self, tmp_path):
+        repo = tmp_path / "repo"
+        (repo / "src").mkdir(parents=True)
+        victim = tmp_path / "victim.py"
+        victim.write_text("UNTOUCHED = True\n")
+        (repo / "src" / "app.py").symlink_to(victim)
+
+        with pytest.raises(ValueError, match="not usable in this checkout"):
+            apply_stub_edit(repo, request(chunk(file_path="src/app.py")))
+
+        assert victim.read_text() == "UNTOUCHED = True\n"
+
+    def test_the_editor_refuses_to_write_into_dot_git(self, tmp_path):
+        """The one that becomes host code execution: a post-commit hook fires on
+        the very next `record_attempt`, as the worker user, with no sandbox
+        involved at any point."""
+        repo = tmp_path / "repo"
+        hooks = repo / ".git" / "hooks"
+        hooks.mkdir(parents=True)
+        (hooks / "post-commit").write_text("#!/bin/sh\n")
+
+        with pytest.raises(ValueError, match="refusing to edit inside .git"):
+            apply_stub_edit(repo, request(chunk(file_path=".git/hooks/post-commit")))
+
+        assert (hooks / "post-commit").read_text() == "#!/bin/sh\n"

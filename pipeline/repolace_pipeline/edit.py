@@ -18,6 +18,8 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
+from repolace_shared.paths import PathEscapesRoot, resolve_within
+
 from repolace_pipeline.context import RetrievedChunk
 
 MARKER_RULE = "-" * 74
@@ -85,7 +87,23 @@ def apply_stub_edit(repo_path: Path, request: StubEditRequest) -> Path:
     indentation so the result reads as deliberate rather than as damage.
     """
     top = request.top
-    target = repo_path / top.file_path
+    try:
+        target = resolve_within(repo_path, top.file_path)
+    except PathEscapesRoot as exc:
+        # `repo_path / top.file_path` is not confinement: pathlib discards
+        # repo_path outright for an absolute file_path, and a symlink walks out
+        # with nothing in the string to notice. file_path comes from a database
+        # row, and once the real Editor exists it comes from the model.
+        raise ValueError(f"retrieved path is not usable in this checkout: {exc}") from exc
+    if ".git" in target.relative_to(repo_path.resolve()).parts:
+        # Protection the *stub* editor does not need -- its path came from a row
+        # it wrote itself -- and the real Editor will. `.git` sits inside the
+        # tree the editor writes to, and git treats parts of it as executable
+        # configuration: an Editor that writes .git/hooks/post-commit gets host
+        # code execution on the very next `record_attempt`. That is the confused
+        # deputy re-entering through the editor rather than the sandbox, and
+        # withholding .git from the sandbox says nothing about it.
+        raise ValueError(f"refusing to edit inside .git: {top.file_path}")
     if not target.is_file():
         # Retrieval returns whatever is indexed; the index can outlive a file
         # that a later commit deleted.

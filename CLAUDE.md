@@ -286,6 +286,17 @@ This does **not** cover the checkout's own `.git/config`, which the sandbox *can
 
 **The lesson worth carrying:** *"the sandbox never receives `.git`" bounds what the sandbox can plant, not what the host will read.* Every host-side git invocation is still a confused deputy for whatever configuration the host itself supplies.
 
+### A third route into the same class: paths the host chooses to follow
+
+`.git` sitting outside the sandbox does not help when the *host* is handed a path and follows it. Two routes were live and are now closed, and neither involves the sandbox or `.git` at all:
+
+- **Arbitrary host file read.** `retrieval.index` walked the checkout with `os.walk` and read any `.py` it found. `os.walk` does not descend a symlinked *directory*, but it does list a symlinked *file*, and `read_text` resolves it. git stores a symlink as an ordinary mode-`120000` entry and clones it back verbatim, so a repo committing `settings.py -> /home/worker/.env` put a host file into `code_chunks.content` — from where it is retrievable and, in Phase 2, goes into an LLM prompt at a third-party API. Reproduced. Note the *incremental* path is the live one and never went through the walk at all: `_incremental_index` builds `repo_path / rel` straight from `git diff --name-only`.
+- **Arbitrary host file write.** `apply_stub_edit` did `repo_path / file_path`. Under pathlib semantics that discards `repo_path` entirely for an absolute `file_path` — `Path("/repo") / "/etc/cron.d/x"` *is* `/etc/cron.d/x`, with no `..` and nothing in the string that looks wrong — and follows a symlink for a relative one.
+
+**The rule now: every path that reaches the filesystem from a database row, a diff, or a model goes through `repolace_shared.paths.resolve_within`, and a symlink is refused rather than followed.** Refusing rather than following matters even when the target happens to land inside the tree: following it would still be letting the repository choose where a later read or write goes.
+
+The Editor additionally refuses anything under `.git`. That is protection the *stub* editor does not need — its path came from a row it wrote itself — and the real Editor will: `.git/hooks/post-commit` is one model-chosen string away from host code execution on the next `record_attempt`. Deliberate, and worth keeping when the stub is replaced.
+
 **Decided: the sandbox never receives `.git`.**
 
 - **In:** source files only, copied out of the checkout without `.git`. No credentials, no remote, no network during the test run.

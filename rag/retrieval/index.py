@@ -10,11 +10,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from repolace_shared.db.models import CodeChunk, RegisteredRepo
 from repolace_shared.git.repo import UNTRUSTED_TREE_CONFIG_ARGS, sanitized_git_env
+from repolace_shared.paths import PathEscapesRoot, resolve_within
 from retrieval.chunker import Chunk, chunk_python_file
 from retrieval.config import EMBED_BATCH_SIZE
 from retrieval.embed import embed_texts
 
 log = structlog.get_logger()
+
+#: Generous for real source; a file past it is generated or hostile, and
+#: either way is not what retrieval is for.
+MAX_SOURCE_BYTES = 2 * 1024 * 1024
 
 _IGNORED_DIR_NAMES = frozenset(
     {
@@ -62,10 +67,25 @@ def find_python_files(repo_path: Path) -> list[Path]:
     """
     found: list[Path] = []
     total_files = 0
-    for dirpath, dirnames, filenames in os.walk(repo_path):
+    # followlinks=False is the default, but state it: it is the half of the
+    # symlink defence that lives here, and a later "tidy-up" that flipped it
+    # would reopen the hole silently.
+    for dirpath, dirnames, filenames in os.walk(repo_path, followlinks=False):
         dirnames[:] = [d for d in dirnames if d not in _IGNORED_DIR_NAMES]
         total_files += len(filenames)
-        found.extend(Path(dirpath) / name for name in filenames if name.endswith(".py"))
+        for name in filenames:
+            if not name.endswith(".py"):
+                continue
+            candidate = Path(dirpath) / name
+            if candidate.is_symlink():
+                # os.walk already refuses to descend a symlinked *directory*;
+                # a symlinked file is the half it does not cover, and that half
+                # is enough: a tracked `config.py -> /home/worker/.env` puts a
+                # host file into code_chunks.content, from where it is
+                # retrievable and lands in an LLM prompt.
+                log.warning("rag.index.symlink_skipped", file_path=str(candidate))
+                continue
+            found.append(candidate)
 
     if not found:
         log.warning(
@@ -78,8 +98,35 @@ def find_python_files(repo_path: Path) -> list[Path]:
 
 
 def chunk_file(repo_path: Path, file_path: Path) -> list[Chunk]:
+    """Read one file and chunk it, refusing anything that leaves the checkout.
+
+    The containment check matters here and not only in `find_python_files`,
+    because the incremental path never goes through that function:
+    `_incremental_index` builds `repo_path / rel` straight from
+    `git diff --name-only`, and git tracks a symlink as an ordinary mode-120000
+    entry. The incremental path is also the *common* path once a repo has been
+    indexed once, so this is the live one.
+
+    `relative_path` stays **lexical**, deliberately. It is the join key
+    `_incremental_index` deletes on, and it has to equal the string git emitted;
+    resolving it would silently stop matching stored rows for any repo reached
+    through a symlinked directory. Containment is checked separately, on the
+    resolved path.
+    """
     relative_path = str(file_path.relative_to(repo_path))
     try:
+        resolve_within(repo_path, relative_path)
+    except (PathEscapesRoot, OSError) as exc:
+        log.warning("rag.index.outside_repo", file_path=relative_path, error=str(exc))
+        return []
+    try:
+        size = file_path.stat().st_size
+        if size > MAX_SOURCE_BYTES:
+            # The tree is untrusted, and read_text has no bound of its own: a
+            # generated multi-hundred-megabyte .py would go into memory whole
+            # and then into tree-sitter.
+            log.warning("rag.index.oversized_file", file_path=relative_path, size=size)
+            return []
         source = file_path.read_text(encoding="utf-8", errors="ignore")
     except OSError as exc:
         # One unreadable file (permissions, broken symlink) must not abort the
