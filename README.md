@@ -4,7 +4,7 @@ An autonomous software-engineering agent platform. A user registers a GitHub rep
 
 ## Status
 
-**Phase 0–1 (active development).** The foundational infrastructure and the core loop components are built; the full end-to-end pipeline is not yet wired together.
+**Phase 0–1 (active development).** The pipeline runs end to end — clone, index, baseline test run, edit, verify, score, open PR — but the edit step is a deterministic stub, not a model. Replacing it with a real agent is the remaining Phase 1 work.
 
 | Layer | State |
 |---|---|
@@ -13,12 +13,13 @@ An autonomous software-engineering agent platform. A user registers a GitHub rep
 | GitHub App integration | Done — installation events, repo auto-registration, issue fetching |
 | Database schema | Done — Alembic migrations, ORM models for installations, repos, tasks, test runs, code chunks |
 | RAG layer | Done — Python AST chunking via tree-sitter, 4 embedding strategies, pgvector HNSW + full-text hybrid retrieval |
-| Task pipeline | Done — task enqueue endpoint, checkout lifecycle (one ephemeral clone per task), per-task git workspace |
-| Verify sandbox | Done — rootless locked-down Docker container, byte-identical tree export (no `.git`), pytest report parsing, scoring against baseline, test-edit tracking |
-| Git hardening | Done — credential helper scoped to host, `.git/config`/`.git/hooks` pinned, path traversal guards, symlink refusal |
-| Agents (planner/editor/reviewer/debugger) | Not started — `agents/` package exists but is empty |
-| LiteLLM gateway | Not started — `gateway/` package exists but is empty |
-| Celery worker dispatch | Scaffolded — `worker/` service stands up but pipeline runs inline in the API process for now |
+| Task pipeline | Done — task enqueue endpoint, `repolace-run-task` CLI, checkout lifecycle (one ephemeral clone per task), per-task git workspace |
+| Verify sandbox | Done — rootless locked-down Docker container from a prepared per-repo image, byte-identical tree export (no `.git`), pytest report parsing, baseline + attempt scored into `tasks.outcome`, test-edit tracking |
+| Git hardening | Done — credential helper scoped to host, hooks and fsmonitor disabled, global/system git config pinned to `/dev/null`, path traversal guards, symlink refusal |
+| Agents (planner/editor/reviewer/debugger) | Not started — `agents/` package exists but is empty; the edit step is a stub (`pipeline/repolace_pipeline/edit.py`) |
+| LiteLLM gateway | Not started — `gateway/` package exists but is empty. Phase 1, so cost is recorded from the first benchmark run |
+| Retry loop | Not started — one edit attempt per task |
+| Celery worker dispatch | Scaffolded — `worker/` service stands up but is unused; tasks run through the `repolace-run-task` CLI until Phase 2 |
 | Eval harness | Scaffolded — `eval/harness/` exists, not yet wired to run benchmark repos |
 | Observability (OTel + Grafana) | Not started — structured JSON logging with task IDs only |
 | UI | Not started |
@@ -51,7 +52,7 @@ User picks issue + target branch
 └──────────────┘
 ```
 
-**Phase 1 runs synchronously inline in the API process** — one Docker sandbox, no queue dispatch. The Celery worker and RabbitMQ containers exist from Phase 0 but are not used for pipeline execution until Phase 2.
+**Phase 1 runs synchronously, one task per process.** `POST /repos/{id}/tasks` only inserts a queued row; the pipeline runs separately through the `repolace-run-task` CLI on the host, which keeps the retrieval stack and torch out of the API image. The Celery worker and RabbitMQ containers exist from Phase 0 but are not used for pipeline execution until Phase 2, when the worker will call the same `run_task`.
 
 ## Monorepo structure
 
@@ -92,7 +93,7 @@ Each workspace package has a distinct top-level import (`repolace_api`, `repolac
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) (package manager)
-- Docker and Docker Compose
+- Docker and Docker Compose, plus **rootless** Docker for the Verify sandbox (`docker-rootless-extras`, `systemctl --user enable --now docker`) with cgroup v2 delegation of `cpu`, `memory` and `pids` — without delegation the sandbox's resource caps are silently ignored
 - A GitHub App (for repo registration)
 
 ### Install dependencies
@@ -126,17 +127,38 @@ uv run alembic upgrade head
 uv run --project api uvicorn repolace_api.main:app --reload --port 8000
 ```
 
+### Point Docker at the rootless daemon
+
+```bash
+export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock
+```
+
+This must be a real environment variable. A `DOCKER_HOST` line in `.env` is read into the settings object, never into `os.environ`, so the sandbox would silently run against the rootful socket.
+
+### Run a task
+
+```bash
+# Queue it (returns the task id)
+curl -X POST localhost:8000/repos/<repo_id>/tasks \
+  -H 'content-type: application/json' \
+  -d '{"issue_number": 42, "target_branch": "main"}'
+
+# Run it
+uv run --all-packages repolace-run-task <task_id>
+```
+
+The task runs the repo's suite at the base commit, applies the edit, runs it again, and scores the two. A PR is opened only when the outcome is `passed`, unless the task was queued with `"open_pr_on_failure": true`. Until the real agent lands the edit is a stub, so expect that flag to be needed to see a PR.
+
 ### Run tests
 
 ```bash
-# Unit tests (no external dependencies)
-uv run pytest rag/tests shared/tests pipeline/tests verify/tests
+uv run --all-packages pytest
+```
 
-# Database-backed tests (requires running Postgres)
-uv run pytest -m db
+Database-backed (`-m db`) and Docker sandbox (`-m docker`) tests skip when Postgres or the Docker daemon is unreachable. To make a missing dependency fail instead of skip, which is what you want before merging:
 
-# Docker sandbox tests (requires running Docker daemon)
-uv run pytest -m docker
+```bash
+REPOLACE_TEST_DB_REQUIRED=1 REPOLACE_TEST_DOCKER_REQUIRED=1 uv run --all-packages pytest
 ```
 
 ## Index freshness
@@ -156,13 +178,13 @@ When a task starts, repolace checks the repo's `indexed_commit_sha` against the 
 - Host code execution via `.git/hooks`
 - Filter/attribute-based attacks from tracked `.gitattributes`
 
-**Git runs in a sanitized environment** — `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM` pinned to `/dev/null`, credential helper scoped to the expected host, `.git/config` pinned to `/dev/null`.
+**Git runs in a sanitized environment** — `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM` pinned to `/dev/null`, an allowlisted environment, hooks and fsmonitor disabled on every invocation, and a credential helper that releases the token only over `https` to the expected host. The checkout's own `.git/config` is not pinned; the sandbox never receives it, and the export reads blobs directly so no filter or attribute it names ever runs.
 
 ## What comes next
 
-**Phase 1 completion:** Wire the single-agent loop end-to-end and run the benchmark (15–20 hand-picked Python issues, tracked pass/fail/cost/latency).
+**Phase 1 completion:** LiteLLM gateway, a real single agent in place of the stub editor, a bounded retry loop, and the benchmark (15–20 hand-picked Python issues, tracked pass/fail/cost/latency). Benchmark repos must contain no tracked symlinks or submodules — the export refuses both.
 
-**Phase 2:** Split into specialized agents (planner/editor/reviewer/debugger), async queue dispatch, merge-conflict resolution sub-loop, LiteLLM gateway, basic UI.
+**Phase 2:** Split into specialized agents (planner/editor/reviewer/debugger), async queue dispatch, merge-conflict resolution sub-loop, basic UI.
 
 **Phase 3:** Full OpenTelemetry instrumentation, Grafana stack, expandable benchmark.
 
