@@ -10,6 +10,7 @@ copies are gone; this is the single definition.
 import asyncio
 import functools
 import os
+import re
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -45,7 +46,71 @@ REQUIRE_DB_ENV_VAR = "REPOLACE_TEST_DB_REQUIRED"
 #: worst way for them to look. Parallel git worktrees each set their own suffix
 #: (`REPOLACE_TEST_DB_SUFFIX=_test_<stream>`); the default is unchanged, so a
 #: single checkout behaves exactly as it did before.
-TEST_DB_SUFFIX = os.environ.get("REPOLACE_TEST_DB_SUFFIX", "_test")
+#:
+#: Validated at import (see `_validated_suffix`), because an environment
+#: variable can be *set but empty* -- `export X=`, a CI `${{ vars.UNSET }}`, a
+#: wrapper script forwarding `$STREAM` -- and `os.environ.get(name, default)`
+#: returns "" for that rather than the default. An empty suffix makes the "test"
+#: database the development database, and `db_session` TRUNCATEs it before every
+#: test. The old constant made that impossible; this puts the guarantee back.
+SUFFIX_ENV_VAR = "REPOLACE_TEST_DB_SUFFIX"
+_SUFFIX_RULE = r"_[a-z0-9_]{1,32}"
+#: Postgres identifiers are 63 *bytes*, and anything longer is silently
+#: truncated -- in CREATE DATABASE and again in the connection startup packet --
+#: so two suffixes that differ only after byte 63 would name the same database
+#: with no error at all.
+_POSTGRES_IDENTIFIER_BYTES = 63
+#: `shared/tests/test_migrations.py` derives its scratch database as
+#: `<test database>_migrations`, so the budget has to leave room for it.
+_MIGRATIONS_SCRATCH_SUFFIX = "_migrations"
+
+
+def _validated_suffix(raw: str) -> str:
+    """The suffix, or a UsageError naming the variable and the rule it broke.
+
+    A leading underscore and a closed character set, not a blocklist: the value
+    is spliced into a quoted identifier (`CREATE DATABASE "..."`, where a `"`
+    breaks out) and into an unquoted DSN (where `?`, `#` and `/` start a query
+    string or path and silently connect somewhere else). Lowercase only because
+    Postgres folds unquoted identifiers, so `_A` and `_a` must not be two names
+    for one database.
+    """
+    if re.fullmatch(_SUFFIX_RULE, raw) is None:
+        raise pytest.UsageError(
+            f"{SUFFIX_ENV_VAR}={raw!r} is not a valid test-database suffix: it must match "
+            f"{_SUFFIX_RULE} (an underscore, then 1-32 of a-z, 0-9 or _). An empty value is "
+            f"refused on purpose -- it would make the test database the development "
+            f"database, which db_session TRUNCATEs. Unset the variable to get '_test'."
+        )
+    return raw
+
+
+def _test_database_name(dev_database: str | None, suffix: str) -> str:
+    """The test database's name, refusing any that is not provably not the dev one.
+
+    The suffix has already been validated, so these checks should be
+    unreachable -- which is exactly why they are cheap to keep: the cost of
+    being wrong is truncating the development database.
+    """
+    if not dev_database:
+        raise pytest.UsageError("DATABASE_URL names no database, so there is nothing to derive a test database from")
+    name = f"{dev_database}{suffix}"
+    if name == dev_database:
+        raise pytest.UsageError(
+            f"the test database would be the development database ({dev_database!r}); "
+            f"db_session TRUNCATEs every table, so refusing to continue"
+        )
+    longest = f"{name}{_MIGRATIONS_SCRATCH_SUFFIX}"
+    if len(longest.encode()) > _POSTGRES_IDENTIFIER_BYTES:
+        raise pytest.UsageError(
+            f"{longest!r} is {len(longest.encode())} bytes; Postgres truncates identifiers at "
+            f"{_POSTGRES_IDENTIFIER_BYTES}, so this suffix could silently share a database with "
+            f"another one. Use a shorter {SUFFIX_ENV_VAR}."
+        )
+    return name
+
+
+TEST_DB_SUFFIX = _validated_suffix(os.environ.get(SUFFIX_ENV_VAR, "_test"))
 
 
 def _skip_or_fail(reason: str, required_env_var: str = REQUIRE_DB_ENV_VAR) -> None:
@@ -147,7 +212,7 @@ def postgres_url() -> Iterator[str]:
     except ValidationError:
         _skip_or_fail("no database configuration (DATABASE_URL unset)")
 
-    test_url = dev_url.set(database=f"{dev_url.database}{TEST_DB_SUFFIX}")
+    test_url = dev_url.set(database=_test_database_name(dev_url.database, TEST_DB_SUFFIX))
     admin_dsn = dev_url.render_as_string(hide_password=False).replace("+asyncpg", "")
 
     try:
