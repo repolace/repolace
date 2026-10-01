@@ -2489,13 +2489,17 @@ version = "0.0.1"
 source = { editable = "agents" }
 dependencies = [
     { name = "langgraph" },
+    { name = "repolace-gateway" },
     { name = "repolace-shared" },
+    { name = "repolace-verify" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "langgraph", specifier = ">=0.2" },
+    { name = "repolace-gateway", editable = "gateway" },
     { name = "repolace-shared", editable = "shared" },
+    { name = "repolace-verify", editable = "verify" },
 ]
 
 [[package]]
@@ -2522,11 +2526,23 @@ name = "repolace-eval"
 version = "0.0.1"
 source = { editable = "eval" }
 dependencies = [
+    { name = "httpx" },
+    { name = "repolace-rag" },
     { name = "repolace-shared" },
+    { name = "repolace-verify" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "structlog" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "repolace-shared", editable = "shared" }]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "repolace-rag", editable = "rag" },
+    { name = "repolace-shared", editable = "shared" },
+    { name = "repolace-verify", editable = "verify" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
+    { name = "structlog", specifier = ">=24.1" },
+]
 
 [[package]]
 name = "repolace-gateway"
@@ -2556,6 +2572,8 @@ source = { editable = "pipeline" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic-settings" },
+    { name = "repolace-agents" },
+    { name = "repolace-gateway" },
     { name = "repolace-rag" },
     { name = "repolace-shared" },
     { name = "repolace-verify" },
@@ -2567,6 +2585,8 @@ dependencies = [
 requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
     { name = "pydantic-settings", specifier = ">=2.5" },
+    { name = "repolace-agents", editable = "agents" },
+    { name = "repolace-gateway", editable = "gateway" },
     { name = "repolace-rag", editable = "rag" },
     { name = "repolace-shared", editable = "shared" },
     { name = "repolace-verify", editable = "verify" },

@@ -22,6 +22,7 @@ swallowing the failing import rather than fixing it, and collect credit for the
 now-trivially-passing tests. That is a source-side edit, so no path rule sees it.
 """
 
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
@@ -72,6 +73,110 @@ def is_test_path(path: str) -> bool:
         return False
     stem = name[:-3]
     return name == "tests.py" or stem.startswith("test_") or stem.endswith("_test")
+
+
+def is_protected_path(
+    path: str,
+    *,
+    collected_files: Collection[str] = (),
+    conftests: Collection[str] = (),
+) -> bool:
+    """Is the agent's edit tool forbidden from writing this path?
+
+    The paths `disqualifying_paths` would fail the task for editing, as far as a
+    path plus the baseline's collected sets can say, and `.github/` besides. The
+    edit tool refuses them up front, as a model-visible error, so the agent
+    learns the rule on its first attempt instead of finishing a patch the scorer
+    then throws away.
+
+    **Pass the baseline's `collected_files` and `conftests`.** Without them this
+    knows only the path heuristic, and the heuristic does not see a test file
+    that pytest collects through a custom `python_files` or `--doctest-modules`
+    (`checks/check_foo.py`, `src/pkg/docs.py`), nor a data file beside one. The
+    scorer does -- it reads the same sets -- so a tool built without them lets
+    the agent edit a file the scorer will then discard the whole patch for, which
+    is the wasted run this function exists to prevent. The pipeline supplies a
+    baseline-aware closure as `ToolContext.is_protected`; the defaults exist so
+    the function is usable where there is no baseline yet, and are the weaker
+    form.
+
+    Built from this module's own primitives rather than a copy -- the same
+    `is_test_path`, `_CONFIG_FILES` and baseline-evidence lookup that
+    `disqualifying_paths` uses -- so the two cannot drift.
+
+    **Where it differs from the scorer, in each direction:**
+
+    * *Stricter, on purpose.* `disqualifying_paths` spares a shipped module like
+      `django/test/client.py` because it can consult `baseline_files` (it existed
+      at the base commit and pytest never collected from it). At edit time this
+      has no such evidence, so it follows `is_test_path` and refuses. That is the
+      cautious direction -- a refused edit costs a model-visible error, a
+      permitted one the scorer later disqualifies costs the task -- but an issue
+      whose real fix lives in such a module cannot be fixed by the agent.
+      `.github/` is also protected here and not by the scorer: it is not test
+      infrastructure, but agent-authored CI on a pull request is a security
+      problem on a real repository (a workflow the agent writes runs with that
+      repository's secrets). Actions is disabled on benchmark repositories and
+      not on product ones.
+    * *Never weaker.* Given the baseline's `collected_files` and `conftests`, any
+      path `disqualifying_paths` rejects (with no `baseline_files`) is protected
+      here; a test asserts it over a grid of paths. If the scorer learns a new
+      way to reject a path, that must reach this function too.
+
+    Takes a canonical repo-relative path; the caller is expected to have already
+    confined it with `repolace_shared.paths.resolve_within`. Normalised first,
+    because the `./` prefix is exactly the seam `_normalise` was written to
+    close.
+    """
+    normalised = _normalise(path)
+    parts = PurePosixPath(normalised).parts
+    # Case-insensitive, like the `.git` check elsewhere: the directory is what
+    # makes GitHub read the file as a workflow, and a filesystem that folds case
+    # would otherwise let `.GitHub/workflows/` through.
+    if parts and parts[0].lower() == ".github":
+        return True
+    # `is_test_path` already matches `_CONFIG_FILES` today. The second clause is
+    # not redundancy to tidy away: `is_test_path` is documented as a heuristic
+    # that gets tuned, and narrowing it must never quietly unprotect
+    # `conftest.py` or `pyproject.toml` -- the basename check is the floor.
+    # `test_protected_paths.py` patches `is_test_path` to False to hold it there.
+    if is_test_path(normalised) or PurePosixPath(normalised).name in _CONFIG_FILES:
+        return True
+    return _rejected_by_evidence(normalised, _baseline_evidence(collected_files, conftests))
+
+
+@dataclass(frozen=True)
+class _BaselineEvidence:
+    """What the baseline run says is test infrastructure, as lookup sets."""
+
+    files: frozenset[str]
+    conftest_names: frozenset[str]
+    fixture_dirs: frozenset[str]
+
+
+def _baseline_evidence(collected_files: Collection[str], conftests: Collection[str]) -> _BaselineEvidence:
+    files = frozenset(_normalise(p) for p in collected_files)
+    return _BaselineEvidence(
+        files=files,
+        conftest_names=frozenset(PurePosixPath(p).name for p in conftests),
+        fixture_dirs=frozenset(str(PurePosixPath(p).parent) for p in files),
+    )
+
+
+def _rejected_by_evidence(normalised: str, evidence: _BaselineEvidence) -> bool:
+    """Does the baseline's own record make this path test infrastructure?
+
+    The branches `disqualifying_paths` and `is_protected_path` share, factored
+    out so the edit tool and the scorer read one definition of "what pytest told
+    us". Takes an already-normalised path.
+    """
+    if normalised in evidence.files:
+        return True
+    if normalised.endswith("conftest.py") and PurePosixPath(normalised).name in evidence.conftest_names:
+        return True
+    # A data file beside collected tests: a golden file or a recorded cassette,
+    # which is a test in everything but extension.
+    return str(PurePosixPath(normalised).parent) in evidence.fixture_dirs and not normalised.endswith(".py")
 
 
 def _normalise(path: str) -> str:
@@ -150,9 +255,8 @@ def disqualifying_paths(
     baseline and is never collected, but relaxing ``filterwarnings`` in it turns
     a real failure into a real pass.
     """
-    collected = {_normalise(p) for p in baseline.collected_files}
-    conftests = {PurePosixPath(p).name for p in baseline.conftests}
-    fixture_dirs = {str(PurePosixPath(p).parent) for p in collected}
+    evidence = _baseline_evidence(baseline.collected_files, baseline.conftests)
+    collected = evidence.files
     existed = {_normalise(p) for p in baseline_files} if baseline_files is not None else None
     # `.` is dropped defensively. It cannot over-match as the rule is written --
     # the ancestor loop skips `.`, and a non-`.` ancestor never matches it -- but
@@ -171,15 +275,7 @@ def disqualifying_paths(
         normalised = _normalise(path)
         name = PurePosixPath(normalised).name
 
-        if normalised in collected:
-            disqualified.append(path)
-        elif normalised.endswith("conftest.py") and name in conftests:
-            disqualified.append(path)
-        elif name in _CONFIG_FILES:
-            disqualified.append(path)
-        elif str(PurePosixPath(normalised).parent) in fixture_dirs and not normalised.endswith(".py"):
-            # A data file beside collected tests: a golden file or a recorded
-            # cassette, which is a test in everything but extension.
+        if _rejected_by_evidence(normalised, evidence) or name in _CONFIG_FILES:
             disqualified.append(path)
         elif is_test_path(normalised):
             # Only when we cannot prove otherwise. A file that existed at
@@ -269,6 +365,34 @@ def fail_to_pass(baseline: SuiteResult, attempt: SuiteResult) -> tuple[str, ...]
     """
     became_passing = _candidate_fail_to_pass(baseline) & set(attempt.passed)
     return tuple(sorted(became_passing | set(collection_fixed(baseline, attempt))))
+
+
+def expected_not_red(baseline: SuiteResult, expected: Sequence[str]) -> tuple[str, ...]:
+    """The curated fail-to-pass ids that were NOT red at the base commit.
+
+    `score(..., expected_fail_to_pass=...)` checks that every expected test
+    passes *after* the patch and never that it was failing *before*. If one
+    already passes in our environment -- the overlay's test happens not to fail
+    here, a dependency resolves differently -- then every other condition is
+    met by a patch that changes nothing: any non-test edit, even a comment,
+    scores PASSED. That is the false positive this module exists to prevent, and
+    no stream would notice, because the verdict is well-formed.
+
+    "Red" is what `fail_to_pass` can credit: in `failed` or `xfailed` (not an
+    ordinary skip, which going green is evidence of nothing), or inside a module
+    that would not import at baseline -- the same file-shaped collect-failure
+    prefixes `score()` and `collection_fixed` use, so the three agree on what a
+    collection error covers. An id absent from the baseline altogether is not
+    red either: a test the baseline never ran cannot have failed.
+
+    Returns the offending ids, sorted and de-duplicated; empty means every
+    expected test was red. Benchmark mode treats a non-empty result as an
+    inadmissible instance rather than a verdict on the agent, and the gold
+    analysis reports it per instance. Pure; does not change `score()`.
+    """
+    red = _candidate_fail_to_pass(baseline)
+    prefixes = _collect_failure_prefixes(baseline.collect_failures)
+    return tuple(sorted({e for e in expected if e not in red and not e.startswith(prefixes)}))
 
 
 def regressions(baseline: SuiteResult, attempt: SuiteResult) -> tuple[str, ...]:
@@ -443,4 +567,132 @@ def score(
         reason=f"{len(fixed)} fail-to-pass, no regressions "
                f"(uncurated: not evidence this issue specifically was fixed)",
         **sets,
+    )
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """Whether a patch did harm -- the PR gate outside the benchmark.
+
+    Not an outcome and not a score. `ok` means *no evidence of harm was found*,
+    which is a weaker claim than `Score.PASSED` and must be worded as one
+    wherever it reaches a human (the PR body says what was not verified).
+    """
+
+    ok: bool
+    reason: str
+    #: Passing at baseline, not passing now -- a deleted test, a test turned into
+    #: a skip and a module that stopped collecting all count, as in `regressions`.
+    regressions: tuple[str, ...] = ()
+    #: Baseline failures silenced rather than fixed, as in `neutralized`.
+    neutralized: tuple[str, ...] = ()
+    #: Modules that collected at baseline and do not now. A module that stops
+    #: importing loses every test in it without any of them ever being recorded
+    #: as failed, which is why this is its own set rather than a side effect of
+    #: `regressions`.
+    new_collect_failures: tuple[str, ...] = ()
+    disqualified: tuple[str, ...] = ()
+
+
+def agent_verdict(
+    baseline: SuiteResult,
+    attempt: SuiteResult,
+    changed_files: list[str] | tuple[str, ...],
+    *,
+    baseline_files: tuple[str, ...] | None = None,
+    attempt_infrastructure_error: bool = False,
+) -> Verdict:
+    """Decide whether to open a PR for a task that has no ground truth.
+
+    `score()` cannot gate this. It is inadmissible whenever nothing was red at
+    the base commit -- which is the *normal* case for a live issue, where the
+    suite passes and the bug is simply not covered by it -- so under `score()`
+    a real task would never open a PR. This asks the question that can be
+    answered without a failing test: did the patch break anything, or make
+    something stop objecting?
+
+    In order, the first that applies decides, and each is `ok=False`:
+    disqualified paths, an unusable baseline, an infrastructure error, an
+    unscoreable attempt, a fingerprint drift. Then, with all of those clear,
+    three kinds of harm are collected *together* so the reason names everything
+    wrong rather than the first thing found: `neutralized` baseline failures,
+    `regressions`, and `new_collect_failures` (modules that import at baseline
+    and do not now, `attempt.collect_failures - baseline.collect_failures`). `ok`
+    only when all three are empty.
+
+    **It does not require a fail-to-pass, and must not.** A passing suite and an
+    unreproduced bug is the normal case, so "nothing went green" is not harm
+    here. `ok=True` therefore means *no evidence of harm was found* and nothing
+    stronger; the PR body must say what was not verified. It also does not
+    judge an empty `changed_files`: a patch that changes nothing has no
+    regressions and would be `ok`, so the pipeline's no-change gate has to fire
+    before this is asked.
+
+    Errs toward `ok=False`, as `score()` errs toward FAILED, with one difference
+    in posture: where `score()` reports an unusable baseline as *inadmissible*
+    (excluded from the headline), a PR gate has no such bucket. An unusable
+    baseline, an unscoreable attempt, an infrastructure error and a fingerprint
+    drift all mean harm was not ruled out, so all are `ok=False` with the reason
+    saying which.
+
+    **Known duplication, owed by stream A.** The five precondition checks above
+    are a copy of the prefix of `score()`, written here so streams E and F can
+    test against a real verdict without waiting on A. Their reason strings are
+    identical to `score()`'s on purpose. Two copies of "was the baseline usable,
+    did the environment drift" are two chances for the PR gate and the benchmark
+    to disagree about what a run means, so A extracts the shared prefix into one
+    private helper that both call -- under the equivalence test in
+    `test_agent_verdict.py` (`TestAgreesWithScore`), which pins that `score()`
+    and this function report the same reason for every precondition, and which
+    must pass unchanged across that refactor.
+    """
+    disqualified = disqualifying_paths(changed_files, baseline, baseline_files)
+    if disqualified:
+        return Verdict(
+            ok=False,
+            reason=f"diff touches test or config files: {', '.join(disqualified[:3])}",
+            disqualified=disqualified,
+        )
+
+    if baseline.error:
+        return Verdict(ok=False, reason=f"baseline unscoreable: {baseline.error}")
+
+    if attempt_infrastructure_error:
+        return Verdict(ok=False, reason=f"infrastructure failure: {attempt.error}")
+
+    if attempt.error:
+        return Verdict(ok=False, reason=f"attempt unscoreable: {attempt.error}")
+
+    drift = fingerprint_changed(baseline, attempt)
+    if drift:
+        return Verdict(ok=False, reason=drift)
+
+    silenced = neutralized(baseline, attempt)
+    broke = regressions(baseline, attempt)
+    new_collect_failures = tuple(sorted(set(attempt.collect_failures) - set(baseline.collect_failures)))
+
+    problems = []
+    if silenced:
+        problems.append(
+            f"{len(silenced)} baseline failure(s) silenced rather than fixed: {', '.join(silenced[:3])}"
+        )
+    if broke:
+        problems.append(f"{len(broke)} pass-to-pass regression(s): {', '.join(broke[:3])}")
+    if new_collect_failures:
+        problems.append(
+            f"{len(new_collect_failures)} module(s) no longer collect: {', '.join(new_collect_failures[:3])}"
+        )
+    if problems:
+        return Verdict(
+            ok=False,
+            reason="; ".join(problems),
+            regressions=broke,
+            neutralized=silenced,
+            new_collect_failures=new_collect_failures,
+        )
+
+    return Verdict(
+        ok=True,
+        reason="no regression, silenced failure or new collection error found "
+               "(not evidence the issue is fixed)",
     )

@@ -10,16 +10,26 @@ supposed to reject. Those constraints are the only machine-checkable part of
 the success criteria.
 """
 
+import itertools
+import re
 import uuid
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
-from repolace_shared.db.models import BASELINE_ATTEMPT, Task, TaskOutcome, TaskStatus, TaskTestRun
+from repolace_shared.db.models import (
+    AGENT_STOP_REASONS,
+    BASELINE_ATTEMPT,
+    RegisteredRepo,
+    Task,
+    TaskOutcome,
+    TaskStatus,
+    TaskTestRun,
+)
 
-from db_support import seed_task
+from db_support import make_task, seed_task
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db]
 
@@ -274,3 +284,227 @@ class TestPatchProvenance:
         task = await seed_task(db_session)
 
         assert task.patch_sha is None and task.changed_files is None
+
+
+class TestAgentOutputs:
+    """Migration 0013's columns on `tasks`."""
+
+    async def test_they_default_to_null(self, db_session):
+        """NULL, not empty: "the task never reached the agent" is a different
+        claim from "the agent produced an empty diff" or "had no reason"."""
+        task = await seed_task(db_session)
+
+        stored = (await db_session.execute(select(Task))).scalar_one()
+        assert stored.patch_diff is None
+        assert stored.score_reason is None
+        assert stored.agent_stop_reason is None
+        assert task.id == stored.id
+
+    async def test_the_diff_and_reason_round_trip(self, db_session):
+        task = await seed_task(db_session)
+        task.patch_diff = "diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/x.py\n@@ -1 +1 @@\n-a\n+b\n"
+        task.score_reason = "1 fail-to-pass, no regressions"
+        task.agent_stop_reason = "submitted"
+        await db_session.commit()
+
+        stored = (await db_session.execute(select(Task))).scalar_one()
+        assert stored.patch_diff.startswith("diff --git")
+        assert stored.score_reason == "1 fail-to-pass, no regressions"
+        assert stored.agent_stop_reason == "submitted"
+
+    async def test_an_empty_diff_is_distinct_from_no_diff(self, db_session):
+        task = await seed_task(db_session)
+        task.patch_diff = ""
+        await db_session.commit()
+
+        stored = (await db_session.execute(select(Task))).scalar_one()
+        assert stored.patch_diff == ""
+
+    @pytest.mark.parametrize("reason", AGENT_STOP_REASONS)
+    async def test_every_stop_reason_is_accepted(self, db_session, reason):
+        task = await seed_task(db_session)
+        task.agent_stop_reason = reason
+        await db_session.commit()
+
+        stored = (await db_session.execute(select(Task))).scalar_one()
+        assert stored.agent_stop_reason == reason
+
+    async def test_the_database_check_lists_exactly_the_constant(self, db_session):
+        """Read from the catalog, so a reason REMOVED from the constant is caught too.
+
+        `test_every_stop_reason_is_accepted` only catches the other direction: a
+        reason in the constant that the migration forgot. A reason the migration
+        still accepts but the constant dropped would pass every behavioural test
+        here while the pipeline could no longer produce it.
+        """
+        definition = (
+            await db_session.execute(
+                text("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'ck_tasks_agent_stop_reason'")
+            )
+        ).scalar_one()
+
+        assert set(re.findall(r"'([a-z_]+)'::character varying", definition)) == set(AGENT_STOP_REASONS)
+
+    async def test_an_unknown_stop_reason_is_rejected(self, db_session):
+        """The CHECK is what makes a typo in the pipeline an error instead of a
+        value no report knows how to group."""
+        task = await seed_task(db_session)
+        task.agent_stop_reason = "ran_out_of_patience"
+
+        with pytest.raises(IntegrityError):
+            await db_session.commit()
+
+    async def test_an_empty_stop_reason_is_rejected(self, db_session):
+        """An empty string is not NULL, and must not pass for "no reason"."""
+        task = await seed_task(db_session)
+        task.agent_stop_reason = ""
+
+        with pytest.raises(IntegrityError):
+            await db_session.commit()
+
+
+class TestEvalInstanceRunIndex:
+    """`uq_tasks_eval_instance_run` makes the harness's enqueue idempotent."""
+
+    @staticmethod
+    def _eval_task(session, repo_id, **overrides):
+        fields = {"eval_run_id": "run-1", "instance_id": "psf__requests-2317", "run_index": 0}
+        task = make_task(repo_id, **{**fields, **overrides})
+        session.add(task)
+        return task
+
+    async def test_a_duplicate_run_of_one_instance_is_rejected(self, db_session):
+        seeded = await seed_task(db_session)
+        self._eval_task(db_session, seeded.repo_id)
+        await db_session.commit()
+
+        self._eval_task(db_session, seeded.repo_id)
+        with pytest.raises(IntegrityError):
+            await db_session.commit()
+
+    async def test_another_run_index_is_allowed(self, db_session):
+        """Three runs per instance is the design; only an exact repeat is a duplicate."""
+        seeded = await seed_task(db_session)
+        for run_index in range(3):
+            self._eval_task(db_session, seeded.repo_id, run_index=run_index)
+        await db_session.commit()
+
+        rows = (await db_session.execute(select(Task).where(Task.eval_run_id == "run-1"))).scalars().all()
+        assert sorted(row.run_index for row in rows) == [0, 1, 2]
+
+    async def test_another_instance_or_another_run_is_allowed(self, db_session):
+        seeded = await seed_task(db_session)
+        self._eval_task(db_session, seeded.repo_id)
+        self._eval_task(db_session, seeded.repo_id, instance_id="pallets__flask-4992")
+        self._eval_task(db_session, seeded.repo_id, eval_run_id="run-2")
+        await db_session.commit()
+
+        rows = (await db_session.execute(select(Task).where(Task.eval_run_id.is_not(None)))).scalars().all()
+        assert len(rows) == 3
+
+    async def test_product_tasks_may_repeat_freely(self, db_session):
+        """Rows with no `eval_run_id` are outside the unique index entirely.
+
+        All three eval columns are NULL on such a row -- a product task with an
+        `instance_id` but no `eval_run_id` is refused by
+        `ck_tasks_eval_columns_together`, below.
+        """
+        seeded = await seed_task(db_session)
+        for _ in range(3):
+            db_session.add(make_task(seeded.repo_id, eval_run_id=None, instance_id=None, run_index=None))
+        await db_session.commit()
+
+        rows = (await db_session.execute(select(Task).where(Task.eval_run_id.is_(None)))).scalars().all()
+        assert len(rows) == 4  # the seeded task plus three
+
+    async def test_the_index_is_unique_and_partial(self, db_session):
+        """Read from the catalog, because the behavioural tests above cannot tell
+        a partial index from a plain one: Postgres treats NULLs as distinct in a
+        unique index, so product rows would pass either way. The `WHERE` is what
+        states the intent, and what keeps the index from carrying every product
+        task."""
+        definition = (
+            await db_session.execute(
+                text("SELECT indexdef FROM pg_indexes WHERE indexname = 'uq_tasks_eval_instance_run'")
+            )
+        ).scalar_one()
+
+        assert "UNIQUE" in definition
+        assert "(eval_run_id, instance_id, run_index)" in definition
+        assert "eval_run_id IS NOT NULL" in definition
+
+
+class TestEvalColumnsTogether:
+    """`ck_tasks_eval_columns_together`: all three eval columns NULL, or all set.
+
+    The unique index above compares only rows where all three are non-NULL (NULLs
+    are distinct in a Postgres unique index), so without this an enqueue that
+    forgot one column would insert a row the index never checks.
+    """
+
+    COLUMNS = ("eval_run_id", "instance_id", "run_index")
+    VALUES = {"eval_run_id": "run-1", "instance_id": "psf__requests-2317", "run_index": 0}
+
+    @classmethod
+    def _fields(cls, set_columns):
+        return {column: (cls.VALUES[column] if column in set_columns else None) for column in cls.COLUMNS}
+
+    async def test_all_null_is_accepted(self, db_session):
+        task = await seed_task(db_session, **self._fields(()))
+
+        stored = (await db_session.execute(select(Task))).scalar_one()
+        assert (stored.eval_run_id, stored.instance_id, stored.run_index) == (None, None, None)
+        assert task.id == stored.id
+
+    async def test_all_set_is_accepted(self, db_session):
+        """`run_index=0` is part of the set: falsy in Python, not NULL in SQL."""
+        await seed_task(db_session, **self._fields(self.COLUMNS))
+
+        stored = (await db_session.execute(select(Task))).scalar_one()
+        assert (stored.eval_run_id, stored.instance_id, stored.run_index) == (
+            "run-1",
+            "psf__requests-2317",
+            0,
+        )
+
+    @pytest.mark.parametrize(
+        "set_columns",
+        [
+            combination
+            for size in (1, 2)
+            for combination in itertools.combinations(("eval_run_id", "instance_id", "run_index"), size)
+        ],
+        ids=lambda combination: "+".join(combination) + "_only",
+    )
+    async def test_every_partial_combination_is_rejected(self, db_session, set_columns):
+        """All six: each column alone, and each pair. The failure each guards is
+        a *different* forgotten argument, so one parametrised case per omission."""
+        with pytest.raises(IntegrityError, match="ck_tasks_eval_columns_together"):
+            await seed_task(db_session, **self._fields(set_columns))
+
+    async def test_clearing_one_column_of_a_benchmark_row_is_rejected(self, db_session):
+        """An UPDATE is not a way around it: the constraint holds for the row's whole life."""
+        task = await seed_task(db_session, **self._fields(self.COLUMNS))
+        task.run_index = None
+
+        with pytest.raises(IntegrityError, match="ck_tasks_eval_columns_together"):
+            await db_session.commit()
+
+
+class TestIndexStrategy:
+    async def test_it_defaults_to_null_meaning_the_legacy_strategy(self, db_session):
+        """NULL is not `"truncate"`. It is "built before the column existed",
+        which `reindex_if_stale` reads as the legacy strategy."""
+        task = await seed_task(db_session)
+
+        repo = await db_session.get(RegisteredRepo, task.repo_id)
+        assert repo.index_strategy is None
+
+    async def test_it_can_be_set(self, db_session):
+        task = await seed_task(db_session)
+        repo = await db_session.get(RegisteredRepo, task.repo_id)
+        repo.index_strategy = "head_tail"
+        await db_session.commit()
+
+        stored = (await db_session.execute(select(RegisteredRepo))).scalar_one()
+        assert stored.index_strategy == "head_tail"

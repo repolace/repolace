@@ -22,6 +22,7 @@ import uuid
 from contextlib import AsyncExitStack, asynccontextmanager
 from collections.abc import Mapping
 from dataclasses import dataclass
+from decimal import Decimal
 
 import httpx
 import structlog
@@ -82,6 +83,25 @@ class RunResult:
     #: the exact mistake the success criteria are written to avoid.
     outcome: TaskOutcome | None = None
     score_reason: str | None = None
+    #: What the task's model calls cost in total (the gateway's `TaskBudget`
+    #: running sum). None, not zero, when nothing was measured -- no model was
+    #: called (the stub and gold runners) or the task failed before the agent --
+    #: because "free" and "never priced" are different claims.
+    cost_usd: Decimal | None = None
+    #: Scored edit attempts that were actually run and verified (1..N). 0 when the
+    #: task never reached a scored attempt.
+    attempts: int = 0
+    #: Whether the agent ended by calling `submit`. None when no agent ran, which
+    #: is not the same as False (an agent that ran out of steps).
+    submitted: bool | None = None
+    #: Why the agent loop ended, as the string stored in
+    #: `tasks.agent_stop_reason` (one of `AGENT_STOP_REASONS`). A string rather
+    #: than the agents package's enum so this module does not import it for a
+    #: label. None when no agent ran.
+    stop_reason: str | None = None
+    #: The PR gate's own sentence for opening, or withholding, a pull request.
+    #: None when the gate never ran -- the task failed first.
+    pr_gate_reason: str | None = None
 
 
 def _describe(exc: BaseException) -> str:

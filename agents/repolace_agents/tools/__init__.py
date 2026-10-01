@@ -1,0 +1,31 @@
+"""The agent's tools. Import from here or from `repolace_agents.tools.base`.
+
+Nothing in this package imports `litellm`, `repolace_gateway.client` (which
+pulls `litellm` and FastAPI), `rag`/`retrieval`, `torch` or
+`sentence_transformers`: agent tests must stay cheap, and `rag` would pull torch
+into them. The lighter gateway modules (`repolace_gateway.budget`,
+`.errors`) are fine. SQLAlchemy and pgvector *are* loaded, through
+`verify.scoring`'s import of `repolace_shared.db.models`.
+"""
+
+from repolace_agents.tools.base import (
+    Tool,
+    ToolBox,
+    ToolContext,
+    ToolError,
+    ToolLimits,
+    ToolOutcome,
+    ToolSpec,
+    build_toolbox,
+)
+
+__all__ = [
+    "Tool",
+    "ToolBox",
+    "ToolContext",
+    "ToolError",
+    "ToolLimits",
+    "ToolOutcome",
+    "ToolSpec",
+    "build_toolbox",
+]

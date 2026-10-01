@@ -6,10 +6,14 @@ requires-python = ">=3.12"
 dependencies = [
     "langgraph>=0.2",
     "repolace-shared",
+    "repolace-gateway",
+    "repolace-verify",
 ]
 
 [tool.uv.sources]
 repolace-shared = { workspace = true }
+repolace-gateway = { workspace = true }
+repolace-verify = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

@@ -7,6 +7,8 @@ dependencies = [
     "repolace-shared",
     "repolace-rag",
     "repolace-verify",
+    "repolace-agents",
+    "repolace-gateway",
     "sqlalchemy[asyncio]>=2.0",
     "httpx>=0.27",
     "pydantic-settings>=2.5",
@@ -20,6 +22,8 @@ repolace-run-task = "repolace_pipeline.cli:main"
 repolace-shared = { workspace = true }
 repolace-rag = { workspace = true }
 repolace-verify = { workspace = true }
+repolace-agents = { workspace = true }
+repolace-gateway = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

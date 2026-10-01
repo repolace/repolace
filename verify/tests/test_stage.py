@@ -8,55 +8,14 @@ is the exact ambiguity the baseline exists to remove.
 """
 
 import uuid
-from pathlib import Path
 
 import pytest
 
-from verify.protocol import EnvironmentRef, RepoSpec, SuiteResult
+from verify.protocol import RepoSpec
 from verify.stage import BASELINE_ATTEMPT, Verifier, container_name
+from verify.testing import FakeBackend, FakeWorkspace
 
 pytestmark = pytest.mark.anyio
-
-
-class FakeBackend:
-    def __init__(self) -> None:
-        self.prepared: list[str] = []
-        self.runs: list[dict] = []
-
-    async def prepare(self, spec: RepoSpec, source_dir: Path, cache_key: str) -> EnvironmentRef:
-        self.prepared.append(cache_key)
-        return EnvironmentRef(backend="fake", identifier=f"image-{cache_key}")
-
-    async def run_tests(self, env, source_dir, results_dir, spec, *, container_name):
-        self.runs.append(
-            {
-                "image": env.identifier,
-                "source": source_dir,
-                "results": results_dir,
-                "container": container_name,
-            }
-        )
-        return SuiteResult(passed=("t::a",))
-
-
-class FakeWorkspace:
-    """Just the two methods `Verifier` needs, which is why `Workspace` is a Protocol."""
-
-    def __init__(self, root: Path) -> None:
-        self.root = root
-        self.exported: list[int] = []
-
-    async def export_tree(self, attempt: int) -> Path:
-        self.exported.append(attempt)
-        path = self.root / f"export-{attempt}"
-        path.mkdir(exist_ok=True)
-        (path / "pyproject.toml").write_text("[project]\nname='x'\n")
-        return path
-
-    async def results_dir(self, attempt: int) -> Path:
-        path = self.root / f"results-{attempt}"
-        path.mkdir(exist_ok=True)
-        return path
 
 
 @pytest.fixture
