@@ -79,7 +79,7 @@ BASELINE_ATTEMPT = 0
 #: strings behind a CHECK constraint rather than a Postgres enum, so adding a
 #: value later is a drop-and-recreate of one constraint instead of an
 #: `ALTER TYPE` (see migrations 0007 and 0009 for what the enum route costs).
-#: `repolace_agents.contracts.StopReason` carries the same seven values, and a
+#: `repolace_agents.contracts.StopReason` carries the same eight values, and a
 #: test holds the two equal -- `agents` must not import this module, because it
 #: would drag SQLAlchemy and pgvector into code that only needs to name a reason.
 AGENT_STOP_REASONS: tuple[str, ...] = (
@@ -90,6 +90,10 @@ AGENT_STOP_REASONS: tuple[str, ...] = (
     "budget_wall",
     "llm_error",
     "no_change",
+    #: Every attempt was used and the last scored one still had visible
+    #: regressions or collection errors. Distinct from `submitted` so a report
+    #: can tell "submitted clean" from "ran out of attempts still red".
+    "max_attempts",
 )
 _AGENT_STOP_REASON_LIST = ", ".join(f"'{reason}'" for reason in AGENT_STOP_REASONS)
 
@@ -169,6 +173,15 @@ class Task(Base):
         CheckConstraint(
             f"agent_stop_reason IS NULL OR agent_stop_reason IN ({_AGENT_STOP_REASON_LIST})",
             name="ck_tasks_agent_stop_reason",
+        ),
+        # The three eval columns are all NULL (a product task) or all set (a
+        # benchmark row). The unique index below only compares rows where all
+        # three are non-NULL -- NULLs are distinct in a Postgres unique index --
+        # so without this an enqueue that forgot `run_index` would silently lose
+        # the idempotency the index exists for.
+        CheckConstraint(
+            "(eval_run_id IS NULL) = (instance_id IS NULL) AND (eval_run_id IS NULL) = (run_index IS NULL)",
+            name="ck_tasks_eval_columns_together",
         ),
         # Makes the harness's enqueue idempotent: a re-run after a crash cannot
         # create a second row for one (run, instance, run_index), which would be

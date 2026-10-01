@@ -125,6 +125,11 @@ class StopReason(str, enum.Enum):
     LLM_ERROR = "llm_error"
     #: The agent finished (or gave up) with no net change to the tree.
     NO_CHANGE = "no_change"
+    #: Every attempt was used and the last scored one still had visible
+    #: regressions or collection errors. Distinct from SUBMITTED so a report can
+    #: tell "submitted clean" from "ran out of attempts still red" -- see
+    #: `AgentResult` for exactly when the graph reports it.
+    MAX_ATTEMPTS = "max_attempts"
 
 
 @dataclass(frozen=True)

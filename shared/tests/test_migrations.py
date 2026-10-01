@@ -31,7 +31,7 @@ ALEMBIC_INI = Path(__file__).resolve().parents[2] / "api" / "alembic.ini"
 TASK_COLUMNS_0013 = {"patch_diff", "score_reason", "agent_stop_reason"}
 REPO_COLUMNS_0013 = {"index_strategy"}
 INDEX_0013 = "uq_tasks_eval_instance_run"
-CHECK_0013 = "ck_tasks_agent_stop_reason"
+CHECKS_0013 = {"ck_tasks_agent_stop_reason", "ck_tasks_eval_columns_together"}
 
 
 def _in_thread(coro_factory):
@@ -120,7 +120,11 @@ def _schema_state(url: str) -> dict[str, set[str]]:
         lambda: _fetch(dsn, "SELECT indexname FROM pg_indexes WHERE indexname = $1", INDEX_0013)
     )
     checks = _in_thread(
-        lambda: _fetch(dsn, "SELECT conname FROM pg_constraint WHERE conname = $1", CHECK_0013)
+        lambda: _fetch(
+            dsn,
+            "SELECT conname::text FROM pg_constraint WHERE conname::text = ANY($1::text[])",
+            sorted(CHECKS_0013),
+        )
     )
     return {
         "tasks": columns("tasks") & TASK_COLUMNS_0013,
@@ -135,7 +139,7 @@ PRESENT = {
     "tasks": TASK_COLUMNS_0013,
     "registered_repos": REPO_COLUMNS_0013,
     "index": {INDEX_0013},
-    "check": {CHECK_0013},
+    "check": CHECKS_0013,
 }
 
 

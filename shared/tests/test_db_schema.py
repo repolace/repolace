@@ -10,6 +10,8 @@ supposed to reject. Those constraints are the only machine-checkable part of
 the success criteria.
 """
 
+import itertools
+import re
 import uuid
 from decimal import Decimal
 
@@ -318,20 +320,6 @@ class TestAgentOutputs:
         stored = (await db_session.execute(select(Task))).scalar_one()
         assert stored.patch_diff == ""
 
-    def test_the_stop_reasons_are_the_seven_the_contract_names(self):
-        """Pinned as literals so adding or renaming one is a deliberate edit here
-        and in `repolace_agents.contracts.StopReason`, not a side effect."""
-        assert set(AGENT_STOP_REASONS) == {
-            "submitted",
-            "step_cap",
-            "budget_usd",
-            "budget_calls",
-            "budget_wall",
-            "llm_error",
-            "no_change",
-        }
-        assert len(set(AGENT_STOP_REASONS)) == len(AGENT_STOP_REASONS)
-
     @pytest.mark.parametrize("reason", AGENT_STOP_REASONS)
     async def test_every_stop_reason_is_accepted(self, db_session, reason):
         task = await seed_task(db_session)
@@ -340,6 +328,22 @@ class TestAgentOutputs:
 
         stored = (await db_session.execute(select(Task))).scalar_one()
         assert stored.agent_stop_reason == reason
+
+    async def test_the_database_check_lists_exactly_the_constant(self, db_session):
+        """Read from the catalog, so a reason REMOVED from the constant is caught too.
+
+        `test_every_stop_reason_is_accepted` only catches the other direction: a
+        reason in the constant that the migration forgot. A reason the migration
+        still accepts but the constant dropped would pass every behavioural test
+        here while the pipeline could no longer produce it.
+        """
+        definition = (
+            await db_session.execute(
+                text("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'ck_tasks_agent_stop_reason'")
+            )
+        ).scalar_one()
+
+        assert set(re.findall(r"'([a-z_]+)'::character varying", definition)) == set(AGENT_STOP_REASONS)
 
     async def test_an_unknown_stop_reason_is_rejected(self, db_session):
         """The CHECK is what makes a typo in the pipeline an error instead of a
@@ -399,12 +403,15 @@ class TestEvalInstanceRunIndex:
         assert len(rows) == 3
 
     async def test_product_tasks_may_repeat_freely(self, db_session):
-        """Rows with no `eval_run_id` are outside the constraint entirely."""
+        """Rows with no `eval_run_id` are outside the unique index entirely.
+
+        All three eval columns are NULL on such a row -- a product task with an
+        `instance_id` but no `eval_run_id` is refused by
+        `ck_tasks_eval_columns_together`, below.
+        """
         seeded = await seed_task(db_session)
         for _ in range(3):
-            db_session.add(
-                make_task(seeded.repo_id, eval_run_id=None, instance_id="psf__requests-2317", run_index=0)
-            )
+            db_session.add(make_task(seeded.repo_id, eval_run_id=None, instance_id=None, run_index=None))
         await db_session.commit()
 
         rows = (await db_session.execute(select(Task).where(Task.eval_run_id.is_(None)))).scalars().all()
@@ -425,6 +432,63 @@ class TestEvalInstanceRunIndex:
         assert "UNIQUE" in definition
         assert "(eval_run_id, instance_id, run_index)" in definition
         assert "eval_run_id IS NOT NULL" in definition
+
+
+class TestEvalColumnsTogether:
+    """`ck_tasks_eval_columns_together`: all three eval columns NULL, or all set.
+
+    The unique index above compares only rows where all three are non-NULL (NULLs
+    are distinct in a Postgres unique index), so without this an enqueue that
+    forgot one column would insert a row the index never checks.
+    """
+
+    COLUMNS = ("eval_run_id", "instance_id", "run_index")
+    VALUES = {"eval_run_id": "run-1", "instance_id": "psf__requests-2317", "run_index": 0}
+
+    @classmethod
+    def _fields(cls, set_columns):
+        return {column: (cls.VALUES[column] if column in set_columns else None) for column in cls.COLUMNS}
+
+    async def test_all_null_is_accepted(self, db_session):
+        task = await seed_task(db_session, **self._fields(()))
+
+        stored = (await db_session.execute(select(Task))).scalar_one()
+        assert (stored.eval_run_id, stored.instance_id, stored.run_index) == (None, None, None)
+        assert task.id == stored.id
+
+    async def test_all_set_is_accepted(self, db_session):
+        """`run_index=0` is part of the set: falsy in Python, not NULL in SQL."""
+        await seed_task(db_session, **self._fields(self.COLUMNS))
+
+        stored = (await db_session.execute(select(Task))).scalar_one()
+        assert (stored.eval_run_id, stored.instance_id, stored.run_index) == (
+            "run-1",
+            "psf__requests-2317",
+            0,
+        )
+
+    @pytest.mark.parametrize(
+        "set_columns",
+        [
+            combination
+            for size in (1, 2)
+            for combination in itertools.combinations(("eval_run_id", "instance_id", "run_index"), size)
+        ],
+        ids=lambda combination: "+".join(combination) + "_only",
+    )
+    async def test_every_partial_combination_is_rejected(self, db_session, set_columns):
+        """All six: each column alone, and each pair. The failure each guards is
+        a *different* forgotten argument, so one parametrised case per omission."""
+        with pytest.raises(IntegrityError, match="ck_tasks_eval_columns_together"):
+            await seed_task(db_session, **self._fields(set_columns))
+
+    async def test_clearing_one_column_of_a_benchmark_row_is_rejected(self, db_session):
+        """An UPDATE is not a way around it: the constraint holds for the row's whole life."""
+        task = await seed_task(db_session, **self._fields(self.COLUMNS))
+        task.run_index = None
+
+        with pytest.raises(IntegrityError, match="ck_tasks_eval_columns_together"):
+            await db_session.commit()
 
 
 class TestIndexStrategy:

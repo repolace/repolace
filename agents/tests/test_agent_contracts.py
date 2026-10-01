@@ -41,6 +41,13 @@ class TestStopReason:
         assert StopReason.STEP_CAP == "step_cap"
         assert StopReason("llm_error") is StopReason.LLM_ERROR
 
+    def test_running_out_of_attempts_still_red_is_its_own_reason(self):
+        """Without it "submitted clean" and "ran out of attempts still red" both
+        read `submitted`, and the report cannot tell them apart."""
+        assert StopReason.MAX_ATTEMPTS.value == "max_attempts"
+        assert StopReason.MAX_ATTEMPTS in set(StopReason)
+        assert len(StopReason) == 8
+
 
 class TestAgentLimits:
     def test_the_defaults_are_the_planned_ones(self):
