@@ -38,7 +38,14 @@ def anyio_backend() -> str:
 # database entirely.
 
 REQUIRE_DB_ENV_VAR = "REPOLACE_TEST_DB_REQUIRED"
-TEST_DB_SUFFIX = "_test"
+#: Appended to the development database's name to get the test database's. An
+#: environment variable rather than a constant because `db_session` TRUNCATEs
+#: every table before every test, so two test runs that share one database
+#: corrupt each other -- with failures that look like real bugs, which is the
+#: worst way for them to look. Parallel git worktrees each set their own suffix
+#: (`REPOLACE_TEST_DB_SUFFIX=_test_<stream>`); the default is unchanged, so a
+#: single checkout behaves exactly as it did before.
+TEST_DB_SUFFIX = os.environ.get("REPOLACE_TEST_DB_SUFFIX", "_test")
 
 
 def _skip_or_fail(reason: str, required_env_var: str = REQUIRE_DB_ENV_VAR) -> None:
