@@ -104,6 +104,38 @@ class SuiteResult:
         return self.error is None
 
 
+@dataclass(frozen=True)
+class ScriptResult:
+    """One execution of a scratch script -- not a suite, so nothing is parsed.
+
+    A script is whatever the agent wrote to see how the code behaves. It is not
+    pytest, has no report file and no pass/fail sets, so the only honest result
+    is what the process did: how it exited, and what it printed.
+
+    `exit_code` is None when the script never produced one -- it was killed on
+    the timeout, or the container could not start. `timed_out` and `error` say
+    which of those it was, and they are different things:
+
+    * **`error`** means the *runtime* failed -- the daemon is unreachable, the
+      container could not be created. The script never ran, so nothing about its
+      exit status is a fact about the code under test. Distinct from a non-zero
+      exit, which means the script ran and failed, and is the agent's to read.
+    * **`timed_out`** means it ran and was killed.
+
+    `truncated` is True when stdout or stderr hit the capture cap, so a tool
+    that shows the output to a model can say the tail is missing instead of
+    presenting a clipped log as the whole story.
+    """
+
+    exit_code: int | None
+    stdout: str = ""
+    stderr: str = ""
+    timed_out: bool = False
+    truncated: bool = False
+    duration_seconds: float | None = None
+    error: str | None = None
+
+
 class SandboxBackend(Protocol):
     async def prepare(self, spec: RepoSpec, source_dir: Path, cache_key: str) -> EnvironmentRef:
         """Build or reuse an environment. Network is permitted here and nowhere else."""
@@ -119,4 +151,37 @@ class SandboxBackend(Protocol):
         container_name: str,
     ) -> SuiteResult:
         """Run the suite with no network. Source files in, pass/fail data out."""
+        ...
+
+    async def run_script(
+        self,
+        env: EnvironmentRef,
+        source_dir: Path,
+        script_path: Path,
+        spec: RepoSpec,
+        *,
+        container_name: str,
+        timeout_seconds: float,
+    ) -> ScriptResult:
+        """Run one scratch script against `source_dir`, with no network.
+
+        Same containment as `run_tests` -- no network, read-only root, every
+        capability dropped, an unprivileged uid, the same resource caps -- and an
+        implementation must build both from one shared flag set so a flag cannot
+        be dropped from one path and kept in the other.
+
+        What differs, and what an implementation must hold to:
+
+        * **The source is mounted read-only, unconditionally.** Not through a
+          `RepoSpec` field: a spec is per-repository data, and a protection that
+          data can switch off is only as trustworthy as the data.
+        * **The script is mounted read-only at a fixed path**, outside the tree,
+          so it never appears in the source the host exports or diffs.
+        * **No results mount**, and no report parsing -- there is nothing to
+          parse and nothing may be written back to the host.
+        * `PYTHONPATH` is the source root, because a script's `sys.path[0]` is
+          its own directory rather than the repository.
+        * `timeout_seconds` is a hard limit; on timeout the container is removed
+          by `container_name`, for the reason `run_tests` removes its own.
+        """
         ...

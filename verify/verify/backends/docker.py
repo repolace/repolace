@@ -43,7 +43,7 @@ from verify.dockerfile import (
     render_dockerfile,
 )
 from verify.errors import EnvironmentBuildFailed, SandboxUnavailable
-from verify.protocol import EnvironmentRef, RepoSpec, SuiteResult
+from verify.protocol import EnvironmentRef, RepoSpec, ScriptResult, SuiteResult
 from verify.report import parse_report
 
 log = structlog.get_logger()
@@ -397,3 +397,16 @@ class DockerBackend:
             duration=result.duration_seconds,
         )
         return result
+
+    async def run_script(
+        self,
+        env: EnvironmentRef,
+        source_dir: Path,
+        script_path: Path,
+        spec: RepoSpec,
+        *,
+        container_name: str,
+        timeout_seconds: float,
+    ) -> ScriptResult:
+        """Run one scratch script with no network. Contract: `SandboxBackend.run_script`."""
+        raise NotImplementedError("DockerBackend.run_script lands in stream A: sandbox")

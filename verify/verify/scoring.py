@@ -74,6 +74,42 @@ def is_test_path(path: str) -> bool:
     return name == "tests.py" or stem.startswith("test_") or stem.endswith("_test")
 
 
+def is_protected_path(path: str) -> bool:
+    """Is the agent's edit tool forbidden from writing this path?
+
+    Exactly the paths `disqualifying_paths` would fail the task for editing, as
+    far as a path alone can say: a test path, or a config file that changes what
+    runs or whether it passes. The edit tool refuses them up front, as a
+    model-visible error, so the agent learns the rule on its first attempt
+    instead of finishing a patch the scorer then throws away.
+
+    Built from this module's own constants rather than a copy, so the tool and
+    the scorer cannot drift: a path the tool allows and the scorer disqualifies
+    is a wasted run, and one the tool refuses and the scorer allows is a fix the
+    agent could not make.
+
+    **Stricter than the scorer on purpose, and the one place it differs.**
+    `disqualifying_paths` spares a shipped module like `django/test/client.py`
+    because it can consult the baseline's collected-file set and
+    `baseline_files`. At edit time there is no such evidence to hand, so this
+    follows `is_test_path` alone and refuses it. That is the cautious direction
+    -- a refused edit costs a model-visible error, a permitted one that the
+    scorer later disqualifies costs the task -- but it does mean an issue whose
+    real fix lives in such a module cannot be fixed by the agent.
+
+    Takes a canonical repo-relative path; the caller is expected to have already
+    confined it with `repolace_shared.paths.resolve_within`. Normalised first,
+    because the `./` prefix is exactly the seam `_normalise` was written to
+    close: `./.gitattributes` must not escape the set.
+    """
+    normalised = _normalise(path)
+    # `is_test_path` already matches `_CONFIG_FILES` today. The second clause is
+    # not redundancy to tidy away: `is_test_path` is documented as a heuristic
+    # that gets tuned, and narrowing it must never quietly unprotect
+    # `conftest.py` or `pyproject.toml` -- the basename check is the floor.
+    return is_test_path(normalised) or PurePosixPath(normalised).name in _CONFIG_FILES
+
+
 def _normalise(path: str) -> str:
     """Strip a leading `./` without eating the leading dot of a dotfile.
 
@@ -444,3 +480,62 @@ def score(
                f"(uncurated: not evidence this issue specifically was fixed)",
         **sets,
     )
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """Whether a patch did harm -- the PR gate outside the benchmark.
+
+    Not an outcome and not a score. `ok` means *no evidence of harm was found*,
+    which is a weaker claim than `Score.PASSED` and must be worded as one
+    wherever it reaches a human (the PR body says what was not verified).
+    """
+
+    ok: bool
+    reason: str
+    #: Passing at baseline, not passing now -- a deleted test, a test turned into
+    #: a skip and a module that stopped collecting all count, as in `regressions`.
+    regressions: tuple[str, ...] = ()
+    #: Baseline failures silenced rather than fixed, as in `neutralized`.
+    neutralized: tuple[str, ...] = ()
+    #: Modules that collected at baseline and do not now. A module that stops
+    #: importing loses every test in it without any of them ever being recorded
+    #: as failed, which is why this is its own set rather than a side effect of
+    #: `regressions`.
+    new_collect_failures: tuple[str, ...] = ()
+    disqualified: tuple[str, ...] = ()
+
+
+def agent_verdict(
+    baseline: SuiteResult,
+    attempt: SuiteResult,
+    changed_files: list[str] | tuple[str, ...],
+    *,
+    baseline_files: tuple[str, ...] | None = None,
+    attempt_infrastructure_error: bool = False,
+) -> Verdict:
+    """Decide whether to open a PR for a task that has no ground truth.
+
+    `score()` cannot gate this. It is inadmissible whenever nothing was red at
+    the base commit -- which is the *normal* case for a live issue, where the
+    suite passes and the bug is simply not covered by it -- so under `score()`
+    a real task would never open a PR. This asks the question that can be
+    answered without a failing test: did the patch break anything, or make
+    something stop objecting?
+
+    Built from the same primitives as `score()` -- `disqualifying_paths`,
+    `regressions`, `neutralized`, `fingerprint_changed` -- and **its precondition
+    checks must be shared with `score()`**, factored out of it rather than
+    copied (a refactor that leaves `test_scoring.py` passing untouched). Two
+    copies of "was the baseline usable, did the environment drift" are two
+    chances for the PR gate and the benchmark to disagree about what a run
+    means.
+
+    Errs toward `ok=False`, as `score()` errs toward FAILED, with one difference
+    in posture: where `score()` reports an unusable baseline as *inadmissible*
+    (excluded from the headline), a PR gate has no such bucket. An unusable
+    baseline, an unscoreable attempt, an infrastructure error and a fingerprint
+    drift all mean harm was not ruled out, so all are `ok=False` with the reason
+    saying which.
+    """
+    raise NotImplementedError("agent_verdict lands in stream A: sandbox")
