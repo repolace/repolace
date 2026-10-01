@@ -28,6 +28,20 @@ class PipelineSettings(BaseSettings):
     #: is fine -- every repo then gets the default spec and the install
     #: heuristic, which is the state a repo starts in.
     verify_specs_path: Path = _REPO_ROOT_ENV_FILE.parent / "verify" / "specs.toml"
+    #: Where benchmark instances live (`<instance_id>.json`, read with
+    #: `repolace_shared.instances.load_instance`). The pipeline reads one by
+    #: `tasks.instance_id` to get the hidden-test overlay and the curated
+    #: fail-to-pass list, which is why it is a setting here rather than something
+    #: only the eval harness knows. A missing directory is fine outside benchmark
+    #: mode: nothing reads it for a live issue.
+    instances_dir: Path = _REPO_ROOT_ENV_FILE.parent / "eval" / "instances"
+    #: Which embedding strategy indexes are built with (`retrieval.strategies`).
+    #: `truncate` is the legacy behaviour, so changing nothing changes nothing --
+    #: and the default must stay it until the retrieval eval has picked a winner,
+    #: because `registered_repos.index_strategy` is compared against this once
+    #: retrieval reads it, and a different value forces a full reindex of every
+    #: repo it meets.
+    embedding_strategy: str = "truncate"
 
     @property
     def github_app_private_key(self) -> str:
