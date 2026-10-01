@@ -17,7 +17,7 @@ import pytest
 from verify.backends.docker import DockerBackend
 from verify.overlay import apply_overlay
 from verify.protocol import EnvironmentRef, RepoSpec, ScriptResult, SuiteResult
-from verify.scoring import Verdict, agent_verdict
+from verify.scoring import Verdict
 from verify.stage import container_name
 
 pytestmark = pytest.mark.anyio
@@ -82,10 +82,6 @@ class TestStubsRefuseLoudly:
     def test_apply_overlay(self, tmp_path):
         with pytest.raises(NotImplementedError, match="stream A"):
             apply_overlay(tmp_path, {"tests/test_x.py": b"x"}, dir_mode=0o777)
-
-    def test_agent_verdict(self):
-        with pytest.raises(NotImplementedError, match="stream A"):
-            agent_verdict(SuiteResult(), SuiteResult(), ["src/a.py"])
 
     async def test_docker_run_script(self, tmp_path: Path):
         with pytest.raises(NotImplementedError, match="stream A"):

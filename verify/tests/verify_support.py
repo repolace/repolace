@@ -52,3 +52,16 @@ def start_record(**extra) -> dict:
 def collect_record(nodeid: str, **extra) -> dict:
     return {"kind": "collect", "nodeid": nodeid, "outcome": "failed",
             "longrepr": extra.pop("longrepr", "ImportError: no module named x"), **extra}
+
+
+#: The fingerprint every `suite()` carries, so two suites built with defaults are
+#: comparable. `fingerprint_changed` compares rootdir, ini and plugins, and an
+#: empty fingerprint on both sides reads as "no drift" -- which would let a test
+#: of the drift rule pass for the wrong reason.
+STABLE_FINGERPRINT = {"rootdir": "/repo", "ini": {}, "plugins": []}
+
+
+def suite(**overrides) -> SuiteResult:
+    """A comparable `SuiteResult` for scoring tests: every set empty, a stable fingerprint."""
+    fields = {"fingerprint": dict(STABLE_FINGERPRINT)}
+    return SuiteResult(**{**fields, **overrides})
