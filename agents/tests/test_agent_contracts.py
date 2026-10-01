@@ -1,4 +1,9 @@
-"""The agent contracts: shapes, invariants, and that importing them stays cheap."""
+"""The agent contracts: shapes, invariants, and that importing them stays cheap.
+
+The stubs' own refusal tests are not here: each lives in a file named for the one
+stream that will delete it (`test_graph_stub.py` for stream F, `test_tools_stub.py`
+for stream B), so no two parallel streams edit one file.
+"""
 
 import dataclasses
 import subprocess
@@ -13,18 +18,17 @@ from repolace_agents.contracts import (
     AgentDeps,
     AgentLimits,
     AgentResult,
-    AgentRunner,
     AttemptRecord,
     IssueContext,
-    LLMClientLike,
     SearchHit,
     StopReason,
 )
-from repolace_agents.run import run_agent
-from repolace_agents.tools.base import ToolContext, ToolLimits, build_toolbox
+from repolace_agents.tools.base import ToolContext, ToolLimits
 from repolace_shared.db.models import AGENT_STOP_REASONS
 from verify.protocol import SuiteResult
 from verify.scoring import is_protected_path
+
+from agents_support import expect_stub, make_deps
 
 pytestmark = pytest.mark.anyio
 
@@ -140,27 +144,9 @@ class TestAgentResult:
 
 
 class TestAgentDeps:
-    def deps(self, **overrides) -> AgentDeps:
-        async def verify_attempt(attempt: int):
-            return None
-
-        async def changed_files():
-            return []
-
-        fields = {
-            "llm": None,
-            "tools": None,
-            "checkout": Path("/tmp/checkout"),
-            "issue": IssueContext(7, "title", None, "https://example.test/7", None),
-            "retrieved": (),
-            "repo_overview": "",
-            "baseline": SuiteResult(),
-            "baseline_files": (),
-            "hidden_paths": frozenset(),
-            "verify_attempt": verify_attempt,
-            "changed_files": changed_files,
-        }
-        return AgentDeps(**{**fields, **overrides})
+    @staticmethod
+    def deps(**overrides) -> AgentDeps:
+        return make_deps(**overrides)
 
     def test_limits_default_to_the_planned_bounds(self):
         assert self.deps().limits == AgentLimits()
@@ -177,10 +163,14 @@ class TestAgentDeps:
         assert set(hints) == {f.name for f in dataclasses.fields(AgentDeps)}
 
     def test_an_llm_is_optional_for_the_stub_and_gold_runners(self):
-        assert self.deps(llm=None).llm is None
+        """From the annotation, not by reading back the None the test passed in."""
+        assert type(None) in typing.get_args(typing.get_type_hints(AgentDeps)["llm"])
 
-    def test_hidden_paths_default_shape_is_a_frozenset(self):
-        assert self.deps().hidden_paths == frozenset()
+    def test_hidden_paths_is_declared_as_a_frozenset_of_paths(self):
+        """The feedback filter trusts it for the whole task, so a mutable `set` must
+        not satisfy the contract. Asserted on the declared type: the fixture builds
+        the value itself, so checking it would only check the fixture."""
+        assert typing.get_type_hints(AgentDeps)["hidden_paths"] == frozenset[str]
 
 
 class TestSearchHitAndIssueContext:
@@ -270,26 +260,6 @@ class TestToolLimits:
         assert limits.default_script_timeout <= limits.max_script_timeout
 
 
-class TestStubsRefuseLoudly:
-    async def test_run_agent_lands_in_stream_f(self):
-        deps = TestAgentDeps().deps()
-
-        with pytest.raises(NotImplementedError, match="stream F: graph"):
-            await run_agent(deps)
-
-    def test_build_toolbox_lands_in_stream_b(self):
-        async def noop(*args):
-            return None
-
-        with pytest.raises(NotImplementedError, match="stream B: toolbox"):
-            build_toolbox(ToolContext(Path("."), noop, noop, None, None))
-
-
-def test_the_protocols_are_importable_names():
-    """Names other streams import; a rename would otherwise surface far from here."""
-    assert LLMClientLike is not None and AgentRunner is not None
-
-
 class TestImportsStayCheap:
     def run_python(self, code: str) -> subprocess.CompletedProcess:
         # A subprocess because other tests in this process may already have
@@ -307,16 +277,58 @@ class TestImportsStayCheap:
 
         assert result.returncode == 0, result.stderr
 
-    def test_nor_the_gateway_nor_rag_nor_torch(self):
-        """`agents` depends on the gateway for its types but must not import it at
-        runtime, and must never reach `rag`, which would pull torch into every
-        agent test."""
+    FORBIDDEN = ("litellm", "repolace_gateway.client", "retrieval", "torch", "sentence_transformers")
+
+    def test_nor_the_gateway_client_nor_rag_nor_torch(self):
+        """The heavy things, by name. `repolace_gateway.client` pulls `litellm` and
+        FastAPI; `retrieval` would pull torch into every agent test.
+
+        Deliberately NOT `repolace_gateway` as a whole: the graph catches
+        `BudgetExceeded` (`repolace_gateway.budget`) and `LLMCallError`
+        (`repolace_gateway.errors`), both light, and a guard that forbade the
+        package would go red the day it imports them for no reason that matters.
+        """
         result = self.run_python(
             "import repolace_agents.contracts, repolace_agents.tools, "
             "repolace_agents.tools.base, repolace_agents.run, sys; "
-            "bad = [m for m in ('litellm', 'repolace_gateway', 'retrieval', 'torch', 'sentence_transformers') "
-            "if m in sys.modules]; "
+            f"bad = [m for m in {self.FORBIDDEN!r} if m in sys.modules]; "
             "assert not bad, f'imported: {bad}'"
         )
 
         assert result.returncode == 0, result.stderr
+
+    def test_the_light_gateway_modules_are_allowed_alongside_the_contracts(self):
+        """The positive half of the rule above, so it cannot quietly tighten back
+        into "no gateway": importing exactly what the graph needs keeps the guard green."""
+        result = self.run_python(
+            "import repolace_agents.contracts, repolace_agents.run, "
+            "repolace_gateway.budget, repolace_gateway.errors, sys; "
+            f"bad = [m for m in {self.FORBIDDEN!r} if m in sys.modules]; "
+            "assert not bad, f'imported: {bad}'; "
+            "assert 'repolace_gateway.budget' in sys.modules"
+        )
+
+        assert result.returncode == 0, result.stderr
+
+
+class TestExpectStub:
+    """The helper stub tests use: a stub is swallowed, anything else skips."""
+
+    def test_a_stub_that_names_its_owner_is_swallowed(self):
+        with expect_stub("stream F"):
+            raise NotImplementedError("run_agent lands in stream F: graph")
+
+    def test_a_stub_that_names_someone_else_fails(self):
+        with pytest.raises(AssertionError, match="must name the stream"):
+            with expect_stub("stream F"):
+                raise NotImplementedError("lands in stream B")
+
+    def test_an_implementation_that_returns_skips(self):
+        with pytest.raises(pytest.skip.Exception):
+            with expect_stub("stream F"):
+                pass
+
+    def test_an_implementation_that_raises_something_else_skips(self):
+        with pytest.raises(pytest.skip.Exception):
+            with expect_stub("stream F"):
+                raise RuntimeError("a real error from a real implementation")

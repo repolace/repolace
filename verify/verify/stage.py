@@ -50,8 +50,11 @@ RunLabel = int | str
 #: A str label: starts with a letter, so it can never read as an attempt number
 #: (`"1"` would otherwise produce the same directory and container name as the
 #: int 1), and limited to what Docker accepts in a name so nothing is silently
-#: rewritten into a collision.
-_LABEL = re.compile(r"[a-zA-Z][a-zA-Z0-9_.-]*")
+#: rewritten into a collision. At most 64 characters, because the label becomes a
+#: directory name (`export-<label>`, `results-<label>`) and the filesystem's limit
+#: is 255 bytes per component, not Docker's -- an over-long label would pass
+#: `container_name` and then fail at `mkdir` with `ENAMETOOLONG`.
+_LABEL = re.compile(r"[a-zA-Z][a-zA-Z0-9_.-]{0,63}")
 
 
 class Workspace(Protocol):
@@ -104,7 +107,8 @@ def container_name(task_id: uuid.UUID, run: RunLabel) -> str:
     """
     if isinstance(run, str) and not _LABEL.fullmatch(run):
         raise ValueError(
-            f"run label {run!r} must start with a letter and use only letters, digits, '_', '.', '-'"
+            f"run label {run!r} must start with a letter, use only letters, digits, '_', '.', '-', "
+            f"and be at most 64 characters"
         )
     return _NAME_UNSAFE.sub("-", f"repolace-{task_id.hex[:12]}-{run}")
 
@@ -225,14 +229,37 @@ class Verifier:
           `task_test_runs`, and carries no attempt number.
         * **Never trips the baseline guard** -- it is not attempt 0, and it must
           not make a later real attempt look like a second baseline.
-        * **A fresh label per call** (`"probe-<n>"`), so its export, results
-          directory and container name collide with nothing, including the
-          previous probe.
+        * **A fresh label per call**, `"probe-<n>"`, where `<n>` comes from a
+          per-`Verifier` counter that only ever increases: never reused, not even
+          after the previous probe was discarded, so its export, results
+          directory and container name collide with nothing. (`script-<n>` for
+          `run_script` has its own counter.) The label is at most 64 characters
+          and starts with a letter, which `container_name` enforces.
         * **Discards its directories when done** -- `workspace.discard(label)`,
           in a `finally`, cancellation included -- so a 40-step loop leaves
           bounded disk behind and one probe's files cannot reach the next.
         * Reuses the prepared environment and never builds one: raises
           `VerifierNotReady` when there is none.
+
+        **What comes back, and what does not.** A `SandboxError` from the backend
+        -- `SandboxUnavailable`, `SandboxTimeout`, `EnvironmentBuildFailed` -- is
+        **returned** as `SuiteResult(error=<redacted message>)`, never raised, as
+        `pipeline._verify` does for a scored run: the tool reports an `error` like
+        any other result, and has exactly one thing to catch.
+        **`VerifierNotReady` is the only exception** this raises for a sandbox
+        reason. Anything that is not a `SandboxError` -- an `OSError` from the
+        workspace, a bug -- propagates, as it should.
+
+        `timeout_seconds=None` means the spec's own `timeout_seconds`, or the
+        backend's default when that is None too. A number overrides both for this
+        call alone.
+
+        **`targets` and the timeout reach the backend only through the spec:**
+        `dataclasses.replace(self.spec, test_targets=tuple(targets),
+        timeout_seconds=...)` is what `SandboxBackend.run_tests` receives. The
+        Protocol has no `targets` or `timeout` parameter on `run_tests` and does
+        not gain one, so a backend reads them from `spec.test_targets` and
+        `spec.timeout_seconds`.
 
         The calling tool commits a checkpoint first, because `export_tree`
         refuses a tree that differs from HEAD -- which keeps this stage git-free.
@@ -252,13 +279,24 @@ class Verifier:
         """Run a scratch script against the current tree, for `run_python`.
 
         Same rules as `run_subset` -- never the overlay, never recorded, never
-        the baseline guard, a fresh label per call (`"script-<n>"`), directories
-        discarded in a `finally` -- plus two of its own. The script is written
-        outside both trees: not into the checkout, which `git add -A` would sweep
-        into the next checkpoint commit and the PR, and not into the export,
-        which is mounted read-only. And `timeout_seconds` is required rather than
-        defaulted: the tool owns the policy, and a script with no limit holds a
-        container and its memory cap for as long as the model likes.
+        the baseline guard, a fresh label per call (`"script-<n>"`, from its own
+        per-`Verifier` counter), directories discarded in a `finally`, a
+        `SandboxError` **returned** as `ScriptResult(error=<redacted message>)`
+        rather than raised, `VerifierNotReady` the only exception -- plus these:
+
+        * **Where the script is written.** `<workspace.results_dir(label)>/main.py`,
+          mode 0644. That is outside both trees: not in the checkout, which
+          `git add -A` would sweep into the next checkpoint commit and the PR, and
+          not in the export, which is mounted read-only and which the host might
+          later diff. It is also the one host-side directory `workspace.discard`
+          removes, so the script cannot outlive the call -- `Workspace` has no
+          scratch directory of its own, so do not reach for `tempfile`, whose
+          output `discard` never sees.
+        * **`timeout_seconds` is required**, not defaulted: the tool owns the
+          policy, and a script with no limit holds a container and its memory cap
+          for as long as the model likes. Unlike a probe's, it reaches the
+          backend as `SandboxBackend.run_script`'s own `timeout_seconds` argument,
+          which the Protocol already has.
 
         Raises `VerifierNotReady` when no environment has been prepared.
         """

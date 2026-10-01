@@ -23,10 +23,17 @@ def test_the_original_fields_keep_their_positions():
     assert names[6] == "score_reason"
 
 
-def test_the_new_fields_come_last():
-    names = [f.name for f in dataclasses.fields(RunResult)]
+def test_the_added_fields_exist_and_all_have_defaults():
+    """What positional construction depends on, without pinning the exact tail: a
+    stream that adds a further field (a patch sha, say) must not break this, only a
+    field added without a default, or one inserted into the original prefix."""
+    fields = {f.name: f for f in dataclasses.fields(RunResult)}
 
-    assert names[7:] == ["cost_usd", "attempts", "submitted", "stop_reason", "pr_gate_reason"]
+    assert {"cost_usd", "attempts", "submitted", "stop_reason", "pr_gate_reason"} <= set(fields)
+    for name, field in list(fields.items())[7:]:
+        assert (
+            field.default is not dataclasses.MISSING or field.default_factory is not dataclasses.MISSING
+        ), f"{name} has no default, so RunResult(task_id, status) would stop constructing"
 
 
 def test_positional_construction_still_means_what_it_did():

@@ -3,7 +3,9 @@
 Everything not implemented yet is asserted to *refuse*, because the failure the
 refusals prevent is silent: a `run` that ignored its overlay would score a
 benchmark task against the wrong tests, and `run_subset` returning an empty
-result would let a stream build on a probe that does nothing.
+result would let a stream build on a probe that does nothing. The refusals go
+through `expect_stub`, so implementing one skips its test instead of turning the
+suite red.
 """
 
 import uuid
@@ -13,6 +15,8 @@ import pytest
 from verify.protocol import RepoSpec
 from verify.stage import BASELINE_ATTEMPT, Verifier, VerifierNotReady
 from verify.testing import FakeBackend, FakeWorkspace
+
+from verify_support import expect_stub
 
 pytestmark = pytest.mark.anyio
 
@@ -45,6 +49,17 @@ class TestWithoutAnOverlay:
 
         with pytest.raises(RuntimeError, match="baseline"):
             await v.run(workspace, BASELINE_ATTEMPT)
+
+    async def test_a_dirty_tree_is_refused_not_swallowed_by_the_stage(self, workspace):
+        """The export's refusal is the precondition the whole stage rests on; the
+        stage must let it through, and must not have built anything by then."""
+        v = verifier()
+        workspace.set_dirty(True)
+
+        with pytest.raises(RuntimeError, match="refusing to export"):
+            await v.run(workspace, BASELINE_ATTEMPT)
+
+        assert v.backend.prepared == [] and v.backend.runs == [] and not v.prepared
 
     async def test_an_empty_overlay_is_no_overlay(self, workspace):
         v = verifier(overlay={})
@@ -87,8 +102,10 @@ class TestHiddenPaths:
 
 
 class TestAScoredRunWithAnOverlayRefuses:
+    """Until stream A applies the overlay. Each skips once it does (`expect_stub`)."""
+
     async def test_run_raises_rather_than_ignoring_the_overlay(self, workspace):
-        with pytest.raises(NotImplementedError, match="stream A"):
+        with expect_stub("stream A"):
             await verifier(overlay=OVERLAY).run(workspace, BASELINE_ATTEMPT)
 
     async def test_it_refuses_before_exporting_or_preparing_anything(self, workspace):
@@ -96,7 +113,7 @@ class TestAScoredRunWithAnOverlayRefuses:
         image from a tree the overlay was never applied to."""
         v = verifier(overlay=OVERLAY)
 
-        with pytest.raises(NotImplementedError):
+        with expect_stub("stream A"):
             await v.run(workspace, BASELINE_ATTEMPT)
 
         assert workspace.exported == []
@@ -106,24 +123,28 @@ class TestAScoredRunWithAnOverlayRefuses:
 
 
 class TestUnscoredRunsAreNotImplementedYet:
+    """Each skips once implemented. Note an implemented `run_subset` called before
+    the baseline raises `VerifierNotReady`, not `NotImplementedError`: `expect_stub`
+    reads that as "implemented" too, rather than as a failure."""
+
     async def test_run_subset(self, workspace):
-        with pytest.raises(NotImplementedError, match="stream A"):
+        with expect_stub("stream A"):
             await verifier().run_subset(workspace, ["tests/test_a.py"])
 
     async def test_run_subset_accepts_a_timeout(self, workspace):
-        with pytest.raises(NotImplementedError, match="stream A"):
+        with expect_stub("stream A"):
             await verifier().run_subset(workspace, ["tests/test_a.py"], timeout_seconds=30.0)
 
     async def test_run_script(self, workspace):
-        with pytest.raises(NotImplementedError, match="stream A"):
+        with expect_stub("stream A"):
             await verifier().run_script(workspace, "print(1)", timeout_seconds=10.0)
 
     async def test_a_stub_does_not_touch_the_workspace_or_the_backend(self, workspace):
         v = verifier()
 
-        with pytest.raises(NotImplementedError):
+        with expect_stub("stream A"):
             await v.run_subset(workspace, ["tests/test_a.py"])
-        with pytest.raises(NotImplementedError):
+        with expect_stub("stream A"):
             await v.run_script(workspace, "print(1)", timeout_seconds=10.0)
 
         assert workspace.exported == [] and v.backend.runs == [] and v.backend.scripts == []

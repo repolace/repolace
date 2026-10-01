@@ -135,6 +135,16 @@ class ScriptResult:
     duration_seconds: float | None = None
     error: str | None = None
 
+    def __post_init__(self) -> None:
+        # "No exit code" has to be explained. A result with none and neither
+        # `timed_out` nor `error` says nothing at all -- the script neither
+        # finished, nor was killed, nor failed to start -- and a tool rendering it
+        # would have to invent a sentence.
+        if self.exit_code is None and not self.timed_out and not self.error:
+            raise ValueError(
+                "a ScriptResult with no exit_code must say why: timed_out=True or an error"
+            )
+
 
 class SandboxBackend(Protocol):
     async def prepare(self, spec: RepoSpec, source_dir: Path, cache_key: str) -> EnvironmentRef:
