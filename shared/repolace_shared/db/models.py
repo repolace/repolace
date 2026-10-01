@@ -75,6 +75,24 @@ class TaskOutcome(str, enum.Enum):
 #: edit attempt, numbered from 1.
 BASELINE_ATTEMPT = 0
 
+#: Why the agent loop ended, as stored in `tasks.agent_stop_reason`. A tuple of
+#: strings behind a CHECK constraint rather than a Postgres enum, so adding a
+#: value later is a drop-and-recreate of one constraint instead of an
+#: `ALTER TYPE` (see migrations 0007 and 0009 for what the enum route costs).
+#: `repolace_agents.contracts.StopReason` carries the same seven values, and a
+#: test holds the two equal -- `agents` must not import this module, because it
+#: would drag SQLAlchemy and pgvector into code that only needs to name a reason.
+AGENT_STOP_REASONS: tuple[str, ...] = (
+    "submitted",
+    "step_cap",
+    "budget_usd",
+    "budget_calls",
+    "budget_wall",
+    "llm_error",
+    "no_change",
+)
+_AGENT_STOP_REASON_LIST = ", ".join(f"'{reason}'" for reason in AGENT_STOP_REASONS)
+
 
 class GithubInstallation(Base):
     __tablename__ = "github_installations"
@@ -108,6 +126,13 @@ class RegisteredRepo(Base):
     private: Mapped[bool] = mapped_column(Boolean, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
     indexed_commit_sha: Mapped[str | None] = mapped_column(String, nullable=True)
+    #: The embedding strategy the index was built with. NULL means the legacy
+    #: `truncate`, which is what every index built before this column used.
+    #: Without it, changing the strategy on a repo whose index is already current
+    #: never reindexes it -- `reindex_if_stale` compares commits only -- so old
+    #: and new embeddings would mix in one index, and retrieval quality would be
+    #: a silent blend of two experiments.
+    index_strategy: Mapped[str | None] = mapped_column(String, nullable=True)
     registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -138,6 +163,24 @@ class Task(Base):
         CheckConstraint(
             "test_edit_approved_at IS NULL OR outcome = 'passed_with_test_edit'",
             name="ck_tasks_test_edit_approval_needs_test_edit",
+        ),
+        # Built from `AGENT_STOP_REASONS` so the constraint and the constant
+        # cannot drift. A string plus a CHECK, not an enum: see the constant.
+        CheckConstraint(
+            f"agent_stop_reason IS NULL OR agent_stop_reason IN ({_AGENT_STOP_REASON_LIST})",
+            name="ck_tasks_agent_stop_reason",
+        ),
+        # Makes the harness's enqueue idempotent: a re-run after a crash cannot
+        # create a second row for one (run, instance, run_index), which would be
+        # scored twice. Partial because every product task has a NULL
+        # `eval_run_id`, and those must stay free to repeat.
+        Index(
+            "uq_tasks_eval_instance_run",
+            "eval_run_id",
+            "instance_id",
+            "run_index",
+            unique=True,
+            postgresql_where=text("eval_run_id IS NOT NULL"),
         ),
     )
 
@@ -197,8 +240,24 @@ class Task(Base):
     #: NULL means the task never got this far, which is not the same as a patch
     #: that changed nothing.
     patch_sha: Mapped[str | None] = mapped_column(String, nullable=True)
+    #: The final diff itself (`review_diff()`), for every task that got as far as
+    #: the agent. `patch_sha` is a git sha and cannot carry the content: a
+    #: benchmark task that does not score PASSED never pushes, so its commits die
+    #: with the clone and the sha points at nothing. NULL means the task never
+    #: reached the agent; an empty string would be a patch that changed nothing.
+    patch_diff: Mapped[str | None] = mapped_column(Text, nullable=True)
     changed_files: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    #: `Score.reason`, which `score()` computes and the pipeline used to discard.
+    #: The report needs the sentence, and rescoring later is lossy: the set that
+    #: spares a shipped module like `django/test/client.py` (`baseline_files`) is
+    #: not stored. NULL for a task that was never scored.
+    score_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Why the agent loop ended -- one of `AGENT_STOP_REASONS`. Its own column
+    #: because `error_message` is reserved for FAILED ("repolace itself broke"),
+    #: and an agent that ran out of budget did not break repolace. NULL for a
+    #: task that never ran an agent.
+    agent_stop_reason: Mapped[str | None] = mapped_column(String, nullable=True)
     pr_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     pr_url: Mapped[str | None] = mapped_column(String, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
