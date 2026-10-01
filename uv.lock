@@ -2534,13 +2534,19 @@ version = "0.0.1"
 source = { editable = "gateway" }
 dependencies = [
     { name = "litellm" },
+    { name = "pydantic-settings" },
     { name = "repolace-shared" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "structlog" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "litellm", specifier = ">=1.50" },
+    { name = "pydantic-settings", specifier = ">=2.5" },
     { name = "repolace-shared", editable = "shared" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
+    { name = "structlog", specifier = ">=24.1" },
 ]
 
 [[package]]

@@ -180,6 +180,10 @@ When a task starts, repolace checks the repo's `indexed_commit_sha` against the 
 
 **Git runs in a sanitized environment** — `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM` pinned to `/dev/null`, an allowlisted environment, hooks and fsmonitor disabled on every invocation, and a credential helper that releases the token only over `https` to the expected host. The checkout's own `.git/config` is not pinned; the sandbox never receives it, and the export reads blobs directly so no filter or attribute it names ever runs.
 
+**Model calls run on the host, through the gateway, and the provider key lives only there.** Every call is attributed to a task, priced and recorded; an unpriced call is an error rather than zero, and a per-task budget (default $2) is enforced in the gateway rather than trusted to the agent. The key is handed to LiteLLM per call and never exported into `os.environ`, so nothing the host spawns can inherit it.
+
+**`llm_calls` stores every request and response verbatim, which includes repository source code.** For a private repository, its code is in that table (and was sent to the model provider). Redaction strips credential-shaped strings, and the exact keys the gateway holds, from what is stored; it does not and cannot strip code. Treat the database accordingly.
+
 ## What comes next
 
 **Phase 1 completion:** LiteLLM gateway, a real single agent in place of the stub editor, a bounded retry loop, and the benchmark (15–20 hand-picked Python issues, tracked pass/fail/cost/latency). Benchmark repos must contain no tracked symlinks or submodules — the export refuses both.

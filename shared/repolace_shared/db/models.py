@@ -148,7 +148,16 @@ class Task(Base):
     issue_number: Mapped[int] = mapped_column(Integer, nullable=False)
     issue_title: Mapped[str] = mapped_column(String, nullable=False)
     issue_url: Mapped[str] = mapped_column(String, nullable=False)
+    #: UNTRUSTED. Anyone can file an issue on a public repo, so this reaches an
+    #: LLM prompt only as delimited data, never as instruction. NULL for tasks
+    #: created before the column existed, which is not the same as an empty body.
+    issue_body: Mapped[str | None] = mapped_column(Text, nullable=True)
     target_branch: Mapped[str] = mapped_column(String, nullable=False)
+    #: Set only by the eval harness, so benchmark rows are queryable from this
+    #: table rather than from a second store that could drift from it.
+    eval_run_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    instance_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    run_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[TaskStatus] = mapped_column(
         Enum(
             TaskStatus,
@@ -204,6 +213,14 @@ class Task(Base):
     repo: Mapped[RegisteredRepo] = relationship(back_populates="tasks")
     test_runs: Mapped[list["TaskTestRun"]] = relationship(
         back_populates="task", cascade="all, delete-orphan", order_by="TaskTestRun.attempt"
+    )
+    #: `passive_deletes` so deleting a task leans on the database's ON DELETE
+    #: CASCADE instead of loading every call -- each row carries a full prompt.
+    llm_calls: Mapped[list["LLMCall"]] = relationship(
+        back_populates="task",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="LLMCall.created_at",
     )
 
 
@@ -283,6 +300,57 @@ class TaskTestRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     task: Mapped[Task] = relationship(back_populates="test_runs")
+
+
+class LLMCall(Base):
+    """One call through the gateway.
+
+    Stores the request and response verbatim, for the reason `TaskTestRun`
+    stores raw sets: cost, latency and the trajectory itself are the benchmark's
+    evidence, and none of them can be recovered once the call is over. The price
+    is that this table holds repo source code, which is a privacy matter for
+    private repositories.
+
+    Token and cost columns are NULL on a call that produced no usage -- an
+    error row -- rather than 0, because "the provider reported nothing" and
+    "the call was free" are different claims and only the first is true there.
+
+    ``input_tokens`` is the *total* prompt, cached tokens included (LiteLLM's and
+    OpenAI's convention); ``cached_input_tokens`` is the cache-read part of it.
+    Cache-*write* tokens, which Anthropic bills at a premium, are not a column:
+    they are in ``response.usage`` for anyone repricing a run.
+    """
+
+    __tablename__ = "llm_calls"
+    __table_args__ = (
+        Index("ix_llm_calls_task_id_created_at", "task_id", "created_at"),
+        CheckConstraint("attempt IS NULL OR attempt >= 0", name="ck_llm_calls_attempt_non_negative"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False
+    )
+    #: The edit attempt the call belonged to. NULL for a call outside any
+    #: attempt (retrieval-time query rewriting, say), which is not attempt 0:
+    #: 0 is the baseline test run and no model call ever belongs to it.
+    attempt: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stage: Mapped[str] = mapped_column(String, nullable=False)
+    #: The LiteLLM model id actually called, provider prefix included. The model
+    #: that *served* the call, so a fallback shows up as the fallback.
+    model: Mapped[str] = mapped_column(String, nullable=False)
+    provider: Mapped[str] = mapped_column(String, nullable=False)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cached_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cost_usd: Mapped[float | None] = mapped_column(Numeric(14, 8), nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    request: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    response: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    task: Mapped[Task] = relationship(back_populates="llm_calls")
 
 
 class ChunkType(str, enum.Enum):

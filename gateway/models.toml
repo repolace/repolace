@@ -1,0 +1,67 @@
+# Stage -> model routing for the LLM gateway. Loaded by repolace_gateway.config.
+#
+# Provider API keys do NOT go here -- they come from the environment
+# (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY) or the repo-root .env.
+#
+# Prices: LiteLLM's own price map is used unless a model has a [price] table.
+# The map is pinned to the installed LiteLLM version (LITELLM_LOCAL_MODEL_COST_MAP)
+# so a task's cost does not drift with whatever the upstream map says today.
+# A model that has neither is rejected BEFORE its first call -- an unpriced call
+# is a hard error, never zero. Rates are USD per MILLION tokens. If a model sets
+# supports_prompt_caching, its [price] must also give cache_read and cache_write.
+
+[gateway]
+max_attempts = 5            # total tries per model, the first included
+base_delay_seconds = 2.0    # backoff doubles from here, with jitter
+max_delay_seconds = 60.0
+request_timeout_seconds = 180.0
+
+[stages.agent]
+model = "claude-sonnet-5-5"
+# fallback = "..."          # optional; used only after a transient failure exhausts retries
+cache = true                # the agent loop re-sends a long, mostly stable prefix every step
+max_tokens = 8192
+
+[stages.cheap]
+model = "claude-haiku-4-5-20251001"
+cache = false               # single-shot calls: a cache write costs more than it saves
+max_tokens = 1024
+
+# --- headline model --------------------------------------------------------
+# NOT PRICED: LiteLLM 1.98.0's price map has `claude-sonnet-5` but no
+# `claude-sonnet-5-5`, so the gateway will refuse this model with
+# UnpricedModelError until a price is given. Fill in the [price] table below
+# from Anthropic's pricing page (or bump LiteLLM to a version that has it).
+# Rates were deliberately not guessed: a wrong price here is a wrong benchmark.
+[models.claude-sonnet-5-5]
+provider = "anthropic"
+litellm_model = "anthropic/claude-sonnet-5-5"
+supports_prompt_caching = true
+# [models.claude-sonnet-5-5.price]
+# input = 0.0
+# output = 0.0
+# cache_read = 0.0
+# cache_write = 0.0
+
+# --- cheap model -----------------------------------------------------------
+[models.claude-haiku-4-5-20251001]
+provider = "anthropic"
+litellm_model = "anthropic/claude-haiku-4-5-20251001"
+supports_prompt_caching = true   # priced by LiteLLM's map; no [price] needed
+
+# --- comparison models (WP8) -----------------------------------------------
+# Placeholders. Uncomment, fill in, and point a one-run sweep at one with
+#   GATEWAY_STAGE_MODELS='{"agent": "<key>"}'
+# The provider must be one of: anthropic, openai, gemini, and litellm_model must
+# start with "<provider>/" (checked at load -- otherwise one vendor's key would
+# be sent to another vendor's API).
+#
+# [models.comparison-a]
+# provider = "openai"
+# litellm_model = "openai/CHANGE-ME"
+# supports_prompt_caching = false
+#
+# [models.comparison-b]
+# provider = "gemini"
+# litellm_model = "gemini/CHANGE-ME"
+# supports_prompt_caching = false

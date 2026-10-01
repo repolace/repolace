@@ -15,7 +15,7 @@ package = false
 members = ["api", "worker", "agents", "gateway", "rag", "shared", "eval", "pipeline", "verify"]
 
 [tool.pytest.ini_options]
-testpaths = ["rag/tests", "shared/tests", "pipeline/tests", "verify/tests"]
+testpaths = ["rag/tests", "shared/tests", "pipeline/tests", "verify/tests", "gateway/tests"]
 addopts = "-q"
 markers = [
     "db: needs a live PostgreSQL; skipped unless one is reachable",
