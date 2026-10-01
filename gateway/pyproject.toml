@@ -6,6 +6,9 @@ requires-python = ">=3.12"
 dependencies = [
     "litellm>=1.50",
     "repolace-shared",
+    "sqlalchemy[asyncio]>=2.0",
+    "pydantic-settings>=2.5",
+    "structlog>=24.1",
 ]
 
 [tool.uv.sources]
