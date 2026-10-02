@@ -43,6 +43,13 @@ _FIXTURE_DIR_PARTS = frozenset({"__snapshots__", "cassettes", "testdata", "snaps
 #: pass with a diff that touches no test path.
 _CONFIG_FILES = frozenset({
     "pytest.ini", "tox.ini", "setup.cfg", "pyproject.toml", ".coveragerc",
+    # pytest also reads these, and they win over what the repository ships: with
+    # pytest 9, a `pytest.toml` takes precedence over an existing `pytest.ini` (it
+    # prints "ignoring pytest config in pytest.ini"), so adding one swaps the whole
+    # config without touching a protected file. A malformed one breaks the run
+    # outright. The fingerprint only watches twelve ini keys, so it would not see
+    # the swap either.
+    ".pytest.ini", "pytest.toml", ".pytest.toml",
     "conftest.py",
     # Imported by the interpreter before pytest exists, whenever the repo root
     # is on sys.path -- which a legacy-mode editable install arranges.
