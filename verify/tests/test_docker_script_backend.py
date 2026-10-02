@@ -420,17 +420,31 @@ import json, os, sys
 
 MODE = {mode!r}
 SIBLING = {sibling!r}
+CALLS = {calls!r}
 
 args = sys.argv[1:]
 if not args or args[0] != "run":
     sys.exit(0)
 
-results = nonce = None
+results = None
 for previous, current in zip(args, args[1:]):
     if previous == "-v" and current.endswith(":/results"):
         results = current[: -len(":/results")]
-    if previous == "-e" and current.startswith("REPOLACE_RUN_NONCE="):
-        nonce = current.split("=", 1)[1]
+
+# Like `docker run -e NAME` with no value: forward the variable from the CLI's own
+# environment, and only if the argv asked for it.
+forwarded = "REPOLACE_RUN_NONCE" in args
+nonce = os.environ.get("REPOLACE_RUN_NONCE") if forwarded else None
+with open(CALLS, "w") as handle:
+    json.dump(
+        {{
+            "argv": args,
+            "nonce_in_cli_env": os.environ.get("REPOLACE_RUN_NONCE"),
+            "docker_host": os.environ.get("DOCKER_HOST"),
+            "leaked_secret": os.environ.get("GITHUB_APP_PRIVATE_KEY_BASE64"),
+        }},
+        handle,
+    )
 
 report = os.path.join(results, "report.jsonl")
 if MODE == "symlink":
@@ -465,7 +479,12 @@ def fake_container(tmp_path):
 
     def make(mode: str = "honest", sibling: Path | None = None) -> str:
         path = tmp_path / "docker"
-        path.write_text(FAKE_CONTAINER.format(python=sys.executable, mode=mode, sibling=str(sibling or "")))
+        path.write_text(
+            FAKE_CONTAINER.format(
+                python=sys.executable, mode=mode, sibling=str(sibling or ""),
+                calls=str(tmp_path / "container-calls.json"),
+            )
+        )
         path.chmod(0o755)
         return str(path)
 
@@ -489,6 +508,54 @@ class TestRunTestsCarriesAndChecksTheNonce:
 
         assert result.error is None, result.error
         assert result.passed == ("t.py::ok",)
+
+    async def test_the_value_is_in_the_clis_environment_and_never_in_its_argv(self, fake_container, tmp_path):
+        """Argv is readable by every user on the host and is logged when a run times out;
+        a process environment is not. The argv asks docker to forward the name."""
+        await run_suite_through(backend_for(fake_container("honest")), tmp_path)
+
+        seen = json.loads((tmp_path / "container-calls.json").read_text())
+        nonce = seen["nonce_in_cli_env"]
+
+        assert isinstance(nonce, str) and len(nonce) == 32
+        assert "REPOLACE_RUN_NONCE" in seen["argv"]
+        assert not any(nonce in token for token in seen["argv"])
+        assert not any(token.startswith("REPOLACE_RUN_NONCE=") for token in seen["argv"])
+
+    async def test_adding_the_nonce_does_not_change_which_other_variables_the_cli_gets(
+        self, fake_container, tmp_path, monkeypatch
+    ):
+        """The CLI's environment is the allowlisted one *plus* the nonce. Dropping the rest
+        would lose `DOCKER_HOST` and fall back to the rootful socket; inheriting the rest
+        would hand it the App private key."""
+        monkeypatch.setenv("DOCKER_HOST", "unix:///run/user/1000/docker.sock")
+        monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY_BASE64", "not-a-real-key")
+
+        await run_suite_through(backend_for(fake_container("honest")), tmp_path)
+
+        seen = json.loads((tmp_path / "container-calls.json").read_text())
+        assert seen["docker_host"] == "unix:///run/user/1000/docker.sock"
+        assert seen["leaked_secret"] is None
+
+    async def test_without_the_forwarding_flag_the_container_would_get_no_nonce(
+        self, fake_container, tmp_path
+    ):
+        """The fake only forwards when asked, as docker does -- so the honest runs above
+        pass *because* the argv asks, not by accident."""
+        backend = backend_for(fake_container("honest"))
+        real_build = docker_module.build_run_argv
+
+        def without_forwarding(*args, **kwargs):
+            kwargs["forward_nonce"] = False
+            return real_build(*args, **kwargs)
+
+        docker_module.build_run_argv = without_forwarding
+        try:
+            result, _ = await run_suite_through(backend, tmp_path)
+        finally:
+            docker_module.build_run_argv = real_build
+
+        assert "not written by this run" in result.error
 
     async def test_each_run_gets_a_fresh_nonce(self, fake_container, tmp_path):
         backend = backend_for(fake_container("honest"))
