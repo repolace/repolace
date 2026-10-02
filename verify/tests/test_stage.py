@@ -660,8 +660,12 @@ class TestProbeArgumentsAreChecked:
 
     @pytest.mark.parametrize(
         "targets",
-        ["tests/test_a.py", ["-x"], ["tests/a.py", "--rootdir=/"], ["-p", "evil"], [""], [123], [None]],
-        ids=["bare-str", "dash-x", "later-dash", "dash-p", "empty-string", "int", "none"],
+        [
+            "tests/test_a.py", ["-x"], ["tests/a.py", "--rootdir=/"], ["-p", "evil"], [""], [123], [None],
+            ["@args.txt"], ["tests/a.py", "@/etc/passwd"], ["@"],
+        ],
+        ids=["bare-str", "dash-x", "later-dash", "dash-p", "empty-string", "int", "none",
+             "at-file", "later-at-file", "bare-at"],
     )
     async def test_a_target_that_is_not_a_test_path_is_refused(self, workspace, targets):
         verifier = await ready(workspace)
@@ -767,3 +771,25 @@ class TestRedactionHappensInTheStage:
 
         assert "raw message" in result.error
         assert self.SECRET not in result.error
+
+
+class TestAtFileTargets:
+    """pytest expands `@file` arguments by reading the named file for more arguments,
+    and does so even after `--`, so a leading `@` is an option in disguise."""
+
+    @pytest.mark.parametrize("target", ["@args.txt", "@/abs/path", "@../x", "@"])
+    async def test_a_leading_at_is_refused(self, workspace, target):
+        verifier = await ready(workspace)
+
+        with pytest.raises(ValueError, match="'@'"):
+            await verifier.run_subset(workspace, [target])
+
+        assert workspace.discarded == [] and len(verifier.backend.runs) == 1
+
+    async def test_an_at_sign_elsewhere_in_a_target_is_fine(self, workspace):
+        """Parametrised ids and paths legitimately contain one; only a leading one expands."""
+        verifier = await ready(workspace)
+
+        await verifier.run_subset(workspace, ["tests/test_a.py::test_x[a@b]", "pkg@2/test_b.py"])
+
+        assert verifier.backend.runs[-1]["spec"].test_targets == ("tests/test_a.py::test_x[a@b]", "pkg@2/test_b.py")
