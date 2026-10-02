@@ -5,13 +5,17 @@ that differs from HEAD, and `FakeWorkspace` refuses the same way, so a tool that
 forgot to checkpoint raises inside the fake instead of passing.
 """
 
-import pytest
-from verify.protocol import ScriptResult, SuiteResult
-from verify.stage import VerifierNotReady
+import dataclasses
 
-from repolace_agents.tools import ToolLimits
+import pytest
+from verify.protocol import EnvironmentRef, RepoSpec, ScriptResult, SuiteResult
+from verify.stage import VerifierNotReady
+from verify.testing import FakeBackend
+
+from repolace_agents.tools import ToolLimits, build_toolbox
 from repolace_shared.git import GitCommandError
 
+from agents_support import FakeToolCall
 from tools_support import make_harness, snapshot
 
 pytestmark = pytest.mark.anyio
@@ -40,6 +44,8 @@ TARGET_REFUSALS = [
     ".gitattributes",
     "::test_add",
     "tests/test_core.py::test add",
+    "@a.txt",
+    "@tests/test_core.py",
 ]
 
 
@@ -223,16 +229,26 @@ class TestRunTests:
         assert h.subset_calls == [["tests/test_core.py::test_add", "tests"]]
 
     @pytest.mark.parametrize(
-        "target",
-        ["tests/test_core.py", "tests/test_core.py::test_add", "tests/test_core.py::test_add[param-1]", "tests/test_core.py::TestX::test_y[a,b=c@d+e]", "tests", "tests/", "."],
+        ("target", "reaches_the_sandbox_as"),
+        [
+            ("tests/test_core.py", "tests/test_core.py"),
+            ("tests/test_core.py::test_add", "tests/test_core.py::test_add"),
+            ("tests/test_core.py::test_add[param-1]", "tests/test_core.py::test_add[param-1]"),
+            ("tests/test_core.py::TestX::test_y[a,b=c@d+e]", "tests/test_core.py::TestX::test_y[a,b=c@d+e]"),
+            ("tests", "tests"),
+            ("tests/", "tests"),
+            (".", "."),
+            ("./tests/test_core.py::test_add", "tests/test_core.py::test_add"),
+            ("tests/./test_core.py", "tests/test_core.py"),
+        ],
     )
-    async def test_a_plain_target_is_accepted(self, tmp_path, target):
+    async def test_a_plain_target_is_accepted_and_reaches_the_sandbox_normalised(self, tmp_path, target, reaches_the_sandbox_as):
         h = make_harness(tmp_path)
 
         out = await h.call("run_tests", targets=[target])
 
         assert not out.is_error, out.content
-        assert h.subset_calls == [[target]]
+        assert h.subset_calls == [[reaches_the_sandbox_as]]
 
     @pytest.mark.parametrize("target", TARGET_REFUSALS)
     async def test_a_hostile_target_is_refused_and_nothing_runs(self, tmp_path, target):
@@ -252,6 +268,29 @@ class TestRunTests:
         out = await h.call("run_tests", targets=[name])
 
         assert out.is_error and "starts with '-'" in out.content
+        assert h.subset_calls == [] and h.events == []
+
+    async def test_an_argfile_target_is_refused_even_when_the_file_exists(self, tmp_path):
+        # pytest expands `@file` from a file the agent can write, which injects -o, -W, --junitxml=...
+        h = make_harness(tmp_path)
+        (h.checkout / "a.txt").write_text("-o\naddopts=-p evil\n")
+        (h.checkout / "@a.txt").write_text("-v\n")  # lexists('@a.txt') is true: only the character rule stops it
+
+        out = await h.call("run_tests", targets=["@a.txt"])
+
+        assert out.is_error and "must start with a letter, digit, '.' or '_'" in out.content
+        assert h.subset_calls == [] and h.events == []
+
+    @pytest.mark.parametrize("target", ["./-x", "./@a.txt", "tests/../x", "./--collect-only::t"])
+    async def test_a_target_that_only_becomes_an_option_once_normalised_is_refused(self, tmp_path, target):
+        # `./-x` passes the character check as typed; as `-x` it would reach pytest as an option.
+        h = make_harness(tmp_path)
+        for name in ("-x", "@a.txt", "--collect-only"):
+            (h.checkout / name).write_text("x\n")
+
+        out = await h.call("run_tests", targets=[target])
+
+        assert out.is_error
         assert h.subset_calls == [] and h.events == []
 
     @pytest.mark.parametrize("target", ["-p evil", "--rootdir=/", "-x"])
@@ -365,3 +404,42 @@ class TestRunTests:
 
         with pytest.raises(RuntimeError, match="refusing to export"):
             await h.ctx.run_subset(["tests"])
+
+
+class TestTheProbeRendersOnlyWhatTheVerifierReturned:
+    """`run_tests` prints failed ids, collection errors and the output tail verbatim, which is
+    safe only because a probe never includes the hidden overlay. This pins the shape of that
+    guarantee: the sandbox is called with the targets alone, on a tree without the overlay, and
+    the rendering is a function of the one `SuiteResult` that came back."""
+
+    HIDDEN = "tests/test_hidden.py::test_the_oracle"
+
+    async def test_the_output_is_built_from_the_probe_result_alone(self, tmp_path):
+        probe = SuiteResult(
+            passed=("tests/test_core.py::test_ok",),
+            failed=("tests/test_core.py::test_add",),
+            collect_failures=("tests/test_broken.py",),
+            stdout_tail="E   assert 3 == 4",
+        )
+        backend = FakeBackend(results=[probe])
+        baseline = SuiteResult(failed=(self.HIDDEN,), stdout_tail=f"FAILED {self.HIDDEN}")  # oracle-bearing, never an input here
+
+        h = make_harness(tmp_path)
+
+        async def run_subset(targets):
+            # Mirrors `Verifier.run_subset`: export the tree, give the backend the targets
+            # through the spec, and return its result. No overlay is applied on this path.
+            source = await h.workspace.export_tree("probe-1")
+            results = await h.workspace.results_dir("probe-1")
+            spec = dataclasses.replace(RepoSpec(key="x"), test_targets=tuple(targets))
+            return await backend.run_tests(EnvironmentRef("fake", "img"), source, results, spec, container_name="probe-1")
+
+        box = build_toolbox(dataclasses.replace(h.ctx, run_subset=run_subset))
+        out = await box.dispatch(FakeToolCall("run_tests", {"targets": ["tests/test_core.py"]}))
+
+        assert not out.is_error
+        assert backend.runs[0]["spec"].test_targets == ("tests/test_core.py",)
+        assert "tests/test_hidden.py" not in backend.runs[0]["snapshot"]
+        for fragment in ("tests/test_core.py::test_add", "tests/test_broken.py", "E   assert 3 == 4"):
+            assert fragment in out.content
+        assert self.HIDDEN not in out.content and baseline.stdout_tail not in out.content

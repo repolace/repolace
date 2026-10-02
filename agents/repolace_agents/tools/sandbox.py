@@ -34,7 +34,7 @@ from repolace_shared.git import GitError
 from verify.stage import VerifierNotReady
 
 from repolace_agents.tools.base import ToolContext, ToolError, ToolOutcome, ToolSpec
-from repolace_agents.tools.paths import confine, require_text, shown
+from repolace_agents.tools.paths import confine, relative_posix, require_text, shown
 
 #: Per-stream cap for `run_python`, and the cap for a suite's output tail. Both are
 #: ceilings: a small `max_output_chars` shrinks them so the whole result still fits.
@@ -49,9 +49,12 @@ MAX_ID_CHARS = 200
 MAX_ERROR_CHARS = 200
 
 #: A pytest node id or path, and nothing else: no space (so no second argument),
-#: no quote, no `-` first (so no option -- checked separately, since `-` is legal
-#: inside an id). `fullmatch`, because `$` would accept a trailing newline.
-_SAFE_TARGET = re.compile(r"[\w./\[\]:,=@+-]+")
+#: no quote. The first character is a letter, digit, `.` or `_` -- never `-` (an
+#: option) and never `@` (pytest expands `@file` into arguments read from a file
+#: the agent can write, which would smuggle in `-o`, `-W`, `--junitxml=`...). `@`
+#: stays legal *inside* an id, for a parametrised `test_x[a@b]`. `fullmatch`,
+#: because `$` would accept a trailing newline.
+_SAFE_TARGET = re.compile(r"[A-Za-z0-9_.][\w./\[\]:,=@+-]*")
 
 _UNAVAILABLE = "the sandbox is unavailable: {why}; carry on by reading the code (read_file, grep)"
 
@@ -171,26 +174,50 @@ class RunTests:
             },
         )
 
-    def _check_target(self, target: str) -> None:
+    def _normalise_target(self, target: str) -> str:
+        """The repo-relative form of a target the sandbox may be given, or a `ToolError`.
+
+        What reaches pytest is this normalised string, never the raw one: `./-x`
+        passes the character check as typed and would be the option `-x` once
+        normalised, so the first-character rule is applied again to the result.
+        """
         if target.startswith("-"):
             raise ToolError(f"target {shown(target)!r} starts with '-', which pytest would read as an option; name a test file or node id")
         if not _SAFE_TARGET.fullmatch(target):
             raise ToolError(
-                f"target {shown(target)!r} is not a plain test path or node id: use only letters, digits "
-                f"and . / _ - [ ] : , = @ + (no spaces or quotes)"
+                f"target {shown(target)!r} is not a plain test path or node id: it must start with a letter, "
+                f"digit, '.' or '_', and use only letters, digits and . / _ - [ ] : , = @ + (no spaces or quotes)"
             )
-        path_part = target.split("::", 1)[0]
+        path_part, separator, node = target.partition("::")
         # The read guard, so a target can no more name `../x`, a symlink or `.git/...`
         # than `read_file` can; and it must exist, so the name is a file we have seen.
         resolved = confine(self._ctx.checkout, path_part, write=False)
         if not os.path.lexists(resolved):
             raise ToolError(f"target {shown(target)!r}: {shown(path_part)!r} does not exist in the repository")
+        normalised = relative_posix(self._ctx.checkout, resolved) + separator + node
+        if not _SAFE_TARGET.fullmatch(normalised):
+            raise ToolError(f"target {shown(target)!r} names {shown(normalised)!r}, which pytest would not read as a plain path")
+        return normalised
 
     async def __call__(self, args: Mapping[str, Any]) -> ToolOutcome:
+        """Run the probe and render what the sandbox returned.
+
+        **The invariant that makes this rendering safe: the failed ids, the
+        collection errors and the output tail are printed verbatim, and that is
+        only acceptable because a probe never includes the hidden benchmark
+        overlay.** `Verifier.run_subset` runs the targets against the exported tree
+        without the overlay, so nothing in its `SuiteResult` can name a hidden test.
+        Everything shown here is built from that one result and from nothing else:
+        not the baseline, not a scored attempt's `AttemptRecord.result`, both of
+        which are oracle-bearing and are only ever shown through the feedback filter.
+        Do not add them to this output, and do not add filtering here -- filtering
+        lives in `feedback.py`, and a second copy would drift from it.
+
+        The pipeline must also pass a baseline-aware `ToolContext.is_protected`; the
+        context's default knows only the path heuristic.
+        """
         ctx = self._ctx
-        targets: Sequence[str] = list(args["targets"])
-        for target in targets:
-            self._check_target(target)
+        targets: Sequence[str] = [self._normalise_target(target) for target in args["targets"]]
         if ctx.run_subset is None:
             raise _unavailable("this run has no sandbox, so tests cannot be executed")
 
