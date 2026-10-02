@@ -200,6 +200,13 @@ class TestGrepResourceLimits:
         assert out.is_error and "too much memory or CPU time" in out.content and "fixed_string=true" in out.content
 
     async def test_the_child_is_single_threaded_and_the_path_stays_after_the_double_dash(self, h, monkeypatch):
+        """A shape test, deliberately: it pins the argv, not an observed behaviour.
+
+        No cheap behavioural check exists for "git ran without worker threads", and the property
+        that matters (the pattern is the operand of `-e`, the path comes after `--`) is covered by
+        behaviour in `TestGrepInjection`; this one only keeps `--threads=1` and the limits from
+        being dropped silently.
+        """
         seen = []
         real = search_module.run_limited_git
 

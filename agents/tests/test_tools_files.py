@@ -539,6 +539,12 @@ class TestCreateFile:
         assert snapshot(h.checkout) == before
 
     async def test_check_ignore_refuses_bare_repositories_it_might_discover(self, h, monkeypatch):
+        """A shape test, deliberately: it pins that `-c safe.bareRepository=explicit` leads the argv.
+
+        Whether git honours that setting is git's behaviour, shown to hold by the security review
+        and held for the grep runner by a behavioural test in `test_tools_gitproc.py`; here only the
+        flag's presence on this call is checked.
+        """
         from repolace_agents.tools import files as files_module
 
         seen = []
