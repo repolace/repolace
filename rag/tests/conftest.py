@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+from retrieval.testing import FakeEmbedder, install_fake_embedder
+
 from rag_support import write
 
 
@@ -28,3 +30,13 @@ def checkout(tmp_path: Path) -> Path:
 def outside(tmp_path: Path) -> Path:
     """A file the checkout has no business reading, standing in for ~/.env."""
     return write(tmp_path / "outside" / "secrets.env", 'TOKEN = "host-only-secret"\n')
+
+
+@pytest.fixture
+def embedder(monkeypatch) -> FakeEmbedder:
+    """The shared fake embedder, installed where `index.py` and `retrieve.py` look it up.
+
+    Never the real model: nothing here may download weights or pull torch's
+    inference path into a test.
+    """
+    return install_fake_embedder(monkeypatch)

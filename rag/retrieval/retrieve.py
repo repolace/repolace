@@ -16,6 +16,7 @@ from retrieval.config import (
 )
 from retrieval.embed import embed_query
 from retrieval.ranking import RRFResult, merge_rrf
+from retrieval.strategies import DEFAULT_STRATEGY, get_strategy
 
 # Postgres' default parser splits identifiers on non-alphanumeric characters, so
 # `get_user_id` is indexed as the three lexemes get/user/id. Splitting the query
@@ -32,10 +33,12 @@ def _candidate_columns(stmt):
     return stmt.options(defer(CodeChunk.embedding), defer(CodeChunk.content_tsv))
 
 
-async def _semantic_candidates(db: AsyncSession, repo_id: uuid.UUID, query: str, limit: int) -> list[CodeChunk]:
+async def _semantic_candidates(
+    db: AsyncSession, repo_id: uuid.UUID, query: str, limit: int, strategy: str = DEFAULT_STRATEGY
+) -> list[CodeChunk]:
     # A SentenceTransformer forward pass is synchronous and CPU-bound; running
     # it inline would stall the event loop for the whole API process.
-    query_embedding = await asyncio.to_thread(embed_query, query)
+    query_embedding = await asyncio.to_thread(embed_query, query, strategy=strategy)
     stmt = _candidate_columns(
         select(CodeChunk)
         .where(CodeChunk.repo_id == repo_id)
@@ -96,17 +99,38 @@ async def _keyword_candidates(db: AsyncSession, repo_id: uuid.UUID, query: str, 
 
 
 async def hybrid_search(
-    db: AsyncSession, repo_id: uuid.UUID, query: str, limit: int = DEFAULT_SEARCH_LIMIT
+    db: AsyncSession,
+    repo_id: uuid.UUID,
+    query: str,
+    limit: int = DEFAULT_SEARCH_LIMIT,
+    *,
+    keyword_query: str | None = None,
+    query_strategy: str = DEFAULT_STRATEGY,
 ) -> list[RRFResult]:
+    """Rank chunks by reciprocal-rank fusion of a semantic and a keyword arm.
+
+    `keyword_query` lets the keyword arm search for something other than what the
+    encoder embeds: the encoder sees ~128 tokens, so it wants a short natural
+    description, while the keyword arm wants identifiers. A blank value falls
+    back to `query` rather than disabling the arm, since an empty tsquery matches
+    nothing and the search would silently become semantic-only.
+
+    `query_strategy` should be the one the repo was indexed with
+    (`RegisteredRepo.index_strategy`), so the query and the chunks are embedded
+    the same way.
+    """
     if not query.strip():
         raise ValueError("query is empty")
     if limit < 1:
         raise ValueError(f"limit must be at least 1, got {limit}")
+    get_strategy(query_strategy)
 
     candidate_limit = limit * CANDIDATE_MULTIPLIER
     # Sequential rather than gathered: both arms share one AsyncSession, and
     # SQLAlchemy rejects concurrent operations on a single session.
-    semantic_results = await _semantic_candidates(db, repo_id, query, candidate_limit)
-    keyword_results = await _keyword_candidates(db, repo_id, query, candidate_limit)
+    semantic_results = await _semantic_candidates(db, repo_id, query, candidate_limit, query_strategy)
+    keyword_results = await _keyword_candidates(
+        db, repo_id, keyword_query if keyword_query and keyword_query.strip() else query, candidate_limit
+    )
 
     return merge_rrf(semantic_results, keyword_results, limit=limit, k=RRF_K)

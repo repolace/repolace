@@ -36,6 +36,9 @@ class Issue(BaseModel):
     title: str
     html_url: str
     state: str
+    #: Untrusted: anyone who can open an issue wrote it. GitHub sends null for
+    #: an empty body, which is why this is optional and not `str = ""`.
+    body: str | None = None
     pull_request: dict | None = None
 
     @property
