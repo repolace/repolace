@@ -53,6 +53,7 @@ from repolace_agents.prompts import (
     build_system_prompt,
     elided,
 )
+from repolace_agents.render import sanitize_text
 from repolace_agents.state import AgentState
 
 _BUDGET_STOPS = {
@@ -87,6 +88,11 @@ MAX_TOOL_CALLS_PER_REPLY = 8
 MAX_TRANSCRIPT_CHARS = 400_000
 #: Elision spares the newest few tool results: they are what the model is reasoning about.
 KEEP_RECENT_TOOL_RESULTS = 6
+
+#: The result's summary is cut here. The prompt asks for three sentences and the tool
+#: allows 4,000 characters; this is the bound every consumer (a database column, a pull
+#: request body) can rely on.
+MAX_SUMMARY_CHARS = 2000
 
 
 @dataclass(frozen=True)
@@ -384,18 +390,35 @@ def build_graph():
     return builder.compile()
 
 
+def _clean_summary(summary: str | None) -> str | None:
+    """The agent's summary with NUL, control, format and surrogate characters removed, and capped.
+
+    Done once, here, so every consumer gets text that is safe to store and to print: a
+    NUL breaks a Postgres text insert, and a bidi override or a tag-block character is
+    how a line is made to read differently from what it says. **Markdown, @mentions, `#N`
+    references, links and images are deliberately NOT touched** -- the summary is still
+    the model's own words, and neutralising those is the pull-request writer's job, since
+    only it knows where the text ends up. An empty result is None: "no summary".
+    """
+    if summary is None:
+        return None
+    cleaned = sanitize_text(summary)[:MAX_SUMMARY_CHARS].strip()
+    return cleaned or None
+
+
 def result_from_state(state: AgentState) -> AgentResult:
     """Map the final state to the contract's result.
 
     `summary` is the scored attempt's whenever something was scored -- see
     `AgentState.scored_summary` -- and the agent's own latest account otherwise
     (an agent that found nothing to change may say so, and that is worth keeping).
+    It is sanitised and capped here (see `_clean_summary`).
     """
     if state.stop_reason is None:
         raise RuntimeError("the graph ended without a stop reason; the agent node did not run")
     return AgentResult(
         stop_reason=state.stop_reason,
-        summary=state.scored_summary if state.last_attempt is not None else state.summary,
+        summary=_clean_summary(state.scored_summary if state.last_attempt is not None else state.summary),
         attempts=state.attempt,
         steps=state.steps,
         last_attempt=state.last_attempt,

