@@ -7,9 +7,6 @@ API of stream C and skips, saying so, where that is absent.
 """
 
 import json
-import uuid
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
@@ -33,7 +30,6 @@ from harness.retrieval_eval import (
     EVAL_INSTALLATION_ID,
     STRATEGIES,
     EvalRun,
-    GitSource,
     GoldTargets,
     Query,
     RepoPlan,
@@ -42,7 +38,6 @@ from harness.retrieval_eval import (
     RetrievalUnavailable,
     eval_github_repo_id,
     ensure_eval_repo,
-    evaluate_repo_strategy,
     gold_targets,
     load_eval_instances,
     open_git_source,

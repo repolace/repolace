@@ -126,6 +126,9 @@ class Rejected(Exception):
     """One instance failed a filter. `code` groups reasons in the manifest."""
 
     def __init__(self, code: str, detail: str) -> None:
+        # One line, always: the reason becomes a row of the manifest's table, and git's
+        # stderr is several lines (`error: patch failed ...` then `error: ... does not apply`).
+        detail = " ".join(detail.split())
         super().__init__(f"{code}: {detail}")
         self.code = code
         self.detail = detail

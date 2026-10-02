@@ -261,6 +261,10 @@ class TestPatchFilters:
         rename = "diff --git a/tests/a.py b/tests/b.py\nsimilarity index 100%\nrename from tests/a.py\nrename to tests/b.py\n"
         assert "renamed tests/b.py" in patch_rejection(rename, GOOD_GOLD).detail
 
+    def test_a_test_patch_must_not_write_into_dot_git(self):
+        rejection = patch_rejection(one_file_patch(".git/hooks/post-commit", status="added"), GOOD_GOLD)
+        assert rejection.code == "test-patch" and "non-test file" in rejection.detail
+
     def test_a_test_patch_must_not_touch_a_binary_file(self):
         binary = "diff --git a/tests/x.png b/tests/x.png\nnew file mode 100644\nBinary files /dev/null and b/tests/x.png differ\n"
         assert "binary file: tests/x.png" in patch_rejection(binary, GOOD_GOLD).detail
@@ -285,7 +289,9 @@ class TestPatchFilters:
     def test_a_gold_patch_must_not_touch_github_workflows(self, path):
         assert patch_rejection(GOOD_TEST_PATCH, one_file_patch(path)).code == "gold-patch"
 
-    @pytest.mark.parametrize("path", [".gitignore", ".gitattributes", "pkg/.gitkeep", ".gitmodules", "pkg/.GITfoo/x.py"])
+    @pytest.mark.parametrize(
+        "path", [".gitignore", ".gitattributes", "pkg/.gitkeep", ".gitmodules", "pkg/.GITfoo/x.py", ".git/hooks/post-commit"]
+    )
     def test_a_gold_patch_must_not_touch_a_dot_git_path_the_edit_tool_refuses(self, path):
         rejection = patch_rejection(GOOD_TEST_PATCH, one_file_patch(path))
         assert rejection.code == "gold-patch" and ".git* path" in rejection.detail
@@ -407,6 +413,16 @@ class TestGitFilters:
         broken = Candidate(**{**candidate.__dict__, "test_patch": candidate.test_patch.replace("from pkg", "import pkg")})
         with pytest.raises(Rejected, match="apply-failed: test_patch does not apply"):
             await analyse_in_git(broken, caches)
+
+    async def test_a_patch_path_that_climbs_out_of_the_tree_is_rejected(self, upstream, caches, tmp_path):
+        candidate = real_candidate(
+            upstream, tmp_path, test_files={"tests/test_mod.py": "x = 1\n"}, gold_files={"pkg/mod.py": edited_mod()},
+        )
+        climbing = one_file_patch("tests/../../escape.py", status="added")
+        hostile = Candidate(**{**candidate.__dict__, "test_patch": climbing})
+        with pytest.raises(Rejected) as caught:
+            await analyse_in_git(hostile, caches)
+        assert caught.value.code in ("apply-failed", "invalid-instance")
 
     async def test_a_post_apply_file_that_is_not_utf8_is_rejected(self, upstream, caches, tmp_path):
         legacy = upstream_legacy_with_line_changed(upstream)
@@ -662,6 +678,8 @@ class TestRunSelect:
         assert result.rejections[NON_UTF8].startswith("not-utf8:")
         assert result.rejections[NO_COMMIT].startswith("base-commit-missing:")
         assert result.not_evaluated == []
+        # Each reason is one line, or it would break the manifest's table.
+        assert all("\n" not in reason for reason in result.rejections.values())
 
     async def test_the_written_instances_load_and_carry_the_overlay_bytes(self, tmp_path, upstream, dataset):
         await self.run(tmp_path, upstream, dataset)
@@ -698,6 +716,8 @@ class TestRunSelect:
             assert f"| {instance_id} | {code}:" in manifest, instance_id
         assert "touches a non-test file: pkg/mod.py" in manifest
         assert "django/django (1)" in manifest
+        table_rows = [line for line in manifest.split("## Every rejection")[1].split("## Not evaluated")[0].splitlines() if line.strip()]
+        assert len(table_rows) == 2 + 7 and all(line.startswith("|") for line in table_rows)
         assert "- selected: 2; rejected: 7; not evaluated (target or per-repo cap reached): 0" in manifest
         assert OFF_ALLOWLIST not in manifest
 
