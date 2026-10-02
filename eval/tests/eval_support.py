@@ -139,6 +139,31 @@ def patch_from(upstream: Upstream, base: str, files: Mapping[str, str | bytes | 
     return diff_between(work, base, new)
 
 
+def write_instance(
+    directory: Path,
+    instance_id: str,
+    *,
+    base_commit: str,
+    gold_patch: str | None,
+    repo: str = "psf/requests",
+    problem_statement: str = "f1 returns the wrong value\n\nCalling pkg.mod.f1() gives 1, expected 100.",
+) -> None:
+    """An instance file, and (unless `gold_patch` is None) its `.gold.patch` sidecar."""
+    from repolace_shared.instances import InstanceSpec, dump_instance
+
+    directory.mkdir(parents=True, exist_ok=True)
+    spec = InstanceSpec(
+        instance_id=instance_id, repo=repo, base_commit=base_commit, version="2.0",
+        problem_statement=problem_statement, issue_number=int(instance_id.rsplit("-", 1)[1]),
+        fail_to_pass=("tests/test_mod.py::test_it",), pass_to_pass=(),
+        test_files={"tests/test_mod.py": TEST_MOD}, gold_files={"pkg/mod.py": MOD},
+        spec={"base_image": "python:3.9-slim", "install": ["pip install -e ."]},
+    )
+    dump_instance(spec, directory / f"{instance_id}.json")
+    if gold_patch is not None:
+        (directory / f"{instance_id}.gold.patch").write_text(gold_patch, encoding="utf-8")
+
+
 # --- dataset rows and the datasets-server ------------------------------------
 
 
