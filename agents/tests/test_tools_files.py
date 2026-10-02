@@ -281,6 +281,45 @@ class TestEditFile:
         assert path.read_bytes() == b"A = 9\r\nB = 2\r\n"
         assert stat.S_IMODE(path.stat().st_mode) == 0o755
 
+    async def test_a_multi_line_edit_of_a_crlf_file_is_told_about_the_line_endings(self, h):
+        path = h.checkout / "src/pkg/util.py"
+        path.write_bytes(b"A = 1\r\nB = 2\r\nC = 3\r\n")
+
+        out = await h.call("edit_file", path="src/pkg/util.py", old_string="A = 1\nB = 2", new_string="A = 9\nB = 9")
+
+        assert out.is_error and "CRLF" in out.content and "\\r\\n" in out.content
+        assert path.read_bytes() == b"A = 1\r\nB = 2\r\nC = 3\r\n"
+
+    async def test_following_the_crlf_hint_makes_the_edit_work(self, h):
+        path = h.checkout / "src/pkg/util.py"
+        path.write_bytes(b"A = 1\r\nB = 2\r\nC = 3\r\n")
+
+        out = await h.call("edit_file", path="src/pkg/util.py", old_string="A = 1\r\nB = 2", new_string="A = 9\r\nB = 9")
+
+        assert not out.is_error
+        assert path.read_bytes() == b"A = 9\r\nB = 9\r\nC = 3\r\n"
+
+    @pytest.mark.parametrize(
+        ("content", "old"),
+        [
+            (b"A = 1\nB = 2\n", "A = 1\nB = 3"),  # an LF file: no CRLF hint
+            (b"A = 1\r\nB = 2\r\n", "A = 1\nB = 3"),  # CRLF, but the text is wrong either way
+            (b"A = 1\r\nB = 2\r\n", "A = 7"),  # CRLF, but a single line: line endings are not the problem
+        ],
+    )
+    async def test_the_crlf_hint_is_only_given_when_it_would_actually_help(self, h, content, old):
+        (h.checkout / "src/pkg/util.py").write_bytes(content)
+
+        out = await h.call("edit_file", path="src/pkg/util.py", old_string=old, new_string="x")
+
+        assert out.is_error and "not found" in out.content and "CRLF" not in out.content
+
+    async def test_the_descriptions_state_the_dotfile_write_rule(self, h):
+        descriptions = {schema["function"]["name"]: schema["function"]["description"] for schema in h.box.schemas()}
+
+        for name in ("edit_file", "create_file"):
+            assert "component starting with '.'" in descriptions[name] and "Jenkinsfile" in descriptions[name]
+
     async def test_a_missing_file_is_an_error_and_is_not_created(self, h):
         out = await h.call("edit_file", path="src/pkg/nope.py", old_string="a", new_string="b")
 

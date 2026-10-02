@@ -34,6 +34,7 @@ from repolace_shared.git import GitError
 from verify.stage import VerifierNotReady
 
 from repolace_agents.tools.base import ToolContext, ToolError, ToolOutcome, ToolSpec
+from repolace_agents.tools.wording import TESTS_NOT_SHOWN
 from repolace_agents.tools.paths import confine, relative_posix, require_text, shown
 
 #: Per-stream cap for `run_python`, and the cap for a suite's output tail. Both are
@@ -158,12 +159,11 @@ class RunTests:
         self.spec = ToolSpec(
             name="run_tests",
             description=(
-                "Run some of the repository's visible tests in the sandbox, to check your change as "
-                "you work. Targets are pytest paths or node ids such as 'tests/test_x.py' or "
+                "Run some of the repository's tests in the sandbox, to check your change as you work. "
+                f"{TESTS_NOT_SHOWN} Targets are pytest paths or node ids such as 'tests/test_x.py' or "
                 "'tests/test_x.py::test_name'; each must name a file that exists, and none may start "
-                "with '-'. This probes the tests you can see: it is not scored, and it is not a "
-                "substitute for the final check, which runs after you submit. Returns the counts, the "
-                "failing test ids and the end of pytest's output."
+                "with '-'. A pass here is not a verdict on your change and is not scored. Returns the "
+                "counts, the failing test ids and the end of pytest's output."
             ),
             parameters={
                 "type": "object",

@@ -264,8 +264,9 @@ class EditFile:
                 "Replace text in an existing file. old_string must match the file exactly "
                 "(whitespace and indentation included) and must appear exactly once unless "
                 "replace_all is true; include enough surrounding lines to make it unique. Test files, "
-                "conftest.py and pytest/tox/setup configuration are read-only, as is anything "
-                "starting with '.git'. Returns the edited region with a few lines of context."
+                "conftest.py and pytest/tox/setup configuration are read-only, as is any path with a "
+                "component starting with '.' (.github/, .vscode/, .env, ...) and CI definitions such as "
+                "Jenkinsfile. Returns the edited region with a few lines of context."
             ),
             parameters={
                 "type": "object",
@@ -301,9 +302,17 @@ class EditFile:
 
         count = text.count(old)
         if count == 0:
+            # read_file shows a CRLF file's line ends as nothing visible, so a multi-line old_string
+            # written with plain newlines cannot match it, and the generic message gives no way out.
+            crlf_hint = ""
+            if "\r\n" in text and "\n" in old and "\r" not in old and old.replace("\n", "\r\n") in text:
+                crlf_hint = (
+                    ". This file uses CRLF line endings: write \\r\\n between the lines of old_string "
+                    "(and of new_string, to keep them)"
+                )
             raise ToolError(
                 f"old_string was not found in {name}; it must match exactly, including whitespace and "
-                f"indentation. Use read_file to see the current content"
+                f"indentation. Use read_file to see the current content{crlf_hint}"
             )
         if count > 1 and not replace_all:
             raise ToolError(
@@ -347,8 +356,9 @@ class CreateFile:
             name="create_file",
             description=(
                 "Create a new file, with any missing parent directories. Refuses to overwrite: use "
-                "edit_file for an existing file. Adding test files is not allowed, and neither is "
-                "anything starting with '.git'. A path matched by .gitignore is created but never "
+                "edit_file for an existing file. Adding test files is not allowed, and neither is any "
+                "path with a component starting with '.' (.github/, .vscode/, .env, ...) or a CI "
+                "definition such as Jenkinsfile. A path matched by .gitignore is created but never "
                 "committed or run, and the result says so."
             ),
             parameters={

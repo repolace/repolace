@@ -94,6 +94,23 @@ class TestTheToolList:
         assert out.is_error and "read_file" in out.content
 
 
+class TestOneStoryAboutHiddenTests:
+    """Every tool that mentions the tests uses the one sentence the graph's prompt uses."""
+
+    async def test_the_shared_sentence_is_exactly_the_graphs(self):
+        from repolace_agents.tools.wording import TESTS_NOT_SHOWN
+
+        assert TESTS_NOT_SHOWN == "Some tests are not shown to you."
+
+    async def test_run_tests_and_submit_use_it_and_not_a_second_phrasing(self, tmp_path):
+        descriptions = {schema["function"]["name"]: schema["function"]["description"] for schema in make(tmp_path).box.schemas()}
+
+        for name in ("run_tests", "submit"):
+            assert "Some tests are not shown to you." in descriptions[name]
+            for other_phrasing in ("final check", "full test suite", "visible tests", "tests you can see"):
+                assert other_phrasing not in descriptions[name], (name, other_phrasing)
+
+
 class TestSubmit:
     async def test_it_submits_with_the_models_own_summary(self, tmp_path):
         out = await make(tmp_path).call("submit", summary="changed add() to handle None")

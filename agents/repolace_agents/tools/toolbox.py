@@ -21,6 +21,7 @@ from repolace_agents.tools.gitproc import require_prlimit
 from repolace_agents.tools.paths import require_text
 from repolace_agents.tools.sandbox import RunPython, RunTests
 from repolace_agents.tools.search import Grep, SearchCode
+from repolace_agents.tools.wording import TESTS_NOT_SHOWN
 
 MAX_SUMMARY_CHARS = 4000
 
@@ -33,8 +34,8 @@ class Submit:
             name="submit",
             description=(
                 "Call this when the issue is fixed, with a short summary of what you changed and why. "
-                "It ends your work: your changes are then run against the full test suite. Do not "
-                "call it before you have checked your change."
+                f"{TESTS_NOT_SHOWN} It ends your work: your change is then checked against all of the "
+                "tests. Do not call it before you have checked your change."
             ),
             parameters={
                 "type": "object",
