@@ -552,14 +552,32 @@ class TestClean:
         assert fb.clean is ok
         assert agent_verdict(baseline, attempt, changed, baseline_files=None).ok is ok
 
-    def test_a_fingerprint_drift_is_not_clean(self):
-        baseline = suite(passed=[A])
-        attempt = dataclasses.replace(suite(passed=[A]), fingerprint={"rootdir": "/other", "ini": {}, "plugins": []})
+    @staticmethod
+    def drifted(**changed) -> SuiteResult:
+        fingerprint = {"rootdir": "/repo", "ini": {}, "plugins": [], **changed}
+        return dataclasses.replace(suite(passed=[A]), fingerprint=fingerprint)
 
-        fb = feedback(baseline, attempt)
+    @pytest.mark.parametrize(
+        "changed", [{"rootdir": "/other"}, {"ini": {"filterwarnings": "SECRET-ini-key"}}, {"plugins": ["SECRET-plugin"]}]
+    )
+    def test_a_fingerprint_drift_is_not_clean_and_is_neutral_in_overlay_mode(self, changed):
+        """A hidden conftest can register a plugin only when some behaviour is present, so the
+        words `plugins changed` or an ini key would tell the model about files it cannot see."""
+        fb = feedback(suite(passed=[A]), self.drifted(**changed))
 
+        text = render_feedback(fb)
         assert fb.fingerprint_drift is not None and not fb.clean
-        assert "rootdir" in render_feedback(fb)
+        assert "The test configuration changed between the baseline run and yours." in text
+        for word in ("rootdir", "ini", "plugins", "SECRET"):
+            assert word not in everything_shown(fb), word
+
+    @pytest.mark.parametrize("key", ["rootdir", "ini", "plugins"])
+    def test_outside_overlay_mode_the_drift_says_which_setting_changed(self, key):
+        changed = {"rootdir": "/other", "ini": {"x": "y"}, "plugins": ["p"]}[key]
+
+        fb = feedback(suite(passed=[A]), self.drifted(**{key: changed}), hidden=frozenset(), overlay_mode=False)
+
+        assert fb.fingerprint_drift is not None and f"({key})" in render_feedback(fb)
 
     def test_an_infrastructure_error_is_not_clean(self):
         assert not feedback(suite(passed=[A]), suite(passed=[A]), infrastructure_error=True).clean

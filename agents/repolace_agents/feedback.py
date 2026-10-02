@@ -73,6 +73,13 @@ or a rare repository:
   so pass-to-pass is still enforced. The baseline summary omits totals for the
   same reason; a *failing* visible test inside the replaced file would still show
   up as a difference against the agent's own probe, which is rare.
+* **A hidden conftest or helper.** The overlay can include a `conftest.py` or a
+  helper module, and either can change visible outcomes under the overlay or the
+  run's fingerprint (a plugin registered only when some behaviour is present). A
+  correct fix can then be reported as "the test configuration changed" and retried,
+  and visible tests can fail only in the scored run. In overlay mode the drift
+  message is one neutral sentence with no plugin or ini names, so what remains is a
+  single bit ("did a hidden file react to this change"). Rare, and accepted.
 * **Protected paths.** `disqualified` echoes paths the agent itself changed.
 
 "Clean" is `agent_verdict`'s verdict on the **filtered** pair, so it means what
@@ -151,6 +158,12 @@ STDOUT_CHARS = 3000
 
 _FINGERPRINT_KEYS = ("rootdir", "ini", "plugins")
 
+#: What `fingerprint_drift` holds in overlay mode in place of `fingerprint_changed`'s
+#: wording. That wording names *which* of rootdir / ini / plugins changed, and a
+#: hidden conftest or helper is one thing that can change the plugin set; naming it
+#: tells the model something about files it cannot see.
+DRIFT_NEUTRAL = "the test configuration changed"
+
 
 class FeedbackInvariantError(RuntimeError):
     """`VisibleFeedback.clean` disagreed with `agent_verdict`'s verdict on the same pair.
@@ -192,7 +205,8 @@ class VisibleFeedback:
     neutralized: tuple[str, ...]
     disqualified: tuple[str, ...]
     #: Which of rootdir / ini / plugins changed between baseline and attempt, as
-    #: `fingerprint_changed` words it; None if none did.
+    #: `fingerprint_changed` words it (in overlay mode just `DRIFT_NEUTRAL`, which
+    #: names none of them); None if none did.
     fingerprint_drift: str | None
     #: Counts and ids over *visible* tests only, after filtering; zero and empty
     #: for an unscoreable run, whose sets are partial.
@@ -361,6 +375,8 @@ def visible_feedback(
     # asked, when both runs are usable and the sandbox did not fail.
     unusable = bool(baseline.error or attempt.error or infrastructure_error)
     drift = None if unusable else fingerprint_changed(visible_baseline, visible_attempt)
+    if drift is not None and overlay:
+        drift = DRIFT_NEUTRAL
 
     known_ids, known_paths = _universe(visible_baseline)
     listed_failed = () if attempt.error else tuple(sorted(i for i in visible_attempt.failed if i in known_ids))
@@ -425,10 +441,11 @@ def render_feedback(fb: VisibleFeedback, *, nonce: str = "") -> str:
     if fb.unscoreable:
         problems.append(_CATEGORY_TEXT.get(fb.unscoreable, _CATEGORY_TEXT["unusable_result"]))
     if fb.fingerprint_drift:
+        key = _drift_key(fb.fingerprint_drift)
+        named = f" ({key})" if key in _FINGERPRINT_KEYS else ""
         problems.append(
-            f"The test configuration ({_drift_key(fb.fingerprint_drift)}) changed between the baseline run "
-            f"and yours. Revert any change to test configuration, `conftest.py` or packaging metadata "
-            f"that affects how tests are collected."
+            f"The test configuration{named} changed between the baseline run and yours. Revert any change "
+            f"to test configuration, `conftest.py` or packaging metadata that affects how tests are collected."
         )
     if fb.disqualified:
         problems.append(
