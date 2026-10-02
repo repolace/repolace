@@ -60,6 +60,13 @@ def build_toolbox(ctx: ToolContext) -> ToolBox:
     `list_dir`, `edit_file`, `create_file`, `run_python`, `run_tests`, `submit`.
     Every limit comes from `ctx.limits`, and the box is built with its
     `max_output_chars` so the cap the tools budget against is the cap the box enforces.
+
+    **A pipeline must pass its own `ctx.is_protected`.** The context default is the
+    baseline-blind `is_protected_path`: it knows the path heuristic and not which files
+    pytest collected at the base commit, so a test file collected through a custom
+    `python_files` would be editable and the scorer would then discard the whole patch.
+    The pipeline supplies a closure over the baseline's `collected_files` and `conftests`
+    minus the benchmark overlay's paths.
     """
     return ToolBox(
         [
