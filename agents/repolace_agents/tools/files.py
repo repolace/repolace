@@ -356,11 +356,18 @@ class CreateFile:
         # `:`, which is how pathspec magic is spelled.
         try:
             await run_git(
+                "-c", "safe.bareRepository=explicit",
                 "check-ignore", "-q", "--", f"./{rel}",
                 cwd=self._ctx.checkout, timeout=CHECK_IGNORE_TIMEOUT_SECONDS,
             )
         except GitCommandError as exc:
-            if exc.returncode == 1:  # git's "not ignored"; anything else is a real failure
+            if exc.returncode == 1:  # git's "not ignored"
                 return False
-            raise
+            # 128 is what git says for a path inside a submodule (a tracked gitlink is an
+            # empty directory in the clone, and a repository author controls that). Not
+            # something the model can fix and not a repolace bug, so it is told, not crashed.
+            raise ToolError(
+                "cannot create files at that location: git cannot check it, for example because it "
+                "is inside a submodule"
+            ) from None
         return True

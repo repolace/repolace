@@ -10,9 +10,8 @@ import stat
 import pytest
 
 from repolace_agents.tools import ToolLimits
-from repolace_shared.git import GitCommandError
 
-from tools_support import make_checkout, make_harness, snapshot
+from tools_support import git, make_checkout, make_harness, snapshot
 
 pytestmark = pytest.mark.anyio
 
@@ -465,16 +464,45 @@ class TestCreateFile:
         assert out.is_error
         assert snapshot(h.checkout) == before
 
-    async def test_git_failing_is_loud_and_writes_nothing(self, tmp_path):
-        # A checkout that is not a repository: `git check-ignore` exits 128.
+    async def test_a_path_inside_a_submodule_is_a_tool_error_not_a_crash(self, tmp_path):
+        # A tracked gitlink (mode 160000) is an empty directory in a clone; `git check-ignore`
+        # exits 128 for anything beneath it. The repository author controls that layout.
+        h = make_harness(tmp_path)
+        git(h.checkout, "update-index", "--add", "--cacheinfo", f"160000,{'a' * 40},vendor_sub")
+        git(h.checkout, "commit", "-q", "-m", "add a gitlink")
+        (h.checkout / "vendor_sub").mkdir()
+        before = snapshot(h.checkout)
+
+        out = await h.call("create_file", path="vendor_sub/new.py", content="x = 1\n")
+
+        assert out.is_error and out.content.startswith("cannot create files at that location")
+        assert snapshot(h.checkout) == before
+
+    async def test_a_checkout_git_cannot_read_is_a_tool_error_and_writes_nothing(self, tmp_path):
         h = make_harness(tmp_path)
         os.rename(h.checkout / ".git", tmp_path / "moved-git")
         before = snapshot(h.checkout)
 
-        with pytest.raises(GitCommandError, match="check-ignore"):
-            await h.call("create_file", path="src/pkg/new.py", content="x\n")
+        out = await h.call("create_file", path="src/pkg/new.py", content="x\n")
 
+        assert out.is_error and "cannot create files at that location" in out.content
         assert snapshot(h.checkout) == before
+
+    async def test_check_ignore_refuses_bare_repositories_it_might_discover(self, h, monkeypatch):
+        from repolace_agents.tools import files as files_module
+
+        seen = []
+        real = files_module.run_git
+
+        async def spy(*args, **kwargs):
+            seen.append(args)
+            return await real(*args, **kwargs)
+
+        monkeypatch.setattr(files_module, "run_git", spy)
+
+        await h.call("create_file", path="src/pkg/new.py", content="x\n")
+
+        assert seen and seen[0][:2] == ("-c", "safe.bareRepository=explicit")
 
 
 def test_make_checkout_is_a_real_repository(tmp_path):
