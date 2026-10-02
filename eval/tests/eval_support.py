@@ -23,7 +23,15 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from repolace_shared.db.models import TaskOutcome, TaskStatus
+from repolace_shared.db.models import (
+    GithubInstallation,
+    LLMCall,
+    RegisteredRepo,
+    Task,
+    TaskOutcome,
+    TaskStatus,
+    TaskTestRun,
+)
 
 if TYPE_CHECKING:
     from harness.report import TaskRow
@@ -235,3 +243,47 @@ def rows_for(outcomes: Sequence[TaskOutcome | None], *, run_index: int = 0, pref
         for i, outcome in enumerate(outcomes)
     ]
 
+
+
+# --- database seeding --------------------------------------------------------
+
+
+async def seed_bench_repo(session, *, github_repo_id: int = 7001) -> RegisteredRepo:
+    """An installation and one registered repo, committed. The bench repo tasks hang off."""
+    if await session.get(GithubInstallation, 4242) is None:
+        session.add(GithubInstallation(id=4242, account_login="acme", account_id=1, account_type="Organization"))
+    repo = RegisteredRepo(
+        installation_id=4242, github_repo_id=github_repo_id, owner="acme", name=f"bench-{github_repo_id}",
+        full_name=f"acme/bench-{github_repo_id}", default_branch="main", private=True,
+    )
+    session.add(repo)
+    await session.commit()
+    return repo
+
+
+async def add_eval_task(session, repo: RegisteredRepo, *, instance_id: str = "psf__requests-1001",
+                        eval_run_id: str = "run-a", run_index: int = 0, **fields: Any) -> Task:
+    values: dict[str, Any] = dict(
+        repo_id=repo.id, issue_number=1001, issue_title="Fix the thing",
+        issue_url="https://github.com/acme/bench/issues/1001", target_branch=f"bench/{instance_id}",
+        status=TaskStatus.COMPLETED, eval_run_id=eval_run_id, instance_id=instance_id, run_index=run_index,
+    )
+    values.update(fields)
+    task = Task(**values)
+    session.add(task)
+    await session.commit()
+    return task
+
+
+def add_call(session, task: Task, *, model: str = "anthropic/test-main", cost: str | None = "0.10",
+             input_tokens: int | None = 100, cached: int | None = 40, output: int | None = 10,
+             created_at: datetime | None = None) -> None:
+    session.add(LLMCall(
+        task_id=task.id, stage="agent", model=model, provider=model.split("/")[0],
+        input_tokens=input_tokens, cached_input_tokens=cached, output_tokens=output,
+        cost_usd=Decimal(cost) if cost is not None else None, created_at=created_at or T0,
+    ))
+
+
+def add_test_run(session, task: Task, attempt: int, *, error: str | None = None) -> None:
+    session.add(TaskTestRun(task_id=task.id, attempt=attempt, commit_sha="c" * 40, error=error))
