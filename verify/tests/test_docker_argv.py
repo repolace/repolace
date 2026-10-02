@@ -11,18 +11,30 @@ from pathlib import Path
 
 import pytest
 
-from verify.backends.docker import build_argv, build_run_argv, sanitized_docker_env
+from verify.backends.docker import (
+    build_argv,
+    build_run_argv,
+    build_script_argv,
+    sanitized_docker_env,
+)
 from verify.config import DockerConfig, DockerLimits
 from verify.protocol import EnvironmentRef, RepoSpec
 
 ENV = EnvironmentRef(backend="docker", identifier="repolace-verify:a_b-cafe")
 SOURCE = Path("/tmp/export-0")
 RESULTS = Path("/tmp/results-0")
+SCRIPT = Path("/tmp/results-script-1/main.py")
 
 
 def argv(config: DockerConfig | None = None, spec: RepoSpec | None = None) -> tuple[str, ...]:
     return build_run_argv(
         config or DockerConfig(), spec or RepoSpec(key="a/b"), ENV, SOURCE, RESULTS, "c-0"
+    )
+
+
+def script_argv(config: DockerConfig | None = None, spec: RepoSpec | None = None) -> tuple[str, ...]:
+    return build_script_argv(
+        config or DockerConfig(), spec or RepoSpec(key="a/b"), ENV, SOURCE, SCRIPT, "c-0"
     )
 
 
@@ -235,3 +247,229 @@ class TestEnvironmentAllowlist:
         monkeypatch.setenv("DOCKER_HOST", "unix:///run/user/1000/docker.sock")
 
         assert sanitized_docker_env()["DOCKER_HOST"] == "unix:///run/user/1000/docker.sock"
+
+
+# --- the scratch-script path ------------------------------------------------
+#
+# The two builders share one containment list, and the tests below are what stop
+# a flag being dropped from one of them. Each is parametrised over both builders
+# so a failure names the flag *and* the builder, and the structural test at the end
+# pins the property the individual ones only sample: that nothing before the first
+# mount differs between them.
+
+BUILDERS = {"pytest": argv, "script": script_argv}
+
+
+@pytest.fixture(params=sorted(BUILDERS))
+def build(request):
+    """Either builder, called as `build(config, spec)`."""
+    return BUILDERS[request.param]
+
+
+class TestContainmentOnBothBuilders:
+    def test_the_network_is_off(self, build):
+        assert "--network=none" in build()
+
+    def test_the_network_cannot_be_turned_on_by_a_spec(self, build):
+        crafted = RepoSpec(key="a/b", extra_pytest_args=("--network=bridge",), extra_env={"X": "1"})
+        args = build(spec=crafted)
+
+        assert args.count("--network=none") == 1
+        assert "--network=bridge" not in args[: args.index(ENV.identifier)]
+
+    def test_the_root_filesystem_is_read_only(self, build):
+        assert "--read-only" in build()
+
+    def test_tmp_is_a_capped_tmpfs(self, build):
+        assert "--tmpfs=/tmp:rw,nosuid,nodev,size=256m" in build()
+
+    def test_all_capabilities_are_dropped(self, build):
+        assert "--cap-drop=ALL" in build()
+
+    def test_privilege_escalation_is_blocked(self, build):
+        assert "--security-opt=no-new-privileges" in build()
+
+    def test_it_does_not_run_as_root(self, build):
+        assert has_pair(build(), "--user", "65534:65534")
+
+    def test_memory_is_capped(self, build):
+        assert has_pair(build(), "--memory", "2g")
+
+    def test_swap_equals_memory(self, build):
+        args = build()
+
+        assert has_pair(args, "--memory-swap", args[args.index("--memory") + 1])
+
+    def test_cpu_is_capped(self, build):
+        assert has_pair(build(), "--cpus", "2.0")
+
+    def test_processes_are_capped(self, build):
+        assert has_pair(build(), "--pids-limit", "512")
+
+    def test_file_descriptors_are_capped(self, build):
+        assert has_pair(build(), "--ulimit", "nofile=4096:4096")
+
+    def test_the_log_is_capped(self, build):
+        assert has_pair(build(), "--log-opt", "max-size=10m")
+        assert has_pair(build(), "--log-opt", "max-file=1")
+
+    def test_zombies_are_reaped(self, build):
+        assert "--init" in build()
+
+    def test_the_container_is_named_so_it_can_be_killed(self, build):
+        """`run_process` kills the client; the container survives, so cleanup
+        addresses it by name -- for a script as much as for a suite."""
+        assert has_pair(build(), "--name", "c-0")
+
+    def test_cpuset_is_passed_when_configured(self, build):
+        assert has_pair(build(DockerConfig(limits=DockerLimits(cpuset_cpus="0-1"))), "--cpuset-cpus", "0-1")
+
+    def test_cpuset_is_absent_unless_configured(self, build):
+        assert "--cpuset-cpus" not in build()
+
+    def test_the_runtime_is_passed_when_configured(self, build):
+        assert has_pair(build(DockerConfig(runtime="runsc")), "--runtime", "runsc")
+
+    def test_the_runtime_is_absent_unless_configured(self, build):
+        assert "--runtime" not in build()
+
+    def test_the_interpreter_is_the_explicit_entrypoint(self, build):
+        assert has_pair(build(), "--entrypoint", "python")
+        assert has_pair(build(spec=RepoSpec(key="a/b", python_executable="python3")), "--entrypoint", "python3")
+
+    def test_home_is_writable(self, build):
+        assert has_pair(build(), "-e", "HOME=/tmp")
+
+    def test_the_working_directory_is_the_repo(self, build):
+        assert has_pair(build(), "-w", "/repo")
+
+    def test_extra_env_is_passed(self, build):
+        assert has_pair(build(spec=RepoSpec(key="a/b", extra_env={"TZ": "UTC"})), "-e", "TZ=UTC")
+
+
+class TestTheTwoBuildersShareOneContainmentList:
+    """The property the per-flag tests above only sample."""
+
+    @pytest.mark.parametrize(
+        "config",
+        [
+            DockerConfig(),
+            DockerConfig(runtime="runsc"),
+            DockerConfig(limits=DockerLimits(cpuset_cpus="0-1", memory="1g", memory_swap="1g")),
+        ],
+        ids=["default", "runtime", "cpuset-and-memory"],
+    )
+    def test_everything_before_the_first_mount_is_identical(self, config):
+        """A flag added to one path and not the other makes these differ. Compared
+        up to the first `-v`, which is where the shared list ends. Both are given
+        the same container name, which is the one per-run value in the prefix."""
+        pytest_args, script_args = argv(config), script_argv(config)
+
+        pytest_prefix = pytest_args[: pytest_args.index("-v")]
+        script_prefix = script_args[: script_args.index("-v")]
+
+        assert pytest_prefix == script_prefix
+        assert "--network=none" in pytest_prefix  # not vacuous: the prefix has substance
+
+    def test_a_spec_cannot_change_the_shared_part(self):
+        """The shared part reads only the config -- a spec field that reached it
+        would be a per-repository switch on a containment control."""
+        hostile = RepoSpec(
+            key="a/b", repo_readonly=True, keep_addopts=True, disable_plugin_autoload=True,
+            extra_env={"A": "1"}, test_targets=("t",), extra_pytest_args=("--x",),
+        )
+        plain = RepoSpec(key="a/b")
+
+        for builder in (argv, script_argv):
+            assert builder(spec=hostile)[: builder(spec=hostile).index("-v")] == builder(spec=plain)[
+                : builder(spec=plain).index("-v")
+            ]
+
+
+class TestScriptMounts:
+    def test_the_source_is_read_only(self):
+        assert has_pair(script_argv(), "-v", f"{SOURCE}:/repo:ro")
+
+    def test_the_source_is_read_only_even_when_the_spec_says_writable(self):
+        """Unconditional: a spec is per-repository data, and a protection data can
+        switch off is only as trustworthy as the data."""
+        spec = RepoSpec(key="a/b", repo_readonly=False)
+
+        assert has_pair(script_argv(spec=spec), "-v", f"{SOURCE}:/repo:ro")
+        assert not has_pair(script_argv(spec=spec), "-v", f"{SOURCE}:/repo")
+
+    def test_the_script_is_mounted_read_only_at_a_fixed_path_outside_the_tree(self):
+        assert has_pair(script_argv(), "-v", f"{SCRIPT}:/scratch/main.py:ro")
+
+    def test_there_are_exactly_two_mounts(self):
+        args = script_argv()
+
+        assert sum(1 for a in args if a == "-v") == 2
+
+    def test_nothing_is_mounted_for_results(self):
+        args = script_argv()
+
+        assert not any(":/results" in a for a in args)
+        assert not any("REPOLACE_REPORT_PATH" in a for a in args)
+
+    def test_the_pytest_path_still_mounts_its_results(self):
+        """The contrast that gives the previous test meaning."""
+        assert has_pair(argv(), "-v", f"{RESULTS}:/results")
+
+
+class TestScriptCommand:
+    def test_the_command_after_the_image_is_exactly_the_script(self):
+        args = script_argv()
+
+        assert args[args.index(ENV.identifier) + 1 :] == ("/scratch/main.py",)
+
+    def test_it_is_not_run_under_pytest(self):
+        args = script_argv()
+
+        assert "pytest" not in args and "-m" not in args and "_repolace_report" not in args
+
+    def test_the_source_root_is_importable(self):
+        """A script's `sys.path[0]` is `/scratch`, so a flat-layout package would
+        otherwise not import."""
+        assert has_pair(script_argv(), "-e", "PYTHONPATH=/repo")
+
+    def test_the_pytest_plugin_directory_is_not_on_the_path(self):
+        assert not any("/opt/repolace" in a for a in script_argv())
+
+    def test_a_specs_test_targets_and_pytest_args_do_not_reach_the_script(self):
+        spec = RepoSpec(key="a/b", test_targets=("tests",), extra_pytest_args=("-x",))
+        args = script_argv(spec=spec)
+
+        assert "tests" not in args and "-x" not in args
+
+    def test_the_image_is_the_environment_that_was_prepared(self):
+        assert ENV.identifier in script_argv()
+
+    def test_the_image_comes_after_every_flag(self):
+        """Anything after the image is an argument to the interpreter, so a flag
+        placed there would be silently ignored rather than rejected."""
+        args = script_argv()
+        flags = [i for i, a in enumerate(args) if a in {"-v", "-e", "-w", "--user", "--memory"}]
+
+        assert max(flags) < args.index(ENV.identifier)
+
+
+class TestRootdirIsPinned:
+    def test_it_follows_the_plugin_and_precedes_everything_else_pytest_is_given(self):
+        args = argv(spec=RepoSpec(key="a/b", test_targets=("tests",), extra_pytest_args=("-x",)))
+        plugin = args.index("_repolace_report")
+
+        assert args[plugin - 1] == "-p"
+        assert args[plugin + 1] == "--rootdir=/repo"
+        assert args.index("--rootdir=/repo") < args.index("tests")
+
+    @pytest.mark.parametrize("keep_addopts", [True, False])
+    @pytest.mark.parametrize("targets", [(), ("tests",), ("tests/test_a.py::test_one",)])
+    def test_it_is_always_there_not_only_when_targets_are_overridden(self, keep_addopts, targets):
+        """One node-id space for the baseline, every attempt and every probe."""
+        spec = RepoSpec(key="a/b", keep_addopts=keep_addopts, test_targets=targets)
+
+        assert argv(spec=spec).count("--rootdir=/repo") == 1
+
+    def test_the_script_path_has_no_pytest_to_pin(self):
+        assert not any(a.startswith("--rootdir") for a in script_argv())

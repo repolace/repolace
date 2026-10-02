@@ -52,3 +52,6 @@ PLUGIN_MODULE = "_repolace_report"
 REPORT_PATH = "/results/report.jsonl"
 WORKDIR = "/repo"
 RESULTS_DIR = "/results"
+#: Where a scratch script is mounted. Its own directory rather than `/repo`, so
+#: the script never appears in the tree the host exports or diffs.
+SCRIPT_PATH = "/scratch/main.py"
