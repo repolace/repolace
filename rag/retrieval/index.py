@@ -14,8 +14,15 @@ from repolace_shared.paths import PathEscapesRoot, resolve_within
 from retrieval.chunker import Chunk, chunk_python_file
 from retrieval.config import EMBED_BATCH_SIZE
 from retrieval.embed import embed_texts
+from retrieval.strategies import DEFAULT_STRATEGY, get_strategy
 
 log = structlog.get_logger()
+
+#: What a NULL `registered_repos.index_strategy` means: every index built before
+#: the column existed used `truncate`. A literal and not `DEFAULT_STRATEGY`,
+#: because NULL must keep meaning `truncate` if the default is ever changed --
+#: otherwise those old indexes would be mislabelled and never rebuilt.
+_LEGACY_STRATEGY = "truncate"
 
 #: Generous for real source; a file past it is generated or hostile, and
 #: either way is not what retrieval is for.
@@ -144,7 +151,13 @@ def _chunk_paths(repo_path: Path, paths: list[Path]) -> list[Chunk]:
     return chunks
 
 
-async def _insert_chunks(db: AsyncSession, repo_id: uuid.UUID, commit_sha: str, chunks: list[Chunk]) -> None:
+async def _insert_chunks(
+    db: AsyncSession,
+    repo_id: uuid.UUID,
+    commit_sha: str,
+    chunks: list[Chunk],
+    strategy: str,
+) -> None:
     """Embed and insert in batches.
 
     Embedding a whole repo in one call materialises every vector as Python
@@ -154,7 +167,7 @@ async def _insert_chunks(db: AsyncSession, repo_id: uuid.UUID, commit_sha: str, 
     for start in range(0, len(chunks), EMBED_BATCH_SIZE):
         batch = chunks[start : start + EMBED_BATCH_SIZE]
         # SentenceTransformer.encode is synchronous and CPU-bound.
-        embeddings = await asyncio.to_thread(embed_texts, [chunk.content for chunk in batch])
+        embeddings = await asyncio.to_thread(embed_texts, [chunk.content for chunk in batch], strategy=strategy)
         db.add_all(
             CodeChunk(
                 repo_id=repo_id,
@@ -174,13 +187,27 @@ async def _insert_chunks(db: AsyncSession, repo_id: uuid.UUID, commit_sha: str, 
         await db.flush()
 
 
-async def _set_indexed_sha(db: AsyncSession, repo_id: uuid.UUID, commit_sha: str) -> None:
+async def _set_indexed_sha(db: AsyncSession, repo_id: uuid.UUID, commit_sha: str, strategy: str) -> None:
+    """Record the commit and the strategy in one statement.
+
+    They describe the same index, so they must never be written apart: a commit
+    with a stale strategy is exactly the mixed-embeddings state `index_strategy`
+    exists to prevent.
+    """
     await db.execute(
-        update(RegisteredRepo).where(RegisteredRepo.id == repo_id).values(indexed_commit_sha=commit_sha)
+        update(RegisteredRepo)
+        .where(RegisteredRepo.id == repo_id)
+        .values(indexed_commit_sha=commit_sha, index_strategy=strategy)
     )
 
 
-async def _full_index(db: AsyncSession, repo_id: uuid.UUID, repo_path: Path, commit_sha: str) -> int:
+async def _full_index(
+    db: AsyncSession,
+    repo_id: uuid.UUID,
+    repo_path: Path,
+    commit_sha: str,
+    strategy: str,
+) -> int:
     paths = await asyncio.to_thread(find_python_files, repo_path)
     chunks = await asyncio.to_thread(_chunk_paths, repo_path, paths)
 
@@ -190,8 +217,8 @@ async def _full_index(db: AsyncSession, repo_id: uuid.UUID, repo_path: Path, com
     # advisory lock above already makes indexing single-flight per repo, and
     # Postgres readers are not blocked by writers.
     await db.execute(delete(CodeChunk).where(CodeChunk.repo_id == repo_id))
-    await _insert_chunks(db, repo_id, commit_sha, chunks)
-    await _set_indexed_sha(db, repo_id, commit_sha)
+    await _insert_chunks(db, repo_id, commit_sha, chunks, strategy)
+    await _set_indexed_sha(db, repo_id, commit_sha, strategy)
 
     log.info(
         "rag.index.full",
@@ -203,15 +230,22 @@ async def _full_index(db: AsyncSession, repo_id: uuid.UUID, repo_path: Path, com
     return len(chunks)
 
 
-async def index_repo(db: AsyncSession, repo_id: uuid.UUID, repo_path: Path, commit_sha: str) -> int:
+async def index_repo(
+    db: AsyncSession,
+    repo_id: uuid.UUID,
+    repo_path: Path,
+    commit_sha: str,
+    strategy: str = DEFAULT_STRATEGY,
+) -> int:
     """Full (re)index of a repo checkout at commit_sha. Replaces all existing chunks.
 
     Owns its transaction: this is one unit of work, and the advisory lock that
     makes it single-flight lives for the transaction's lifetime.
     """
+    get_strategy(strategy)
     await _acquire_repo_lock(db, repo_id)
     try:
-        count = await _full_index(db, repo_id, repo_path, commit_sha)
+        count = await _full_index(db, repo_id, repo_path, commit_sha, strategy)
         await db.commit()
         return count
     except Exception:
@@ -274,6 +308,7 @@ async def _incremental_index(
     changed_py_files: list[str],
     old_sha: str,
     new_sha: str,
+    strategy: str,
 ) -> int:
     chunks: list[Chunk] = []
     if changed_py_files:
@@ -282,9 +317,9 @@ async def _incremental_index(
         )
         present = [repo_path / rel for rel in changed_py_files if (repo_path / rel).exists()]
         chunks = await asyncio.to_thread(_chunk_paths, repo_path, present)
-        await _insert_chunks(db, repo_id, new_sha, chunks)
+        await _insert_chunks(db, repo_id, new_sha, chunks, strategy)
 
-    await _set_indexed_sha(db, repo_id, new_sha)
+    await _set_indexed_sha(db, repo_id, new_sha, strategy)
     log.info(
         "rag.index.incremental",
         repo_id=str(repo_id),
@@ -296,12 +331,24 @@ async def _incremental_index(
     return len(chunks)
 
 
-async def reindex_if_stale(db: AsyncSession, repo_id: uuid.UUID, repo_path: Path, current_commit_sha: str) -> int:
+async def reindex_if_stale(
+    db: AsyncSession,
+    repo_id: uuid.UUID,
+    repo_path: Path,
+    current_commit_sha: str,
+    strategy: str = DEFAULT_STRATEGY,
+) -> int:
     """Incrementally reindex only files changed since the last indexed commit.
 
     Returns the number of chunks (re)written; 0 if the index is already current.
     Owns its transaction, as index_repo does.
+
+    An index built with a different strategy is rebuilt in full even when its
+    commit is current. An incremental pass would embed only the changed files
+    with the new strategy and leave the rest as they were, so one index would
+    hold vectors from two experiments.
     """
+    get_strategy(strategy)
     await _acquire_repo_lock(db, repo_id)
     try:
         repo = await db.get(RegisteredRepo, repo_id)
@@ -311,7 +358,15 @@ async def reindex_if_stale(db: AsyncSession, repo_id: uuid.UUID, repo_path: Path
         await asyncio.to_thread(_assert_git_root, repo_path)
 
         if repo.indexed_commit_sha is None:
-            count = await _full_index(db, repo_id, repo_path, current_commit_sha)
+            count = await _full_index(db, repo_id, repo_path, current_commit_sha, strategy)
+        elif (indexed_with := repo.index_strategy or _LEGACY_STRATEGY) != strategy:
+            log.info(
+                "rag.index.strategy_changed",
+                repo_id=str(repo_id),
+                old_strategy=indexed_with,
+                new_strategy=strategy,
+            )
+            count = await _full_index(db, repo_id, repo_path, current_commit_sha, strategy)
         elif repo.indexed_commit_sha == current_commit_sha:
             count = 0
         else:
@@ -330,7 +385,7 @@ async def reindex_if_stale(db: AsyncSession, repo_id: uuid.UUID, repo_path: Path
                     new_sha=current_commit_sha,
                     stderr=exc.stderr.strip() if exc.stderr else "",
                 )
-                count = await _full_index(db, repo_id, repo_path, current_commit_sha)
+                count = await _full_index(db, repo_id, repo_path, current_commit_sha, strategy)
             else:
                 count = await _incremental_index(
                     db,
@@ -339,6 +394,7 @@ async def reindex_if_stale(db: AsyncSession, repo_id: uuid.UUID, repo_path: Path
                     [f for f in changed if f.endswith(".py")],
                     repo.indexed_commit_sha,
                     current_commit_sha,
+                    strategy,
                 )
 
         await db.commit()
