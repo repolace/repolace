@@ -173,6 +173,24 @@ FILTER_FUNCTIONS = {"visible_feedback", "baseline_summary"}
 ORACLE_ATTRIBUTES = {"baseline", "result"}
 SUITE_RESULT_FIELDS = {f.name for f in dataclasses.fields(SuiteResult)}
 
+#: **Every module that builds or sends model-visible text, except `feedback.py` (the one
+#: sanctioned reader).** Written as a constant so extending it is a one-line change.
+#: It deliberately lists only this package's own top-level modules today. Stream B's
+#: `tools/sandbox.py` renders a probe `SuiteResult` into a tool result as well; that is
+#: safe only because a probe never includes the overlay (and the pipeline must filter
+#: probe results through `hidden_paths` regardless), and this tripwire is to be extended
+#: to `tools/**` once that stream has merged -- add the paths here, not a second list.
+ORACLE_SCANNED_FILES = tuple(PACKAGE / f"{name}.py" for name in ("graph", "prompts", "render", "state", "run"))
+#: The scanned files in which not even the filter calls may touch `.baseline` / `.result`.
+ORACLE_BLIND_FILES = tuple(PACKAGE / f"{name}.py" for name in ("prompts", "render", "state", "run"))
+
+#: Names and attributes that hold a `SuiteResult` or an `AttemptRecord` anywhere in this
+#: package, for the dump check below.
+ORACLE_NAMES = frozenset({"baseline", "result", "record", "rec", "last_attempt", "attempt_record"})
+#: Functions that turn a whole object into text. `repr(record)` would print every field
+#: of a `SuiteResult` -- including the hidden node ids -- without ever naming one.
+DUMPERS = frozenset({"repr", "str", "asdict", "astuple", "vars", "dumps", "format", "pformat", "ascii"})
+
 
 def _parents(tree: ast.AST) -> dict[ast.AST, ast.AST]:
     return {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
@@ -185,26 +203,47 @@ def _called_name(node: ast.AST) -> str | None:
     return None
 
 
+def _mentions_oracle(node: ast.AST) -> bool:
+    return any(
+        (isinstance(n, ast.Name) and n.id in ORACLE_NAMES) or (isinstance(n, ast.Attribute) and n.attr in ORACLE_NAMES)
+        for n in ast.walk(node)
+    )
+
+
+def dump_offenders(tree: ast.AST) -> list[str]:
+    """Places that stringify a whole oracle-holding object: `repr(x)`, `asdict(x)`, `f"{x}"`, `"%s" % x`."""
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and _called_name(node) in DUMPERS:
+            if any(_mentions_oracle(arg) for arg in (*node.args, *(k.value for k in node.keywords))):
+                found.append(f"line {node.lineno}: {_called_name(node)}(...)")
+        elif isinstance(node, ast.FormattedValue) and _mentions_oracle(node.value):
+            found.append(f"line {node.lineno}: f-string interpolation")
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod) and _mentions_oracle(node.right):
+            found.append(f"line {node.lineno}: %-formatting")
+    return found
+
+
 class TestOnlyTheFilterReadsTheOracle:
     """A tripwire, not a proof: it fails when someone adds a second reader, and says where."""
 
-    @pytest.mark.parametrize("module", ["graph", "prompts", "render", "state", "run"])
-    def test_no_module_but_the_filter_touches_a_suite_results_fields(self, module):
-        tree = ast.parse((PACKAGE / f"{module}.py").read_text())
+    @pytest.mark.parametrize("path", ORACLE_SCANNED_FILES, ids=lambda p: p.name)
+    def test_no_module_but_the_filter_touches_a_suite_results_fields(self, path):
+        tree = ast.parse(path.read_text())
 
         touched = {
             node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute) and node.attr in SUITE_RESULT_FIELDS
         }
 
-        assert touched == set(), f"{module}.py reads SuiteResult field(s) {sorted(touched)}; only feedback.py may"
+        assert touched == set(), f"{path.name} reads SuiteResult field(s) {sorted(touched)}; only feedback.py may"
 
-    @pytest.mark.parametrize("module", ["prompts", "render", "state", "run"])
-    def test_the_prompt_builders_never_touch_the_baseline_or_an_attempts_result_at_all(self, module):
-        tree = ast.parse((PACKAGE / f"{module}.py").read_text())
+    @pytest.mark.parametrize("path", ORACLE_BLIND_FILES, ids=lambda p: p.name)
+    def test_the_prompt_builders_never_touch_the_baseline_or_an_attempts_result_at_all(self, path):
+        tree = ast.parse(path.read_text())
 
         touched = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute) and n.attr in ORACLE_ATTRIBUTES}
 
-        assert touched == set(), f"{module}.py reads {sorted(touched)}"
+        assert touched == set(), f"{path.name} reads {sorted(touched)}"
 
     def test_the_graph_hands_the_oracle_only_to_the_filter_as_an_argument(self):
         tree = ast.parse((PACKAGE / "graph.py").read_text())
@@ -225,6 +264,35 @@ class TestOnlyTheFilterReadsTheOracle:
             isinstance(n, ast.Attribute) and n.attr in ORACLE_ATTRIBUTES for n in ast.walk(tree)
         )
 
+    @pytest.mark.parametrize("path", ORACLE_SCANNED_FILES, ids=lambda p: p.name)
+    def test_nothing_stringifies_a_whole_result_or_record(self, path):
+        """Attribute-name matching misses `repr(record)`, `asdict(rec.result)` and `f"{baseline}"`."""
+        assert dump_offenders(ast.parse(path.read_text())) == []
+
+    @pytest.mark.parametrize(
+        "leak",
+        [
+            "repr(record)",
+            "str(rec.result)",
+            "asdict(deps.baseline)",
+            "dataclasses.asdict(last_attempt)",
+            "json.dumps(vars(record))",
+            "f'{record}'",
+            "f'baseline: {deps.baseline!r}'",
+            "'%s' % (baseline,)",
+            "format(result)",
+        ],
+    )
+    def test_the_dump_check_would_catch_each_of_these(self, leak):
+        """The tripwire is only worth keeping if it trips."""
+        assert dump_offenders(ast.parse(f"def f(deps, record, rec, baseline, result, last_attempt):\n    return {leak}"))
+
+    @pytest.mark.parametrize("fine", ["repr(deps.limits)", "str(call.id)", "f'{nonce}'", "format(1)", "dict(response.message)"])
+    def test_the_dump_check_leaves_ordinary_code_alone(self, fine):
+        assert not dump_offenders(
+            ast.parse(f"def f(deps, call, nonce, response):\n    return {fine}")
+        )
+
     def test_the_check_would_catch_a_second_reader(self):
         """The tripwire is only worth keeping if it trips."""
         leaky = ast.parse("def f(deps, rec):\n    return f'baseline: {deps.baseline.failed} {rec.result}'")
@@ -237,10 +305,16 @@ class TestOnlyTheFilterReadsTheOracle:
 
         assert sorted(offenders) == ["baseline", "result"]
 
+    def test_the_scanned_files_all_exist_and_the_list_is_not_empty(self):
+        """A renamed module would otherwise fall out of the scan and everything would still pass."""
+        assert ORACLE_SCANNED_FILES and all(path.is_file() for path in ORACLE_SCANNED_FILES)
+
     def test_the_prompt_modules_do_not_import_suite_result(self):
         """By import, not by text: a docstring may name it, but nothing may bring it into scope."""
-        for module in ("prompts", "render", "state"):
-            tree = ast.parse((PACKAGE / f"{module}.py").read_text())
+        for path in ORACLE_BLIND_FILES:
+            if path.name == "run.py":
+                continue
+            tree = ast.parse(path.read_text())
             imported = set()
             for node in ast.walk(tree):
                 if isinstance(node, ast.ImportFrom):
@@ -249,7 +323,7 @@ class TestOnlyTheFilterReadsTheOracle:
                 elif isinstance(node, ast.Import):
                     imported.update(alias.name for alias in node.names)
 
-            assert "SuiteResult" not in imported and not any(name.startswith("verify") for name in imported), module
+            assert "SuiteResult" not in imported and not any(name.startswith("verify") for name in imported), path.name
 
 
 class TestHiddenDoesNotSteerTheRun:
@@ -315,3 +389,20 @@ class TestHiddenDoesNotSteerTheRun:
         oom = await self.outcome(suite(error=self.OOM, collect_failures=[self.H]), suite(passed=[A, B]))
 
         assert hang == oom
+
+    @pytest.mark.parametrize("hidden_tests", [1, 7, 40])
+    async def test_the_number_of_hidden_tests_never_changes_what_the_model_sees(self, hidden_tests):
+        """Kills `len(baseline.failed)` or `len(result.failed)` appended to any message: those
+        counts include the hidden tests, so the transcript would differ with their number. The
+        static tripwire catches the attribute names; this catches the behaviour."""
+        def world(n):
+            ids = [f"{self.H}::t{i}" for i in range(n)]
+            baseline = suite(passed=[A, B, *ids[::2]], failed=ids[1::2])
+            attempt = suite(passed=[A, *ids[::2]], failed=ids[1::2])  # B regresses: three retries
+            return baseline, attempt
+
+        reference = await self.outcome(*world(0))
+        varied = await self.outcome(*world(hidden_tests))
+
+        assert varied == reference
+        assert reference[1] is StopReason.MAX_ATTEMPTS and len(reference[3]) == 3

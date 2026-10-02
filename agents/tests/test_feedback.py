@@ -117,6 +117,22 @@ class TestFiltering:
         assert fb.visible_failed == ()
         assert "test_hidden_issue" not in everything_shown(fb)
 
+    @pytest.mark.parametrize(
+        "hidden_spelling",
+        ["./tests/test_hidden_issue.py", "tests//test_hidden_issue.py", "tests/./test_hidden_issue.py",
+         "tests/sub/../test_hidden_issue.py", "/tests/test_hidden_issue.py"],
+    )
+    def test_a_hidden_path_is_normalised_too_not_only_the_ids(self, hidden_spelling):
+        """The hidden side comes from instance data, and nothing guarantees it is spelled canonically.
+        Without normalising it, `tests/test_hidden_issue.py::t` is compared to `./tests/...` and is not hidden."""
+        baseline = suite(passed=[A, hid()])
+        attempt = suite(passed=[A], failed=[hid()], collect_failures=[HIDDEN_FILE])
+
+        fb = feedback(baseline, attempt, hidden=frozenset({hidden_spelling}))
+
+        assert fb.visible_failed == () and fb.regressions == () and fb.new_collect_failures == ()
+        assert fb.clean and "test_hidden_issue" not in everything_shown(fb)
+
     def test_an_id_under_a_hidden_directory_is_hidden(self):
         baseline = suite(passed=[A])
         attempt = suite(passed=[A], failed=["tests/hidden/sub/test_x.py::t"])
