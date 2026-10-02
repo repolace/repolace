@@ -22,12 +22,12 @@ import fnmatch
 import os
 import re
 from collections.abc import Iterator, Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from repolace_shared.git import GitTimeoutError
 
 from repolace_agents.tools.base import ToolContext, ToolError, ToolOutcome, ToolSpec
-from repolace_agents.tools.files import path_property
+from repolace_agents.tools.files import NOTICE_RESERVE, fit_count, notice_reserve, path_property
 from repolace_agents.tools.gitproc import run_limited_git
 from repolace_agents.tools.paths import (
     confine,
@@ -38,6 +38,9 @@ from repolace_agents.tools.paths import (
     require_text,
     shown,
 )
+
+if TYPE_CHECKING:  # `contracts` imports the tools package, so a runtime import here would be a cycle
+    from repolace_agents.contracts import SearchHit
 
 #: Wall-clock bound on one `git grep`.
 GREP_TIMEOUT_SECONDS = 20.0
@@ -109,12 +112,35 @@ class SearchCode:
         if not hits:
             return ToolOutcome("no matches in the index; try different words, or use grep for an exact string")
 
-        blocks = []
+        cap = self._ctx.limits.max_output_chars
+        budget = max(0, cap - notice_reserve(cap))
+        blocks: list[str] = []
+        used = 0
         for hit in hits:
-            header = f"{hit.file_path}:{hit.start_line}-{hit.end_line} {hit.symbol} ({hit.chunk_type})"
-            snippet = [_clip(line, MAX_SNIPPET_LINE_CHARS) for line in hit.snippet.split("\n")[:MAX_SNIPPET_LINES]]
-            blocks.append("\n".join([header, *(f"    {line}" for line in snippet)]))
-        return ToolOutcome("\n\n".join(blocks))
+            block = self._block(hit, MAX_SNIPPET_LINES)
+            if not blocks and len(block) > budget:
+                # Even one hit is too long (a tiny output cap): keep it, with fewer snippet lines.
+                lines = MAX_SNIPPET_LINES
+                while lines > 0 and len(block) > budget:
+                    lines -= 1
+                    block = self._block(hit, lines)
+            if used + len(block) + 2 > budget:
+                break
+            blocks.append(block)
+            used += len(block) + 2
+        text = "\n\n".join(blocks)
+        if len(blocks) < len(hits):
+            text += (
+                f"\n\n[{len(hits) - len(blocks)} more hit(s) cut at the output limit; ask for a smaller "
+                f"limit or make the query more specific]"
+            )
+        return ToolOutcome(text)
+
+    @staticmethod
+    def _block(hit: SearchHit, snippet_lines: int) -> str:
+        header = f"{hit.file_path}:{hit.start_line}-{hit.end_line} {hit.symbol} ({hit.chunk_type})"
+        snippet = [_clip(line, MAX_SNIPPET_LINE_CHARS) for line in hit.snippet.split("\n")[:snippet_lines]]
+        return "\n".join([header, *(f"    {line}" for line in snippet)])
 
 
 class Grep:
@@ -220,10 +246,15 @@ class Grep:
         if not matches:
             scope = f" matching glob {glob!r}" if glob is not None else ""
             return ToolOutcome(f"no matches for {shown(pattern)!r} in tracked files under {printable(pathspec)}{scope}")
-        body = "\n".join(matches[:max_results])
-        if len(matches) > max_results:
+        # Budgeted in characters, with room kept for up to two notices: a count limit does not
+        # bound size, and the box would cut the notices off the end.
+        cap = ctx.limits.max_output_chars
+        budget = max(0, cap - min(2 * NOTICE_RESERVE, cap // 2))
+        shown_count = max(1, fit_count(matches[:max_results], budget))
+        body = "\n".join(matches[:shown_count])
+        if shown_count < len(matches):
             body += (
-                f"\n[showing the first {max_results} of {len(matches)} matches; narrow with path or "
+                f"\n[showing the first {shown_count} of {len(matches)} matches; narrow with path or "
                 f"glob, or use a more specific pattern]"
             )
         if result.output_cut:

@@ -206,6 +206,17 @@ class TestListDir:
         out.content.encode("utf-8")
         assert "caf\\udce9.py" in out.content
 
+    async def test_a_file_name_with_control_characters_is_shown_escaped(self, h):
+        # A raw newline in a name would let a repository start a line of its own in the listing.
+        (h.checkout / "nl\nname.py").write_text("x")
+        (h.checkout / "esc\x1b[31m.py").write_text("x")
+
+        out = await h.call("list_dir")
+
+        assert "nl\\x0aname.py" in out.content and "esc\\x1b[31m.py" in out.content
+        assert "\x1b" not in out.content
+        assert not any(line == "name.py" for line in out.content.splitlines())
+
     async def test_an_empty_directory_says_so(self, h):
         (h.checkout / "empty").mkdir()
 

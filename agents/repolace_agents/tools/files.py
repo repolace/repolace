@@ -13,14 +13,21 @@ from __future__ import annotations
 
 import os
 import stat
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from repolace_shared.git import GitCommandError, run_git
 
 from repolace_agents.tools.base import ToolContext, ToolError, ToolOutcome, ToolSpec
-from repolace_agents.tools.paths import MAX_PATH_CHARS, confine, is_git_name, printable, relative_posix
+from repolace_agents.tools.paths import (
+    MAX_PATH_CHARS,
+    confine,
+    escape_controls,
+    is_git_name,
+    printable,
+    relative_posix,
+)
 
 #: More than this in one listing is a wall of text the model cannot use; it is
 #: told to list a subdirectory instead.
@@ -67,6 +74,33 @@ def read_regular_file(resolved: Path, shown_path: str, max_bytes: int) -> bytes:
     if b"\0" in data:
         raise ToolError(f"{shown_path} looks like a binary file (it contains NUL bytes) and cannot be read or edited")
     return data
+
+
+#: Characters a tool keeps back for the notice that follows its body ("[N more lines; call
+#: ... to continue]"). The notice is what tells the model the result is partial, so it must
+#: survive: `ToolBox` cuts an over-long result from the end, and the end is where it sits.
+NOTICE_RESERVE = 200
+
+
+def notice_reserve(cap: int) -> int:
+    """`NOTICE_RESERVE`, scaled down for a small output cap so the body keeps most of it."""
+    return min(NOTICE_RESERVE, cap // 4)
+
+
+def fit_count(pieces: Sequence[str], budget: int) -> int:
+    """How many leading `pieces`, joined by newlines, fit in `budget` characters.
+
+    The tools that return a list (lines, entries, matches, hits) budget in characters, not in
+    items, for one reason: a count limit says nothing about size, and when the box cuts a
+    result that was sized by count, the header and the "continue from here" hint still describe
+    the *uncut* result. The model then resumes after lines it never saw.
+    """
+    used = 0
+    for index, piece in enumerate(pieces):
+        used += len(piece) + 1
+        if used > budget:
+            return index
+    return len(pieces)
 
 
 def numbered(lines: list[str], first_number: int) -> str:
@@ -131,7 +165,23 @@ class ReadFile:
 
         capped_end = start + ctx.limits.max_read_lines - 1
         last = min(total, capped_end, end if end is not None else total)
-        out = [f"{name} (lines {start}-{last} of {total})", numbered(lines[start - 1 : last], start)]
+        shown_lines = [f"{number:>6}\t{lines[number - 1]}" for number in range(start, last + 1)]
+
+        # Budget in characters. The header and the continuation hint describe what was
+        # returned, so they are built from the last line that *fully* fit -- never from the
+        # line-count limit, which on ordinary 60-character lines is 3x what the output cap
+        # holds, and would have the model resume at 401 after seeing 124.
+        header_size = len(f"{name} (lines {start}-{last} of {total})") + 1
+        budget = max(0, ctx.limits.max_output_chars - header_size - notice_reserve(ctx.limits.max_output_chars))
+        fitting = fit_count(shown_lines, budget)
+        if fitting == 0:
+            # One line alone is over the budget (a minified file). Show its start and say so:
+            # the only line that is ever clipped, and never silently.
+            marker = f" [line cut: {len(lines[start - 1])} characters long]"
+            shown_lines = [shown_lines[0][: max(0, budget - len(marker))] + marker]
+            fitting = 1
+        last = start + fitting - 1
+        out = [f"{name} (lines {start}-{last} of {total})", "\n".join(shown_lines[:fitting])]
         if last < total and (end is None or end > last):
             out.append(f"[{total - last} more line(s); call read_file again with start_line={last + 1} to continue]")
         return ToolOutcome("\n".join(out))
@@ -174,13 +224,17 @@ class ListDir:
 
         entries: list[str] = []
         self._walk(resolved, "", args.get("depth", 1), entries)
-        shown_entries = entries[:MAX_LIST_ENTRIES]
         header = f"{name}/" if rel != "." else "./"
-        if not shown_entries:
+        if not entries:
             return ToolOutcome(f"{header} is empty")
-        body = "\n".join(shown_entries)
+
+        counted = entries[:MAX_LIST_ENTRIES]
+        fitting = fit_count(counted, max(0, ctx.limits.max_output_chars - len(header) - notice_reserve(ctx.limits.max_output_chars)))
+        body = "\n".join(counted[:fitting])
         if len(entries) > MAX_LIST_ENTRIES:
             body += f"\n[more than {MAX_LIST_ENTRIES} entries; list a subdirectory or use a lower depth]"
+        elif fitting < len(counted):
+            body += f"\n[{len(counted) - fitting} more entries cut at the output limit; list a subdirectory or use a lower depth]"
         return ToolOutcome(f"{header}\n{body}")
 
     def _walk(self, directory: Path, prefix: str, depth: int, out: list[str]) -> None:
@@ -195,7 +249,7 @@ class ListDir:
             # so a listing cannot be walked out of the tree.
             is_dir = child.is_dir(follow_symlinks=False)
             suffix = "/" if is_dir else "@" if child.is_symlink() else ""
-            out.append(printable(f"{prefix}{child.name}{suffix}"))
+            out.append(escape_controls(printable(f"{prefix}{child.name}{suffix}")))
             if is_dir and depth > 1:
                 self._walk(Path(child.path), f"{prefix}{child.name}/", depth - 1, out)
 

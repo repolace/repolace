@@ -81,10 +81,10 @@ class TestTheToolList:
             assert function["description"], function["name"]
 
     async def test_the_box_uses_the_context_output_cap(self, tmp_path):
+        # `edit_file` echoes the edited region unbudgeted, so it is a result only the box can cut.
         h = make(tmp_path, limits=ToolLimits(max_output_chars=200))
-        (h.checkout / "src/pkg/util.py").write_text("x" * 5000 + "\n")
 
-        out = await h.call("read_file", path="src/pkg/util.py")
+        out = await h.call("edit_file", path="src/pkg/util.py", old_string="VALUE = 1", new_string="V" * 5000)
 
         assert len(out.content) <= 200 and "[truncated" in out.content
 
