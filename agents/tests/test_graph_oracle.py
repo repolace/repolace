@@ -175,12 +175,18 @@ SUITE_RESULT_FIELDS = {f.name for f in dataclasses.fields(SuiteResult)}
 
 #: **Every module that builds or sends model-visible text, except `feedback.py` (the one
 #: sanctioned reader).** Written as a constant so extending it is a one-line change.
-#: It deliberately lists only this package's own top-level modules today. Stream B's
-#: `tools/sandbox.py` renders a probe `SuiteResult` into a tool result as well; that is
-#: safe only because a probe never includes the overlay (and the pipeline must filter
-#: probe results through `hidden_paths` regardless), and this tripwire is to be extended
-#: to `tools/**` once that stream has merged -- add the paths here, not a second list.
-ORACLE_SCANNED_FILES = tuple(PACKAGE / f"{name}.py" for name in ("graph", "prompts", "render", "state", "run"))
+#: It lists this package's own top-level modules and every module under `tools/` except
+#: `tools/sandbox.py`. That one renders a probe `SuiteResult` into a tool result on
+#: purpose, so it legitimately reads those fields: it is safe only because a probe never
+#: includes the hidden overlay (and the pipeline must filter probe results through
+#: `hidden_paths` regardless). It is excluded from the field-read check below, still
+#: covered by a narrower whole-object dump check, and pinned by `TestTheProbeRendererIsTheOnlyToolThatReadsAResult`.
+#: Add paths here, not a second list.
+TOOLS = PACKAGE / "tools"
+PROBE_RENDERER = TOOLS / "sandbox.py"
+ORACLE_SCANNED_FILES = tuple(PACKAGE / f"{name}.py" for name in ("graph", "prompts", "render", "state", "run")) + tuple(
+    path for path in sorted(TOOLS.glob("*.py")) if path != PROBE_RENDERER
+)
 #: The scanned files in which not even the filter calls may touch `.baseline` / `.result`.
 ORACLE_BLIND_FILES = tuple(PACKAGE / f"{name}.py" for name in ("prompts", "render", "state", "run"))
 
@@ -406,3 +412,84 @@ class TestHiddenDoesNotSteerTheRun:
 
         assert varied == reference
         assert reference[1] is StopReason.MAX_ATTEMPTS and len(reference[3]) == 3
+
+
+class TestTheProbeRendererIsTheOnlyToolThatReadsAResult:
+    """`tools/sandbox.py` prints a probe's `SuiteResult`; that is safe only while probes never carry the overlay.
+
+    The field-read tripwire above skips this one file because reading those fields is its job.
+    These tests make the exception narrow and visible: it stays the only tool that reads a
+    result, the dump check still covers it, and nothing under `tools/` can even name the
+    hidden-test machinery, so a probe cannot be handed the overlay by a later edit to a tool.
+    """
+
+    HIDDEN_NAMES = frozenset({"overlay", "hidden_paths", "hidden"})
+
+    def test_the_exclusion_is_not_stale(self):
+        """If the renderer stopped reading result fields, the exception could be dropped."""
+        tree = ast.parse(PROBE_RENDERER.read_text())
+
+        assert any(isinstance(n, ast.Attribute) and n.attr in SUITE_RESULT_FIELDS for n in ast.walk(tree))
+
+    def test_no_other_tool_module_is_excluded_from_the_scan(self):
+        tool_files = set(TOOLS.glob("*.py"))
+
+        assert tool_files - set(ORACLE_SCANNED_FILES) == {PROBE_RENDERER}
+
+    @staticmethod
+    def bare_object_dumps(tree: ast.AST) -> list[str]:
+        """Stringifications of a whole result object (`repr(result)`, `f"{result}"`), not of its fields.
+
+        Narrower than `dump_offenders` on purpose: the renderer formats `len(result.failed)` and
+        `result.exit_code` all day, which that check (any mention of an oracle name) would flag.
+        What must never happen here is dumping the object, which prints every field at once.
+        """
+
+        def bare(node: ast.AST) -> bool:
+            return isinstance(node, ast.Name) and node.id in ORACLE_NAMES
+
+        found = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and _called_name(node) in DUMPERS:
+                if any(bare(arg) for arg in (*node.args, *(k.value for k in node.keywords))):
+                    found.append(f"line {node.lineno}: {_called_name(node)}(<whole object>)")
+            elif isinstance(node, ast.FormattedValue) and bare(node.value):
+                found.append(f"line {node.lineno}: f-string interpolation of a whole object")
+            elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):
+                right = node.right.elts if isinstance(node.right, ast.Tuple) else [node.right]
+                if any(bare(item) for item in right):
+                    found.append(f"line {node.lineno}: %-formatting of a whole object")
+        return found
+
+    def test_the_probe_renderer_never_stringifies_a_whole_result(self):
+        assert self.bare_object_dumps(ast.parse(PROBE_RENDERER.read_text())) == []
+
+    @pytest.mark.parametrize(
+        "leak", ["repr(result)", "str(result)", "asdict(result)", "f'{result}'", "f'{result!r}'", "'%s' % (result,)"]
+    )
+    def test_the_narrow_check_would_catch_each_of_these(self, leak):
+        assert self.bare_object_dumps(ast.parse(f"def f(result):\n    return {leak}"))
+
+    @pytest.mark.parametrize("fine", ["f'{len(result.failed)} failed'", "f'{result.exit_code}'", "str(result.exit_code)"])
+    def test_the_narrow_check_allows_field_counts(self, fine):
+        assert self.bare_object_dumps(ast.parse(f"def f(result):\n    return {fine}")) == []
+
+    @pytest.mark.parametrize("path", sorted(TOOLS.glob("*.py")), ids=lambda p: p.name)
+    def test_no_tool_module_names_the_overlay_or_hidden_paths(self, path):
+        """By AST, so a docstring may explain the rule but no code can reach for the overlay."""
+        tree = ast.parse(path.read_text())
+
+        named = {
+            name
+            for node in ast.walk(tree)
+            for name in (
+                [node.id] if isinstance(node, ast.Name) else
+                [node.attr] if isinstance(node, ast.Attribute) else
+                [node.arg] if isinstance(node, ast.arg) else
+                [node.arg] if isinstance(node, ast.keyword) and node.arg else
+                []
+            )
+            if name.lower() in self.HIDDEN_NAMES
+        }
+
+        assert named == set(), f"{path.name} names {sorted(named)}: a probe must never see the hidden overlay"
