@@ -108,12 +108,12 @@ class TestBothCallersAreBuiltOnIt:
     would not follow the replacement."""
 
     def test_score_returns_what_it_returns(self, monkeypatch):
-        monkeypatch.setattr(scoring, "_preconditions", lambda *args: SENTINEL)
+        monkeypatch.setattr(scoring, "_preconditions", lambda *args, **kwargs: SENTINEL)
 
         assert score(suite(passed=(A,)), suite(passed=(A,)), ["src/app.py"]) is SENTINEL
 
     def test_agent_verdict_reports_the_same_reason_and_disqualified_set(self, monkeypatch):
-        monkeypatch.setattr(scoring, "_preconditions", lambda *args: SENTINEL)
+        monkeypatch.setattr(scoring, "_preconditions", lambda *args, **kwargs: SENTINEL)
 
         verdict = agent_verdict(suite(passed=(A,)), suite(passed=(A,)), ["src/app.py"])
 
@@ -122,7 +122,7 @@ class TestBothCallersAreBuiltOnIt:
         assert verdict.disqualified == SENTINEL.disqualified
 
     def test_when_it_finds_nothing_both_go_on_to_compare_test_sets(self, monkeypatch):
-        monkeypatch.setattr(scoring, "_preconditions", lambda *args: None)
+        monkeypatch.setattr(scoring, "_preconditions", lambda *args, **kwargs: None)
         base = suite(passed=(A, B), failed=())
 
         assert agent_verdict(base, suite(passed=(A,)), ["src/app.py"]).regressions == (B,)
@@ -131,8 +131,11 @@ class TestBothCallersAreBuiltOnIt:
     def test_both_hand_it_the_same_arguments(self, monkeypatch):
         calls = []
 
-        def spy(*args):
-            calls.append(args)
+        def spy(*args, **kwargs):
+            # Positional and keyword spellings of the same call must compare equal, so
+            # a caller switching to keyword arguments is not a spurious failure.
+            names = ("baseline", "attempt", "changed_files", "baseline_files", "attempt_infrastructure_error")
+            calls.append(dict(zip(names, args)) | kwargs)
             return None
 
         monkeypatch.setattr(scoring, "_preconditions", spy)
@@ -142,7 +145,10 @@ class TestBothCallersAreBuiltOnIt:
         score(base, attempt, files, baseline_files=("src/app.py",), attempt_infrastructure_error=True)
         agent_verdict(base, attempt, files, baseline_files=("src/app.py",), attempt_infrastructure_error=True)
 
-        assert calls[0] == calls[1] == (base, attempt, files, ("src/app.py",), True)
+        assert calls[0] == calls[1] == {
+            "baseline": base, "attempt": attempt, "changed_files": files,
+            "baseline_files": ("src/app.py",), "attempt_infrastructure_error": True,
+        }
 
 
 class TestEveryPreconditionFailsBothCallers:

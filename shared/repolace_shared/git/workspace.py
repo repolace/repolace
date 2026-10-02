@@ -214,9 +214,14 @@ class TaskWorkspace:
             log.warning("workspace.discard_refused", error=str(exc))
             return
         for target in targets:
-            # `lexists`, so a dangling symlink is still removed, and a label that
-            # was never exported does not log a failure for a path that is not there.
-            if os.path.lexists(target):
+            if os.path.islink(target):
+                # A symlink where the directory should be: remove the link itself and
+                # never what it points at. `rmtree` refuses a symlink, which would leave
+                # it in place, and following it would delete a host directory.
+                await asyncio.to_thread(_unlink, target)
+            elif os.path.lexists(target):
+                # `lexists` rather than `exists`, and checked at all so a label that was
+                # never exported does not log a failure for a path that is not there.
                 await asyncio.to_thread(_remove_tree, target)
 
     async def prune_remote_refs(self, keep: Sequence[str]) -> tuple[str, ...]:
@@ -359,6 +364,14 @@ def _refuse_reuse(destination: Path, what: str, attempt: int | str) -> None:
     """
     if os.path.lexists(destination):
         raise RuntimeError(f"{what} for {attempt} already exists; labels are single-use")
+
+
+def _unlink(path: Path) -> None:
+    """Remove one symlink, best effort: a failure is a warning, never an exception."""
+    try:
+        os.unlink(path)
+    except OSError as exc:
+        log.warning("workspace.remove_failed", root=str(path), error=str(exc))
 
 
 def _remove_tree(root: Path) -> None:

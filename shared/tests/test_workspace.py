@@ -620,6 +620,50 @@ class TestDiscard:
             assert not results.exists()
             assert (victim / "precious.txt").read_text() == "keep me"
 
+    async def test_a_dangling_symlink_in_place_of_the_directory_is_removed(self, origin_url, tmp_path):
+        """`lexists`, not `exists`: the second is False for a dangling link, so the
+        link would be left behind and the label look discarded when it is not."""
+        async with workspace_for(origin_url) as workspace:
+            export_link = workspace.root / "export-probe-1"
+            results_link = workspace.root / "results-probe-1"
+            export_link.symlink_to(tmp_path / "nowhere")
+            results_link.symlink_to(tmp_path / "also-nowhere")
+
+            await workspace.discard("probe-1")
+
+            assert not os.path.lexists(export_link) and not os.path.lexists(results_link)
+
+    async def test_a_live_symlink_is_removed_and_its_target_is_untouched(self, origin_url, tmp_path):
+        victim = tmp_path / "victim-dir"
+        victim.mkdir()
+        (victim / "precious.txt").write_text("keep me")
+        victim.chmod(0o700)
+        async with workspace_for(origin_url) as workspace:
+            link = workspace.root / "export-probe-1"
+            link.symlink_to(victim)
+
+            await workspace.discard("probe-1")
+
+            assert not os.path.lexists(link)
+            assert (victim / "precious.txt").read_text() == "keep me"
+            assert stat.S_IMODE(victim.stat().st_mode) == 0o700
+
+    async def test_a_symlink_that_will_not_unlink_is_a_warning_not_an_exception(
+        self, origin_url, tmp_path, monkeypatch
+    ):
+        async with workspace_for(origin_url) as workspace:
+            (workspace.root / "export-probe-1").symlink_to(tmp_path / "nowhere")
+
+            def refuse(path):
+                raise PermissionError("not yours")
+
+            monkeypatch.setattr(os, "unlink", refuse)
+            with structlog.testing.capture_logs() as logs:
+                await workspace.discard("probe-1")
+            monkeypatch.undo()
+
+            assert [e for e in logs if e["event"] == "workspace.remove_failed"]
+
     async def test_a_symlink_in_place_of_the_run_directory_is_never_followed(self, origin_url, tmp_path):
         victim = tmp_path / "victim-dir"
         victim.mkdir()
