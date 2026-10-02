@@ -149,8 +149,9 @@ def _check_targets(targets: Sequence[str]) -> tuple[str, ...]:
 
     A bare `str` is a `Sequence[str]`, so `tuple("tests/a.py")` would silently
     become one-character arguments. A leading `-` would be read by pytest as an
-    option. The toolbox already refuses both, so reaching here with one is a bug in
-    the caller -- hence an error, not a result.
+    option, and a leading `@` as a request to read more arguments from a file. The
+    toolbox already refuses these, so reaching here with one is a bug in the caller --
+    hence an error, not a result.
     """
     if isinstance(targets, str):
         raise ValueError(f"targets must be a sequence of strings, not the single string {targets!r}")
@@ -160,6 +161,10 @@ def _check_targets(targets: Sequence[str]) -> tuple[str, ...]:
             raise ValueError(f"a test target must be a non-empty string, got {target!r}")
         if target.startswith("-"):
             raise ValueError(f"a test target may not start with '-', got {target!r}")
+        if target.startswith("@"):
+            # pytest expands `@file` arguments by reading the named file for more
+            # arguments, even after `--`, so this is an option in disguise.
+            raise ValueError(f"a test target may not start with '@', got {target!r}")
     return checked
 
 
