@@ -9,6 +9,13 @@ chose after reading text anyone can file. So this runner puts the child under
 `RLIMIT_AS` and `RLIMIT_CPU`, and bounds the bytes it will read back instead of
 buffering whatever the process prints.
 
+The limits are applied by the util-linux `prlimit` wrapper (`prlimit --as=... --cpu=... -- git ...`),
+which sets them and then `exec`s git without forking, so the child *is* git, its pid is
+the process-group id, and the limits belong to git and not to the Python process. A
+`preexec_fn` would do the same job less well: it forces `fork()` where `vfork` is
+possible (120 ms against 13 ms measured with a 3 GiB parent), blocks the event loop while
+it runs, and executes every `os.register_at_fork` hook a library has installed in the child.
+
 It reuses `run_git`'s hardening rather than inventing its own: the environment is
 `sanitized_git_env` (an allowlist, with the config files pinned to /dev/null), the
 config pins are `UNTRUSTED_TREE_CONFIG_ARGS` plus `safe.bareRepository=explicit`,
@@ -23,15 +30,37 @@ shared with every other stream; the one place that needs limits carries them.
 from __future__ import annotations
 
 import asyncio
-import resource
+import functools
+import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+import structlog
+
 from repolace_shared.git import UNTRUSTED_TREE_CONFIG_ARGS, GitTimeoutError, sanitized_git_env
 from repolace_shared.process import REAP_TIMEOUT_SECONDS, kill_process_tree
 
+log = structlog.get_logger()
+
 _READ_CHUNK = 64 * 1024
+
+
+@functools.lru_cache(maxsize=1)
+def prlimit_path() -> str:
+    """Absolute path of `prlimit`, or a clear error. Resolved once, not per call."""
+    found = shutil.which("prlimit")
+    if found is None:
+        raise RuntimeError(
+            "`prlimit` (util-linux) is not installed, and the grep tool needs it to put a memory and CPU "
+            "limit on git; install util-linux (Debian and Ubuntu ship it, Alpine needs the util-linux package)"
+        )
+    return found
+
+
+def require_prlimit() -> None:
+    """Fail at toolbox construction, not on the first grep a model happens to make."""
+    prlimit_path()
 
 
 @dataclass(frozen=True)
@@ -44,21 +73,6 @@ class LimitedGitResult:
     #: `stdout` is a prefix of what git would have printed. `returncode` then says
     #: nothing about the work.
     output_cut: bool
-
-
-def _limit_child(memory_bytes: int, cpu_seconds: int) -> Callable[[], None]:
-    """The `preexec_fn` that puts the child under its limits before it execs git.
-
-    Before exec rather than `prlimit` after spawn, so there is no window in which git
-    runs unlimited. The CPU hard limit is a few seconds past the soft one: the soft
-    limit sends SIGXCPU, which ends git; the hard limit is SIGKILL if it somehow does not.
-    """
-
-    def apply() -> None:
-        resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
-        resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 5))
-
-    return apply
 
 
 async def _read_capped(stream: asyncio.StreamReader, limit: int, on_overflow: Callable[[], None]) -> tuple[bytes, bool]:
@@ -101,6 +115,11 @@ async def run_limited_git(
     """
     command = ("git", *args)
     process = await asyncio.create_subprocess_exec(
+        prlimit_path(),
+        f"--as={max_memory_bytes}",
+        # soft (SIGXCPU, which ends git) : hard (SIGKILL, if it somehow does not) a few seconds on
+        f"--cpu={max_cpu_seconds}:{max_cpu_seconds + 5}",
+        "--",
         "git",
         *UNTRUSTED_TREE_CONFIG_ARGS,
         # A bare repository planted in the tree must not be picked up as the one to operate on.
@@ -113,10 +132,10 @@ async def run_limited_git(
         # Nothing here is interactive; an inherited stdin would block until the timeout.
         stdin=asyncio.subprocess.DEVNULL,
         start_new_session=True,
-        preexec_fn=_limit_child(max_memory_bytes, max_cpu_seconds),
     )
-    # Cached while the pid is certainly valid: `start_new_session` makes git its own group
-    # leader, so the pgid is the pid and the group stays killable after git is reaped.
+    # Cached while the pid is certainly valid: `start_new_session` makes the child its own group
+    # leader, so the pgid is the pid -- and `prlimit` execs git in place, so that pid is git's --
+    # and the group stays killable after git is reaped.
     pgid = process.pid
 
     def kill() -> None:
@@ -138,7 +157,8 @@ async def run_limited_git(
         try:
             await asyncio.wait_for(process.wait(), REAP_TIMEOUT_SECONDS)
         except TimeoutError:
-            pass  # a deadline that does not return is worse than a leaked process
+            # A deadline that does not return is worse than a leaked process, but it is worth seeing.
+            log.warning("git.kill.reap_timeout", command=list(command))
         raise GitTimeoutError(args, timeout) from None
     except asyncio.CancelledError:
         # No await while unwinding a cancellation: the group is SIGKILLed and the child

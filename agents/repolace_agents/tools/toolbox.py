@@ -17,6 +17,7 @@ from typing import Any
 
 from repolace_agents.tools.base import ToolBox, ToolContext, ToolError, ToolOutcome, ToolSpec
 from repolace_agents.tools.files import CreateFile, EditFile, ListDir, ReadFile
+from repolace_agents.tools.gitproc import require_prlimit
 from repolace_agents.tools.paths import require_text
 from repolace_agents.tools.sandbox import RunPython, RunTests
 from repolace_agents.tools.search import Grep, SearchCode
@@ -68,6 +69,7 @@ def build_toolbox(ctx: ToolContext) -> ToolBox:
     The pipeline supplies a closure over the baseline's `collected_files` and `conftests`
     minus the benchmark overlay's paths.
     """
+    require_prlimit()  # grep runs git under a memory and CPU limit; fail now, not on the first search
     return ToolBox(
         [
             SearchCode(ctx),
