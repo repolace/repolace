@@ -349,8 +349,8 @@ class TestTheNotShownPhrasing:
             "system prompt": build_system_prompt(LIMITS, NONCE),
             "retry, benchmark mode": self.retry(overlay_mode=True),
             "retry, product mode": self.retry(overlay_mode=False),
-            "baseline, benchmark mode": baseline_summary(suite(passed=[self.A], failed=[self.B]), frozenset(), overlay_mode=True),
-            "baseline, product mode": baseline_summary(suite(passed=[self.A], failed=[self.B]), frozenset(), overlay_mode=False),
+            "baseline, benchmark mode": baseline_summary(suite(passed=[self.A], failed=[self.B]), frozenset(), overlay_mode=True, nonce="n0nce"),
+            "baseline, product mode": baseline_summary(suite(passed=[self.A], failed=[self.B]), frozenset(), overlay_mode=False, nonce="n0nce"),
             "localize message": build_localize_message(issue(), "src/", [hit(0)], "BASELINE", LIMITS, NONCE),
         }
 

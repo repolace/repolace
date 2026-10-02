@@ -101,6 +101,13 @@ def check_nonce(nonce: str) -> str:
     return nonce
 
 
+def require_nonce(nonce: str) -> str:
+    """`check_nonce`, and non-empty: an empty nonce makes the delimiter a bare, guessable tag."""
+    if not nonce:
+        raise ValueError("a non-empty per-task nonce is required; an empty one would make the delimiters guessable")
+    return check_nonce(nonce)
+
+
 def sanitize_text(text: str) -> str:
     """`text` with every invisible or control character deleted; newlines are normalised.
 

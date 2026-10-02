@@ -54,7 +54,7 @@ from repolace_agents.prompts import (
     build_system_prompt,
     elided,
 )
-from repolace_agents.render import escape_invisible, sanitize_text
+from repolace_agents.render import escape_invisible, require_nonce, sanitize_text
 from repolace_agents.state import AgentState
 
 _BUDGET_STOPS = {
@@ -451,10 +451,14 @@ def result_from_state(state: AgentState) -> AgentResult:
 async def run_graph(deps: AgentDeps, *, nonce: str) -> AgentResult:
     """Run the graph for one task. `run_agent` calls this with a random nonce.
 
-    Separate from `run_agent` so a test can fix the nonce and assert on it; the
-    public entry point takes none, because a caller-chosen nonce would be a
-    predictable one.
+    **The pipeline must call `run_agent`, never this.** The nonce is what keeps an
+    attacker from writing the real closing delimiter, so it must be unpredictable;
+    `run_agent` draws it from `secrets.token_hex(8)` on every call and takes no
+    argument for it, because one a caller could choose is one an attacker could
+    predict. This function exists separately only so a test can fix the nonce and
+    assert on it. It refuses an empty or malformed one.
     """
+    require_nonce(nonce)
     if deps.llm is None or deps.tools is None:
         raise ValueError("the LLM graph needs deps.llm and deps.tools; only the stub and gold runners run without them")
     if deps.limits.max_attempts < 1 or deps.limits.max_steps_per_attempt < 1:

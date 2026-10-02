@@ -6,6 +6,7 @@ conversation stayed a valid one through retries, elision and every kind of stop.
 """
 
 import copy
+import inspect
 import re
 import subprocess
 import sys
@@ -1085,7 +1086,7 @@ class TestPublicEntry:
 
     async def test_each_run_draws_its_own_unpredictable_nonce(self):
         nonces = []
-        for _ in range(2):
+        for _ in range(5):
             llm = ScriptedLLM([submit_reply()])
             await run_agent(deps_for(llm, ScriptedVerifier([clean(1)])))
             system = llm.calls[0].messages[0]["content"]
@@ -1093,7 +1094,17 @@ class TestPublicEntry:
             assert match is not None
             nonces.append(match.group(1))
 
-        assert nonces[0] != nonces[1] and all(len(n) == 16 for n in nonces)
+        assert len(set(nonces)) == 5 and all(len(n) == 16 for n in nonces)
+
+    async def test_run_graph_refuses_an_empty_or_malformed_nonce(self):
+        """It is only for tests that fix the nonce; it must not accept one that makes the tags guessable."""
+        for nonce in ("", "a b", "a>"):
+            with pytest.raises(ValueError):
+                await run_graph(deps_for(ScriptedLLM([]), ScriptedVerifier([])), nonce=nonce)
+
+    def test_run_agent_takes_no_nonce_argument(self):
+        """A nonce a caller could choose is one an attacker could predict."""
+        assert list(inspect.signature(run_agent).parameters) == ["deps"]
 
     async def test_run_agent_is_an_agent_runner(self):
         runner: AgentRunner = run_agent
