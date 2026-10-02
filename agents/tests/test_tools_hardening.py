@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from tools_support import git, make_harness, snapshot
+from tools_support import make_harness, snapshot
 
 pytestmark = pytest.mark.anyio
 
