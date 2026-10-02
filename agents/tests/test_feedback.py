@@ -15,8 +15,13 @@ false rather than around the functions:
 
 import dataclasses
 import inspect
+import os
 import random
+import subprocess
+import sys
+import textwrap
 import typing
+from pathlib import Path
 
 import pytest
 
@@ -34,6 +39,7 @@ from repolace_agents.feedback import (
     visible_feedback,
 )
 from repolace_shared.process import ProcessResult
+import verify
 from verify.protocol import SuiteResult
 from verify.report import parse_report
 from verify.scoring import Verdict, agent_verdict
@@ -125,7 +131,10 @@ class TestFiltering:
     )
     def test_a_sibling_that_merely_shares_a_prefix_is_not_hidden(self, sibling):
         """Over-hiding costs the agent information, and a sibling is not the oracle."""
-        fb = feedback(suite(passed=[A]), suite(passed=[A], failed=[sibling]), hidden=frozenset({HIDDEN_FILE, "tests/hidden"}))
+        fb = feedback(
+            suite(passed=[A, sibling]), suite(passed=[A], failed=[sibling]),
+            hidden=frozenset({HIDDEN_FILE, "tests/hidden"}),
+        )
 
         assert fb.visible_failed == (sibling,)
 
@@ -138,7 +147,7 @@ class TestFiltering:
         assert fb.new_collect_failures == () and fb.clean
 
     def test_a_collect_failure_of_a_visible_module_is_reported(self):
-        baseline = suite(passed=[A])
+        baseline = suite(passed=[A, "pkg/mod.py::test_m"])
         attempt = suite(passed=[A], collect_failures=["pkg/mod.py"])
 
         fb = feedback(baseline, attempt)
@@ -237,6 +246,142 @@ class TestOverlayMode:
         attempt = suite(passed=[A], stdout_tail="all fine")
 
         assert feedback(suite(passed=[A]), attempt, hidden=frozenset(), overlay_mode=False).stdout_tail is None
+
+
+class TestIdUniverse:
+    """An id is shown only if the baseline run produced it; anything else is counted, never named.
+
+    The scored run executes the agent's own source in the same interpreter as the
+    report plugin, so a node id on a *visible* path is attacker-controlled text.
+    """
+
+    FORGED = "tests/test_a.py::test_one[from pkg import f def test_f2p_SECRET(): assert f(9) == 11]"
+
+    def test_a_failing_id_the_baseline_never_had_is_counted_and_not_named(self):
+        fb = feedback(suite(passed=[A, B]), suite(passed=[B], failed=[A, self.FORGED]))
+
+        assert fb.visible_failed == (A,) and fb.unlisted_failed == 1
+        shown = everything_shown(fb)
+        assert "SECRET" not in shown and "1 other failing test(s) are not shown." in shown
+
+    def test_a_legitimate_failing_id_that_is_in_the_baseline_still_renders(self):
+        """A regression, and a test that was already failing, are both baseline ids."""
+        fb = feedback(suite(passed=[A], failed=[B]), suite(passed=[], failed=[A, B]))
+
+        assert fb.visible_failed == (A, B) and fb.unlisted_failed == 0
+        assert A in render_feedback(fb) and B in render_feedback(fb)
+
+    def test_a_parametrised_id_that_exists_only_after_the_fix_does_not_break_rendering(self):
+        """`test_x[new-value]` is a perfectly honest id; it is simply not one the baseline can vouch for."""
+        fb = feedback(suite(passed=[A]), suite(passed=[A], failed=["tests/test_a.py::test_p[after-the-fix]"]))
+
+        assert fb.clean and fb.visible_failed == () and fb.unlisted_failed == 1
+        text = render_feedback(fb)
+        assert "after-the-fix" not in text and "1 other failing test(s) are not shown." in text
+
+    def test_an_unlisted_failure_alone_does_not_make_the_attempt_unclean(self):
+        """It is not harm the verdict can attribute; only the model's view of it is withheld."""
+        fb = feedback(suite(passed=[A]), suite(passed=[A], failed=["tests/test_a.py::test_p[x]"]))
+
+        assert fb.clean
+
+    def test_a_new_collect_failure_in_a_module_the_baseline_collected_is_named(self):
+        fb = feedback(suite(passed=[A, "pkg/mod.py::t"]), suite(passed=[A], collect_failures=["pkg/mod.py"]))
+
+        assert fb.new_collect_failures == ("pkg/mod.py",) and fb.unlisted_collect_failures == 0
+
+    def test_a_new_collect_failure_naming_something_the_baseline_never_collected_is_counted_not_named(self):
+        forged = "pkg/not_a_module_SECRET_text_from_hidden_source"
+        fb = feedback(suite(passed=[A]), suite(passed=[A], collect_failures=[forged]))
+
+        assert fb.new_collect_failures == () and fb.unlisted_collect_failures == 1
+        assert not fb.clean, "still a problem the verdict found; only the name is withheld"
+        shown = everything_shown(fb)
+        assert "SECRET" not in shown and "1 further module(s) failed to import" in shown
+
+    def test_the_count_is_capped_because_the_attempt_can_inflate_it_at_will(self):
+        forged = [f"tests/test_a.py::t[{i}]" for i in range(40)]
+
+        text = render_feedback(feedback(suite(passed=[A]), suite(passed=[A], failed=forged)))
+
+        assert "more than 10 other failing test(s) are not shown." in text and "40" not in text
+
+    def test_a_hidden_id_is_never_in_the_universe_even_if_it_is_in_the_baseline(self):
+        """The universe is built from the filtered baseline, so a forged id spelled like a hidden one is not vouched for."""
+        fb = feedback(suite(passed=[A, hid()]), suite(passed=[A], failed=[hid()]))
+
+        assert fb.visible_failed == () and fb.unlisted_failed == 0 and SECRET not in everything_shown(fb)
+
+    def test_the_pass_count_counts_only_ids_the_baseline_knows(self):
+        fb = feedback(suite(passed=[A]), suite(passed=[A, "tests/test_a.py::t[forged-pass]"]))
+
+        assert fb.visible_passed == 1
+
+    def test_a_hand_built_feedback_without_the_new_fields_still_constructs(self):
+        fb = VisibleFeedback(False, None, (), (), (), (), None, 0, (), None)
+
+        assert fb.unlisted_failed == 0 and fb.unlisted_collect_failures == 0 and fb.clean
+
+
+PLUGIN_DIR = Path(verify.__file__).parent / "plugin"
+
+
+def _real_pytest(root: Path, tag: str) -> SuiteResult:
+    """Run the REAL pytest with the REAL report plugin and parse it with the REAL parser."""
+    report = root / f"report-{tag}.jsonl"
+    env = {**os.environ, "PYTHONPATH": str(PLUGIN_DIR), "REPOLACE_REPORT_PATH": str(report), "PYTHONDONTWRITEBYTECODE": "1"}
+    process = subprocess.run(
+        [sys.executable, "-m", "pytest", "-p", "_repolace_report", "-o", "addopts=", f"--rootdir={root}",
+         "-o", f"cache_dir={root}/.cache"],
+        cwd=root, env=env, capture_output=True, timeout=120, check=False,
+    )
+    return parse_report(report, ProcessResult(returncode=process.returncode, stdout=process.stdout, stderr=process.stderr), 1.0)
+
+
+class TestRealPytestForgery:
+    def test_agent_source_cannot_carry_hidden_test_text_through_a_visible_node_id(self, tmp_path):
+        """The audit's E4, reproduced end to end. A legal source edit wraps the report writer,
+        reads the hidden test file from disk and forges a failed id on a visible path that
+        carries its text. Before the universe rule, the retry message printed it."""
+        def write(rel: str, text: str) -> None:
+            path = tmp_path / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(textwrap.dedent(text))
+
+        clean_pkg = "def f(x):\n    return x + 1\n"
+        write("pkg/__init__.py", clean_pkg)
+        write("tests/test_visible.py", "from pkg import f\ndef test_v():\n    assert f(1) == 2\n")
+        write("tests/test_hidden.py", "from pkg import f\ndef test_f2p_SECRET_BEHAVIOUR():\n    assert f(9) == 11\n")
+        baseline = _real_pytest(tmp_path, "base")
+
+        write("pkg/__init__.py", clean_pkg + textwrap.dedent('''
+            def _leak():
+                import glob
+                try:
+                    import _repolace_report as r
+                except Exception:
+                    return
+                secret = " ".join(open(p).read() for p in glob.glob("tests/test_hidden*.py")).replace("\\n", " ")[:150]
+                orig = r._Recorder.write
+                def write(self, rec):
+                    if rec.get("kind") == "test" and rec["nodeid"].endswith("::test_v"):
+                        rec = dict(rec, nodeid=rec["nodeid"] + "[" + secret + "]",
+                                   outcome="failed" if rec["when"] == "call" else rec["outcome"])
+                    if rec.get("kind") == "session":
+                        rec = dict(rec, exitstatus=1)
+                    return orig(self, rec)
+                r._Recorder.write = write
+            _leak()
+        '''))
+        attempt = _real_pytest(tmp_path, "attempt")
+
+        assert any("SECRET_BEHAVIOUR" in nodeid for nodeid in attempt.failed), "the forgery did not take; the test would prove nothing"
+        fb = visible_feedback(baseline, attempt, ["pkg/__init__.py"], None, frozenset({"tests/test_hidden.py"}))
+
+        shown = everything_shown(fb)
+        assert "SECRET_BEHAVIOUR" not in shown and "f(9)" not in shown
+        assert fb.unlisted_failed == 1 and not fb.clean
+        assert "tests/test_visible.py::test_v" in shown  # the real id of the test it displaced is still reported
 
 
 class TestUnscoreable:
@@ -496,6 +641,7 @@ class TestNoOracle:
         assert set(hints) == {
             "infrastructure_error", "unscoreable", "regressions", "new_collect_failures", "neutralized",
             "disqualified", "fingerprint_drift", "visible_passed", "visible_failed", "stdout_tail",
+            "unlisted_failed", "unlisted_collect_failures",
         }
         assert SuiteResult not in {t for hint in hints.values() for t in (hint, *typing.get_args(hint))}
 
