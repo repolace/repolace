@@ -32,6 +32,7 @@ import structlog
 from repolace_shared.git import redact
 from repolace_shared.process import ProcessResult, run_process
 from verify.config import (
+    ENV_NAME,
     PLUGIN_DIR,
     PLUGIN_MODULE,
     REPORT_PATH,
@@ -228,6 +229,14 @@ def _extra_env_argv(spec: RepoSpec) -> list[str]:
     chose. `spec.py` refuses the same names when the spec file is loaded, so this is
     the backstop for a `RepoSpec` built in code.
     """
+    malformed = sorted(name for name in spec.extra_env if not ENV_NAME.fullmatch(name))
+    if malformed:
+        # Before the reserved check, which compares whole keys: `HOME=/evil` is not
+        # `HOME`, yet docker would split it into the name HOME and win over ours.
+        raise ValueError(
+            f"spec {spec.key!r}: extra_env names must match [A-Za-z_][A-Za-z0-9_]*; "
+            f"got {', '.join(repr(name) for name in malformed)}"
+        )
     reserved = sorted(set(spec.extra_env) & RESERVED_ENV)
     if reserved:
         raise ValueError(
