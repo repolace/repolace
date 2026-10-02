@@ -32,11 +32,11 @@ from repolace_agents.contracts import AgentLimits, IssueContext, SearchHit
 from repolace_agents.render import (
     MAX_OVERVIEW_CHARS,
     TESTS_NOT_SHOWN,
-    check_nonce,
     clean_untrusted,
     data_block,
     inline,
     render_hits,
+    require_nonce,
 )
 
 #: How many retrieved locations the localize message shows. Retrieval returns
@@ -58,12 +58,6 @@ def elided(attempt: int) -> str:
     return ELIDED.format(attempt=attempt)
 
 
-def _require_nonce(nonce: str) -> str:
-    if not nonce:
-        raise ValueError("the prompts need a non-empty per-task nonce; an empty one would make the delimiters guessable")
-    return check_nonce(nonce)
-
-
 def build_system_prompt(limits: AgentLimits, nonce: str) -> str:
     """The system prompt: role, authority, capabilities, method, constraints, budget, retries.
 
@@ -71,7 +65,7 @@ def build_system_prompt(limits: AgentLimits, nonce: str) -> str:
     anything the model has said -- which is what the "hostile issue leaves the
     system prompt byte-identical" test holds.
     """
-    _require_nonce(nonce)
+    require_nonce(nonce)
     return f"""You are repolace, an autonomous software engineer. Your job is to fix the issue described in the first user message by editing the source files of the repository you are working in, using the tools you have been given.
 
 ## Who you take instructions from
@@ -125,7 +119,7 @@ def render_issue(issue: IssueContext, limits: AgentLimits, nonce: str) -> str:
     body is cleaned and cut at `limits.max_issue_chars`; the title is cut
     separately so a long one cannot spend the body's budget or hide behind it.
     """
-    _require_nonce(nonce)
+    require_nonce(nonce)
     title = inline(issue.title, MAX_TITLE_CHARS)
     body = clean_untrusted(issue.body, limits.max_issue_chars) if issue.body else "(no description provided)"
     return data_block("issue", nonce, f"Title: {title}\n\n{body}", limit=limits.max_issue_chars + 1000)
@@ -145,7 +139,7 @@ def build_localize_message(
     this module never sees a `SuiteResult`, which is what keeps the oracle out of
     the prompt builders.
     """
-    _require_nonce(nonce)
+    require_nonce(nonce)
     hits = render_hits(retrieved, max_hits=MAX_HITS, max_snippet_lines=limits.max_context_snippet_lines)
     overview = repo_overview.strip() or "(no overview available)"
     return "\n\n".join(

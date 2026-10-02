@@ -101,6 +101,7 @@ from repolace_agents.render import (
     TESTS_NOT_SHOWN,
     bounded_list,
     data_block,
+    require_nonce,
     sanitize_text,
 )
 
@@ -427,7 +428,7 @@ def _drift_key(drift: str) -> str:
     return first if first in _FINGERPRINT_KEYS else "configuration"
 
 
-def render_feedback(fb: VisibleFeedback, *, nonce: str = "") -> str:
+def render_feedback(fb: VisibleFeedback, *, nonce: str) -> str:
     """The retry message for a not-clean attempt.
 
     The sentences are repolace's own; everything derived from the repository
@@ -435,7 +436,12 @@ def render_feedback(fb: VisibleFeedback, *, nonce: str = "") -> str:
     cleaned as untrusted text. The category text is looked up, never echoed, so a
     hand-built `VisibleFeedback` with raw text in `unscoreable` still cannot
     forward it.
+
+    `nonce` is required and must be non-empty, as it is for the prompts: a default
+    would give a call that forgot it bare, guessable tags, and the closing-tag
+    defence is meant not to rest on the nonce but is not meant to be the only layer.
     """
+    require_nonce(nonce)
     problems: list[str] = []
     if fb.infrastructure_error:
         problems.append("The test infrastructure failed while checking your attempt. That is not caused by your change.")
@@ -518,7 +524,7 @@ def baseline_summary(
     hidden_paths: Collection[str],
     *,
     overlay_mode: bool = True,
-    nonce: str = "",
+    nonce: str,
 ) -> str:
     """The baseline run, as the agent may know it.
 
@@ -543,6 +549,7 @@ def baseline_summary(
     unfiltered results -- so pass-to-pass is still enforced; feedback just does
     not warn the agent about it.
     """
+    require_nonce(nonce)
     hidden = _hidden_set(hidden_paths)
     overlay = overlay_mode or bool(hidden)
     visible = _filter_result(baseline, hidden)
