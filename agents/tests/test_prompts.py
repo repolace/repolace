@@ -12,10 +12,12 @@ tests do not claim otherwise; the bound on a hostile issue is the tools, pinned 
 """
 
 import dataclasses
+import re
 
 import pytest
 
 from repolace_agents.contracts import AgentLimits, IssueContext, SearchHit
+from repolace_agents.feedback import baseline_summary, render_feedback, visible_feedback
 from repolace_agents.prompts import (
     MAX_HITS,
     MAX_TITLE_CHARS,
@@ -30,12 +32,15 @@ from repolace_agents.render import (
     check_nonce,
     clean_untrusted,
     data_block,
+    TESTS_NOT_SHOWN,
     inline,
     render_hits,
     sanitize_text,
     strip_closing_tags,
     truncate,
 )
+
+from agents_support import suite
 
 NONCE = "a1b2c3d4"
 LIMITS = AgentLimits(max_attempts=3, max_steps_per_attempt=40, max_issue_chars=500, max_context_snippet_lines=5)
@@ -310,3 +315,52 @@ class TestSanitize:
     def test_render_hits_refuses_negative_bounds(self):
         with pytest.raises(ValueError):
             render_hits([], max_hits=-1, max_snippet_lines=1)
+
+
+class TestTheNotShownPhrasing:
+    """One honest sentence, the same everywhere and in both modes, saying nothing about what is hidden.
+
+    Telling the agent a passing run it can see does not prove the fix is fair. Saying how
+    many tests are hidden, where they are or what they are called is not, and neither is
+    the word "hidden" or "visible", which turns a fact into something to probe for.
+    """
+
+    A, B = "tests/test_a.py::test_one", "tests/test_a.py::test_two"
+
+    def retry(self, **kw) -> str:
+        fb = visible_feedback(suite(passed=[self.A, self.B]), suite(passed=[self.A]), ["src/a.py"], None, frozenset(), **kw)
+        return render_feedback(fb, nonce=NONCE)
+
+    def texts(self) -> dict[str, str]:
+        return {
+            "system prompt": build_system_prompt(LIMITS, NONCE),
+            "retry, benchmark mode": self.retry(overlay_mode=True),
+            "retry, product mode": self.retry(overlay_mode=False),
+            "baseline, benchmark mode": baseline_summary(suite(passed=[self.A], failed=[self.B]), frozenset(), overlay_mode=True),
+            "baseline, product mode": baseline_summary(suite(passed=[self.A], failed=[self.B]), frozenset(), overlay_mode=False),
+            "localize message": build_localize_message(issue(), "src/", [hit(0)], "BASELINE", LIMITS, NONCE),
+        }
+
+    def test_the_sentence_is_the_same_honest_one(self):
+        assert TESTS_NOT_SHOWN == "Some tests are not shown to you."
+
+    @pytest.mark.parametrize(
+        "where",
+        ["system prompt", "retry, benchmark mode", "retry, product mode", "baseline, benchmark mode", "baseline, product mode"],
+    )
+    def test_it_appears_once_and_verbatim_wherever_the_agent_is_told(self, where):
+        assert self.texts()[where].count(TESTS_NOT_SHOWN) == 1
+
+    def test_no_model_facing_text_calls_any_test_visible_or_hidden(self):
+        for where, text in self.texts().items():
+            lowered = text.lower()
+            assert "visible" not in lowered and "hidden" not in lowered, where
+
+    def test_the_two_modes_say_it_identically(self):
+        texts = self.texts()
+
+        assert TESTS_NOT_SHOWN in texts["retry, benchmark mode"] and TESTS_NOT_SHOWN in texts["retry, product mode"]
+        assert TESTS_NOT_SHOWN in texts["baseline, benchmark mode"] and TESTS_NOT_SHOWN in texts["baseline, product mode"]
+
+    def test_the_phrasing_states_no_count_file_or_name(self):
+        assert not re.search(r"\d", TESTS_NOT_SHOWN) and "/" not in TESTS_NOT_SHOWN and ".py" not in TESTS_NOT_SHOWN

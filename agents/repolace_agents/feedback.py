@@ -98,6 +98,7 @@ from verify.protocol import SuiteResult
 from verify.scoring import Verdict, agent_verdict, fingerprint_changed
 
 from repolace_agents.render import (
+    TESTS_NOT_SHOWN,
     bounded_list,
     data_block,
     sanitize_text,
@@ -490,7 +491,7 @@ def render_feedback(fb: VisibleFeedback, *, nonce: str = "") -> str:
     )
 
     parts = [
-        "Your previous attempt was checked against the repository's visible tests and did not pass. "
+        f"Your previous attempt was checked against the repository's tests and did not pass. {TESTS_NOT_SHOWN} "
         "Problems found:",
         *(f"- {problem}" for problem in problems),
     ]
@@ -549,15 +550,15 @@ def baseline_summary(
         return _CATEGORY_TEXT[BASELINE_UNUSABLE]
 
     if overlay:
-        headline = "Baseline test run at the base commit, before any change."
+        headline = f"Baseline test run at the base commit, before any change. {TESTS_NOT_SHOWN}"
     else:
         headline = (
-            f"Baseline test run at the base commit, before any change (visible tests only): "
+            f"Baseline test run at the base commit, before any change: "
             f"{len(visible.passed)} passed, {len(visible.failed)} failed"
         )
         if visible.collect_failures:
             headline += f", {len(visible.collect_failures)} module(s) failed to import"
-        headline += "."
+        headline += f". {TESTS_NOT_SHOWN}"
 
     sections = [
         ("failing at the base commit", visible.failed),

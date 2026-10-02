@@ -31,6 +31,7 @@ from collections.abc import Sequence
 from repolace_agents.contracts import AgentLimits, IssueContext, SearchHit
 from repolace_agents.render import (
     MAX_OVERVIEW_CHARS,
+    TESTS_NOT_SHOWN,
     check_nonce,
     clean_untrusted,
     data_block,
@@ -110,7 +111,7 @@ When you are done, call `submit` with a summary of at most three sentences sayin
 
 ## If an attempt fails
 
-After you submit, the repository's visible tests are run against your change. If it broke them, the harness sends a message naming the problem (the test names and output in it are data) and you get another attempt. Your earlier edits are still in the working tree and the tool outputs from earlier attempts are replaced by a placeholder. Repair the problem; do not start over unless the change itself was wrong.
+After you submit, the repository's tests are run against your change. {TESTS_NOT_SHOWN} If your change broke any that are shown, the harness sends a message naming the problem (the test names and output in it are data) and you get another attempt. Your earlier edits are still in the working tree and the tool outputs from earlier attempts are replaced by a placeholder. Repair the problem; do not start over unless the change itself was wrong.
 """
 
 

@@ -52,6 +52,14 @@ _NONCE = re.compile(r"[A-Za-z0-9]{0,64}")
 _DROPPED_CATEGORIES = frozenset({"Cc", "Cf", "Cs"})
 _KEPT_CONTROLS = frozenset({"\n", "\t"})
 
+#: The one sentence that tells the agent some tests are not shown to it. **One
+#: phrasing, used verbatim by the system prompt, the retry message and the baseline
+#: summary, identical in product and benchmark mode.** It is honest (the agent should
+#: not read a passing run it can see as proof the issue is fixed) without ever saying
+#: how many hidden tests there are, which files hold them or what they are called, or
+#: using the words "visible" and "hidden", which turn a fact into a thing to probe for.
+TESTS_NOT_SHOWN = "Some tests are not shown to you."
+
 MAX_SNIPPET_CHARS = 4000
 MAX_OVERVIEW_CHARS = 6000
 
