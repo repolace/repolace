@@ -557,3 +557,45 @@ class TestReservedEnvironment:
         for pair in ("HOME=/tmp", "PYTHONPATH=/opt/repolace", "REPOLACE_REPORT_PATH=/results/report.jsonl",
                      "REPOLACE_RUN_NONCE=n"):
             assert has_pair(args, "-e", pair), pair
+
+
+class TestCollectionErrorsDoNotAbortTheSession:
+    """Without the flag pytest stops at the first module that fails to import: exit 2,
+    nothing run, every visible result lost. `test_collection_errors_real_pytest.py`
+    shows the consequence against real pytest; these pin that the argv carries it."""
+
+    FLAG = "--continue-on-collection-errors"
+
+    def test_it_is_always_there(self):
+        assert self.FLAG in argv()
+
+    def test_it_comes_before_the_targets_and_the_extra_args(self):
+        args = argv(spec=RepoSpec(key="a/b", test_targets=("tests",), extra_pytest_args=("-x",)))
+
+        assert args.index(self.FLAG) < args.index("tests") < args.index("-x")
+        assert args[-2:] == ("tests", "-x")
+
+    @pytest.mark.parametrize("keep_addopts", [True, False])
+    @pytest.mark.parametrize("autoload", [True, False])
+    def test_no_spec_field_removes_it(self, keep_addopts, autoload):
+        spec = RepoSpec(
+            key="a/b", keep_addopts=keep_addopts, disable_plugin_autoload=autoload,
+            repo_readonly=True, test_targets=("tests",), extra_pytest_args=("-p", "no:x"),
+            extra_env={"PYTEST_ADDOPTS": "-x"},
+        )
+
+        assert argv(spec=spec).count(self.FLAG) == 1
+
+    def test_it_is_not_given_twice_and_is_not_a_value_of_another_flag(self):
+        args = argv()
+
+        assert args.count(self.FLAG) == 1
+        assert args[args.index(self.FLAG) - 1] not in {"-o", "-p", "--rootdir"}
+
+    def test_it_is_after_the_plugin_and_the_rootdir(self):
+        args = argv()
+
+        assert args.index("_repolace_report") < args.index("--rootdir=/repo") < args.index(self.FLAG)
+
+    def test_a_script_is_not_pytest_and_gets_no_pytest_flag(self):
+        assert self.FLAG not in script_argv()

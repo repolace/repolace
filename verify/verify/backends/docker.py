@@ -334,6 +334,16 @@ def build_run_argv(
         # caught rather than silently changing what "passing" means.
         argv += ["-o", "addopts="]
 
+    # Unconditional, and not a spec field: without it pytest stops the whole session
+    # at the first collection error (exit 2, nothing run, `passed` empty), so a
+    # module the patch broke -- or a hidden test module that cannot be imported --
+    # would hide every visible result, make two attempts that differ only in whether
+    # a hidden file imports give the agent different feedback, and leave
+    # `new_collect_failures` and the baseline's own broken modules dead code.
+    # With it the run exits 1, `collect_failures` is populated and the rest runs.
+    # More lenient than SWE-bench, where any collection error kills the run.
+    argv += ["--continue-on-collection-errors"]
+
     argv += list(spec.test_targets)
     argv += list(spec.extra_pytest_args)
     return tuple(argv)
