@@ -18,7 +18,7 @@ from pathlib import Path
 
 import structlog
 
-from verify.config import RESERVED_ENV
+from verify.config import ENV_NAME, RESERVED_ENV
 from verify.errors import SpecError
 from verify.protocol import RepoSpec
 
@@ -65,6 +65,14 @@ def _coerce(name: str, value: object, spec_key: str) -> object:
             isinstance(k, str) and isinstance(v, str) for k, v in value.items()
         ):
             raise SpecError(f"{spec_key}.{name} must be a table of strings, got {value!r}")
+        malformed = sorted(k for k in value if not ENV_NAME.fullmatch(k))
+        if malformed:
+            # `HOME=/evil` is not a name: docker splits it into HOME and wins over the
+            # sandbox's own, which the reserved check below cannot see.
+            raise SpecError(
+                f"{spec_key}.{name} has invalid variable name(s) "
+                f"{', '.join(repr(k) for k in malformed)}; names must match [A-Za-z_][A-Za-z0-9_]*"
+            )
         reserved = sorted(set(value) & RESERVED_ENV)
         if reserved:
             # The backend refuses these too; failing here names the spec file entry

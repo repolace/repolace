@@ -784,11 +784,11 @@ class TestAHostileSpecCannotChangeTheFlags:
         assert self.without_pair(hostile, "-e", "X=") == plain
         assert denied_tokens(hostile) == []
 
-    def test_a_hostile_env_name_adds_only_its_own_pair(self, build):
-        plain = build()
-        hostile = build(spec=RepoSpec(key="a/b", extra_env={"--privileged": "1"}))
-
-        assert self.without_pair(hostile, "-e", "--privileged=") == plain
+    def test_a_hostile_env_name_is_refused_outright(self, build):
+        """Once only emitted harmlessly as the value of `-e`; a name that is not an
+        identifier is now refused, which is stricter (see `TestEnvironmentNamesAreNames`)."""
+        with pytest.raises(ValueError, match="names must match"):
+            build(spec=RepoSpec(key="a/b", extra_env={"--privileged": "1"}))
 
     def test_a_hostile_interpreter_is_only_ever_the_entrypoints_value(self, build):
         """`--entrypoint --network=host image` hands docker an entrypoint, not a flag."""
@@ -836,3 +836,45 @@ class TestAHostileSpecCannotChangeTheFlags:
         # The interpreter value is a token like any other to `denied_tokens`, which cannot
         # tell it is docker's entrypoint argument, so check what is left once it is replaced.
         assert denied_tokens(stripped) == []
+
+
+class TestEnvironmentNamesAreNames:
+    """`-e NAME=VALUE` splits on the first `=`, so a *name* containing one is a way past
+    an exact-key reserved check: `HOME=/evil` emits `-e HOME=/evil=v`, which docker applies
+    after the sandbox's own `-e HOME=/tmp` and which wins."""
+
+    PAYLOADS = ["HOME=/evil", "REPOLACE_RUN_NONCE=known#", "PYTHONPATH=/x:", "A=B", "REPOLACE_REPORT_PATH=/x"]
+
+    @pytest.mark.parametrize("name", PAYLOADS)
+    def test_a_name_that_smuggles_an_assignment_is_refused_on_either_builder(self, build, name):
+        with pytest.raises(ValueError, match="names must match"):
+            build(spec=RepoSpec(key="a/b", extra_env={name: "v"}))
+
+    @pytest.mark.parametrize(
+        "name", ["", "1A", "A B", "A-B", "A.B", "A\n", "A\nB", "HOME ", " HOME", "ÄB", "A\x00", "A=", "=A", "$X"]
+    )
+    def test_anything_that_is_not_a_plain_identifier_is_refused(self, build, name):
+        with pytest.raises(ValueError):
+            build(spec=RepoSpec(key="a/b", extra_env={name: "v"}))
+
+    @pytest.mark.parametrize("name", ["TZ", "_X", "a1", "LC_ALL", "MY_VAR_2", "__"])
+    def test_a_plain_identifier_is_accepted(self, build, name):
+        assert has_pair(build(spec=RepoSpec(key="a/b", extra_env={name: "v"})), "-e", f"{name}=v")
+
+    def test_the_error_names_every_offender(self, build):
+        with pytest.raises(ValueError) as excinfo:
+            build(spec=RepoSpec(key="acme/x", extra_env={"HOME=/e": "1", "A B": "2", "TZ": "UTC"}))
+
+        message = str(excinfo.value)
+        assert "acme/x" in message and "HOME=/e" in message and "A B" in message
+        assert "'TZ'" not in message
+
+    def test_the_payload_never_reaches_the_argv(self, build):
+        """Not merely refused in a message: nothing is built."""
+        with pytest.raises(ValueError):
+            build(spec=RepoSpec(key="a/b", extra_env={"HOME=/evil": "v"}))
+
+    def test_the_trailing_newline_trap(self, build):
+        """`$` matches before a final newline; the check is a fullmatch, not that."""
+        with pytest.raises(ValueError):
+            build(spec=RepoSpec(key="a/b", extra_env={"HOME\n": "v"}))

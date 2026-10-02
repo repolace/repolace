@@ -107,6 +107,29 @@ class TestReservedEnvironment:
         assert spec_from_mapping("a/b", {"extra_env": {"TZ": "UTC"}}).extra_env == {"TZ": "UTC"}
 
 
+class TestEnvironmentNamesAreNames:
+    @pytest.mark.parametrize("name", ["HOME=/evil", "REPOLACE_RUN_NONCE=known#", "A=B", "PYTHONPATH=/x:"])
+    def test_a_name_that_smuggles_an_assignment_is_refused(self, name):
+        """`-e HOME=/evil=v` is applied after the sandbox's own HOME and wins; the
+        exact-key reserved check cannot see it."""
+        with pytest.raises(SpecError, match="invalid variable name"):
+            spec_from_mapping("a/b", {"extra_env": {name: "v"}})
+
+    @pytest.mark.parametrize("name", ["", "1A", "A B", "A-B", "A\n", "HOME ", "ÄB"])
+    def test_anything_that_is_not_a_plain_identifier_is_refused(self, name):
+        with pytest.raises(SpecError):
+            spec_from_mapping("a/b", {"extra_env": {name: "v"}})
+
+    def test_the_error_names_the_entry_and_the_offender(self, tmp_path):
+        path = write(tmp_path, '[specs."acme/sample"]\nextra_env = { "HOME=/evil" = "v" }\n')
+
+        with pytest.raises(SpecError, match=r"acme/sample\.extra_env.*HOME=/evil"):
+            load_specs(path)
+
+    def test_plain_identifiers_are_accepted(self):
+        assert spec_from_mapping("a/b", {"extra_env": {"TZ": "UTC", "_X": "1"}}).extra_env == {"TZ": "UTC", "_X": "1"}
+
+
 class TestResolving:
     def test_an_uncurated_repo_gets_a_default_carrying_its_own_key(self):
         """Falling back rather than raising: an uncurated repo should get a run
