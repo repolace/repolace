@@ -114,6 +114,7 @@ async def create_task(
         repo_id=repo.id,
         issue_number=issue.number,
         issue_title=issue.title,
+        issue_body=issue.body,
         issue_url=issue.html_url,
         target_branch=target_branch.strip(),
         status=TaskStatus.QUEUED,
