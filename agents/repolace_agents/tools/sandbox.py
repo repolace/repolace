@@ -30,6 +30,7 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from repolace_shared.git import GitError
 from verify.stage import VerifierNotReady
 
 from repolace_agents.tools.base import ToolContext, ToolError, ToolOutcome, ToolSpec
@@ -57,6 +58,20 @@ _UNAVAILABLE = "the sandbox is unavailable: {why}; carry on by reading the code 
 
 def _unavailable(why: str) -> ToolError:
     return ToolError(_UNAVAILABLE.format(why=why))
+
+
+async def _checkpoint(ctx: ToolContext, message: str) -> None:
+    """Commit the working tree, turning a git failure into a message the model can read.
+
+    A tree git cannot snapshot (it refuses a path, a lock is stuck) is not something
+    the model can fix, but ending the run on it hides why; as a `ToolError` the model
+    is told, and every later call fails the same visible way instead of crashing the
+    run on the first. Only git's own errors are mapped: anything else is a bug.
+    """
+    try:
+        await ctx.checkpoint(message)
+    except GitError as exc:
+        raise ToolError(f"could not snapshot the working tree: {shown(str(exc), MAX_ERROR_CHARS)}") from None
 
 
 def _tail(text: str, limit: int) -> str:
@@ -106,7 +121,7 @@ class RunPython:
         timeout = min(args.get("timeout_seconds", ctx.limits.default_script_timeout), ctx.limits.max_script_timeout)
 
         # Before the sandbox, not after: the export refuses a tree that differs from HEAD.
-        await ctx.checkpoint("checkpoint: before script")
+        await _checkpoint(ctx, "checkpoint: before script")
         try:
             result = await ctx.run_script(args["code"], timeout)
         except VerifierNotReady:
@@ -179,7 +194,7 @@ class RunTests:
         if ctx.run_subset is None:
             raise _unavailable("this run has no sandbox, so tests cannot be executed")
 
-        await ctx.checkpoint("checkpoint: before test probe")
+        await _checkpoint(ctx, "checkpoint: before test probe")
         try:
             result = await ctx.run_subset(targets)
         except VerifierNotReady:

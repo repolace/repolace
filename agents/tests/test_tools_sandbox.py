@@ -10,6 +10,7 @@ from verify.protocol import ScriptResult, SuiteResult
 from verify.stage import VerifierNotReady
 
 from repolace_agents.tools import ToolLimits
+from repolace_shared.git import GitCommandError
 
 from tools_support import make_harness, snapshot
 
@@ -178,6 +179,30 @@ class TestRunPython:
 
         for fact in ("NO network", "/scratch/main.py", "/repo", "read-only", "Nothing the script writes persists"):
             assert fact in description
+
+
+class TestCheckpointFailure:
+    async def test_a_tree_that_cannot_be_snapshotted_is_a_tool_error_not_a_crash(self, tmp_path):
+        # Whatever else breaks a checkpoint, the model sees a message and the run goes on.
+        async def failing_checkpoint(message):
+            raise GitCommandError(["add", "--all"], 128, "error: invalid path 'git~1/hooks/pc'")
+
+        h = make_harness(tmp_path, checkpoint=failing_checkpoint)
+
+        for name, args in (("run_python", {"code": "print(1)"}), ("run_tests", {"targets": ["tests/test_core.py"]})):
+            out = await h.call(name, **args)
+            assert out.is_error and out.content.startswith("could not snapshot the working tree:")
+            assert "invalid path" in out.content
+        assert h.script_calls == [] and h.subset_calls == []
+
+    async def test_a_failure_that_is_not_git_is_a_bug_and_propagates(self, tmp_path):
+        async def broken_checkpoint(message):
+            raise RuntimeError("a bug")
+
+        h = make_harness(tmp_path, checkpoint=broken_checkpoint)
+
+        with pytest.raises(RuntimeError, match="a bug"):
+            await h.call("run_python", code="x")
 
 
 class TestRunTests:
