@@ -39,14 +39,16 @@ from typing import Any, Literal
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 
-from repolace_gateway.budget import BudgetExceeded, BudgetLimit
-from repolace_gateway.errors import LLMCallError
+from repolace_gateway.budget import BudgetExceeded, BudgetLimit, current_scope
+from repolace_gateway.errors import LLMCallError, NoTaskScope
 
 from repolace_agents.contracts import AgentDeps, AgentLimits, AgentResult, StopReason
 from repolace_agents.feedback import baseline_summary, render_feedback, visible_feedback
 from repolace_agents.prompts import (
     NUDGE,
     SKIPPED_AFTER_SUBMIT,
+    SKIPPED_BUDGET,
+    TOO_MANY_CALLS,
     build_localize_message,
     build_system_prompt,
     elided,
@@ -68,6 +70,23 @@ _SKIP_VERIFY = frozenset(
 _NO_RETRY = _SKIP_VERIFY | {StopReason.NO_CHANGE, StopReason.MAX_ATTEMPTS}
 
 _ELIDED = re.compile(r"\[output from attempt \d+ elided\]")
+
+#: How many tool calls one model reply may have executed; the rest are answered, not run.
+#: A module constant rather than an `AgentLimits` field because `AgentLimits` is a frozen
+#: contract (and `ToolLimits` lives in the frozen `tools/base.py`); it belongs in
+#: `AgentLimits` and moves there with the next contract change. Without it one reply
+#: could carry thousands of calls -- the reviewer's 3,000 were all executed -- each
+#: `run_python` up to 120 s and each `run_tests` up to 300 s, while the wall-clock
+#: budget is only consulted inside the next model call.
+MAX_TOOL_CALLS_PER_REPLY = 8
+
+#: A transcript larger than this has its older tool results elided before the next model
+#: call. About 100k tokens of the model's context, with room left for the reply: past that
+#: the next request fails with a context-window error, which is `LLM_ERROR`, which skips
+#: verify, so the work done would never be scored.
+MAX_TRANSCRIPT_CHARS = 400_000
+#: Elision spares the newest few tool results: they are what the model is reasoning about.
+KEEP_RECENT_TOOL_RESULTS = 6
 
 
 @dataclass(frozen=True)
@@ -120,8 +139,10 @@ def _assistant_turn(response: Any) -> dict[str, Any]:
     return message
 
 
-def _elide_tool_outputs(messages: Sequence[Mapping[str, Any]], attempt: int) -> tuple[Mapping[str, Any], ...]:
-    """Replace the content of every tool result not already elided with a placeholder.
+def _elide_tool_outputs(
+    messages: Sequence[Mapping[str, Any]], attempt: int, *, keep_last: int = 0
+) -> tuple[Mapping[str, Any], ...]:
+    """Replace the content of tool results not already elided with a placeholder.
 
     Called on entry to a retry, when every non-elided tool result belongs to the
     attempt that just finished -- earlier ones were elided on their own retry -- so
@@ -130,16 +151,53 @@ def _elide_tool_outputs(messages: Sequence[Mapping[str, Any]], attempt: int) -> 
     the *content* goes, so each call still has its answer and the list stays valid
     for the provider. That bounds the context across attempts, and the cache
     prefix is rebuilt once per attempt rather than never matching.
+
+    `keep_last` spares the newest tool results, for the mid-attempt pass that keeps
+    one long attempt inside the context window (see `MAX_TRANSCRIPT_CHARS`).
     """
     marker = elided(attempt)
+    tool_positions = [i for i, message in enumerate(messages) if message.get("role") == "tool"]
+    # `max(..., 0)`: with fewer results than `keep_last` a negative start would slice from the
+    # end and spare the wrong ones.
+    spared = set(tool_positions[max(len(tool_positions) - keep_last, 0):]) if keep_last > 0 else set()
     out: list[Mapping[str, Any]] = []
-    for message in messages:
+    for index, message in enumerate(messages):
         content = message.get("content")
-        if message.get("role") == "tool" and not (isinstance(content, str) and _ELIDED.fullmatch(content)):
+        if (
+            message.get("role") == "tool"
+            and index not in spared
+            and not (isinstance(content, str) and _ELIDED.fullmatch(content))
+        ):
             out.append({**message, "content": marker})
         else:
             out.append(message)
     return tuple(out)
+
+
+def _transcript_chars(messages: Sequence[Mapping[str, Any]]) -> int:
+    """The characters a request would carry: every message's content and every call's arguments."""
+    total = 0
+    for message in messages:
+        content = message.get("content")
+        total += len(content) if isinstance(content, str) else 0
+        for call in message.get("tool_calls") or ():
+            total += len(call.get("function", {}).get("arguments") or "")
+    return total
+
+
+def _raise_if_budget_reached() -> None:
+    """The gateway's budget check, between tool calls rather than only inside a model call.
+
+    A reply's tool calls can each run for minutes, and the wall-clock budget is
+    otherwise only looked at when the next model call starts. Outside a
+    `task_scope` there is no budget to check and the model client itself raises
+    `NoTaskScope` on the first call, so this stays quiet rather than raise it twice.
+    """
+    try:
+        scope = current_scope()
+    except NoTaskScope:
+        return
+    scope.budget.raise_if_reached()
 
 
 # --- nodes -------------------------------------------------------------------
@@ -177,6 +235,8 @@ async def agent(state: AgentState, runtime: Runtime[RunContext]) -> dict[str, An
         if attempt_steps >= deps.limits.max_steps_per_attempt:
             stop = StopReason.STEP_CAP
             break
+        if _transcript_chars(messages) > MAX_TRANSCRIPT_CHARS:
+            messages = list(_elide_tool_outputs(messages, attempt_no, keep_last=KEEP_RECENT_TOOL_RESULTS))
         try:
             # A tuple, so the client and this loop cannot alias one mutable list.
             response = await llm.complete("agent", tuple(messages), schemas, attempt=attempt_no)
@@ -201,17 +261,33 @@ async def agent(state: AgentState, runtime: Runtime[RunContext]) -> dict[str, An
             continue
 
         submitted = False
-        for call in response.tool_calls:
+        budget_stop: StopReason | None = None
+        for index, call in enumerate(response.tool_calls):
+            # Every call is answered, whatever happens to it, or the next request is invalid.
             if submitted:
-                # Every call must be answered or the next request is invalid, but a
-                # call after `submit` is not run: submit is the agent's last word.
+                # Submit is the agent's last word, so a call after it is not run.
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": SKIPPED_AFTER_SUBMIT})
+                continue
+            if budget_stop is not None:
+                messages.append({"role": "tool", "tool_call_id": call.id, "content": SKIPPED_BUDGET})
+                continue
+            if index >= MAX_TOOL_CALLS_PER_REPLY:
+                messages.append({"role": "tool", "tool_call_id": call.id, "content": TOO_MANY_CALLS})
+                continue
+            try:
+                _raise_if_budget_reached()
+            except BudgetExceeded as exc:
+                budget_stop = _BUDGET_STOPS[exc.limit]
+                messages.append({"role": "tool", "tool_call_id": call.id, "content": SKIPPED_BUDGET})
                 continue
             outcome = await tools.dispatch(call)
             messages.append({"role": "tool", "tool_call_id": call.id, "content": outcome.content})
             if outcome.submitted:
                 submitted = True
                 summary = outcome.summary
+        if budget_stop is not None:
+            stop = budget_stop
+            break
         if submitted:
             stop = StopReason.SUBMITTED
             break

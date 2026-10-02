@@ -9,6 +9,7 @@ import copy
 import re
 import subprocess
 import sys
+import uuid
 from decimal import Decimal
 
 import pytest
@@ -17,19 +18,37 @@ from langgraph.runtime import Runtime
 
 from repolace_agents import graph as graph_module
 from repolace_agents.contracts import AgentLimits, AgentRunner, IssueContext, StopReason
-from repolace_agents.graph import RunContext, build_graph, recursion_limit_for, run_graph
-from repolace_agents.prompts import ELIDED, NUDGE, SKIPPED_AFTER_SUBMIT, build_system_prompt
+from repolace_agents.graph import (
+    KEEP_RECENT_TOOL_RESULTS,
+    MAX_TOOL_CALLS_PER_REPLY,
+    MAX_TRANSCRIPT_CHARS,
+    RunContext,
+    build_graph,
+    recursion_limit_for,
+    run_graph,
+)
+from repolace_agents.prompts import (
+    ELIDED,
+    NUDGE,
+    SKIPPED_AFTER_SUBMIT,
+    SKIPPED_BUDGET,
+    TOO_MANY_CALLS,
+    build_system_prompt,
+)
 from repolace_agents.run import run_agent
 from repolace_agents.state import AgentState
-from repolace_gateway.budget import BudgetExceeded, BudgetLimit, current_scope, task_scope
+from repolace_agents.tools.base import ToolBox, ToolOutcome
+from repolace_gateway.budget import BudgetExceeded, BudgetLimit, TaskBudget, current_scope, task_scope
 from repolace_gateway.errors import LLMCallError, MissingProviderKey, NoTaskScope, UnpricedModelError
 
 from agents_support import (
+    FunctionTool,
     ScriptedLLM,
     ScriptedVerifier,
     attempt_record,
     check_messages_valid,
     make_deps,
+    object_schema,
     reply,
     scripted_toolbox,
     submit_reply,
@@ -207,6 +226,172 @@ class TestOneAttempt:
 
         assert reply("hi", *calls).message == _assistant_message("hi", calls)
         assert reply(None).message == _assistant_message(None, ())
+
+
+class TestReplyBounds:
+    """One reply, one transcript and one attempt's wall clock are all bounded."""
+
+    @staticmethod
+    def many_reads(n: int):
+        return reply(None, *[tool_call("read_file", {"path": f"f{i}"}, id=f"c{i}") for i in range(n)])
+
+    async def test_a_reply_with_3000_calls_runs_only_the_cap_and_answers_every_id(self):
+        """The reviewer's case: all 3,000 were executed, the transcript was 24 MB, and hours of tool time were possible."""
+        toolbox, tools = scripted_toolbox()
+        llm = ScriptedLLM([self.many_reads(3000), submit_reply()])
+
+        result = await run(llm, ScriptedVerifier([clean(1)]), tools=toolbox)
+
+        assert len(tools["read_file"].calls) == MAX_TOOL_CALLS_PER_REPLY
+        answers = [m for m in llm.calls[1].messages if m["role"] == "tool"]
+        assert [m["tool_call_id"] for m in answers] == [f"c{i}" for i in range(3000)]
+        assert [m["content"] for m in answers[MAX_TOOL_CALLS_PER_REPLY:]] == [TOO_MANY_CALLS] * (3000 - MAX_TOOL_CALLS_PER_REPLY)
+        assert all(m["content"].startswith("read_file output") for m in answers[:MAX_TOOL_CALLS_PER_REPLY])
+        assert result.stop_reason is StopReason.SUBMITTED  # the transcript was valid (ScriptedLLM checks every request)
+
+    async def test_exactly_the_cap_is_run_and_one_more_is_not(self):
+        toolbox, tools = scripted_toolbox()
+        llm = ScriptedLLM([self.many_reads(MAX_TOOL_CALLS_PER_REPLY + 1), submit_reply()])
+
+        await run(llm, ScriptedVerifier([clean(1)]), tools=toolbox)
+
+        assert len(tools["read_file"].calls) == MAX_TOOL_CALLS_PER_REPLY
+        assert llm.calls[1].messages[-1]["content"] == TOO_MANY_CALLS
+
+    async def test_a_submit_beyond_the_cap_is_not_executed_and_the_model_can_send_it_again(self):
+        calls = [tool_call("read_file", {"path": "a"}, id=f"c{i}") for i in range(MAX_TOOL_CALLS_PER_REPLY)]
+        late_submit = tool_call("submit", {"summary": "too late"}, id="late")
+        llm = ScriptedLLM([reply(None, *calls, late_submit), submit_reply("sent again")])
+
+        result = await run(llm, ScriptedVerifier([clean(1)]))
+
+        assert llm.calls[1].messages[-1] == {"role": "tool", "tool_call_id": "late", "content": TOO_MANY_CALLS}
+        assert result.stop_reason is StopReason.SUBMITTED and result.summary == "sent again" and result.steps == 2
+
+    async def test_a_submit_within_the_cap_still_ends_the_attempt_and_skips_the_rest(self):
+        toolbox, tools = scripted_toolbox()
+        calls = [tool_call("submit", {"summary": "done"}, id="s"), *[tool_call("read_file", {"path": "x"}, id=f"c{i}") for i in range(20)]]
+
+        state = await final_state(ScriptedLLM([reply(None, *calls)]), ScriptedVerifier([clean(1)]), tools=toolbox)
+
+        assert tools["read_file"].calls == []
+        assert [m["content"] for m in state["messages"] if m["role"] == "tool"][1:] == [SKIPPED_AFTER_SUBMIT] * 20
+        check_messages_valid(state["messages"])
+
+    async def test_a_huge_transcript_has_its_older_tool_results_elided_before_the_next_call(self, monkeypatch):
+        monkeypatch.setattr(graph_module, "MAX_TRANSCRIPT_CHARS", 4000)
+        toolbox, _ = scripted_toolbox(lambda name, args: f"{name}:{args['path']}:" + "x" * 1500)
+        replies = [reply(None, tool_call("read_file", {"path": f"f{i}"}, id=f"c{i}")) for i in range(10)]
+        llm = ScriptedLLM([*replies, submit_reply()])
+
+        await run(llm, ScriptedVerifier([clean(1)]), tools=toolbox, limits=AgentLimits(max_attempts=3, max_steps_per_attempt=20))
+
+        last = [m["content"] for m in llm.calls[-1].messages if m["role"] == "tool"]
+        assert last[-KEEP_RECENT_TOOL_RESULTS:] == [f"read_file:f{i}:" + "x" * 1500 for i in range(10 - KEEP_RECENT_TOOL_RESULTS, 10)]
+        assert last[:-KEEP_RECENT_TOOL_RESULTS] == ["[output from attempt 1 elided]"] * (10 - KEEP_RECENT_TOOL_RESULTS)
+        assert _chars(llm.calls[-1].messages) < 4000 + KEEP_RECENT_TOOL_RESULTS * 1600 + 2000
+
+    @pytest.mark.parametrize("results, keep, elided_count", [(4, 6, 0), (6, 6, 0), (9, 6, 3), (3, 0, 3), (1, 1, 0)])
+    def test_elision_spares_exactly_the_newest_results_and_never_more_than_exist(self, results, keep, elided_count):
+        """With fewer results than `keep_last` a negative slice start spared the wrong ones (and elided too many)."""
+        messages = [{"role": "system", "content": "s"}]
+        for i in range(results):
+            messages += [
+                {"role": "assistant", "content": None, "tool_calls": [{"id": f"c{i}", "type": "function", "function": {"name": "x", "arguments": "{}"}}]},
+                {"role": "tool", "tool_call_id": f"c{i}", "content": f"out{i}"},
+            ]
+
+        out = graph_module._elide_tool_outputs(messages, 1, keep_last=keep)
+
+        contents = [m["content"] for m in out if m["role"] == "tool"]
+        assert contents == ["[output from attempt 1 elided]"] * elided_count + [f"out{i}" for i in range(elided_count, results)]
+        check_messages_valid(out)
+
+    async def test_large_tool_call_arguments_count_towards_the_transcript_budget(self, monkeypatch):
+        """A `create_file` of 100,000 characters is in the request as an argument, not as a result."""
+        # Above the opening messages (the system prompt alone is several thousand characters),
+        # below what nine 8,000-character arguments add up to, with tiny results throughout.
+        monkeypatch.setattr(graph_module, "MAX_TRANSCRIPT_CHARS", 20_000)
+        toolbox, _ = scripted_toolbox(lambda name, args: "short")
+        replies = KEEP_RECENT_TOOL_RESULTS + 3
+        big = [reply(None, tool_call("read_file", {"path": "p" * 8000}, id=f"c{i}")) for i in range(replies)]
+        llm = ScriptedLLM([*big, submit_reply()])
+
+        await run(llm, ScriptedVerifier([clean(1)]), tools=toolbox, limits=AgentLimits(max_attempts=3, max_steps_per_attempt=20))
+
+        results = [m["content"] for m in llm.calls[-1].messages if m["role"] == "tool"]
+        assert len(results) == replies
+        assert results[:-KEEP_RECENT_TOOL_RESULTS] == ["[output from attempt 1 elided]"] * 3
+        assert results[-KEEP_RECENT_TOOL_RESULTS:] == ["short"] * KEEP_RECENT_TOOL_RESULTS
+
+    async def test_the_budget_elision_keeps_every_call_answered(self, monkeypatch):
+        """ScriptedLLM validates every request; this makes the pairs explicit, across the elision."""
+        monkeypatch.setattr(graph_module, "MAX_TRANSCRIPT_CHARS", 1000)
+        toolbox, _ = scripted_toolbox(lambda name, args: "y" * 900)
+        llm = ScriptedLLM([*[read() for _ in range(8)], submit_reply()])
+
+        await run(llm, ScriptedVerifier([clean(1)]), tools=toolbox, limits=AgentLimits(max_attempts=3, max_steps_per_attempt=20))
+
+        for call in llm.calls:
+            check_messages_valid(call.messages)
+        assert any("elided" in m["content"] for m in llm.calls[-1].messages if m["role"] == "tool")
+
+    async def test_nothing_is_elided_below_the_budget(self):
+        toolbox, _ = scripted_toolbox()
+        llm = ScriptedLLM([read(), read(), submit_reply()])
+
+        await run(llm, ScriptedVerifier([clean(1)]), tools=toolbox)
+
+        assert not any("elided" in m["content"] for m in llm.calls[-1].messages if m["role"] == "tool")
+        assert MAX_TRANSCRIPT_CHARS == 400_000
+
+    @pytest.mark.parametrize(
+        "limit, reason",
+        [
+            (BudgetLimit.WALL_TIME, StopReason.BUDGET_WALL),
+            (BudgetLimit.USD, StopReason.BUDGET_USD),
+            (BudgetLimit.CALLS, StopReason.BUDGET_CALLS),
+        ],
+    )
+    async def test_a_budget_that_runs_out_during_one_reply_stops_the_remaining_calls(self, limit, reason):
+        """The wall clock used to be consulted only inside the next model call, so one reply could run for hours."""
+        now = [0.0]
+        budget = TaskBudget(max_usd=1, max_calls=5, max_wall_seconds=10, clock=lambda: now[0])
+        ran = []
+
+        async def spend(args):
+            ran.append(args["path"])
+            if limit is BudgetLimit.WALL_TIME:
+                now[0] = 100.0
+            elif limit is BudgetLimit.USD:
+                budget.charge(Decimal("5"))
+            else:
+                budget.calls = 5
+            return ToolOutcome("ok")
+
+        toolbox = ToolBox([FunctionTool("read_file", spend, parameters=object_schema({"path": {"type": "string"}}, ["path"]))])
+        verifier = ScriptedVerifier([])
+        calls = [tool_call("read_file", {"path": f"f{i}"}, id=f"c{i}") for i in range(5)]
+
+        with task_scope(uuid.uuid4(), budget):
+            state = await final_state(ScriptedLLM([reply(None, *calls)]), verifier, tools=toolbox)
+
+        assert ran == ["f0"], "the first call ran; the budget was already gone before the second"
+        assert state["stop_reason"] is reason and verifier.calls == []
+        answers = [m["content"] for m in state["messages"] if m["role"] == "tool"]
+        assert answers == ["ok", *[SKIPPED_BUDGET] * 4]
+        check_messages_valid(state["messages"])
+
+    async def test_outside_a_task_scope_there_is_no_budget_to_check_and_calls_run(self):
+        toolbox, tools = scripted_toolbox()
+
+        await run(ScriptedLLM([self.many_reads(3), submit_reply()]), ScriptedVerifier([clean(1)]), tools=toolbox)
+
+        assert len(tools["read_file"].calls) == 3
+
+
+def _chars(messages) -> int:
+    return sum(len(m["content"]) for m in messages if isinstance(m.get("content"), str))
 
 
 class TestRetry:
@@ -491,9 +676,6 @@ class TestBudgetAndProviderStops:
         async def boom(args):
             raise RuntimeError("tool bug")
 
-        from agents_support import FunctionTool, object_schema
-        from repolace_agents.tools.base import ToolBox
-
         toolbox = ToolBox([FunctionTool("read_file", boom, parameters=object_schema({"path": {"type": "string"}}, ["path"]))])
 
         with pytest.raises(RuntimeError, match="tool bug"):
@@ -591,8 +773,6 @@ class TestRecursionGuard:
 class TestTaskScope:
     async def test_the_gateways_task_scope_reaches_every_model_call_inside_the_graph(self):
         """The contextvar must survive into LangGraph's async nodes, or every call raises NoTaskScope."""
-        import uuid
-
         class ScopedLLM(ScriptedLLM):
             def __init__(self, script):
                 super().__init__(script)

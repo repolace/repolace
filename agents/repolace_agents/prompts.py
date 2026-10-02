@@ -48,6 +48,8 @@ MAX_TITLE_CHARS = 300
 #: a test can find them in a transcript and the wording lives in one place.
 NUDGE = "Your last reply called no tool. Call a tool to continue, or call `submit` if you are finished."
 SKIPPED_AFTER_SUBMIT = "not executed: the attempt ended when `submit` was called"
+TOO_MANY_CALLS = "not executed: too many tool calls in one reply; send fewer per reply"
+SKIPPED_BUDGET = "not executed: the task budget ran out"
 ELIDED = "[output from attempt {attempt} elided]"
 
 
