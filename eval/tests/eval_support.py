@@ -15,8 +15,10 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import tempfile
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -93,6 +95,48 @@ def diff_between(repo: Path, old: str, new: str, *, renames: bool = False) -> st
     """The text of `git diff old new`, as GitHub would serve it (paths quoted by git's defaults)."""
     flag = "--find-renames" if renames else "--no-renames"
     return git(repo, "diff", "--no-color", flag, old, new).decode("utf-8")
+
+
+# --- a fixture upstream repository -------------------------------------------
+
+MOD = "".join(f"def f{i}():\n    return {i}\n" for i in range(1, 16))
+TEST_MOD = "from pkg.mod import f1\n\n\ndef test_it():\n    assert f1() == 1\n"
+CRLF_TEST = "def test_a():\r\n    assert True\r\n\r\ndef test_b():\r\n    assert True\r\n"
+#: Line 1 is not UTF-8; the rest is ASCII, so a patch to line 20 never mentions it.
+LEGACY = b"# caf\xe9 latin-1\n" + b"".join(f"x{i} = {i}\n".encode() for i in range(2, 30))
+
+
+@dataclass(frozen=True)
+class Upstream:
+    path: Path
+    #: A commit with no symlink; the default branch moves past it.
+    base: str
+    #: A later commit that adds a symlink (`LICENSE -> README.md`).
+    base_symlink: str
+
+
+def build_upstream(path: Path) -> Upstream:
+    """A small upstream repository on `main`: a package, its tests, a CRLF test and a latin-1 file."""
+    base = make_repo(path, {
+        "pkg/__init__.py": "",
+        "pkg/mod.py": MOD,
+        "tests/test_mod.py": TEST_MOD,
+        "tests/test_crlf.py": CRLF_TEST,
+        "legacy.py": LEGACY,
+        "README.md": "readme\n",
+    })
+    base_symlink = commit_files(path, {}, "add a symlink", symlinks={"LICENSE": "README.md"})
+    return Upstream(path, base, base_symlink)
+
+
+def patch_from(upstream: Upstream, base: str, files: Mapping[str, str | bytes | None], scratch: Path) -> str:
+    """The diff of `files` applied on top of `base`, without touching `upstream`."""
+    scratch.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(dir=scratch)) / "work"
+    git(scratch, "clone", "--quiet", str(upstream.path), str(work))
+    git(work, "checkout", "--quiet", base)
+    new = commit_files(work, files, "change")
+    return diff_between(work, base, new)
 
 
 # --- dataset rows and the datasets-server ------------------------------------
