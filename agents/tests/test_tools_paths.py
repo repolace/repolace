@@ -64,7 +64,7 @@ class TestEscapes:
 
     @pytest.mark.parametrize("path", ["..", "../x.py", "src/../../x.py", "src/pkg/../../../x.py"])
     def test_dotdot_out_of_the_tree_is_refused(self, checkout, path):
-        with pytest.raises(ToolError, match="outside"):
+        with pytest.raises(ToolError, match="'..' is not allowed"):
             write(checkout, path)
 
     def test_a_symlinked_file_pointing_outside_is_refused(self, checkout):
@@ -108,7 +108,6 @@ class TestGitFamily:
             ".gitignore",
             ".gitkeep",
             "vendor/pkg/.git/config",
-            "src/../.git/hooks/post-commit",
             "./.git/config",
         ],
     )
@@ -154,7 +153,6 @@ class TestProtectedWrites:
             "tests/test_new.py",
             "src/pkg/core_test.py",
             "./tests/test_core.py",
-            "src/../tests/test_core.py",
         ],
     )
     def test_test_and_config_files_cannot_be_written(self, checkout, path):
@@ -169,7 +167,7 @@ class TestProtectedWrites:
 
     def test_the_guard_is_judged_on_the_resolved_path(self, checkout):
         seen = []
-        confine(checkout, "./src/../src/pkg/core.py", write=True, is_protected=lambda rel: seen.append(rel) or False)
+        confine(checkout, "./src/./pkg/core.py", write=True, is_protected=lambda rel: seen.append(rel) or False)
         assert seen == ["src/pkg/core.py"]
 
     def test_a_baseline_aware_guard_is_honoured(self, checkout):
@@ -202,3 +200,130 @@ class TestMalformedPaths:
         with pytest.raises(ToolError) as caught:
             read(checkout, "leak_file.py")
         assert str(checkout.parent) not in str(caught.value)
+
+
+class TestDotDot:
+    """`..` is refused outright: the literal walk and `resolve()` read it differently."""
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "nonexistent/../link_src/pkg/core.py",
+            "nonexistent/../link_file",
+            "src/../src/pkg/core.py",  # harmless, but one reading of a path is the point
+            "a/b/../../src/pkg/core.py",
+            "./..",
+        ],
+    )
+    @pytest.mark.parametrize("write_mode", [False, True])
+    def test_any_dotdot_component_is_refused_even_when_it_stays_inside(self, checkout, path, write_mode):
+        with pytest.raises(ToolError, match="'..' is not allowed"):
+            confine(checkout, path, write=write_mode, is_protected=is_protected_path)
+
+    def test_a_name_that_merely_contains_two_dots_is_fine(self, checkout):
+        assert read(checkout, "src/pkg/a..b.py").name == "a..b.py"
+        assert read(checkout, "src/..hidden/x.py").name == "x.py"
+
+
+class TestGitAliases:
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "git~1/hooks/pc",
+            "GIT~1/hooks/pc",
+            "src/Git~2/x",
+            "git~1",
+            ".g‌it/hooks/pc",  # ZERO WIDTH NON-JOINER: HFS+ ignores it, so this is `.git`
+            ".‍git/config",
+            "﻿.git/config",
+            ".git‮/config",
+            ".⁪git/config",
+        ],
+    )
+    @pytest.mark.parametrize("write_mode", [False, True])
+    def test_names_a_filesystem_would_read_as_dot_git_are_refused(self, checkout, path, write_mode):
+        with pytest.raises(ToolError, match=r"\.git"):
+            confine(checkout, path, write=write_mode, is_protected=lambda rel: False)
+
+    @pytest.mark.parametrize("name", ["gitlab", "git~", "git~x", "digit", "legit~1"])
+    def test_names_that_only_resemble_them_are_fine(self, checkout, name):
+        assert read(checkout, f"src/{name}/x.py").name == "x.py"
+
+    @pytest.mark.parametrize("path", ["a\\b", "a\\.git\\config", "a\tb", "a\nb", "a\x1bb", "a\x7fb", "a\rb"])
+    @pytest.mark.parametrize("write_mode", [False, True])
+    def test_backslashes_and_control_characters_are_refused(self, checkout, path, write_mode):
+        with pytest.raises(ToolError, match="not a usable path"):
+            confine(checkout, path, write=write_mode, is_protected=is_protected_path)
+
+
+class TestSymlinkLoops:
+    @pytest.fixture
+    def looped(self, checkout):
+        os.symlink("loop", checkout / "loop")
+        os.symlink("loop2b", checkout / "loop2")
+        os.symlink("loop2", checkout / "loop2b")
+        return checkout
+
+    @pytest.mark.parametrize("path", ["loop", "loop/x", "loop2/x", "loop2b/y/z"])
+    @pytest.mark.parametrize("write_mode", [False, True])
+    def test_a_symlink_loop_is_a_symlink_refusal_not_a_crash(self, looped, path, write_mode):
+        with pytest.raises(ToolError, match="symlink") as caught:
+            confine(looped, path, write=write_mode, is_protected=is_protected_path)
+        assert str(looped) not in str(caught.value) and str(looped.parent) not in str(caught.value)
+
+    def test_a_loop_that_resolve_alone_would_trip_on_is_still_a_tool_error(self, looped, monkeypatch):
+        # The walk reports a loop as a symlink first; this holds the fallback: if `resolve`
+        # does raise RuntimeError it must not escape, and its text (a host path) must not either.
+        def boom(root, candidate):
+            raise RuntimeError(f"Symlink loop from '{looped}/loop'")
+
+        monkeypatch.setattr("repolace_agents.tools.paths.resolve_within", boom)
+        with pytest.raises(ToolError) as caught:
+            read(looped, "src/pkg/core.py")
+        assert str(looped) not in str(caught.value)
+
+
+class TestDotfileWrites:
+    CI_AND_IDE_FILES = [
+        ".circleci/config.yml",
+        ".buildkite/pipeline.yml",
+        ".travis.yml",
+        ".drone.yml",
+        "azure-pipelines.yml",
+        "Jenkinsfile",
+        "bitbucket-pipelines.yml",
+        "appveyor.yml",
+        "cloudbuild.yaml",
+        ".devcontainer/devcontainer.json",
+        ".vscode/tasks.json",
+        ".pre-commit-config.yaml",
+        ".husky/pre-commit",
+        ".envrc",
+        ".pytest.ini",
+        "src/pkg/.hidden",
+        "src/.cache/x.py",
+        "jenkinsfile",
+        "AZURE-PIPELINES.YML",
+    ]
+
+    @pytest.mark.parametrize("path", CI_AND_IDE_FILES)
+    def test_ci_ide_and_hook_files_cannot_be_written(self, checkout, path):
+        with pytest.raises(ToolError) as caught:
+            write(checkout, path)
+        message = str(caught.value)
+        assert "never write a path with a component starting with '.'" in message or "off limits" in message
+        assert "Reading them is fine" in message or "off limits" in message
+
+    @pytest.mark.parametrize("path", [p for p in CI_AND_IDE_FILES if not p.startswith(".git")])
+    def test_the_same_files_can_be_read(self, checkout, path):
+        assert read(checkout, path).name == os.path.basename(path)
+
+    @pytest.mark.parametrize("path", ["Makefile", "src/Jenkinsfile", "docs/appveyor.yml", "src/pkg/new_module.py", "scripts/build.sh"])
+    def test_ordinary_files_and_non_root_lookalikes_stay_writable(self, checkout, path):
+        # Not a ban on build files or on the names elsewhere in the tree: only the root-level
+        # CI definitions, which is where those providers look.
+        assert write(checkout, path).name == os.path.basename(path)
+
+    def test_the_rule_is_judged_on_the_resolved_path_not_the_spelling(self, checkout):
+        with pytest.raises(ToolError, match="never write a path"):
+            write(checkout, "./.envrc")

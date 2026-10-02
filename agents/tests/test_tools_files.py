@@ -315,7 +315,7 @@ class TestEditFile:
 
     @pytest.mark.parametrize(
         "path",
-        ["tests/test_core.py", "conftest.py", "pyproject.toml", "./tests/test_core.py", "src/../tests/test_core.py"],
+        ["tests/test_core.py", "conftest.py", "pyproject.toml", "./tests/test_core.py"],
     )
     async def test_protected_files_are_refused_and_unchanged(self, h, path):
         before = snapshot(h.checkout)

@@ -15,6 +15,7 @@ agent wrote.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -41,6 +42,51 @@ _GIT_REFUSAL = (
     "acts on, so these tools neither read nor change it"
 )
 
+#: Why a write to a dotfile or CI definition is refused. The agent branch is pushed
+#: to the same repository the pull request targets, so a push-triggered pipeline
+#: (CircleCI, Buildkite, Travis, Drone, Azure, Jenkins, ...) runs it with the
+#: project's secrets before any human has looked -- the reason `.github/` is
+#: refused -- and editor and hook files (`.vscode/tasks.json`, `.devcontainer/`,
+#: `.husky/`, `.pre-commit-config.yaml`, `.envrc`) run code on whoever opens or
+#: commits to the branch next.
+DOTFILE_WRITE_REFUSAL = (
+    "{path} is not writable: these tools never write a path with a component starting with '.' "
+    "(.circleci/, .travis.yml, .vscode/, .devcontainer/, .husky/, .envrc, ...) or a CI definition "
+    "such as Jenkinsfile or azure-pipelines.yml, because the branch is pushed to the repository "
+    "and those files can run code with its secrets or on a developer's machine before review. "
+    "Reading them is fine. Change source files instead"
+)
+
+#: Root-level CI definitions that are not dotfiles. The dotfile rule already covers
+#: `.travis.yml`, `.circleci/`, `.drone.yml`, `.buildkite/`, `.gitlab-ci.yml` and the
+#: rest, so this lists only the providers that use a visible name. Deliberately not
+#: a ban on build files in general: `Makefile` and `tox.ini` stay as `is_protected`
+#: leaves them.
+CI_ROOT_FILES = frozenset({
+    "jenkinsfile",
+    "azure-pipelines.yml",
+    "appveyor.yml",
+    "cloudbuild.yaml",
+    "bitbucket-pipelines.yml",
+})
+
+#: Code points an HFS+ filesystem ignores when comparing names, so `.g<U+200C>it`
+#: is `.git` to it. Stripped before the `.git*` test.
+_HFS_IGNORABLE = dict.fromkeys(
+    [*range(0x200C, 0x2010), *range(0x202A, 0x202F), *range(0x206A, 0x2070), 0xFEFF]
+)
+
+#: NTFS 8.3 short name of `.git` (`git~1`). `git add` refuses a path containing it
+#: (core.protectNTFS is on by default), so one created in the tree would make every
+#: later checkpoint fail.
+_NTFS_GIT_ALIAS = re.compile(r"git~\d")
+
+#: NUL and other control characters, DEL, and backslash (a path separator to NTFS,
+#: so `a\.git\config` is a `.git` component there). None is in a real source path.
+_UNUSABLE_CHARS = re.compile(r"[\x00-\x1f\x7f\\]")
+
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
 
 def printable(text: str) -> str:
     """`text` with anything UTF-8 cannot encode written as an escape (`\\ud800`, `\\udcff`).
@@ -51,6 +97,15 @@ def printable(text: str) -> str:
     the next provider request fail to encode, ending the run.
     """
     return text.encode("utf-8", errors="backslashreplace").decode("utf-8")
+
+
+def escape_controls(text: str) -> str:
+    """`text` with control characters written as `\\x0a`-style escapes.
+
+    For a path shown to the model: a repository can name a file `x\nsrc/pkg/core.py`,
+    and a raw newline would let it start a line of its own in a result.
+    """
+    return _CONTROL_CHARS.sub(lambda match: f"\\x{ord(match.group()):02x}", text)
 
 
 def shown(text: str, limit: int = 80) -> str:
@@ -73,16 +128,19 @@ def require_text(name: str, text: str) -> None:
 
 
 def is_git_name(component: str) -> bool:
-    """Is this path component part of the `.git*` family?
+    """Is this path component part of the `.git*` family, or an alias of `.git`?
 
     The whole family, not just `.git`: git reads `.gitattributes` (a `diff=` or
     `filter=` selector pairs with a driver command), `.gitmodules` and `.gitignore`
     as configuration, and `.github/` is CI that runs with the repository's
     secrets. Case-folded because a case-insensitive filesystem would otherwise
-    let `.GIT/hooks/post-commit` through. A hook written there runs on the *host*
+    let `.GIT/hooks/post-commit` through, with HFS-ignorable code points removed
+    first for the same reason, and `git~1` (the NTFS short name) refused because
+    git itself refuses to add it. A hook written under `.git` runs on the *host*
     at the next commit, which is the one thing the sandbox cannot contain.
     """
-    return component.lower().startswith(".git")
+    folded = component.translate(_HFS_IGNORABLE).casefold()
+    return folded.startswith(".git") or _NTFS_GIT_ALIAS.match(folded) is not None
 
 
 def relative_posix(checkout: Path, resolved: Path) -> str:
@@ -101,8 +159,12 @@ def confine(
 
     Always refused, for reads too:
 
-    * an absolute path, `..`, and any symlink or symlinked parent that leaves the
-      tree -- `resolve_within`, which refuses a symlink rather than following it;
+    * an empty or over-long path, and any control character or backslash;
+    * `..` anywhere. A literal walk of the components (below) and `resolve()`
+      disagree about `nonexistent/../link`: the walk sees nothing to follow while
+      `resolve()` follows the symlink. Refusing `..` leaves one reading of the path;
+    * an absolute path and any symlink or symlinked parent that leaves the tree --
+      `resolve_within`, which refuses a symlink rather than following it;
     * a symlink anywhere in the path, even one that lands back inside the tree;
     * anything in the `.git*` family (see `is_git_name`), checked on the string
       the model sent *and* on the resolved location, so a path that merely spells
@@ -111,14 +173,20 @@ def confine(
     Refused when `write=True`, additionally:
 
     * the repository root itself (not a file);
+    * any path with a component starting with `.`, and the root-level CI
+      definitions in `CI_ROOT_FILES` -- default-deny, because the branch is pushed
+      to the repository and these files run code before review (see
+      `DOTFILE_WRITE_REFUSAL`). Reads of ordinary dotfiles are unaffected;
     * `is_protected(rel)` -- `ToolContext.is_protected`, never `is_protected_path`
-      directly, so the pipeline's baseline-aware closure applies. It is judged on
-      the **resolved** repo-relative path, so `./tests/x.py`, `src/../tests/x.py`
-      and an in-tree symlink onto `tests/` all read the same as `tests/x.py`.
+      directly. Judged on the **resolved** repo-relative path.
 
     `is_protected` is required, not defaulted, when `write=True`: a default would
     be the weaker baseline-blind guard, and a tool author who forgot to pass the
-    real one would get no error, only a quietly weaker check.
+    real one would get no error, only a quietly weaker check. **A pipeline must
+    pass a baseline-aware closure** (the baseline's `collected_files` and
+    `conftests`, minus the benchmark overlay): the context default is blind to
+    what pytest collected, so a file it collects through a custom `python_files`
+    would be editable and the scorer would then discard the whole patch.
 
     Returns the resolved path, which is what the caller must open. No file is
     created, touched or even required to exist here.
@@ -126,35 +194,47 @@ def confine(
     if write and is_protected is None:
         raise TypeError("confine(write=True) requires is_protected=ctx.is_protected")
 
-    if not path or "\0" in path or len(path) > MAX_PATH_CHARS:
+    if not path or len(path) > MAX_PATH_CHARS or _UNUSABLE_CHARS.search(path):
         # NUL makes `lstat` raise ValueError and an overlong component raises
         # OSError(ENAMETOOLONG); both are the model's mistake, not a bug.
         raise ToolError(
             f"not a usable path: {shown(path)!r}; give a non-empty path of at most "
-            f"{MAX_PATH_CHARS} characters, relative to the repository root"
+            f"{MAX_PATH_CHARS} characters with no control characters or backslashes, "
+            f"relative to the repository root"
         )
 
-    if any(is_git_name(part) for part in path.split("/")):
-        raise ToolError(_GIT_REFUSAL.format(path=shown(path)))
+    parts = path.split("/")
+    if ".." in parts:
+        raise ToolError("'..' is not allowed in paths; use a path relative to the repository root")
 
-    try:
-        resolved = resolve_within(checkout, path)
-    except PathEscapesRoot as exc:
-        raise ToolError(f"{shown(str(exc), 200)}; use a path inside the repository, relative to its root") from None
-    except (OSError, ValueError):
-        raise ToolError(f"not a usable path: {shown(path)!r}") from None
+    if any(is_git_name(part) for part in parts):
+        raise ToolError(_GIT_REFUSAL.format(path=shown(path)))
 
     # `resolve_within` refuses a symlink as the last component and any symlink whose
     # target is outside the tree; a symlinked *directory* in the middle that lands
     # back inside is followed. That would let the repository choose where a later read
     # or write goes -- the reason `resolve_within` refuses at all -- so refuse these too.
+    # Before `resolve`, so a symlink loop is reported as a symlink.
     cursor = checkout.resolve()
-    for part in path.split("/"):
+    for part in parts:
         if part in ("", "."):
             continue
         cursor = cursor / part
-        if cursor.is_symlink():
+        try:
+            is_link = cursor.is_symlink()
+        except (OSError, ValueError):  # e.g. a component over the filesystem's name limit
+            raise ToolError(f"not a usable path: {shown(path)!r}") from None
+        if is_link:
             raise ToolError(f"refusing to follow a symlink: {shown(path)}")
+
+    try:
+        resolved = resolve_within(checkout, path)
+    except PathEscapesRoot as exc:
+        raise ToolError(f"{shown(str(exc), 200)}; use a path inside the repository, relative to its root") from None
+    except (OSError, ValueError, RuntimeError):
+        # RuntimeError is `resolve()` on a symlink loop; its text names the host path,
+        # so nothing from the exception is echoed.
+        raise ToolError(f"not a usable path: {shown(path)!r}") from None
 
     rel = relative_posix(checkout, resolved)
     if any(is_git_name(part) for part in rel.split("/")):
@@ -163,6 +243,8 @@ def confine(
     if write:
         if rel == ".":
             raise ToolError("that path is the repository root; name a file inside it")
+        if any(part.startswith(".") for part in rel.split("/")) or rel.casefold() in CI_ROOT_FILES:
+            raise ToolError(DOTFILE_WRITE_REFUSAL.format(path=printable(rel)))
         assert is_protected is not None
         if is_protected(rel):
             raise ToolError(PROTECTED_WRITE_REFUSAL.format(path=printable(rel)))
