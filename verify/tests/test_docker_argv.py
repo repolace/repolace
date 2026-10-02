@@ -17,13 +17,13 @@ from verify.backends.docker import (
     build_script_argv,
     sanitized_docker_env,
 )
-from verify.config import DockerConfig, DockerLimits
+from verify.config import RESERVED_ENV, DockerConfig, DockerLimits
 from verify.protocol import EnvironmentRef, RepoSpec
 
 ENV = EnvironmentRef(backend="docker", identifier="repolace-verify:a_b-cafe")
 SOURCE = Path("/tmp/export-0")
 RESULTS = Path("/tmp/results-0")
-SCRIPT = Path("/tmp/results-script-1/main.py")
+SCRIPT = Path("/tmp/results-script-1/_repolace_script.py")
 
 
 def argv(config: DockerConfig | None = None, spec: RepoSpec | None = None) -> tuple[str, ...]:
@@ -316,6 +316,12 @@ class TestContainmentOnBothBuilders:
     def test_zombies_are_reaped(self, build):
         assert "--init" in build()
 
+    def test_the_image_is_never_pulled_at_run_time(self, build):
+        """A tag missing locally -- a pruned image, a typo in a spec -- would
+        otherwise be fetched from a registry on the one path that must have no
+        network."""
+        assert "--pull=never" in build()
+
     def test_the_container_is_named_so_it_can_be_killed(self, build):
         """`run_process` kills the client; the container survives, so cleanup
         addresses it by name -- for a script as much as for a suite."""
@@ -399,7 +405,7 @@ class TestScriptMounts:
         assert not has_pair(script_argv(spec=spec), "-v", f"{SOURCE}:/repo")
 
     def test_the_script_is_mounted_read_only_at_a_fixed_path_outside_the_tree(self):
-        assert has_pair(script_argv(), "-v", f"{SCRIPT}:/scratch/main.py:ro")
+        assert has_pair(script_argv(), "-v", f"{SCRIPT}:/scratch/_repolace_script.py:ro")
 
     def test_there_are_exactly_two_mounts(self):
         args = script_argv()
@@ -421,7 +427,7 @@ class TestScriptCommand:
     def test_the_command_after_the_image_is_exactly_the_script(self):
         args = script_argv()
 
-        assert args[args.index(ENV.identifier) + 1 :] == ("/scratch/main.py",)
+        assert args[args.index(ENV.identifier) + 1 :] == ("/scratch/_repolace_script.py",)
 
     def test_it_is_not_run_under_pytest(self):
         args = script_argv()
@@ -473,3 +479,81 @@ class TestRootdirIsPinned:
 
     def test_the_script_path_has_no_pytest_to_pin(self):
         assert not any(a.startswith("--rootdir") for a in script_argv())
+
+
+class TestScriptNameIsOneNoRepositoryHas:
+    def test_the_script_is_not_called_main(self):
+        """`sys.path[0]` is the script's directory, ahead of `PYTHONPATH`, so a
+        script called `main.py` would shadow a repository's own `main.py`."""
+        args = script_argv()
+
+        assert not any(a.endswith("main.py") or ":/scratch/main" in a for a in args)
+        assert args[-1] == "/scratch/_repolace_script.py"
+
+
+class TestTheRunNonce:
+    def test_it_reaches_the_container_through_the_environment(self):
+        args = build_run_argv(
+            DockerConfig(), RepoSpec(key="a/b"), ENV, SOURCE, RESULTS, "c-0", nonce="abc123"
+        )
+
+        assert has_pair(args, "-e", "REPOLACE_RUN_NONCE=abc123")
+
+    def test_it_comes_before_the_image(self):
+        args = build_run_argv(
+            DockerConfig(), RepoSpec(key="a/b"), ENV, SOURCE, RESULTS, "c-0", nonce="abc123"
+        )
+
+        assert args.index("REPOLACE_RUN_NONCE=abc123") < args.index(ENV.identifier)
+
+    def test_it_is_absent_when_none_is_given(self):
+        assert not any("REPOLACE_RUN_NONCE" in a for a in argv())
+
+    def test_a_script_has_no_report_and_so_no_nonce(self):
+        assert not any("REPOLACE_RUN_NONCE" in a for a in script_argv())
+
+    def test_the_argv_is_otherwise_unchanged_by_it(self):
+        plain = argv()
+        stamped = build_run_argv(
+            DockerConfig(), RepoSpec(key="a/b"), ENV, SOURCE, RESULTS, "c-0", nonce="abc123"
+        )
+        position = stamped.index("REPOLACE_RUN_NONCE=abc123")
+
+        assert stamped[: position - 1] + stamped[position + 1 :] == plain
+
+
+class TestReservedEnvironment:
+    """The sandbox sets these for itself, and a spec may not name them: each carries a
+    decision, and an override would fail open as a quietly different run."""
+
+    @pytest.mark.parametrize("name", sorted(RESERVED_ENV))
+    def test_a_spec_cannot_set_it_on_either_builder(self, build, name):
+        spec = RepoSpec(key="a/b", extra_env={name: "/elsewhere"})
+
+        with pytest.raises(ValueError, match=name):
+            build(spec=spec)
+
+    def test_the_error_names_every_offender_and_the_spec(self, build):
+        spec = RepoSpec(key="acme/x", extra_env={"HOME": "/h", "PYTHONPATH": "/p", "TZ": "UTC"})
+
+        with pytest.raises(ValueError) as excinfo:
+            build(spec=spec)
+
+        assert "acme/x" in str(excinfo.value)
+        assert "HOME" in str(excinfo.value) and "PYTHONPATH" in str(excinfo.value)
+        assert "TZ" not in str(excinfo.value)
+
+    def test_an_ordinary_variable_is_still_fine(self, build):
+        assert has_pair(build(spec=RepoSpec(key="a/b", extra_env={"TZ": "UTC"})), "-e", "TZ=UTC")
+
+    def test_the_reserved_set_is_the_four_the_sandbox_owns(self):
+        assert RESERVED_ENV == {"PYTHONPATH", "HOME", "REPOLACE_REPORT_PATH", "REPOLACE_RUN_NONCE"}
+
+    def test_the_reserved_names_are_still_set_by_the_sandbox_itself(self):
+        args = build_run_argv(
+            DockerConfig(), RepoSpec(key="a/b"), ENV, SOURCE, RESULTS, "c-0", nonce="n"
+        )
+
+        for pair in ("HOME=/tmp", "PYTHONPATH=/opt/repolace", "REPOLACE_REPORT_PATH=/results/report.jsonl",
+                     "REPOLACE_RUN_NONCE=n"):
+            assert has_pair(args, "-e", pair), pair

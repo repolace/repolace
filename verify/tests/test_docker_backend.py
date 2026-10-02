@@ -257,7 +257,7 @@ SCRIPT_FILE_MODE = 0o644
 
 def write_script(tmp_path: Path, name: str, code: str) -> Path:
     directory = make_dir(tmp_path / f"results-script-{name}")
-    script = directory / "main.py"
+    script = directory / "_repolace_script.py"
     script.write_text(textwrap.dedent(code))
     script.chmod(SCRIPT_FILE_MODE)
     return script
@@ -361,7 +361,7 @@ class TestScriptContainment:
         code = """
             import errno
             try:
-                open("/scratch/main.py", "w").write("x")
+                open("/scratch/_repolace_script.py", "w").write("x")
                 print("WRITTEN")
             except OSError as exc:
                 print(errno.errorcode[exc.errno])
@@ -389,7 +389,7 @@ class TestScriptContainment:
         result, _ = await run_script(backend, spec, environment, tmp_path, "noresults", code)
 
         assert "results-exists False" in result.stdout, result.stdout
-        assert sorted(p.name for p in (tmp_path / "results-script-noresults").iterdir()) == ["main.py"]
+        assert sorted(p.name for p in (tmp_path / "results-script-noresults").iterdir()) == ["_repolace_script.py"]
 
     async def test_every_capability_is_dropped_and_privilege_escalation_blocked(
         self, backend, spec, environment, tmp_path
@@ -556,7 +556,7 @@ class TestProbesAndScriptsThroughTheVerifier:
             await verifier.run_script(workspace, "print('hi')", timeout_seconds=60.0)
 
             assert not await workspace.repo.has_changes()
-            assert not (workspace.path / "main.py").exists()
+            assert not (workspace.path / "_repolace_script.py").exists()
 
     async def test_the_overlay_runs_in_scored_runs_and_is_invisible_to_probes_and_the_image(
         self, backend, spec, origin_url, tmp_path

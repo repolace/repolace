@@ -26,6 +26,7 @@ from typing import Protocol
 
 import structlog
 
+from verify.config import SCRIPT_PATH
 from verify.dockerfile import image_cache_key
 from verify.errors import SandboxError
 from verify.overlay import apply_overlay
@@ -337,7 +338,7 @@ class Verifier:
         `SandboxError` **returned** as `ScriptResult(error=<redacted message>)`
         rather than raised, `VerifierNotReady` the only exception -- plus these:
 
-        * **Where the script is written.** `<workspace.results_dir(label)>/main.py`,
+        * **Where the script is written.** `<workspace.results_dir(label)>/_repolace_script.py`,
           mode 0644. That is outside both trees: not in the checkout, which
           `git add -A` would sweep into the next checkpoint commit and the PR, and
           not in the export, which is mounted read-only and which the host might
@@ -360,7 +361,7 @@ class Verifier:
         try:
             source_dir = await workspace.export_tree(label)
             results_dir = await workspace.results_dir(label)
-            script_path = results_dir / "main.py"
+            script_path = results_dir / Path(SCRIPT_PATH).name
             await asyncio.to_thread(_write_script, script_path, code)
             return await self.backend.run_script(
                 env,

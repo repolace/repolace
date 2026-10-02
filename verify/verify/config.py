@@ -53,5 +53,19 @@ REPORT_PATH = "/results/report.jsonl"
 WORKDIR = "/repo"
 RESULTS_DIR = "/results"
 #: Where a scratch script is mounted. Its own directory rather than `/repo`, so
-#: the script never appears in the tree the host exports or diffs.
-SCRIPT_PATH = "/scratch/main.py"
+#: the script never appears in the tree the host exports or diffs. The name is
+#: deliberately one no repository has: the script's directory is `sys.path[0]`,
+#: ahead of `PYTHONPATH=/repo`, so a script called `main.py` would shadow -- or be
+#: re-imported as -- a repository module of the same name.
+SCRIPT_PATH = "/scratch/_repolace_script.py"
+
+#: The environment variable carrying the per-run nonce into the container. Read by
+#: the plugin, which stamps it into the report so the host can tell this run's
+#: report from any other run's.
+RUN_NONCE_ENV_VAR = "REPOLACE_RUN_NONCE"
+
+#: Container environment the sandbox sets for itself. A spec's `extra_env` may not
+#: name any of them: each one carries a decision (where the report goes, what
+#: identifies the run, what is importable), and an operator typo that overrode one
+#: would fail open, as an unexplained unscoreable run or a quietly different tree.
+RESERVED_ENV = frozenset({"PYTHONPATH", "HOME", "REPOLACE_REPORT_PATH", RUN_NONCE_ENV_VAR})

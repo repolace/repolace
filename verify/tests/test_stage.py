@@ -500,7 +500,7 @@ class TestRunScript:
 
         call = verifier.backend.scripts[0]
         assert call["script_text"] == "import sys\nprint(sys.argv)\n"
-        assert call["script"].name == "main.py"
+        assert call["script"].name == "_repolace_script.py"
 
     async def test_the_script_lives_in_the_results_directory_not_the_tree(self, workspace):
         """Not in the export, which is mounted read-only and which the host might
@@ -513,7 +513,7 @@ class TestRunScript:
         call = verifier.backend.scripts[0]
         assert call["script"].parent.name == "results-script-1"
         assert call["script"].parent != call["source"]
-        assert "main.py" not in call["snapshot"]
+        assert "_repolace_script.py" not in call["snapshot"]
 
     async def test_the_script_file_is_readable_by_another_uid(self, workspace):
         modes = []

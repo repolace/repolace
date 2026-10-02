@@ -18,6 +18,7 @@ from pathlib import Path
 
 import structlog
 
+from verify.config import RESERVED_ENV
 from verify.errors import SpecError
 from verify.protocol import RepoSpec
 
@@ -64,6 +65,13 @@ def _coerce(name: str, value: object, spec_key: str) -> object:
             isinstance(k, str) and isinstance(v, str) for k, v in value.items()
         ):
             raise SpecError(f"{spec_key}.{name} must be a table of strings, got {value!r}")
+        reserved = sorted(set(value) & RESERVED_ENV)
+        if reserved:
+            # The backend refuses these too; failing here names the spec file entry
+            # when it is loaded, instead of the first task that happens to use it.
+            raise SpecError(
+                f"{spec_key}.{name} may not set {', '.join(reserved)}; the sandbox reserves them"
+            )
         return dict(value)
     if not isinstance(value, str):
         raise SpecError(f"{spec_key}.{name} must be a string, got {value!r}")

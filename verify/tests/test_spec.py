@@ -91,6 +91,22 @@ class TestLoading:
         assert spec.extra_env == {"TZ": "UTC"}
 
 
+class TestReservedEnvironment:
+    @pytest.mark.parametrize("name", ["PYTHONPATH", "HOME", "REPOLACE_REPORT_PATH", "REPOLACE_RUN_NONCE"])
+    def test_a_spec_cannot_set_a_variable_the_sandbox_owns(self, name):
+        with pytest.raises(SpecError, match=name):
+            spec_from_mapping("a/b", {"extra_env": {name: "/x", "TZ": "UTC"}})
+
+    def test_the_error_names_the_entry(self, tmp_path):
+        path = write(tmp_path, '[specs."acme/sample"]\nextra_env = { PYTHONPATH = "/x" }\n')
+
+        with pytest.raises(SpecError, match=r"acme/sample\.extra_env"):
+            load_specs(path)
+
+    def test_ordinary_variables_are_untouched(self):
+        assert spec_from_mapping("a/b", {"extra_env": {"TZ": "UTC"}}).extra_env == {"TZ": "UTC"}
+
+
 class TestResolving:
     def test_an_uncurated_repo_gets_a_default_carrying_its_own_key(self):
         """Falling back rather than raising: an uncurated repo should get a run
