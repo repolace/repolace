@@ -137,14 +137,25 @@ class TaskWorkspace:
         ``attempt`` is an int for a scored run and a str label (``"probe-3"``)
         for an unscored one: its own directory, so a probe can never collide with
         an attempt. See ``_run_dir``.
+
+        **A label is single-use.** If its directory already exists this raises
+        before touching it. The sandbox writes into the directory it was given, so
+        what is left there is not ours: exporting over it would follow a symlink the
+        sandbox planted and write through it onto a host file (and chmod a host
+        directory). It would also mix two runs' reports. A repeated label is a
+        logic bug; ``discard`` first if the reuse is intended.
         """
+        # First, and before any git: both are logic errors in the caller, touch
+        # nothing, and need no repository to detect.
+        destination = self._run_dir(_EXPORT_DIR_PREFIX, attempt)
+        _refuse_reuse(destination, "export", attempt)
+
         if not await self.repo.tree_matches_head():
             raise RuntimeError(
                 "refusing to export: the working tree does not match HEAD, so the exported "
                 "tree would not be the commit the results get attributed to"
             )
 
-        destination = self._run_dir(_EXPORT_DIR_PREFIX, attempt)
         # The mode goes all the way down, not just onto the root: the sandbox
         # runs as an unprivileged uid that is not ours, and a suite writing a
         # `__pycache__` or a sqlite fixture beside its own code needs the
@@ -160,7 +171,8 @@ class TaskWorkspace:
         directory cannot destroy the report that says what it did.
         """
         destination = self._run_dir(_RESULTS_DIR_PREFIX, attempt)
-        destination.mkdir(parents=True, exist_ok=True)
+        _refuse_reuse(destination, "results", attempt)
+        destination.mkdir(parents=True)
         os.chmod(destination, _SANDBOX_DIR_MODE)
         return destination
 
@@ -339,6 +351,16 @@ def _force_writable(func, path, exc: BaseException) -> None:
         log.warning("workspace.remove_entry_failed", path=str(path), error=str(retry_exc))
 
 
+def _refuse_reuse(destination: Path, what: str, attempt: int | str) -> None:
+    """Raise if `destination` exists in any form, a dangling symlink included.
+
+    `lexists`, not `exists`: a symlink the sandbox left in place of the directory
+    is precisely the thing that must not be followed, and `exists` follows it.
+    """
+    if os.path.lexists(destination):
+        raise RuntimeError(f"{what} for {attempt} already exists; labels are single-use")
+
+
 def _remove_tree(root: Path) -> None:
     """Delete the workspace, but never at the cost of the exception that is already propagating.
 
@@ -351,10 +373,13 @@ def _remove_tree(root: Path) -> None:
         log.warning("workspace.remove_failed", root=str(root), error=str(exc))
         return
 
-    if root.exists():
+    if os.path.lexists(root):
         # Most likely root-owned files left by the Verify sandbox. Surfaced
         # rather than raised: losing a temp directory is a disk leak worth
-        # seeing in the logs, not a reason to mask why the task failed.
+        # seeing in the logs, not a reason to mask why the task failed. A warning,
+        # never quieter: every probe that leaves one behind is a full copy of the
+        # tree, and the parent directory has to be quota-limited in production for
+        # exactly this reason. `lexists` so a symlink left in place is also seen.
         log.warning("workspace.remove_failed", root=str(root))
     else:
         log.info("workspace.removed", root=str(root))
