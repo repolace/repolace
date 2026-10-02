@@ -26,7 +26,17 @@ from repolace_agents.contracts import AgentLimits, IssueContext, StopReason
 from repolace_agents.graph import run_graph
 from verify.protocol import SuiteResult
 
-from agents_support import ScriptedLLM, ScriptedVerifier, attempt_record, make_deps, scripted_toolbox, submit_reply, suite
+from agents_support import (
+    ScriptedLLM,
+    ScriptedVerifier,
+    attempt_record,
+    make_deps,
+    reply,
+    scripted_toolbox,
+    submit_reply,
+    suite,
+    tool_call,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -240,3 +250,68 @@ class TestOnlyTheFilterReadsTheOracle:
                     imported.update(alias.name for alias in node.names)
 
             assert "SuiteResult" not in imported and not any(name.startswith("verify") for name in imported), module
+
+
+class TestHiddenDoesNotSteerTheRun:
+    """The audit's E8, on the real graph: worlds that differ only in the hidden tests.
+
+    Same scripted model, same visible results; only what the hidden tests did varies.
+    Retry decision, stop reason, spend and every message the model receives must be a
+    function of nothing but whether the scored run completed.
+    """
+
+    H = "tests/test_hidden.py"
+    H_ID = f"{H}::t"
+    HANG = "verify: suite exceeded its 600s deadline and was killed"
+    OOM = "verify: container killed (exit 137); most likely the memory limit"
+    IMPORT = "verify: pytest exited 2 (INTERRUPTED)"
+
+    async def outcome(self, baseline, attempt):
+        # Fixed call ids: `tool_call` numbers them from a global counter, so two otherwise
+        # identical runs would differ in the transcript for a reason that is not the graph's.
+        llm = ScriptedLLM(
+            [reply(None, tool_call("submit", {"summary": f"s{i}"}, id=f"call_s{i}")) for i in range(1, 4)]
+        )
+        verifier = ScriptedVerifier([attempt_record(i, attempt) for i in range(1, 4)])
+        toolbox, _ = scripted_toolbox()
+        deps = make_deps(
+            llm=llm, tools=toolbox, verify_attempt=verifier, baseline=baseline, issue=BENCHMARK,
+            hidden_paths=frozenset({self.H}), limits=AgentLimits(max_attempts=3, max_steps_per_attempt=4),
+            retrieved=(), repo_overview="src/",
+        )
+        result = await run_graph(deps, nonce=NONCE)
+        return result.attempts, result.stop_reason, result.steps, [c.messages for c in llm.calls]
+
+    @pytest.fixture
+    def completed_baseline(self):
+        return suite(passed=[A, B], failed=[self.H_ID])
+
+    async def test_a_hidden_test_red_or_green_makes_no_difference(self, completed_baseline):
+        red = await self.outcome(completed_baseline, suite(passed=[A, B], failed=[self.H_ID]))
+        green = await self.outcome(completed_baseline, suite(passed=[A, B, self.H_ID]))
+
+        assert red == green
+        assert red[:3] == (1, StopReason.SUBMITTED, 1)
+
+    async def test_a_hidden_hang_a_hidden_oom_and_a_hidden_import_error_are_indistinguishable(self, completed_baseline):
+        hang = await self.outcome(completed_baseline, suite(passed=[A, B], error=self.HANG))
+        oom = await self.outcome(completed_baseline, suite(passed=[A], error=self.OOM))
+        broken_import = await self.outcome(
+            completed_baseline, suite(error=self.IMPORT, collect_failures=[self.H])  # visible results lost too
+        )
+
+        assert hang == oom == broken_import
+        assert hang[:3] == (3, StopReason.MAX_ATTEMPTS, 3)
+
+    async def test_the_one_remaining_bit_is_visible_so_the_comparison_above_is_not_vacuous(self, completed_baseline):
+        completed = await self.outcome(completed_baseline, suite(passed=[A, B]))
+        errored = await self.outcome(completed_baseline, suite(passed=[A, B], error=self.HANG))
+
+        assert completed != errored
+        assert errored[1] is StopReason.MAX_ATTEMPTS and completed[1] is StopReason.SUBMITTED
+
+    async def test_an_unusable_baseline_looks_the_same_whatever_made_it_unusable(self):
+        hang = await self.outcome(suite(passed=[A, B], error=self.HANG), suite(passed=[A, B]))
+        oom = await self.outcome(suite(error=self.OOM, collect_failures=[self.H]), suite(passed=[A, B]))
+
+        assert hang == oom

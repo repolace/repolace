@@ -22,17 +22,22 @@ How the guarantee is held, in the order a result passes through here:
    reads. `dataclasses.replace` would carry every field through, including any
    added to `SuiteResult` later; starting from an empty `SuiteResult` makes a
    new field fail closed. `stdout_tail`, `exit_code` and `duration_seconds` are
-   never copied, and `error` is replaced by a *category* label.
+   never copied, and `error` is replaced by a fixed marker (only its presence is
+   read).
 3. **Compute everything from the filtered pair.** Counts, regressions,
    neutralised failures, collection failures and the verdict are all derived
    after filtering, so a count cannot encode a hidden test. (The unfiltered
    result is what `verify_attempt` records for scoring; this module never
    touches that.)
-4. **Overlay mode never shows raw text.** `stdout_tail` is None, and an
-   unscoreable attempt is reduced to one of a closed set of categories. The
-   real messages are exactly the dangerous ones -- "report claims 3 failures",
-   "collection failed for 2 module(s)" -- because their counts include hidden
-   tests.
+4. **Show an id only if the baseline run produced it.** The scored run executes
+   the agent's own source in the same interpreter as the report plugin, so a node
+   id on a visible path is text the agent's code chose. Ids outside the filtered
+   baseline's universe are counted (capped), never named.
+5. **Overlay mode never shows raw text.** `stdout_tail` is None, and *every*
+   unscoreable attempt is one neutral sentence. The real messages are exactly the
+   dangerous ones -- "report claims 3 failures", "collection failed for 2
+   module(s)" -- because their counts include hidden tests, and the categories
+   (timeout, out of memory, did not finish) are themselves hidden-dependent.
 
 **Fail closed.** Overlay mode is `overlay_mode or hidden_paths`, and
 `overlay_mode` defaults to **True**: a caller that forgets to say gets the
@@ -40,15 +45,35 @@ protection, not the leak. The graph passes `issue.instance_id is not None`,
 which is what `IssueContext` documents as meaning benchmark mode; keying on
 `hidden_paths` alone would let an empty overlay silently turn the filter off.
 
-**What this deliberately does not hide**, so nobody assumes otherwise:
+**Residual risk -- what this does NOT close, as the docs must state it.** Filtered
+feedback derived from the scored run is a decision, not an oversight: the
+alternative (feedback from a separate overlay-free run, the scored run once at the
+end) removes every channel below by construction but doubles suite executions and
+changes the `AttemptRecord` / `task_test_runs` contract. What is closed is every
+*accidental* channel. What remains needs either a deliberately adversarial agent
+or a rare repository:
 
-* Tests from a file the overlay *replaced*. If the overlay overwrites an
-  existing `tests/test_foo.py`, every test in that file is hidden, including the
-  ones that were visible before -- a regression in them is invisible to the
-  agent. Hiding too much costs information; hiding too little costs the claim.
-* The *categories* of an unscoreable run (timeout, out of memory, collection
-  error). They say that the run failed, not which test.
-* The paths of files the agent itself changed that are protected.
+* **A forged report, or choosing which visible tests regress.** The scored run
+  executes the agent's code, so an agent that wanted to could encode bits in
+  *which* visible tests it makes fail (a regression pattern is information the
+  agent is entitled to, and it is not hidden-test text). The id universe stops it
+  carrying free text; it cannot stop it signalling through visible ids.
+* **One bit per attempt: "did the scored run complete".** In overlay mode an
+  errored run is one sentence, but it is still a different message from a
+  completed run, and the hidden tests can cause it (a hidden hang, a hidden test
+  killed for memory, a hidden module that does not import). The retry policy for
+  an errored scored run is deterministic given only that bit: it is not clean, so
+  the agent is retried while attempts remain and ends `MAX_ATTEMPTS` otherwise,
+  unless the sandbox itself failed (`infrastructure_error`), which is never
+  retried. Two worlds that differ only in the hidden tests therefore get the same
+  transcript, spend and stop reason whenever the bit agrees.
+* **A replaced test file.** If the overlay overwrites an existing visible test
+  file, every test in it is hidden from feedback, so a regression there is not
+  warned about. The *scored* verdict still sees it (it runs on unfiltered results),
+  so pass-to-pass is still enforced. The baseline summary omits totals for the
+  same reason; a *failing* visible test inside the replaced file would still show
+  up as a difference against the agent's own probe, which is rare.
+* **Protected paths.** `disqualified` echoes paths the agent itself changed.
 
 "Clean" is `agent_verdict`'s verdict on the **filtered** pair, so it means what
 the PR gate means. `VisibleFeedback.clean` is derived from the fields and
@@ -71,18 +96,30 @@ from repolace_agents.render import (
     sanitize_text,
 )
 
-#: Every unscoreable attempt is reduced to one of these. A closed set, so the
-#: raw text -- which names hidden tests and counts them -- cannot be forwarded by
-#: adding a code path that forgets to filter.
+#: Outside overlay mode an unscoreable attempt is reduced to one of these. A
+#: closed set, so the raw text -- which can name hidden tests and count them --
+#: cannot be forwarded by adding a code path that forgets to filter.
 UNSCOREABLE_CATEGORIES = ("timeout", "out_of_memory", "collection_error", "did_not_finish", "unusable_result")
 BASELINE_UNUSABLE = "baseline_unusable"
+#: **In overlay mode every unscoreable run is this one label** -- see the residual
+#: risk in the module docstring. The categories above are informative, and in a
+#: benchmark run they are also *hidden-dependent*: a hidden test that hangs, one
+#: that is killed for memory and a hidden module that does not import each
+#: produce a different category, and the wording used to blame "the visible test
+#: run" for all of them. One sentence leaves a single bit (the run did not
+#: complete) in place of four.
+COMPLETION_UNKNOWN = "did_not_complete"
+
+#: What the rebuilt result carries in place of a raw error: only its presence is
+#: read (by the verdict), never its text.
+RUN_DID_NOT_COMPLETE = "run did not complete"
 
 _CATEGORY_TEXT = {
     "timeout": (
-        "The visible test run exceeded its time limit and was killed. A change that makes code hang, "
+        "The test run exceeded its time limit and was killed. A change that makes code hang, "
         "loop forever or run far slower is the usual cause."
     ),
-    "out_of_memory": "The visible test run was killed for exceeding its memory limit.",
+    "out_of_memory": "The test run was killed for exceeding its memory limit.",
     "collection_error": (
         "The test suite could not be collected, so no tests ran. A change that breaks an import or a "
         "module-level statement is the usual cause."
@@ -92,6 +129,10 @@ _CATEGORY_TEXT = {
     BASELINE_UNUSABLE: (
         "The baseline run at the base commit was unusable, so this attempt cannot be compared against "
         "it. That is not caused by your change."
+    ),
+    COMPLETION_UNKNOWN: (
+        "The check run did not complete, so this attempt cannot be assessed. It was not necessarily "
+        "caused by your change."
     ),
 }
 
@@ -142,8 +183,9 @@ class VisibleFeedback:
     #: The sandbox or host failed, not the patch. Never retried, and not
     #: rendered to the model: there is nothing it could do about it.
     infrastructure_error: bool
-    #: A category label from `UNSCOREABLE_CATEGORIES` (or `BASELINE_UNUSABLE`),
-    #: never raw text; None when the run was usable.
+    #: A category label from `UNSCOREABLE_CATEGORIES` (or `BASELINE_UNUSABLE`), or
+    #: in overlay mode always `COMPLETION_UNKNOWN`; never raw text. None when the
+    #: run was usable.
     unscoreable: str | None
     regressions: tuple[str, ...]
     new_collect_failures: tuple[str, ...]
@@ -225,8 +267,9 @@ def _filter_result(result: SuiteResult, hidden: frozenset[str]) -> SuiteResult:
     """A fresh `SuiteResult` holding only the visible part, built field by field.
 
     Starts from an empty result on purpose: see the module docstring (2). The
-    `error` is replaced by its category, so even a code path that interpolates it
-    cannot forward the raw text; `stdout_tail` is left at its empty default.
+    `error` is replaced by a fixed marker (only its presence is read), so even a
+    code path that interpolates it cannot forward the raw text; `stdout_tail` is
+    left at its empty default.
     """
 
     def keep(ids: Sequence[str]) -> tuple[str, ...]:
@@ -243,7 +286,7 @@ def _filter_result(result: SuiteResult, hidden: frozenset[str]) -> SuiteResult:
         collected_files=tuple(p for p in result.collected_files if not _path_is_hidden(p, hidden)),
         conftests=tuple(p for p in result.conftests if not _path_is_hidden(p, hidden)),
         fingerprint=fingerprint,
-        error=unscoreable_category(result.error) if result.error else None,
+        error=RUN_DID_NOT_COMPLETE if result.error else None,
     )
 
 
@@ -310,9 +353,9 @@ def visible_feedback(
 
     unscoreable: str | None = None
     if baseline.error:
-        unscoreable = BASELINE_UNUSABLE
+        unscoreable = COMPLETION_UNKNOWN if overlay else BASELINE_UNUSABLE
     elif attempt.error and not infrastructure_error:
-        unscoreable = unscoreable_category(attempt.error)
+        unscoreable = COMPLETION_UNKNOWN if overlay else unscoreable_category(attempt.error)
 
     # Mirrors the order `agent_verdict` applies: drift is only meaningful, and only
     # asked, when both runs are usable and the sandbox did not fail.

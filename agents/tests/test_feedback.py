@@ -28,8 +28,10 @@ import pytest
 
 from repolace_agents.feedback import (
     BASELINE_UNUSABLE,
+    COMPLETION_UNKNOWN,
     ID_CHARS,
     MAX_LISTED,
+    RUN_DID_NOT_COMPLETE,
     STDOUT_CHARS,
     UNSCOREABLE_CATEGORIES,
     FeedbackInvariantError,
@@ -208,7 +210,7 @@ class TestFiltering:
         for result in seen:
             blob = repr(dataclasses.asdict(result))
             assert "test_hidden_issue" not in blob and SECRET not in blob and "claims 9" not in blob
-            assert result.error in UNSCOREABLE_CATEGORIES
+            assert result.error == RUN_DID_NOT_COMPLETE
 
     def test_the_overlay_check_is_the_only_gate_on_the_stdout_tail(self):
         """A baseline's stdout is never shown in any mode, and an attempt's is gated on overlay mode alone."""
@@ -412,7 +414,7 @@ class TestUnscoreable:
 
         fb = feedback(suite(passed=[A]), attempt)
 
-        assert fb.unscoreable == "did_not_finish"
+        assert fb.unscoreable == COMPLETION_UNKNOWN
         shown = everything_shown(fb)
         assert "claims 3" not in shown and SECRET not in shown and "3 failures" not in shown
 
@@ -428,12 +430,75 @@ class TestUnscoreable:
         """Comparing against a run that did not finish is not a comparison."""
         fb = feedback(suite(passed=[A, B]), suite(passed=[A], error="verify: suite did not finish (exit 1); report"))
 
-        assert fb.regressions == () and fb.unscoreable == "did_not_finish"
+        assert fb.regressions == () and fb.unscoreable == COMPLETION_UNKNOWN
 
-    def test_an_unusable_baseline_is_reported_as_a_category(self):
+    NEUTRAL = (
+        "The check run did not complete, so this attempt cannot be assessed. It was not necessarily "
+        "caused by your change."
+    )
+    ERRORS = {
+        "hidden hang": "verify: suite exceeded its 600s deadline and was killed",
+        "hidden OOM": "verify: container killed (exit 137); most likely the memory limit",
+        "hidden import error": "verify: pytest exited 2 (INTERRUPTED)",
+        "collection": "verify: collection failed for 2 module(s) and no test ran",
+        "no report": "verify: no test report was written (exit 4); a usage error or a startup failure",
+        "claims": f"verify: report claims 3 failures but pytest exited 0 ({hid()})",
+        "cap": "verify: 50001 test ids exceeds the 50000 cap",
+        "unknown": "something nobody anticipated",
+    }
+    CATEGORY_SENTENCES = (
+        "exceeded its time limit", "memory limit", "could not be collected", "did not finish",
+        "did not produce a usable result",
+    )
+
+    def test_in_overlay_mode_every_unscoreable_run_is_one_neutral_sentence(self):
+        """A hidden hang, a hidden OOM and a hidden import error used to produce three
+        different messages (and blamed "the visible test run" for all of them)."""
+        outputs = {
+            name: everything_shown(feedback(suite(passed=[A, B]), suite(passed=[A], error=error)))
+            for name, error in self.ERRORS.items()
+        }
+
+        assert len(set(outputs.values())) == 1
+        text = next(iter(outputs.values()))
+        assert self.NEUTRAL in text
+        assert not any(sentence in text for sentence in self.CATEGORY_SENTENCES)
+
+    def test_in_overlay_mode_an_unusable_baseline_is_the_same_neutral_sentence(self):
         fb = feedback(suite(error=f"verify: collection failed for 1 module(s) {hid()}"), suite(passed=[A]))
 
-        assert fb.unscoreable == BASELINE_UNUSABLE and not fb.clean and SECRET not in everything_shown(fb)
+        assert fb.unscoreable == COMPLETION_UNKNOWN and not fb.clean
+        assert self.NEUTRAL in render_feedback(fb) and SECRET not in everything_shown(fb)
+
+    @pytest.mark.parametrize(
+        "name, category, sentence",
+        [
+            ("hidden hang", "timeout", "exceeded its time limit"),
+            ("hidden OOM", "out_of_memory", "memory limit"),
+            ("collection", "collection_error", "could not be collected"),
+            ("hidden import error", "did_not_finish", "did not finish"),
+            ("unknown", "unusable_result", "did not produce a usable result"),
+        ],
+    )
+    def test_outside_overlay_mode_the_informative_categories_are_kept(self, name, category, sentence):
+        """A product run has no hidden tests, so telling the agent *why* the run died is plain help."""
+        fb = feedback(
+            suite(passed=[A, B]), suite(passed=[A], error=self.ERRORS[name]), hidden=frozenset(), overlay_mode=False
+        )
+
+        assert fb.unscoreable == category
+        assert sentence in render_feedback(fb) and self.NEUTRAL not in render_feedback(fb)
+
+    def test_outside_overlay_mode_an_unusable_baseline_is_named_as_such(self):
+        fb = feedback(suite(error="verify: suite did not finish (exit 1); r"), suite(passed=[A]),
+                      hidden=frozenset(), overlay_mode=False)
+
+        assert fb.unscoreable == BASELINE_UNUSABLE
+
+    def test_an_errored_scored_run_is_never_clean_whatever_hid_behind_it(self):
+        """The retry policy for an errored run is a function of that one bit: not clean, so retried."""
+        for error in self.ERRORS.values():
+            assert not feedback(suite(passed=[A, B]), suite(passed=[A, B], error=error)).clean
 
     def test_an_infrastructure_error_is_not_an_unscoreable_run(self):
         """The sandbox failed, not the patch: a flag of its own, never retried, never blamed on the agent."""
@@ -513,67 +578,88 @@ class TestClean:
         assert inspect.signature(visible_feedback).parameters["verdict_fn"].default is agent_verdict
 
 
-def _random_world(seed: int, hidden_variant: int):
-    """Two results whose *visible* part is fixed by `seed` and whose hidden part varies with `hidden_variant`.
+ERROR_TEXTS = (
+    "verify: suite exceeded its 600s deadline and was killed",
+    "verify: container killed (exit 137); most likely the memory limit",
+    "verify: collection failed for 2 module(s) and no test ran",
+    "verify: suite did not finish (exit 1); report has no session record",
+    "verify: pytest exited 2 (INTERRUPTED)",
+)
+VISIBLE_IDS = [f"tests/test_a.py::t{i}" for i in range(4)] + [f"pkg/test_b.py::T::t{i}[x]" for i in range(4)]
+HIDDEN_IDS = [hid(f"h{i}") for i in range(5)] + [f"tests/hidden/{i}/test_z.py::t" for i in range(3)]
+BUCKETS = ("passed", "failed", "skipped", "xfailed", "did_not_run")
 
-    Everything about the hidden tests that a run could carry is varied: their
-    outcome in every bucket (or absence), their collect failures, the stdout tail,
-    and the text of an unscoreable error -- the last only within one category,
-    since the category is a deliberate, visible signal.
-    """
+
+def _buckets(rng: random.Random, ids, weights):
+    out = {name: [] for name in BUCKETS}
+    for nodeid in ids:
+        pick = rng.choices([*BUCKETS, None], weights=weights)[0]
+        if pick:
+            out[pick].append(nodeid)
+    return out
+
+
+def _visible_part(seed: int):
+    """The visible half of a world. Drawn from `seed` alone, so it is the same in every hidden variant."""
     vis = random.Random(seed)
-    hid_rng = random.Random(seed * 1000 + hidden_variant)
-
-    visible_ids = [f"tests/test_a.py::t{i}" for i in range(4)] + [f"pkg/test_b.py::T::t{i}[x]" for i in range(4)]
-
-    def buckets(rng: random.Random, ids, *, weights):
-        out = {"passed": [], "failed": [], "skipped": [], "xfailed": [], "did_not_run": []}
-        for nodeid in ids:
-            pick = rng.choices(["passed", "failed", "skipped", "xfailed", "did_not_run", None], weights=weights)[0]
-            if pick:
-                out[pick].append(nodeid)
-        return out
-
-    hidden_ids = [hid(f"h{i}") for i in range(5)] + [f"tests/hidden/{i}/test_z.py::t" for i in range(3)]
-    base_vis = buckets(vis, visible_ids, weights=[6, 2, 1, 1, 0, 0])
-    att_vis = buckets(vis, visible_ids, weights=[6, 2, 1, 1, 1, 1])
-    base_hid = buckets(hid_rng, hidden_ids, weights=[2, 3, 1, 1, 1, 2])
-    att_hid = buckets(hid_rng, hidden_ids, weights=[3, 3, 1, 1, 1, 2])
-
-    vis_collect_base = vis.sample(["pkg/c1.py", "pkg/c2.py"], k=vis.randint(0, 1))
-    vis_collect_att = vis.sample(["pkg/c1.py", "pkg/c2.py", "pkg/c3.py"], k=vis.randint(0, 2))
-    hid_collect = hid_rng.sample([HIDDEN_FILE, "tests/hidden/0/test_z.py"], k=hid_rng.randint(0, 2))
-
-    # One category (did_not_finish), four different raw texts, chosen by the hidden
-    # world: the category is a deliberate, visible signal, the text must not be.
-    v = hidden_variant
-    dnf_texts = [
-        "verify: suite did not finish (exit 1); report has no session record",
-        f"verify: pytest exited 2 (INTERRUPTED) after {v} hidden failures in {hid()}",
-        f"verify: report claims {v + 3} failures but pytest exited 0",
-        f"verify: no test report was written (exit {v}); see {hid()}",
-    ]
-    error = dnf_texts[v % 4] if vis.random() < 0.25 else None
-
-    def build(visible, hidden, collect_visible, *, err=None, stdout=""):
-        merged = {k: tuple(visible[k]) + tuple(hidden[k]) for k in visible}
-        return SuiteResult(
-            **merged,
-            collect_failures=tuple(collect_visible),
-            fingerprint={"rootdir": "/repo", "ini": {}, "plugins": []},
-            stdout_tail=stdout,
-            error=err,
-        )
-
-    baseline = build(base_vis, base_hid, vis_collect_base)
-    attempt = build(
-        att_vis,
-        att_hid,
-        vis_collect_att + hid_collect,
-        err=error,
-        stdout=f"FAILED {hid('h0')} variant {hidden_variant}",
+    return (
+        _buckets(vis, VISIBLE_IDS, [6, 2, 1, 1, 0, 0]),
+        _buckets(vis, VISIBLE_IDS, [6, 2, 1, 1, 1, 1]),
+        vis.sample(["pkg/c1.py", "pkg/c2.py"], k=vis.randint(0, 1)),
+        vis.sample(["pkg/c1.py", "pkg/c2.py", "pkg/c3.py"], k=vis.randint(0, 2)),
     )
+
+
+def _build(visible, hidden, collect, *, error=None, stdout=""):
+    merged = {name: tuple(visible[name]) + tuple(hidden[name]) for name in BUCKETS}
+    return SuiteResult(
+        **merged,
+        collect_failures=tuple(collect),
+        fingerprint={"rootdir": "/repo", "ini": {}, "plugins": []},
+        stdout_tail=stdout,
+        error=error,
+    )
+
+
+def _random_world(seed: int, hidden_variant: int):
+    """Two results whose visible part is fixed by `seed` and whose hidden part varies with `hidden_variant`.
+
+    **Everything that varies with the variant comes from the HIDDEN rng, including
+    whether the run errored and what the raw error says.** An earlier version drew
+    error presence from the visible rng, so this dimension was excluded from the
+    tests by construction while being the one a hidden hang, a hidden OOM and a
+    hidden import error all act through. When the run errors, the visible results
+    may also be partly or wholly lost (a hidden import error aborts the session),
+    and that varies with the hidden world too.
+    """
+    base_vis, att_vis, collect_base, collect_att = _visible_part(seed)
+    rng = random.Random(seed * 1000 + hidden_variant)
+
+    base_hid = _buckets(rng, HIDDEN_IDS, [2, 3, 1, 1, 1, 2])
+    att_hid = _buckets(rng, HIDDEN_IDS, [3, 3, 1, 1, 1, 2])
+    hid_collect = rng.sample([HIDDEN_FILE, "tests/hidden/0/test_z.py"], k=rng.randint(0, 2))
+
+    errored = rng.random() < 0.5
+    error = None
+    if errored:
+        error = f"{rng.choice(ERROR_TEXTS)} [{hid()} variant {hidden_variant}, {rng.randint(1, 9)} hidden failures]"
+        if rng.random() < 0.5:  # the hidden failure took the visible results down with it
+            att_vis = {name: [] for name in BUCKETS}
+            collect_att = []
+
+    baseline = _build(base_vis, base_hid, collect_base)
+    attempt = _build(att_vis, att_hid, collect_att + hid_collect, error=error, stdout=f"FAILED {hid('h0')} v{hidden_variant}")
     return baseline, attempt
+
+
+def _visible_only_world(seed: int, *, errored: bool):
+    """The same world with no hidden tests at all, errored or not -- the one bit hidden content may set."""
+    base_vis, att_vis, collect_base, collect_att = _visible_part(seed)
+    empty = {name: [] for name in BUCKETS}
+    return (
+        _build(base_vis, empty, collect_base),
+        _build(att_vis, empty, collect_att, error="verify: pytest exited 2 (INTERRUPTED)" if errored else None),
+    )
 
 
 class TestNoOracle:
@@ -582,50 +668,43 @@ class TestNoOracle:
     HIDDEN_PATHS = frozenset({HIDDEN_FILE, "tests/hidden"})
 
     @pytest.mark.parametrize("seed", range(120))
-    def test_two_worlds_that_differ_only_in_the_hidden_tests_give_identical_feedback(self, seed):
-        outputs = []
-        for variant in range(4):
+    def test_hidden_content_reaches_the_feedback_only_through_whether_the_run_completed(self, seed):
+        """Six worlds per seed that differ only in the hidden tests -- their outcomes, collect
+        failures, stdout, whether the run errored and what the raw error says -- must each give
+        exactly the feedback of the same world with no hidden tests at all, errored or not."""
+        infra = seed % 7 == 0
+        for variant in range(6):
             baseline, attempt = _random_world(seed, variant)
-            fb = visible_feedback(
-                baseline, attempt, ["src/app.py"], None, self.HIDDEN_PATHS, infrastructure_error=(seed % 7 == 0)
-            )
-            outputs.append((fb, everything_shown(fb)))
+            errored = attempt.error is not None
 
-        first_fb, first_text = outputs[0]
-        for fb, text in outputs[1:]:
-            assert fb == first_fb
-            assert text == first_text
+            fb = visible_feedback(baseline, attempt, ["src/app.py"], None, self.HIDDEN_PATHS, infrastructure_error=infra)
+            canonical_baseline, canonical_attempt = _visible_only_world(seed, errored=errored)
+            expected = visible_feedback(
+                canonical_baseline, canonical_attempt, ["src/app.py"], None, frozenset(), overlay_mode=True,
+                infrastructure_error=infra,
+            )
+
+            assert fb == expected, f"variant {variant}"
+            assert everything_shown(fb) == everything_shown(expected)
+
+    def test_the_worlds_do_exercise_both_values_of_the_one_bit(self):
+        """Otherwise the test above could pass by never producing an errored run."""
+        errored = {_random_world(seed, variant)[1].error is not None for seed in range(10) for variant in range(6)}
+
+        assert errored == {True, False}
 
     @pytest.mark.parametrize("seed", range(120))
     def test_nothing_hidden_ever_appears_in_what_the_model_is_shown(self, seed):
-        baseline, attempt = _random_world(seed, seed % 4)
+        baseline, attempt = _random_world(seed, seed % 6)
 
         fb = visible_feedback(baseline, attempt, ["src/app.py"], None, self.HIDDEN_PATHS)
         shown = everything_shown(fb)
 
-        for needle in ("test_hidden_issue", "tests/hidden", "f2p_secret", "variant", "hidden failures", "claims"):
+        for needle in (
+            "test_hidden_issue", "tests/hidden", "f2p_secret", "variant", "hidden failures", "claims",
+            "time limit", "memory", "deadline", "did not finish",
+        ):
             assert needle not in shown, needle
-
-    @pytest.mark.parametrize("seed", range(60))
-    def test_the_feedback_equals_that_of_a_world_that_never_had_the_hidden_tests(self, seed):
-        """The strongest form: filtering is indistinguishable from the hidden tests not existing."""
-        baseline, attempt = _random_world(seed, 1)
-        hidden_world = visible_feedback(baseline, attempt, ["src/app.py"], None, self.HIDDEN_PATHS)
-
-        def strip(result: SuiteResult) -> SuiteResult:
-            def keep(ids):
-                return tuple(i for i in ids if "test_hidden_issue" not in i and "tests/hidden" not in i)
-
-            return dataclasses.replace(
-                result,
-                passed=keep(result.passed), failed=keep(result.failed), skipped=keep(result.skipped),
-                xfailed=keep(result.xfailed), did_not_run=keep(result.did_not_run),
-                collect_failures=keep(result.collect_failures), stdout_tail="",
-            )
-
-        clean_world = visible_feedback(strip(baseline), strip(attempt), ["src/app.py"], None, frozenset())
-
-        assert dataclasses.replace(hidden_world, stdout_tail=None) == dataclasses.replace(clean_world, stdout_tail=None)
 
     @pytest.mark.parametrize("seed", range(60))
     def test_clean_matches_the_pr_gate_on_the_filtered_results(self, seed):

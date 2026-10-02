@@ -242,6 +242,11 @@ async def verify(state: AgentState, runtime: Runtime[RunContext]) -> dict[str, A
         # as it was -- it is only ever replaced by a record.
         return {"stop_reason": StopReason.NO_CHANGE, "feedback_clean": None}
 
+    # An errored scored run (`SuiteResult.error`, not an infrastructure fault) is
+    # never clean, so the policy is a function of that one bit alone: retry while
+    # attempts remain, `MAX_ATTEMPTS` otherwise. In overlay mode `feedback` words
+    # every such run identically, so what the hidden tests can steer here is that
+    # bit and nothing finer (see the residual-risk note in `feedback.py`).
     changed = await deps.changed_files()
     feedback = visible_feedback(
         deps.baseline,
