@@ -7,16 +7,20 @@ secrets. It exists so that the one rule about untrusted input is written once.
 issue (anyone can file one), a retrieved snippet (the repository author wrote
 it), a test id (a parametrised id is arbitrary text the repository chose) and
 test output. Each is put in front of the model inside a block delimited by a
-per-task nonce, after three things have been done to it, in this order:
+per-task nonce, after four things have been done to it, in this order:
 
-1. **Invisible and control characters are removed.** Zero-width and bidi
-   characters, and the U+E0000 "tag" block, are how an instruction is written
-   so that a human reviewing the prompt does not see it.
-2. **Closing delimiters are removed**, to a fixpoint. The nonce is unguessable,
-   so an attacker cannot write the real closing tag; but removing *any* closing
-   tag of the family costs nothing and means the defence does not rest on the
-   nonce staying secret. Fixpoint, because deleting `</issue-x>` from
-   `</iss</issue-x>ue-x>` assembles a new one.
+0. **Length is pre-cut**, generously (a few times the limit), so the work below
+   is bounded by what is going to be sent and not by what an attacker supplied.
+1. **Invisible and control characters are removed or escaped** -- see
+   `sanitize_text` and `escape_invisible` for exactly which.
+2. **Closing delimiters are neutralised in ONE pass**: the leading `<` of every
+   closing tag of every family becomes `‹`. The nonce is unguessable, so an
+   attacker cannot write the real closing tag; but neutralising *any* closing tag
+   of the family means the defence does not rest on the nonce staying secret.
+   Deleting them instead needed a fixpoint (deleting `</issue-x>` from
+   `</iss</issue-x>ue-x>` assembles a new one), and a fixpoint is quadratic on
+   nested payloads: 64 KB of them froze the event loop for 5 s. Replacing the
+   `<` creates no new `<`, so nothing can reassemble and one pass is enough.
 3. **Length is cut**, last, so the bound holds for what is actually sent.
 
 None of this makes a model obey the delimiters -- that is what the system
@@ -31,14 +35,14 @@ from collections.abc import Iterable, Sequence
 from repolace_agents.contracts import SearchHit
 
 #: Tag families this package opens. A closing tag of any of them, with any
-#: suffix, is removed from untrusted text -- see the module docstring.
+#: suffix, is neutralised in untrusted text -- see the module docstring.
 _FAMILIES = ("issue", "repository", "retrieved", "baseline", "feedback", "output")
 
 #: Matches the tag name only -- the family, then whatever `-nonce` suffix follows --
 #: plus an optional `>`. It deliberately does not match "up to the next `>`": an
 #: unterminated `</issue-x` must not be able to swallow the text after it, which
-#: would let a hostile body delete the legitimate content that follows. `>?` still
-#: removes an unterminated one, so it cannot be completed by what comes next, and
+#: would let a hostile body hide the legitimate content that follows. `>?` still
+#: covers an unterminated one, so it cannot be completed by what comes next, and
 #: `\b` keeps `</issues>` and `</output2>` -- other tags -- out of it.
 _CLOSING_TAG = re.compile(r"<\s*/\s*(?:%s)\b[A-Za-z0-9_-]*\s*>?" % "|".join(_FAMILIES), re.IGNORECASE)
 
@@ -83,13 +87,16 @@ def sanitize_text(text: str) -> str:
     )
 
 
-def strip_closing_tags(text: str) -> str:
-    """`text` with every closing tag of this package's families removed, to a fixpoint."""
-    while True:
-        stripped = _CLOSING_TAG.sub("", text)
-        if stripped == text:
-            return text
-        text = stripped
+def neutralize_closing_tags(text: str) -> str:
+    """`text` with the leading `<` of every closing tag of this package's families replaced by `‹`.
+
+    **One `re.sub` pass, and it must stay one.** A replacement removes a `<` and
+    adds none, and a match contains a `<` only at its start, so no replacement can
+    create or complete a later match: there is nothing to iterate to. The earlier
+    version deleted the tags to a fixpoint, which is quadratic on nested
+    self-assembling input (`</is</issue>sue>` nested 8,000 deep took 5 s).
+    """
+    return _CLOSING_TAG.sub(lambda match: "\u2039" + match.group()[1:], text)
 
 
 def truncate(text: str, limit: int) -> tuple[str, int]:
@@ -101,9 +108,29 @@ def truncate(text: str, limit: int) -> tuple[str, int]:
     return text[:limit], len(text) - limit
 
 
+#: How much of an untrusted string is looked at before the cut. A multiple of the limit,
+#: because cleaning removes characters and the result is cut to the limit afterwards;
+#: the part never looked at is still counted in the "truncated N chars" marker.
+_PRECUT_FACTOR = 4
+_PRECUT_SLACK = 1024
+
+
+def _precut(text: str, limit: int) -> tuple[str, int]:
+    """The head of `text` that cleaning will look at, and how many characters were left unseen."""
+    keep = max(limit, 0) * _PRECUT_FACTOR + _PRECUT_SLACK
+    return text[:keep], max(len(text) - keep, 0)
+
+
 def clean_untrusted(text: str, limit: int) -> str:
-    """Sanitise, strip closing tags, then cut to `limit` with a marker saying so."""
-    text, dropped = truncate(strip_closing_tags(sanitize_text(text)), limit)
+    """Pre-cut, sanitise, neutralise closing tags, then cut to `limit` with a marker saying so.
+
+    The pre-cut is what bounds the work: sanitising and the tag pass are linear, but
+    linear in a megabyte is still a stall in the API process, and a retrieved
+    snippet or a repository overview has no size limit of its own.
+    """
+    head, unseen = _precut(text, limit)
+    text, dropped = truncate(neutralize_closing_tags(sanitize_text(head)), limit)
+    dropped += unseen
     return f"{text}\n[truncated {dropped} chars]" if dropped else text
 
 
@@ -111,11 +138,11 @@ def data_block(tag: str, nonce: str, body: str, *, limit: int) -> str:
     """`body` as untrusted data, between `<tag-nonce>` and `</tag-nonce>`.
 
     `tag` is one of this package's own constants, never untrusted text, and must
-    be in `_FAMILIES` -- a tag outside it would not have its closing form stripped
-    from `body`, which is the property the whole function exists to provide.
+    be in `_FAMILIES` -- a tag outside it would not have its closing form neutralised
+    in `body`, which is the property the whole function exists to provide.
     """
     if tag not in _FAMILIES:
-        raise ValueError(f"unknown delimiter family {tag!r}; add it to _FAMILIES so its closing tag is stripped")
+        raise ValueError(f"unknown delimiter family {tag!r}; add it to _FAMILIES so its closing tag is neutralised")
     check_nonce(nonce)
     name = f"{tag}-{nonce}" if nonce else tag
     return f"<{name}>\n{clean_untrusted(body, limit)}\n</{name}>"
@@ -123,8 +150,10 @@ def data_block(tag: str, nonce: str, body: str, *, limit: int) -> str:
 
 def inline(text: str, limit: int) -> str:
     """One line of untrusted text -- a test id, a path -- bounded and without line breaks."""
-    cleaned = strip_closing_tags(sanitize_text(text)).replace("\n", " ").replace("\t", " ")
+    head, unseen = _precut(text, limit)
+    cleaned = neutralize_closing_tags(sanitize_text(head)).replace("\n", " ").replace("\t", " ")
     cleaned, dropped = truncate(cleaned, limit)
+    dropped += unseen
     return f"{cleaned}...[{dropped} more chars]" if dropped else cleaned
 
 
@@ -157,7 +186,7 @@ def render_hits(hits: Sequence[SearchHit], *, max_hits: int, max_snippet_lines: 
         raise ValueError("max_hits and max_snippet_lines must not be negative")
     entries = []
     for hit in hits[:max_hits]:
-        snippet, hidden_lines = _clip_lines(sanitize_text(hit.snippet), max_snippet_lines)
+        snippet, hidden_lines = _clip_lines(sanitize_text(_precut(hit.snippet, MAX_SNIPPET_CHARS)[0]), max_snippet_lines)
         snippet = clean_untrusted(snippet, MAX_SNIPPET_CHARS)
         if hidden_lines:
             snippet += f"\n[{hidden_lines} more lines not shown]"
