@@ -599,3 +599,240 @@ class TestCollectionErrorsDoNotAbortTheSession:
 
     def test_a_script_is_not_pytest_and_gets_no_pytest_flag(self):
         assert self.FLAG not in script_argv()
+
+
+# --- an ADDED flag must fail too -------------------------------------------------
+#
+# Everything above asserts that a control is present, and a presence check passes
+# when something is *added*: `--privileged` or `--network=host` appended before the
+# image would leave every test green. The script path is where the agent gets a
+# shell, so these pin the whole set of flags, written out literally so that changing
+# it is a conscious edit of this file rather than a regenerated golden.
+
+PYTEST_FLAGS_BEFORE_THE_IMAGE = [
+    "--rm", "--pull=never", "--init", "--name", "--network=none", "--read-only",
+    "--tmpfs=/tmp:rw,nosuid,nodev,size=256m", "--cap-drop=ALL", "--security-opt=no-new-privileges",
+    "--user", "--memory", "--memory-swap", "--cpus", "--pids-limit", "--ulimit",
+    "--log-opt", "--log-opt", "-v", "-v", "-w", "-e", "-e", "-e", "-e", "--entrypoint",
+]
+
+SCRIPT_FLAGS_BEFORE_THE_IMAGE = [
+    "--rm", "--pull=never", "--init", "--name", "--network=none", "--read-only",
+    "--tmpfs=/tmp:rw,nosuid,nodev,size=256m", "--cap-drop=ALL", "--security-opt=no-new-privileges",
+    "--user", "--memory", "--memory-swap", "--cpus", "--pids-limit", "--ulimit",
+    "--log-opt", "--log-opt", "-v", "-v", "-w", "-e", "-e", "--entrypoint",
+]
+
+PYTEST_ENV_BEFORE_THE_IMAGE = [
+    "REPOLACE_REPORT_PATH=/results/report.jsonl", "REPOLACE_RUN_NONCE=n", "HOME=/tmp", "PYTHONPATH=/opt/repolace",
+]
+SCRIPT_ENV_BEFORE_THE_IMAGE = ["HOME=/tmp", "PYTHONPATH=/repo"]
+
+
+def pytest_argv_with_nonce(config=None, spec=None) -> tuple[str, ...]:
+    return build_run_argv(
+        config or DockerConfig(), spec or RepoSpec(key="a/b"), ENV, SOURCE, RESULTS, "c-0", nonce="n"
+    )
+
+
+def before_the_image(args: tuple[str, ...]) -> tuple[str, ...]:
+    return args[: args.index(ENV.identifier)]
+
+
+def option_tokens(args: tuple[str, ...]) -> list[str]:
+    return [t for t in before_the_image(args) if t.startswith("-")]
+
+
+def values_after(args: tuple[str, ...], flag: str) -> list[str]:
+    before = before_the_image(args)
+    return [b for a, b in zip(before, before[1:]) if a == flag]
+
+
+BUILDERS_WITH_ALLOWLISTS = {
+    "pytest": (pytest_argv_with_nonce, PYTEST_FLAGS_BEFORE_THE_IMAGE, PYTEST_ENV_BEFORE_THE_IMAGE,
+               [f"{SOURCE}:/repo", f"{RESULTS}:/results"]),
+    "script": (script_argv, SCRIPT_FLAGS_BEFORE_THE_IMAGE, SCRIPT_ENV_BEFORE_THE_IMAGE,
+               [f"{SOURCE}:/repo:ro", f"{SCRIPT}:/scratch/_repolace_script.py:ro"]),
+}
+
+
+@pytest.fixture(params=sorted(BUILDERS_WITH_ALLOWLISTS))
+def allowlisted(request):
+    return BUILDERS_WITH_ALLOWLISTS[request.param]
+
+
+class TestTheFlagsAreExactlyTheAllowlist:
+    def test_the_option_tokens_before_the_image(self, allowlisted):
+        build, flags, _env, _mounts = allowlisted
+
+        assert option_tokens(build()) == flags
+
+    def test_the_environment_the_container_is_given(self, allowlisted):
+        build, _flags, env, _mounts = allowlisted
+
+        assert values_after(build(), "-e") == env
+
+    def test_the_mounts_the_container_is_given(self, allowlisted):
+        build, _flags, _env, mounts = allowlisted
+
+        assert values_after(build(), "-v") == mounts
+
+    def test_an_added_flag_would_be_seen(self, allowlisted):
+        """The property the allowlist exists for: appending a dangerous flag changes the
+        token list, so the comparison above would fail."""
+        build, flags, _env, _mounts = allowlisted
+        args = build()
+        tampered = args[: args.index(ENV.identifier)] + ("--privileged",) + args[args.index(ENV.identifier) :]
+
+        assert option_tokens(tampered) != flags
+
+    def test_a_config_option_does_not_add_flags_it_was_not_asked_for(self, allowlisted):
+        build, flags, _env, _mounts = allowlisted
+
+        assert option_tokens(build(DockerConfig(limits=DockerLimits(memory="1g", memory_swap="1g")))) == flags
+
+    def test_the_two_optional_flags_are_the_only_ones_a_config_can_add(self, allowlisted):
+        build, flags, _env, _mounts = allowlisted
+        config = DockerConfig(runtime="runsc", limits=DockerLimits(cpuset_cpus="0-1"))
+
+        assert sorted(set(option_tokens(build(config))) - set(flags)) == ["--cpuset-cpus", "--runtime"]
+
+
+DENIED_FLAGS = (
+    "--privileged", "--cap-add", "--pid", "--ipc", "--uts", "--device", "--userns", "--cgroupns",
+    "--volumes-from", "--add-host", "--mount", "--sysctl", "--env-file", "--group-add", "--net",
+    "--security-opt-override", "--storage-opt", "--gpus", "--publish", "-p", "-P", "--link",
+)
+
+
+def denied_tokens(args: tuple[str, ...]) -> list[str]:
+    """Anything before the image that grants a capability the sandbox must never have."""
+    found = []
+    tokens = before_the_image(args)
+    for index, token in enumerate(tokens):
+        name = token.split("=", 1)[0]
+        if name in DENIED_FLAGS:
+            found.append(token)
+        if name == "--network" and token != "--network=none":
+            found.append(token)
+        if name == "--security-opt" and token != "--security-opt=no-new-privileges":
+            found.append(token)
+        if "docker.sock" in token or token in {"/", "/var/run", "/run"} or token.startswith("/var/run/"):
+            found.append(token)
+        if token in {"--network", "--security-opt"}:  # the separate-value spelling
+            found.append(token)
+        if token == "-v" and not (tokens[index + 1].startswith(str(SOURCE)) or tokens[index + 1].startswith(str(RESULTS)) or tokens[index + 1].startswith(str(SCRIPT))):
+            found.append(tokens[index + 1])
+    return found
+
+
+class TestNothingDangerousIsGranted:
+    def test_the_defaults(self, build):
+        assert denied_tokens(build()) == []
+
+    def test_with_every_optional_setting_on(self, build):
+        config = DockerConfig(runtime="runsc", limits=DockerLimits(cpuset_cpus="0-1"))
+        spec = RepoSpec(
+            key="a/b", repo_readonly=True, keep_addopts=True, disable_plugin_autoload=True,
+            extra_env={"TZ": "UTC"}, test_targets=("tests",), extra_pytest_args=("-x",),
+        )
+
+        assert denied_tokens(build(config, spec)) == []
+
+    @pytest.mark.parametrize(
+        "added",
+        [
+            ("--privileged",), ("--cap-add=ALL",), ("--cap-add", "SYS_ADMIN"), ("--network=host",),
+            ("--network", "host"), ("--net=host",), ("--pid=host",), ("--ipc=host",), ("--uts=host",),
+            ("--device", "/dev/kmsg"), ("--userns=host",), ("--security-opt", "seccomp=unconfined"),
+            ("--security-opt=seccomp=unconfined",), ("--security-opt=apparmor=unconfined",),
+            ("-v", "/var/run/docker.sock:/var/run/docker.sock"), ("-v", "/:/host"),
+            ("--mount", "type=bind,src=/,dst=/host"), ("--volumes-from", "other"),
+            ("--add-host", "x:1.1.1.1"), ("--env-file", "/etc/environment"), ("-p", "80:80"),
+        ],
+        ids=lambda added: " ".join(added),
+    )
+    def test_the_detector_catches_each_dangerous_addition(self, build, added):
+        """The denylist is only worth having if it fires. Insert each before the image
+        and require that it is found."""
+        args = build()
+        index = args.index(ENV.identifier)
+        tampered = args[:index] + added + args[index:]
+
+        assert denied_tokens(tampered) != []
+
+
+class TestAHostileSpecCannotChangeTheFlags:
+    """`test_the_network_cannot_be_turned_on_by_a_spec` above puts its hostile value in
+    `extra_pytest_args`, which lands after the image (or is unused), so it proves nothing.
+    These put the value where a spec really can place it."""
+
+    HOSTILE = "--network=host"
+
+    @staticmethod
+    def without_pair(args: tuple[str, ...], flag: str, value_prefix: str) -> tuple[str, ...]:
+        """`args` with the one `flag value` pair whose value starts with `value_prefix` removed."""
+        for index, (a, b) in enumerate(zip(args, args[1:])):
+            if a == flag and b.startswith(value_prefix):
+                return args[:index] + args[index + 2 :]
+        raise AssertionError(f"no {flag} {value_prefix!r} in {args}")
+
+    def test_a_hostile_env_value_adds_only_its_own_pair(self, build):
+        plain = build()
+        hostile = build(spec=RepoSpec(key="a/b", extra_env={"X": self.HOSTILE}))
+
+        assert self.without_pair(hostile, "-e", "X=") == plain
+        assert denied_tokens(hostile) == []
+
+    def test_a_hostile_env_name_adds_only_its_own_pair(self, build):
+        plain = build()
+        hostile = build(spec=RepoSpec(key="a/b", extra_env={"--privileged": "1"}))
+
+        assert self.without_pair(hostile, "-e", "--privileged=") == plain
+
+    def test_a_hostile_interpreter_is_only_ever_the_entrypoints_value(self, build):
+        """`--entrypoint --network=host image` hands docker an entrypoint, not a flag."""
+        plain = build()
+        hostile = build(spec=RepoSpec(key="a/b", python_executable=self.HOSTILE))
+        position = hostile.index("--entrypoint")
+
+        assert hostile[position + 1] == self.HOSTILE
+        assert hostile[:position + 1] + ("python",) + hostile[position + 2 :] == plain
+
+    def test_hostile_targets_and_pytest_args_are_after_the_image(self, build):
+        plain = build()
+        hostile = build(
+            spec=RepoSpec(key="a/b", test_targets=(self.HOSTILE, "--privileged"),
+                          extra_pytest_args=("--cap-add=ALL", "--network=host"))
+        )
+
+        assert before_the_image(hostile) == before_the_image(plain)
+        assert denied_tokens(hostile) == []
+
+    def test_a_hostile_base_image_changes_nothing_in_the_argv(self, build):
+        """The image a run starts from is the prepared environment's tag, never the spec's."""
+        assert build(spec=RepoSpec(key="a/b", base_image=self.HOSTILE)) == build()
+
+    def test_a_hostile_spec_key_changes_nothing_in_the_argv(self, build):
+        assert build(spec=RepoSpec(key="--privileged")) == build()
+
+    def test_with_every_string_field_hostile_at_once_only_the_env_pair_and_the_entrypoint_differ(
+        self, build
+    ):
+        plain = build()
+        spec = RepoSpec(
+            key=self.HOSTILE, base_image=self.HOSTILE, install=(self.HOSTILE,),
+            system_packages=(self.HOSTILE,), python_executable=self.HOSTILE,
+            test_targets=(self.HOSTILE,), extra_pytest_args=(self.HOSTILE,),
+            extra_env={"X": self.HOSTILE},
+        )
+        hostile = build(spec=spec)
+
+        stripped = self.without_pair(hostile, "-e", "X=")
+        position = stripped.index("--entrypoint")
+        stripped = stripped[: position + 1] + ("python",) + stripped[position + 2 :]
+
+        assert before_the_image(stripped) == before_the_image(plain)
+        # The interpreter value is a token like any other to `denied_tokens`, which cannot
+        # tell it is docker's entrypoint argument, so check what is left once it is replaced.
+        assert denied_tokens(stripped) == []
