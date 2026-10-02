@@ -243,8 +243,13 @@ class FakeWorkspace:
       digits and `_.-` (it deletes the tree under the name); `container_name`
       refuses the same labels before a `Verifier` ever passes one here. This fake
       does neither, so a test of label hygiene belongs on the real workspace.
-    * Re-exporting a label overwrites in place and keeps stale files (the real
-      one does the same); only `discard` clears a label.
+    * Re-exporting a label, or asking again for its results directory, is allowed
+      here: it overwrites in place and keeps stale files. `TaskWorkspace` **raises**
+      `RuntimeError("... already exists; labels are single-use")` for both, because
+      whatever the sandbox left in a reused directory (a symlink, say) is not ours to
+      write through. Only `discard` clears a label in either. A test of reuse belongs
+      on the real workspace; this fake is deliberately not stricter, so a stream's
+      existing tests that export one label twice keep working.
     * `discard` is `rmtree(ignore_errors=True)` on files this process owns, so it
       always works. The real one will meet files the sandbox's subuid created and
       the host cannot delete, so bounded disk over a 40-step loop is not
