@@ -16,6 +16,7 @@ baseline exists to remove.
 import asyncio
 import dataclasses
 import itertools
+import math
 import os
 import re
 import uuid
@@ -26,10 +27,11 @@ from typing import Protocol
 
 import structlog
 
+from repolace_shared.git import redact
 from verify.config import SCRIPT_PATH
 from verify.dockerfile import image_cache_key
 from verify.errors import SandboxError
-from verify.overlay import apply_overlay
+from verify.overlay import apply_overlay, validate_overlay_paths
 from verify.protocol import EnvironmentRef, RepoSpec, SandboxBackend, ScriptResult, SuiteResult
 from verify.spec import install_commands
 
@@ -130,6 +132,37 @@ def container_name(task_id: uuid.UUID, run: RunLabel) -> str:
     return _NAME_UNSAFE.sub("-", f"repolace-{task_id.hex[:12]}-{run}")
 
 
+def _check_timeout(timeout_seconds: float | None) -> None:
+    """`None` means the default; anything else must be a positive finite number.
+
+    Not left to the backend's `x or default`: `0` is falsy and would run for the
+    backend's 30-minute default instead of failing.
+    """
+    if timeout_seconds is None:
+        return
+    if not (math.isfinite(timeout_seconds) and timeout_seconds > 0):
+        raise ValueError(f"timeout_seconds must be a positive number, got {timeout_seconds!r}")
+
+
+def _check_targets(targets: Sequence[str]) -> tuple[str, ...]:
+    """Refuse what would be read as something other than a list of test paths.
+
+    A bare `str` is a `Sequence[str]`, so `tuple("tests/a.py")` would silently
+    become one-character arguments. A leading `-` would be read by pytest as an
+    option. The toolbox already refuses both, so reaching here with one is a bug in
+    the caller -- hence an error, not a result.
+    """
+    if isinstance(targets, str):
+        raise ValueError(f"targets must be a sequence of strings, not the single string {targets!r}")
+    checked = tuple(targets)
+    for target in checked:
+        if not isinstance(target, str) or not target:
+            raise ValueError(f"a test target must be a non-empty string, got {target!r}")
+        if target.startswith("-"):
+            raise ValueError(f"a test target may not start with '-', got {target!r}")
+    return checked
+
+
 class Verifier:
     """One task's Verify stage: build the environment once, then run per attempt.
 
@@ -144,7 +177,20 @@ class Verifier:
     -- baseline included, so the baseline and every attempt see the same tests --
     and only after the environment is built, outside the image cache key, so
     the hidden tests are never baked into a layer the cache shares. It is `None`
-    for a live issue.
+    for a live issue. Its keys are validated here, at construction, so a bad one
+    fails before any build rather than after a forty-minute one.
+
+    **The hidden tests are not hidden from the code under test.** During a scored
+    run they sit in the container's `/repo`, readable by anything the suite
+    imports; the protection is the feedback filter withholding their ids and the
+    stdout tail from the model, not the sandbox. Do not assume otherwise when
+    adding a feature that shows a scored run's output to the agent.
+
+    **The workspace's parent directory must be quota-limited in production**
+    (`task_workspace(parent_dir=...)` on a size- and inode-limited filesystem).
+    A probe can write as much as it likes into its own export, a bind mount no
+    container limit covers, and `discard` can leave behind entries the host cannot
+    delete (files owned by the sandbox's subuid).
     """
 
     def __init__(
@@ -162,6 +208,7 @@ class Verifier:
         # filter trusts for the whole task, so a caller mutating the dict it
         # passed in must not be able to change what counts as hidden.
         self.overlay: Mapping[str, bytes] = MappingProxyType(dict(overlay or {}))
+        validate_overlay_paths(self.overlay)
         self._env: EnvironmentRef | None = None
         # Only ever advanced, so a label is never reused -- not even after the run
         # that held it was discarded. `export-<label>` is written in place and the
@@ -285,7 +332,14 @@ class Verifier:
 
         `timeout_seconds=None` means the spec's own `timeout_seconds`, or the
         backend's default when that is None too. A number overrides both for this
-        call alone.
+        call alone, and must be positive and finite: `ValueError` otherwise, never
+        a silent fall back to the default.
+
+        **`targets` is validated here as well as by the tool**: a bare `str`, a
+        non-string, an empty string or anything starting with `-` is a `ValueError`
+        (a violation is a bug in the caller, not a sandbox result). An **empty
+        sequence is a whole-suite probe** -- every visible test, still without the
+        overlay -- and is allowed on purpose.
 
         **`targets` and the timeout reach the backend only through the spec:**
         `dataclasses.replace(self.spec, test_targets=tuple(targets),
@@ -296,10 +350,11 @@ class Verifier:
 
         The calling tool commits a checkpoint first, because `export_tree`
         refuses a tree that differs from HEAD -- which keeps this stage git-free.
-        `targets` are pytest node ids or paths, validated by the caller; the
-        rootdir is pinned the same as for scored runs so node ids mean the same
-        thing in both.
+        `targets` are pytest node ids or paths; the rootdir is pinned the same as
+        for scored runs so node ids mean the same thing in both.
         """
+        checked_targets = _check_targets(targets)
+        _check_timeout(timeout_seconds)
         env = self._require_environment("run a test subset")
         label = f"probe-{next(self._probe_numbers)}"
         # Targets and the timeout travel in the spec, the only channel the
@@ -307,7 +362,7 @@ class Verifier:
         # backend's default) in force.
         spec = dataclasses.replace(
             self.spec,
-            test_targets=tuple(targets),
+            test_targets=checked_targets,
             timeout_seconds=self.spec.timeout_seconds if timeout_seconds is None else timeout_seconds,
         )
         name = container_name(self.task_id, label)
@@ -319,7 +374,10 @@ class Verifier:
                 env, source_dir, results_dir, spec, container_name=name
             )
         except SandboxError as exc:
-            return SuiteResult(error=str(exc))
+            # Redacted again here, not only in the exception's constructor: this
+            # text goes to the model, and a subclass that overrides `__str__`
+            # would otherwise bypass the constructor's redaction.
+            return SuiteResult(error=redact(str(exc)))
         finally:
             await asyncio.shield(workspace.discard(label))
 
@@ -352,8 +410,17 @@ class Verifier:
           backend as `SandboxBackend.run_script`'s own `timeout_seconds` argument,
           which the Protocol already has.
 
+        **A script that times out returns no output**, however much it printed:
+        the backend's process runner discards it on the kill path. Say so to the
+        model rather than presenting an empty result as "it printed nothing".
+
+        `timeout_seconds` must be positive and finite (`ValueError` otherwise).
+
         Raises `VerifierNotReady` when no environment has been prepared.
         """
+        _check_timeout(timeout_seconds)
+        if timeout_seconds is None:
+            raise ValueError("timeout_seconds is required: the tool owns the policy")
         env = self._require_environment("run a script")
         label = f"script-{next(self._script_numbers)}"
         name = container_name(self.task_id, label)
@@ -372,7 +439,7 @@ class Verifier:
                 timeout_seconds=timeout_seconds,
             )
         except SandboxError as exc:
-            return ScriptResult(exit_code=None, error=str(exc))
+            return ScriptResult(exit_code=None, error=redact(str(exc)))
         finally:
             await asyncio.shield(workspace.discard(label))
 

@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from verify.overlay import OverlayError, apply_overlay
+from verify.overlay import OverlayError, apply_overlay, validate_overlay_paths
 
 DIR_MODE = 0o777
 
@@ -256,3 +256,56 @@ class TestAllOrNothing:
     def test_an_overlay_error_is_a_value_error(self):
         """So a caller holding instance data can treat it as bad input."""
         assert issubclass(OverlayError, ValueError)
+
+
+class TestValidateOverlayPaths:
+    """The string-level half of the checks, callable without an export: so a bad overlay
+    fails when the Verifier is built, not after a forty-minute environment build."""
+
+    def test_a_good_overlay_passes(self):
+        validate_overlay_paths({"tests/test_hidden.py": b"x", "tests/data/x.json": b"{}"})
+
+    def test_an_empty_overlay_passes(self):
+        validate_overlay_paths({})
+
+    @pytest.mark.parametrize(
+        "key",
+        ["/etc/x", "../x", "tests/../../x", ".git/config", "a/.GIT/b", "a\\b", "a\x00b", "", ".", "./a", "a//b", "a/"],
+    )
+    def test_every_string_level_refusal_applies(self, key):
+        with pytest.raises(OverlayError) as excinfo:
+            validate_overlay_paths({key: b"x"})
+
+        assert excinfo.value.path == key
+
+    def test_non_bytes_and_non_string_are_refused(self):
+        with pytest.raises(OverlayError, match="bytes"):
+            validate_overlay_paths({"t.py": "text"})  # type: ignore[dict-item]
+        with pytest.raises(OverlayError):
+            validate_overlay_paths({b"t.py": b"x"})  # type: ignore[dict-item]
+
+    def test_a_file_and_one_beneath_it_are_refused(self):
+        with pytest.raises(OverlayError, match="also an overlay file"):
+            validate_overlay_paths({"tests": b"x", "tests/t.py": b"y"})
+
+    def test_it_never_touches_the_filesystem(self, tmp_path, monkeypatch):
+        """No directory is needed, and nothing is looked up on disk."""
+        import os
+
+        def forbidden(*args, **kwargs):
+            raise AssertionError("the pure check touched the filesystem")
+
+        monkeypatch.setattr(os, "stat", forbidden)
+        monkeypatch.setattr(os, "lstat", forbidden)
+
+        validate_overlay_paths({"tests/test_hidden.py": b"x"})
+
+    def test_it_agrees_with_apply_overlay_on_what_is_refused(self, export):
+        """Whatever the pure check refuses, applying also refuses with the same error."""
+        for key in ("../x", ".git/x", "/abs", "a\\b", "a//b"):
+            with pytest.raises(OverlayError) as pure:
+                validate_overlay_paths({key: b"x"})
+            with pytest.raises(OverlayError) as applied:
+                apply_overlay(export, {key: b"x"}, dir_mode=DIR_MODE)
+
+            assert str(pure.value) == str(applied.value)

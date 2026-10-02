@@ -33,15 +33,14 @@ class OverlayError(ValueError):
         super().__init__(f"overlay path {path!r}: {reason}")
 
 
-def _check_key(source_dir: Path, key: object, data: object) -> tuple[list[str], Path]:
-    """Validate one entry; return its components and the resolved target. Raises `OverlayError`.
+def _check_key_string(key: object, data: object) -> list[str]:
+    """The checks that need no filesystem: validate one entry, return its components.
 
-    Strings first, because they are the cheap and complete checks. The keys come
-    from instance data -- trusted operator input -- but they end up as paths on
-    the host, so they are treated as if they were not. Only a *canonical*
-    relative POSIX path is accepted: `./a`, `a//b` and `a/` all normalise to
-    something else under pathlib, and accepting a spelling the code then reads
-    differently is how a check and a use come to disagree.
+    The keys come from instance data -- trusted operator input -- but they end up
+    as paths on the host, so they are treated as if they were not. Only a
+    *canonical* relative POSIX path is accepted: `./a`, `a//b` and `a/` all
+    normalise to something else under pathlib, and accepting a spelling the code
+    then reads differently is how a check and a use come to disagree.
     """
     if not isinstance(key, str):
         raise OverlayError(repr(key), "must be a string")
@@ -69,6 +68,37 @@ def _check_key(source_dir: Path, key: object, data: object) -> tuple[list[str], 
     # lands on the host filesystem.
     if any(part.lower() == ".git" for part in parts):
         raise OverlayError(key, "has a '.git' component")
+    return parts
+
+
+def _check_nesting(parts_by_key: Mapping[str, list[str]]) -> None:
+    """`a` and `a/b` together can never both be written, and neither exists on disk
+    yet for a per-key check to trip over."""
+    keys = set(parts_by_key)
+    for key, parts in parts_by_key.items():
+        for end in range(1, len(parts)):
+            if "/".join(parts[:end]) in keys:
+                raise OverlayError(key, f"{'/'.join(parts[:end])!r} is also an overlay file")
+
+
+def validate_overlay_paths(files: Mapping[str, bytes]) -> None:
+    """Refuse a malformed overlay without touching the filesystem. Raises `OverlayError`.
+
+    The string-level half of `apply_overlay`'s checks, callable the moment the
+    overlay is known. `Verifier` calls it at construction so a bad key fails
+    *before* the environment build -- which can take forty minutes -- rather than
+    after it, when the verifier would already be prepared and a retried baseline
+    would then be refused as a second one. What needs the filesystem (a symlinked
+    parent, an existing directory) can only be checked against an export, so
+    `apply_overlay` still does that.
+    """
+    _check_nesting({key: _check_key_string(key, data) for key, data in files.items()})
+
+
+def _check_key(source_dir: Path, key: object, data: object) -> tuple[list[str], Path]:
+    """Validate one entry against the export too; return its components and resolved target."""
+    parts = _check_key_string(key, data)
+    assert isinstance(key, str)
 
     # Before `resolve_within`, so a symlinked parent is reported as what it is
     # rather than as the escape it happens to cause.
@@ -164,14 +194,7 @@ def apply_overlay(source_dir: Path, files: Mapping[str, bytes], *, dir_mode: int
         raise OverlayError(str(source_dir), "the directory to overlay does not exist")
 
     checked = {key: _check_key(source_dir, key, data) for key, data in files.items()}
-
-    # `a` and `a/b` together can never both be written, and neither exists on disk
-    # yet for the per-key checks above to trip over.
-    keys = set(files)
-    for key, (parts, _target) in checked.items():
-        for end in range(1, len(parts)):
-            if "/".join(parts[:end]) in keys:
-                raise OverlayError(key, f"{'/'.join(parts[:end])!r} is also an overlay file")
+    _check_nesting({key: parts for key, (parts, _target) in checked.items()})
 
     for key, (parts, target) in checked.items():
         _make_directories(source_dir, parts, dir_mode)

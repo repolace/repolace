@@ -174,15 +174,50 @@ class TestTheOverlay:
 
         assert set(verifier.backend.runs[0]["snapshot"]) == {"pyproject.toml"}
 
-    async def test_a_refused_overlay_never_reaches_the_sandbox(self, workspace):
-        """Running the suite without the hidden tests would score the task against
-        the wrong tests -- a confidently wrong number, so it is an error."""
+    @pytest.mark.parametrize(
+        "key", ["../escape.py", "/etc/x", ".git/hooks/post-commit", "tests\\x.py", "tests//x.py", ""]
+    )
+    async def test_a_bad_overlay_key_fails_at_construction_before_any_build(self, workspace, key):
+        """A build can take forty minutes; finding out afterwards leaves the verifier
+        prepared, and a retried baseline is then refused as a second one."""
+        backend = FakeBackend()
+
+        with pytest.raises(OverlayError):
+            Verifier(backend, RepoSpec(key="a/b"), uuid.uuid4(), overlay={key: b"x"})
+
+        assert backend.prepared == [] and backend.runs == [] and workspace.exported == []
+
+    async def test_non_bytes_content_fails_at_construction_too(self):
+        with pytest.raises(OverlayError, match="bytes"):
+            Verifier(FakeBackend(), RepoSpec(key="a/b"), uuid.uuid4(), overlay={"t.py": "text"})  # type: ignore[dict-item]
+
+    async def test_a_file_and_one_beneath_it_fail_at_construction(self):
+        with pytest.raises(OverlayError, match="also an overlay file"):
+            Verifier(
+                FakeBackend(), RepoSpec(key="a/b"), uuid.uuid4(),
+                overlay={"tests": b"x", "tests/t.py": b"y"},
+            )
+
+    async def test_a_good_overlay_still_constructs(self):
+        assert Verifier(FakeBackend(), RepoSpec(key="a/b"), uuid.uuid4(), overlay=HIDDEN).hidden_paths
+
+    async def test_what_needs_the_filesystem_is_still_refused_when_the_overlay_is_applied(self, tmp_path):
+        """A symlinked parent cannot be seen until there is an export to look at, so the
+        apply-time check stays -- and a refusal there never reaches the sandbox."""
+
+        class LinkedExport(FakeWorkspace):
+            async def export_tree(self, attempt):
+                path = await super().export_tree(attempt)
+                (path / "src").mkdir(exist_ok=True)
+                (path / "tests").symlink_to(path / "src")
+                return path
+
         verifier = Verifier(
-            FakeBackend(), RepoSpec(key="a/b"), uuid.uuid4(), overlay={"../escape.py": b"x"}
+            FakeBackend(), RepoSpec(key="a/b"), uuid.uuid4(), overlay={"tests/test_hidden.py": b"x"}
         )
 
-        with pytest.raises(OverlayError, match="escape"):
-            await verifier.run(workspace, BASELINE_ATTEMPT)
+        with pytest.raises(OverlayError, match="symlink"):
+            await verifier.run(LinkedExport(tmp_path), BASELINE_ATTEMPT)
 
         assert verifier.backend.runs == []
 
@@ -617,3 +652,118 @@ class TestRunScript:
         scripts = verifier.backend.scripts
         assert len({call["container"] for call in scripts}) == 4
         assert sorted(call["script_text"] for call in scripts) == [f"print({i})" for i in range(4)]
+
+
+class TestProbeArgumentsAreChecked:
+    """A violation is a bug in the calling tool (which already refuses these), so each
+    is an error, raised before the workspace or the backend is touched."""
+
+    @pytest.mark.parametrize(
+        "targets",
+        ["tests/test_a.py", ["-x"], ["tests/a.py", "--rootdir=/"], ["-p", "evil"], [""], [123], [None]],
+        ids=["bare-str", "dash-x", "later-dash", "dash-p", "empty-string", "int", "none"],
+    )
+    async def test_a_target_that_is_not_a_test_path_is_refused(self, workspace, targets):
+        verifier = await ready(workspace)
+        exported_before = list(workspace.exported)
+
+        with pytest.raises(ValueError):
+            await verifier.run_subset(workspace, targets)
+
+        assert workspace.exported == exported_before and workspace.discarded == []
+        assert len(verifier.backend.runs) == 1
+
+    async def test_a_refused_target_does_not_use_up_a_probe_label(self, workspace):
+        verifier = await ready(workspace)
+        with pytest.raises(ValueError):
+            await verifier.run_subset(workspace, ["-x"])
+
+        await verifier.run_subset(workspace, ["tests/test_a.py"])
+
+        assert workspace.exported[-1] == "probe-1"
+
+    async def test_an_empty_sequence_is_a_whole_suite_probe_and_is_allowed(self, workspace):
+        verifier = await ready(workspace)
+
+        await verifier.run_subset(workspace, [])
+
+        assert verifier.backend.runs[-1]["spec"].test_targets == ()
+        assert set(verifier.backend.runs[-1]["snapshot"]).isdisjoint(HIDDEN)
+
+    async def test_a_tuple_and_a_list_are_both_fine(self, workspace):
+        verifier = await ready(workspace)
+
+        await verifier.run_subset(workspace, ("tests/a.py",))
+        await verifier.run_subset(workspace, ["tests/b.py"])
+
+        assert [r["spec"].test_targets for r in verifier.backend.runs[1:]] == [("tests/a.py",), ("tests/b.py",)]
+
+    @pytest.mark.parametrize("value", [0, 0.0, -1, -0.5, float("nan"), float("inf"), float("-inf")])
+    async def test_a_probe_timeout_that_is_not_positive_and_finite_is_refused(self, workspace, value):
+        """`0` is falsy: left to the backend it would have run for 30 minutes."""
+        verifier = await ready(workspace)
+
+        with pytest.raises(ValueError, match="positive"):
+            await verifier.run_subset(workspace, ["a"], timeout_seconds=value)
+
+        assert workspace.discarded == [] and len(verifier.backend.runs) == 1
+
+    @pytest.mark.parametrize("value", [0, -1, float("nan"), float("inf")])
+    async def test_a_script_timeout_that_is_not_positive_and_finite_is_refused(self, workspace, value):
+        verifier = await ready(workspace)
+
+        with pytest.raises(ValueError, match="positive"):
+            await verifier.run_script(workspace, "print(1)", timeout_seconds=value)
+
+        assert workspace.discarded == [] and verifier.backend.scripts == []
+
+    async def test_a_script_timeout_is_required_not_defaulted(self, workspace):
+        verifier = await ready(workspace)
+
+        with pytest.raises(ValueError):
+            await verifier.run_script(workspace, "print(1)", timeout_seconds=None)  # type: ignore[arg-type]
+
+    async def test_none_still_means_the_default_for_a_probe(self, workspace):
+        verifier = await ready(workspace)
+
+        await verifier.run_subset(workspace, ["a"], timeout_seconds=None)
+
+        assert verifier.backend.runs[-1]["spec"].timeout_seconds is None
+
+    async def test_a_small_positive_timeout_is_fine(self, workspace):
+        verifier = await ready(workspace)
+
+        await verifier.run_subset(workspace, ["a"], timeout_seconds=0.001)
+        await verifier.run_script(workspace, "print(1)", timeout_seconds=0.001)
+
+        assert verifier.backend.runs[-1]["spec"].timeout_seconds == 0.001
+        assert verifier.backend.scripts[-1]["timeout"] == 0.001
+
+
+class TestRedactionHappensInTheStage:
+    """The constructor of `SandboxError` redacts, but the stage is the last thing between
+    the message and the model, so it does not rely on that."""
+
+    SECRET = "ghp_" + "a" * 36
+
+    class Leaky(SandboxUnavailable):
+        def __str__(self):
+            return f"raw message with {TestRedactionHappensInTheStage.SECRET}"
+
+    async def test_a_probe_error_is_redacted_even_if_the_exception_is_not(self, workspace):
+        verifier = await ready(
+            workspace, backend=FakeBackend(results=[SuiteResult(), self.Leaky("x")])
+        )
+
+        result = await verifier.run_subset(workspace, ["a"])
+
+        assert "raw message" in result.error
+        assert self.SECRET not in result.error
+
+    async def test_a_script_error_is_redacted_even_if_the_exception_is_not(self, workspace):
+        verifier = await ready(workspace, backend=FakeBackend(scripts=[self.Leaky("x")]))
+
+        result = await verifier.run_script(workspace, "x", timeout_seconds=5.0)
+
+        assert "raw message" in result.error
+        assert self.SECRET not in result.error
