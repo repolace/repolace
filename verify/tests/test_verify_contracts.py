@@ -1,29 +1,14 @@
-"""The Wave 0 contracts that exist before anything implements them.
-
-Most of what is asserted here is that the stubs *refuse loudly*. A stub that
-returned a plausible empty value instead of raising would let a stream build on
-a seam that does nothing, and the first symptom would be a benchmark number, not
-an error. Each such test goes through `expect_stub`, so the stream that implements
-the stub turns it into a skip instead of a red test, and never has to delete a test
-in a file it does not own.
-"""
+"""The Wave 0 contracts: the shapes `ScriptResult`, run labels and `Verdict` promise."""
 
 import re
 import uuid
 from dataclasses import FrozenInstanceError, fields
-from pathlib import Path
 
 import pytest
 
-from verify.backends.docker import DockerBackend
-from verify.overlay import apply_overlay
-from verify.protocol import EnvironmentRef, RepoSpec, ScriptResult, SuiteResult
+from verify.protocol import ScriptResult
 from verify.scoring import Verdict
 from verify.stage import container_name
-
-from verify_support import expect_stub
-
-pytestmark = pytest.mark.anyio
 
 
 class TestScriptResult:
@@ -113,49 +98,6 @@ class TestContainerNameLabels:
         Docker rejects would be rewritten, letting two labels share one name."""
         with pytest.raises(ValueError, match="run label"):
             container_name(uuid.uuid4(), label)
-
-
-class TestStubsRefuseLoudly:
-    """Each skips, rather than fails, once its stub is implemented (`expect_stub`)."""
-
-    def test_apply_overlay(self, tmp_path):
-        with expect_stub("stream A"):
-            apply_overlay(tmp_path, {"tests/test_x.py": b"x"}, dir_mode=0o777)
-
-    async def test_docker_run_script(self, tmp_path: Path):
-        with expect_stub("stream A"):
-            await DockerBackend().run_script(
-                EnvironmentRef("docker", "img"),
-                tmp_path,
-                tmp_path / "s.py",
-                RepoSpec(key="a/b"),
-                container_name="c",
-                timeout_seconds=1.0,
-            )
-
-
-class TestExpectStub:
-    """The helper the stub tests use: a stub is swallowed, anything else skips."""
-
-    def test_a_stub_that_names_its_owner_is_swallowed(self):
-        with expect_stub("stream A"):
-            raise NotImplementedError("apply_overlay lands in stream A: sandbox")
-
-    def test_a_stub_that_names_someone_else_fails(self):
-        with pytest.raises(AssertionError, match="must name the stream"):
-            with expect_stub("stream A"):
-                raise NotImplementedError("lands in stream B")
-
-    def test_an_implementation_that_returns_skips(self):
-        with pytest.raises(pytest.skip.Exception):
-            with expect_stub("stream A"):
-                pass
-
-    def test_an_implementation_that_raises_something_else_skips(self):
-        """`VerifierNotReady` from an implemented `run_subset` is the real case."""
-        with pytest.raises(pytest.skip.Exception):
-            with expect_stub("stream A"):
-                raise RuntimeError("verifier not ready")
 
 
 class TestVerdict:

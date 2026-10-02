@@ -13,6 +13,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+import structlog
 
 from repolace_shared.git.repo import GitExportError
 from repolace_shared.git.workspace import (
@@ -424,3 +425,562 @@ class TestExportTree:
             assert export.exists() and results.exists()
 
         assert not root.exists()
+
+
+class TestLabelledRuns:
+    """A str label is an unscored run (a probe, a scratch script): its own directory
+    beside the attempts', so it can never collide with one."""
+
+    async def test_an_int_attempt_keeps_the_directory_names_it_always_had(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            export = await workspace.export_tree(3)
+            results = await workspace.results_dir(3)
+
+            assert export == workspace.root / "export-3"
+            assert results == workspace.root / "results-3"
+
+    async def test_a_label_gets_its_own_export_and_results_directory(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            export = await workspace.export_tree("probe-1")
+            results = await workspace.results_dir("probe-1")
+
+            assert export == workspace.root / "export-probe-1"
+            assert results == workspace.root / "results-probe-1"
+            assert (export / "src" / "app.py").exists()
+
+    async def test_a_label_directory_is_distinct_from_every_attempt_and_label(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            exports = {
+                await workspace.export_tree(0),
+                await workspace.export_tree(1),
+                await workspace.export_tree("probe-1"),
+                await workspace.export_tree("probe-2"),
+                await workspace.export_tree("script-1"),
+            }
+
+            assert len(exports) == 5
+
+    async def test_the_export_is_the_same_bytes_whatever_the_key(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            by_int = await workspace.export_tree(0)
+            by_label = await workspace.export_tree("probe-1")
+
+            for relative in ("README.md", "src/app.py"):
+                assert (by_int / relative).read_bytes() == (by_label / relative).read_bytes()
+
+    async def test_the_results_directory_is_writable_by_the_sandbox_uid(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            results = await workspace.results_dir("script-1")
+
+            assert stat.S_IMODE(results.stat().st_mode) == 0o777
+
+    async def test_a_dirty_tree_is_refused_for_a_label_as_for_an_attempt(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            (workspace.path / "src" / "app.py").write_text("edited\n")
+
+            with pytest.raises(RuntimeError, match="refusing to export"):
+                await workspace.export_tree("probe-1")
+
+    @pytest.mark.parametrize(
+        "label",
+        ["", "1", "42", "-x", ".hidden", "probe/3", "../x", "x/..", "probe 3", "probe:3", "a\x00b", "p" + "a" * 64],
+    )
+    async def test_a_label_that_could_name_anything_else_is_refused(self, origin_url, label):
+        """`discard` deletes the tree under the name, so `x/..` must never be able to
+        mean the workspace root, and `"1"` must not alias the int attempt 1."""
+        async with workspace_for(origin_url) as workspace:
+            with pytest.raises(ValueError, match="run label"):
+                await workspace.export_tree(label)
+            with pytest.raises(ValueError, match="run label"):
+                await workspace.results_dir(label)
+
+            assert sorted(p.name for p in workspace.root.iterdir()) == ["repo"]
+
+    async def test_a_label_may_be_exactly_64_characters(self, origin_url):
+        label = "p" + "a" * 63
+        async with workspace_for(origin_url) as workspace:
+            assert (await workspace.export_tree(label)).name == f"export-{label}"
+
+
+class TestDiscard:
+    async def test_it_removes_that_labels_export_and_results(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            export = await workspace.export_tree("probe-1")
+            results = await workspace.results_dir("probe-1")
+            (results / "report.jsonl").write_text("{}\n")
+
+            await workspace.discard("probe-1")
+
+            assert not export.exists() and not results.exists()
+
+    async def test_it_leaves_every_other_run_and_the_checkout_alone(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            baseline = await workspace.export_tree(0)
+            other = await workspace.export_tree("probe-2")
+            await workspace.results_dir(0)
+            await workspace.export_tree("probe-1")
+
+            await workspace.discard("probe-1")
+
+            assert baseline.is_dir() and other.is_dir()
+            assert (workspace.root / "results-0").is_dir()
+            assert (workspace.path / "src" / "app.py").exists()
+
+    async def test_a_discarded_label_is_exportable_again_from_nothing(self, origin_url):
+        """A stale file in one run's directory must not be visible to the next
+        run that gets that directory."""
+        async with workspace_for(origin_url) as workspace:
+            export = await workspace.export_tree("probe-1")
+            (export / "stale.txt").write_text("left by the first run")
+
+            await workspace.discard("probe-1")
+            again = await workspace.export_tree("probe-1")
+
+            assert not (again / "stale.txt").exists()
+
+    async def test_it_can_be_repeated_and_can_name_a_label_that_never_ran(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            await workspace.export_tree("probe-1")
+
+            await workspace.discard("probe-1")
+            await workspace.discard("probe-1")
+            await workspace.discard("script-9")
+
+    async def test_a_label_that_never_ran_is_not_logged_as_a_failure(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            with structlog.testing.capture_logs() as logs:
+                await workspace.discard("script-9")
+
+            assert not [entry for entry in logs if "failed" in entry["event"]]
+
+    async def test_it_works_on_an_int_attempt_too(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            export = await workspace.export_tree(2)
+
+            await workspace.discard(2)
+
+            assert not export.exists()
+
+    async def test_a_label_that_could_climb_out_deletes_nothing_and_does_not_raise(self, origin_url):
+        """`x/..` is `export-x/..` -- the workspace root -- if it were ever joined
+        unvalidated and `export-x` existed. It must be refused, and quietly: a
+        discard runs in a `finally`, and a raise there would mask the real error."""
+        async with workspace_for(origin_url) as workspace:
+            (workspace.root / "export-x").mkdir()
+
+            await workspace.discard("x/..")
+            await workspace.discard("../repo")
+            await workspace.discard("1")
+
+            assert workspace.path.is_dir() and (workspace.root / "export-x").is_dir()
+
+    async def test_it_does_not_raise_when_a_removal_fails(self, origin_url, monkeypatch):
+        async with workspace_for(origin_url) as workspace:
+            await workspace.export_tree("probe-1")
+
+            def explode(*args, **kwargs):
+                raise OSError("device busy")
+
+            monkeypatch.setattr(shutil, "rmtree", explode)
+
+            await workspace.discard("probe-1")  # logged, never raised
+
+            monkeypatch.undo()
+
+    async def test_it_removes_a_directory_the_sandbox_left_unwritable(self, origin_url):
+        """Same hazard as the workspace cleanup: the sandbox's own uid created a
+        directory the host cannot write into, so a plain rmtree stops at it."""
+        async with workspace_for(origin_url) as workspace:
+            results = await workspace.results_dir("probe-1")
+            locked = results / "locked"
+            (locked / "inner").mkdir(parents=True)
+            (locked / "inner" / "f").write_text("x")
+            locked.chmod(0o500)
+
+            try:
+                await workspace.discard("probe-1")
+            finally:
+                if locked.exists():
+                    locked.chmod(0o700)
+
+            assert not results.exists()
+
+    async def test_a_symlink_inside_a_run_is_not_followed(self, origin_url, tmp_path):
+        """The sandbox can write into its own results directory and could plant a
+        link; removal deletes the link, never the file it names."""
+        victim = tmp_path / "victim-dir"
+        victim.mkdir()
+        (victim / "precious.txt").write_text("keep me")
+        async with workspace_for(origin_url) as workspace:
+            results = await workspace.results_dir("probe-1")
+            (results / "link").symlink_to(victim)
+
+            await workspace.discard("probe-1")
+
+            assert not results.exists()
+            assert (victim / "precious.txt").read_text() == "keep me"
+
+    async def test_a_dangling_symlink_in_place_of_the_directory_is_removed(self, origin_url, tmp_path):
+        """`lexists`, not `exists`: the second is False for a dangling link, so the
+        link would be left behind and the label look discarded when it is not."""
+        async with workspace_for(origin_url) as workspace:
+            export_link = workspace.root / "export-probe-1"
+            results_link = workspace.root / "results-probe-1"
+            export_link.symlink_to(tmp_path / "nowhere")
+            results_link.symlink_to(tmp_path / "also-nowhere")
+
+            await workspace.discard("probe-1")
+
+            assert not os.path.lexists(export_link) and not os.path.lexists(results_link)
+
+    async def test_a_live_symlink_is_removed_and_its_target_is_untouched(self, origin_url, tmp_path):
+        victim = tmp_path / "victim-dir"
+        victim.mkdir()
+        (victim / "precious.txt").write_text("keep me")
+        victim.chmod(0o700)
+        async with workspace_for(origin_url) as workspace:
+            link = workspace.root / "export-probe-1"
+            link.symlink_to(victim)
+
+            await workspace.discard("probe-1")
+
+            assert not os.path.lexists(link)
+            assert (victim / "precious.txt").read_text() == "keep me"
+            assert stat.S_IMODE(victim.stat().st_mode) == 0o700
+
+    async def test_a_symlink_that_will_not_unlink_is_a_warning_not_an_exception(
+        self, origin_url, tmp_path, monkeypatch
+    ):
+        async with workspace_for(origin_url) as workspace:
+            (workspace.root / "export-probe-1").symlink_to(tmp_path / "nowhere")
+
+            def refuse(path):
+                raise PermissionError("not yours")
+
+            monkeypatch.setattr(os, "unlink", refuse)
+            with structlog.testing.capture_logs() as logs:
+                await workspace.discard("probe-1")
+            monkeypatch.undo()
+
+            assert [e for e in logs if e["event"] == "workspace.remove_failed"]
+
+    async def test_a_symlink_in_place_of_the_run_directory_is_never_followed(self, origin_url, tmp_path):
+        victim = tmp_path / "victim-dir"
+        victim.mkdir()
+        (victim / "precious.txt").write_text("keep me")
+        async with workspace_for(origin_url) as workspace:
+            (workspace.root / "export-probe-1").symlink_to(victim)
+
+            await workspace.discard("probe-1")
+
+            assert (victim / "precious.txt").read_text() == "keep me"
+
+
+class TestPruneRemoteRefs:
+    """A full clone carries every branch the remote has. Removing the names is one
+    layer against an agent reaching an earlier run's patch -- not the control."""
+
+    @staticmethod
+    def remote_refs(workspace) -> set[str]:
+        out = git(workspace.path, "for-each-ref", "--format=%(refname)", "refs/remotes")
+        return set(out.splitlines())
+
+    async def test_the_clone_starts_with_every_remote_branch(self, origin_url):
+        """The premise: without this the tests below would pass vacuously."""
+        async with workspace_for(origin_url) as workspace:
+            assert {
+                "refs/remotes/origin/main",
+                "refs/remotes/origin/develop",
+                "refs/remotes/origin/hazards",
+                "refs/remotes/origin/HEAD",
+            } <= self.remote_refs(workspace)
+
+    async def test_only_the_kept_branches_survive(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            removed = await workspace.prune_remote_refs(["main"])
+
+            assert self.remote_refs(workspace) == {"refs/remotes/origin/main"}
+            assert set(removed) == {"develop", "hazards"}
+
+    async def test_origin_head_goes_too_so_it_cannot_dangle(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            await workspace.prune_remote_refs(["develop"])
+
+            assert "refs/remotes/origin/HEAD" not in self.remote_refs(workspace)
+            assert self.remote_refs(workspace) == {"refs/remotes/origin/develop"}
+
+    async def test_head_is_not_reported_as_a_removed_branch(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            removed = await workspace.prune_remote_refs(["main"])
+
+            assert "HEAD" not in removed
+
+    async def test_several_branches_can_be_kept_including_nested_names(self, origin_url, source_repo, origin):
+        git(source_repo, "push", str(origin), "main:refs/heads/bench/x")
+        async with workspace_for(origin_url) as workspace:
+            await workspace.prune_remote_refs(["main", "bench/x"])
+
+            assert self.remote_refs(workspace) == {"refs/remotes/origin/main", "refs/remotes/origin/bench/x"}
+
+    async def test_a_name_is_compared_exactly_not_as_a_prefix(self, origin_url, source_repo, origin):
+        git(source_repo, "push", str(origin), "main:refs/heads/bench/x")
+        async with workspace_for(origin_url) as workspace:
+            removed = await workspace.prune_remote_refs(["main", "bench"])
+
+            assert "bench/x" in removed
+            assert self.remote_refs(workspace) == {"refs/remotes/origin/main"}
+
+    async def test_keeping_a_branch_that_does_not_exist_is_harmless(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            await workspace.prune_remote_refs(["main", "no-such-branch"])
+
+            assert self.remote_refs(workspace) == {"refs/remotes/origin/main"}
+
+    async def test_keeping_nothing_removes_every_remote_branch(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            await workspace.prune_remote_refs([])
+
+            assert self.remote_refs(workspace) == set()
+
+    async def test_a_second_call_has_nothing_left_to_remove(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            await workspace.prune_remote_refs(["main"])
+
+            assert await workspace.prune_remote_refs(["main"]) == ()
+
+    async def test_a_branch_whose_name_looks_like_an_option_is_removed_not_obeyed(self, origin_url, source_repo, origin):
+        """Full ref names go to git, so `--force` or `-x` as a branch component is
+        data. A remote chooses these names."""
+        git(source_repo, "push", str(origin), "main:refs/heads/--force")
+        async with workspace_for(origin_url) as workspace:
+            assert "refs/remotes/origin/--force" in self.remote_refs(workspace)
+
+            removed = await workspace.prune_remote_refs(["main"])
+
+            assert "--force" in removed
+            assert self.remote_refs(workspace) == {"refs/remotes/origin/main"}
+
+    async def test_the_checkout_itself_is_untouched(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            before = (await workspace.repo.head_sha(), await workspace.repo.current_branch())
+
+            await workspace.prune_remote_refs(["main"])
+
+            assert (await workspace.repo.head_sha(), await workspace.repo.current_branch()) == before
+            assert not await workspace.repo.has_changes()
+            assert (workspace.path / "src" / "app.py").exists()
+
+    async def test_the_workspace_still_works_afterwards(self, origin_url):
+        """Everything downstream resolves shas, not remote names -- the freshness
+        diff, the export, the squash and the push."""
+        async with workspace_for(origin_url) as workspace:
+            await workspace.prune_remote_refs(["main"])
+            await workspace.start_agent_branch(ISSUE_NUMBER, TASK_ID)
+            (workspace.path / "src" / "app.py").write_text("def add(a, b):\n    return a + b\n")
+            await workspace.record_attempt("attempt 1")
+
+            export = await workspace.export_tree(1)
+            await workspace.squash("fix")
+            pushed = await workspace.push()
+
+            assert (export / "src" / "app.py").read_text() == "def add(a, b):\n    return a + b\n"
+            assert pushed == agent_branch_name(ISSUE_NUMBER, TASK_ID)
+
+    async def test_it_removes_names_not_objects(self, origin_url, source_repo):
+        """The honest limit: a sha that is already known still resolves, which is why
+        this is defence in depth and not the control."""
+        develop_tip = git(source_repo, "rev-parse", "develop")
+        async with workspace_for(origin_url) as workspace:
+            await workspace.prune_remote_refs(["main"])
+
+            assert git(workspace.path, "cat-file", "-t", develop_tip) == "commit"
+            with pytest.raises(Exception):
+                git(workspace.path, "rev-parse", "--verify", "--quiet", "origin/develop")
+
+
+class TestLabelsAreSingleUse:
+    """The sandbox writes into the directory it is given, so whatever is left there is
+    not ours. Exporting over it follows a symlink the sandbox planted and writes through
+    it onto a host file; so a reused label is refused before anything is touched."""
+
+    MESSAGE = "already exists; labels are single-use"
+
+    @staticmethod
+    def victims(tmp_path: Path) -> tuple[Path, Path]:
+        victim_file = tmp_path / "victim.txt"
+        victim_file.write_text("host data")
+        victim_file.chmod(0o600)
+        victim_dir = tmp_path / "victim-dir"
+        victim_dir.mkdir()
+        victim_dir.chmod(0o700)
+        return victim_file, victim_dir
+
+    async def test_exporting_the_same_label_twice_is_refused(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            await workspace.export_tree("probe-1")
+
+            with pytest.raises(RuntimeError, match=self.MESSAGE):
+                await workspace.export_tree("probe-1")
+
+    async def test_exporting_the_same_int_attempt_twice_is_refused(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            await workspace.export_tree(1)
+
+            with pytest.raises(RuntimeError, match=self.MESSAGE):
+                await workspace.export_tree(1)
+
+    async def test_the_message_names_the_label(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            await workspace.export_tree("probe-7")
+
+            with pytest.raises(RuntimeError, match="export for probe-7 already exists"):
+                await workspace.export_tree("probe-7")
+
+    async def test_the_existing_export_is_left_exactly_as_it_was(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            export = await workspace.export_tree("probe-1")
+            (export / "left_by_the_sandbox.txt").write_text("evidence")
+            before = sorted(p.name for p in export.rglob("*"))
+
+            with pytest.raises(RuntimeError):
+                await workspace.export_tree("probe-1")
+
+            assert (export / "left_by_the_sandbox.txt").read_text() == "evidence"
+            assert sorted(p.name for p in export.rglob("*")) == before
+
+    async def test_a_symlink_the_sandbox_left_is_never_written_through(self, origin_url, tmp_path):
+        """The attack this closes: `src` and `README.md` replaced by links to host
+        paths, then the same label exported again."""
+        victim_file, victim_dir = self.victims(tmp_path)
+        async with workspace_for(origin_url) as workspace:
+            export = await workspace.export_tree("probe-1")
+            (export / "README.md").unlink()
+            (export / "README.md").symlink_to(victim_file)
+            shutil.rmtree(export / "src")
+            (export / "src").symlink_to(victim_dir)
+
+            with pytest.raises(RuntimeError, match=self.MESSAGE):
+                await workspace.export_tree("probe-1")
+
+            assert victim_file.read_text() == "host data"
+            assert stat.S_IMODE(victim_file.stat().st_mode) == 0o600
+            assert stat.S_IMODE(victim_dir.stat().st_mode) == 0o700
+            assert list(victim_dir.iterdir()) == []
+
+    async def test_a_dangling_symlink_in_place_of_the_directory_counts_as_existing(
+        self, origin_url, tmp_path
+    ):
+        async with workspace_for(origin_url) as workspace:
+            link = workspace.root / "export-probe-1"
+            link.symlink_to(tmp_path / "nowhere")
+
+            with pytest.raises(RuntimeError, match=self.MESSAGE):
+                await workspace.export_tree("probe-1")
+
+            assert link.is_symlink() and not (tmp_path / "nowhere").exists()
+
+    async def test_a_symlink_to_a_host_directory_in_place_of_the_directory_is_not_followed(
+        self, origin_url, tmp_path
+    ):
+        _file, victim_dir = self.victims(tmp_path)
+        async with workspace_for(origin_url) as workspace:
+            (workspace.root / "export-probe-1").symlink_to(victim_dir)
+
+            with pytest.raises(RuntimeError, match=self.MESSAGE):
+                await workspace.export_tree("probe-1")
+
+            assert list(victim_dir.iterdir()) == []
+            assert stat.S_IMODE(victim_dir.stat().st_mode) == 0o700
+
+    async def test_results_dir_twice_is_refused_and_leaves_the_first_alone(self, origin_url, tmp_path):
+        victim_file, _dir = self.victims(tmp_path)
+        async with workspace_for(origin_url) as workspace:
+            results = await workspace.results_dir("probe-1")
+            (results / "report.jsonl").symlink_to(victim_file)
+
+            with pytest.raises(RuntimeError, match="results for probe-1 already exists"):
+                await workspace.results_dir("probe-1")
+
+            assert (results / "report.jsonl").is_symlink()
+            assert victim_file.read_text() == "host data"
+
+    async def test_results_dir_does_not_chmod_through_a_symlink(self, origin_url, tmp_path):
+        _file, victim_dir = self.victims(tmp_path)
+        async with workspace_for(origin_url) as workspace:
+            (workspace.root / "results-probe-1").symlink_to(victim_dir)
+
+            with pytest.raises(RuntimeError):
+                await workspace.results_dir("probe-1")
+
+            assert stat.S_IMODE(victim_dir.stat().st_mode) == 0o700
+
+    async def test_a_discarded_label_may_be_used_again(self, origin_url):
+        """The intended way to reuse one: discard it first."""
+        async with workspace_for(origin_url) as workspace:
+            await workspace.export_tree("probe-1")
+            await workspace.results_dir("probe-1")
+
+            await workspace.discard("probe-1")
+
+            await workspace.export_tree("probe-1")
+            await workspace.results_dir("probe-1")
+
+    async def test_the_normal_flow_is_unaffected(self, origin_url):
+        """Each attempt is exported once; distinct labels never collide."""
+        async with workspace_for(origin_url) as workspace:
+            for attempt in (0, 1, 2, "probe-1", "probe-2", "script-1"):
+                await workspace.export_tree(attempt)
+                await workspace.results_dir(attempt)
+
+    async def test_the_reuse_check_comes_before_the_dirty_tree_check(self, origin_url):
+        """It touches nothing and needs no git, so a logic bug is reported as one."""
+        async with workspace_for(origin_url) as workspace:
+            await workspace.export_tree("probe-1")
+            (workspace.path / "src" / "app.py").write_text("edited\n")
+
+            with pytest.raises(RuntimeError, match=self.MESSAGE):
+                await workspace.export_tree("probe-1")
+
+
+class TestLeftoverTreesAreLoud:
+    async def test_a_tree_that_would_not_delete_is_a_warning_naming_the_path(
+        self, origin_url, tmp_path, monkeypatch
+    ):
+        """Every probe that leaves one is a full copy of the tree, so a leak has to be
+        visible. (The parent directory should be quota-limited in production.)"""
+        monkeypatch.setattr(shutil, "rmtree", lambda *args, **kwargs: None)
+        with structlog.testing.capture_logs() as logs:
+            async with task_workspace(
+                "acme", "sample", target_branch="main", clone_url=origin_url, parent_dir=tmp_path
+            ) as workspace:
+                root = workspace.root
+
+        leaks = [e for e in logs if e["event"] == "workspace.remove_failed"]
+        assert [e["log_level"] for e in leaks] == ["warning"]
+        assert leaks[0]["root"] == str(root)
+
+    async def test_a_dangling_symlink_left_in_place_is_seen_too(self, origin_url, tmp_path, monkeypatch):
+        with structlog.testing.capture_logs() as logs:
+            async with task_workspace(
+                "acme", "sample", target_branch="main", clone_url=origin_url, parent_dir=tmp_path
+            ) as workspace:
+                root = workspace.root
+                # Replace the workspace by a dangling link the removal cannot delete.
+                shutil.rmtree(root)
+                root.symlink_to(tmp_path / "nowhere")
+                monkeypatch.setattr(shutil, "rmtree", lambda *args, **kwargs: None)
+
+        assert [e for e in logs if e["event"] == "workspace.remove_failed"]
+        root.unlink()
+
+    async def test_a_discard_that_leaves_something_is_also_a_warning(self, origin_url, monkeypatch):
+        async with workspace_for(origin_url) as workspace:
+            results = await workspace.results_dir("probe-1")
+            monkeypatch.setattr(shutil, "rmtree", lambda *args, **kwargs: None)
+
+            with structlog.testing.capture_logs() as logs:
+                await workspace.discard("probe-1")
+
+            leaks = [e for e in logs if e["event"] == "workspace.remove_failed"]
+            assert leaks and leaks[0]["log_level"] == "warning" and leaks[0]["root"] == str(results)
+            monkeypatch.undo()

@@ -13,6 +13,11 @@ the patch's doing or might be a dependency that resolved differently, and
 baseline exists to remove.
 """
 
+import asyncio
+import dataclasses
+import itertools
+import math
+import os
 import re
 import uuid
 from collections.abc import Mapping, Sequence
@@ -22,7 +27,11 @@ from typing import Protocol
 
 import structlog
 
+from repolace_shared.git import redact
+from verify.config import SCRIPT_PATH
 from verify.dockerfile import image_cache_key
+from verify.errors import SandboxError
+from verify.overlay import apply_overlay, validate_overlay_paths
 from verify.protocol import EnvironmentRef, RepoSpec, SandboxBackend, ScriptResult, SuiteResult
 from verify.spec import install_commands
 
@@ -36,6 +45,16 @@ _NAME_UNSAFE = re.compile(r"[^a-zA-Z0-9_.-]")
 #: than imported: `verify` has no business pulling SQLAlchemy and pgvector
 #: into a package whose whole point is to be swappable for a remote executor.
 BASELINE_ATTEMPT = 0
+
+#: Directory mode for what the overlay creates. Matches the export's
+#: (`TaskWorkspace`'s `_SANDBOX_DIR_MODE`, which this package does not import):
+#: the sandbox runs as an unprivileged uid that is not ours and needs to create
+#: entries beside its own tests.
+_OVERLAY_DIR_MODE = 0o777
+
+#: A scratch script is written here, mode 0644: readable by the sandbox uid, which
+#: is not the owner.
+_SCRIPT_FILE_MODE = 0o644
 
 #: What keys a run's export directory, results directory and container name.
 #:
@@ -113,6 +132,42 @@ def container_name(task_id: uuid.UUID, run: RunLabel) -> str:
     return _NAME_UNSAFE.sub("-", f"repolace-{task_id.hex[:12]}-{run}")
 
 
+def _check_timeout(timeout_seconds: float | None) -> None:
+    """`None` means the default; anything else must be a positive finite number.
+
+    Not left to the backend's `x or default`: `0` is falsy and would run for the
+    backend's 30-minute default instead of failing.
+    """
+    if timeout_seconds is None:
+        return
+    if not (math.isfinite(timeout_seconds) and timeout_seconds > 0):
+        raise ValueError(f"timeout_seconds must be a positive number, got {timeout_seconds!r}")
+
+
+def _check_targets(targets: Sequence[str]) -> tuple[str, ...]:
+    """Refuse what would be read as something other than a list of test paths.
+
+    A bare `str` is a `Sequence[str]`, so `tuple("tests/a.py")` would silently
+    become one-character arguments. A leading `-` would be read by pytest as an
+    option, and a leading `@` as a request to read more arguments from a file. The
+    toolbox already refuses these, so reaching here with one is a bug in the caller --
+    hence an error, not a result.
+    """
+    if isinstance(targets, str):
+        raise ValueError(f"targets must be a sequence of strings, not the single string {targets!r}")
+    checked = tuple(targets)
+    for target in checked:
+        if not isinstance(target, str) or not target:
+            raise ValueError(f"a test target must be a non-empty string, got {target!r}")
+        if target.startswith("-"):
+            raise ValueError(f"a test target may not start with '-', got {target!r}")
+        if target.startswith("@"):
+            # pytest expands `@file` arguments by reading the named file for more
+            # arguments, even after `--`, so this is an option in disguise.
+            raise ValueError(f"a test target may not start with '@', got {target!r}")
+    return checked
+
+
 class Verifier:
     """One task's Verify stage: build the environment once, then run per attempt.
 
@@ -127,7 +182,20 @@ class Verifier:
     -- baseline included, so the baseline and every attempt see the same tests --
     and only after the environment is built, outside the image cache key, so
     the hidden tests are never baked into a layer the cache shares. It is `None`
-    for a live issue.
+    for a live issue. Its keys are validated here, at construction, so a bad one
+    fails before any build rather than after a forty-minute one.
+
+    **The hidden tests are not hidden from the code under test.** During a scored
+    run they sit in the container's `/repo`, readable by anything the suite
+    imports; the protection is the feedback filter withholding their ids and the
+    stdout tail from the model, not the sandbox. Do not assume otherwise when
+    adding a feature that shows a scored run's output to the agent.
+
+    **The workspace's parent directory must be quota-limited in production**
+    (`task_workspace(parent_dir=...)` on a size- and inode-limited filesystem).
+    A probe can write as much as it likes into its own export, a bind mount no
+    container limit covers, and `discard` can leave behind entries the host cannot
+    delete (files owned by the sandbox's subuid).
     """
 
     def __init__(
@@ -145,7 +213,13 @@ class Verifier:
         # filter trusts for the whole task, so a caller mutating the dict it
         # passed in must not be able to change what counts as hidden.
         self.overlay: Mapping[str, bytes] = MappingProxyType(dict(overlay or {}))
+        validate_overlay_paths(self.overlay)
         self._env: EnvironmentRef | None = None
+        # Only ever advanced, so a label is never reused -- not even after the run
+        # that held it was discarded. `export-<label>` is written in place and the
+        # plugin appends to `report.jsonl`, so a reused label would mix two runs.
+        self._probe_numbers = itertools.count(1)
+        self._script_numbers = itertools.count(1)
 
     @property
     def prepared(self) -> bool:
@@ -173,16 +247,14 @@ class Verifier:
         a confidently wrong measurement, which is the worst shape this can fail
         in.
 
-        With a non-empty overlay this raises `NotImplementedError` until stream
-        A applies it. Loudly, and before anything is exported: running the suite
-        without the hidden tests would score the task against the wrong tests,
-        and that is a confidently wrong number, not an error anyone would see.
+        **The overlay goes on after the environment is prepared, never before.**
+        The image is built from the first export (`COPY source/ /repo/`) and is
+        shared through a cache whose key does not cover the tests, so an overlay
+        applied earlier would bake the hidden tests into a layer every later build
+        reuses. Applied here it lands only in this run's export directory -- the one
+        the sandbox mounts -- and on every scored run, baseline included, so the
+        baseline and each attempt see the same tests.
         """
-        if self.overlay:
-            raise NotImplementedError(
-                "applying the hidden-test overlay lands in stream A: sandbox"
-            )
-
         source_dir = await workspace.export_tree(attempt)
         results_dir = await workspace.results_dir(attempt)
 
@@ -202,6 +274,11 @@ class Verifier:
             # every comparison downstream of it.
             raise RuntimeError("the baseline has already run for this task")
 
+        if self.overlay:
+            await asyncio.to_thread(
+                apply_overlay, source_dir, self.overlay, dir_mode=_OVERLAY_DIR_MODE
+            )
+
         return await self.backend.run_tests(
             self._env,
             source_dir,
@@ -209,6 +286,14 @@ class Verifier:
             self.spec,
             container_name=container_name(self.task_id, attempt),
         )
+
+    def _require_environment(self, what: str) -> EnvironmentRef:
+        if self._env is None:
+            raise VerifierNotReady(
+                f"cannot {what}: no environment has been prepared (the baseline has not "
+                f"run, or its build failed)"
+            )
+        return self._env
 
     async def run_subset(
         self,
@@ -252,7 +337,14 @@ class Verifier:
 
         `timeout_seconds=None` means the spec's own `timeout_seconds`, or the
         backend's default when that is None too. A number overrides both for this
-        call alone.
+        call alone, and must be positive and finite: `ValueError` otherwise, never
+        a silent fall back to the default.
+
+        **`targets` is validated here as well as by the tool**: a bare `str`, a
+        non-string, an empty string or anything starting with `-` is a `ValueError`
+        (a violation is a bug in the caller, not a sandbox result). An **empty
+        sequence is a whole-suite probe** -- every visible test, still without the
+        overlay -- and is allowed on purpose.
 
         **`targets` and the timeout reach the backend only through the spec:**
         `dataclasses.replace(self.spec, test_targets=tuple(targets),
@@ -263,11 +355,36 @@ class Verifier:
 
         The calling tool commits a checkpoint first, because `export_tree`
         refuses a tree that differs from HEAD -- which keeps this stage git-free.
-        `targets` are pytest node ids or paths, validated by the caller; the
-        rootdir is pinned the same as for scored runs so node ids mean the same
-        thing in both.
+        `targets` are pytest node ids or paths; the rootdir is pinned the same as
+        for scored runs so node ids mean the same thing in both.
         """
-        raise NotImplementedError("Verifier.run_subset lands in stream A: sandbox")
+        checked_targets = _check_targets(targets)
+        _check_timeout(timeout_seconds)
+        env = self._require_environment("run a test subset")
+        label = f"probe-{next(self._probe_numbers)}"
+        # Targets and the timeout travel in the spec, the only channel the
+        # Protocol gives them. `None` leaves the spec's own timeout (and so the
+        # backend's default) in force.
+        spec = dataclasses.replace(
+            self.spec,
+            test_targets=checked_targets,
+            timeout_seconds=self.spec.timeout_seconds if timeout_seconds is None else timeout_seconds,
+        )
+        name = container_name(self.task_id, label)
+
+        try:
+            source_dir = await workspace.export_tree(label)
+            results_dir = await workspace.results_dir(label)
+            return await self.backend.run_tests(
+                env, source_dir, results_dir, spec, container_name=name
+            )
+        except SandboxError as exc:
+            # Redacted again here, not only in the exception's constructor: this
+            # text goes to the model, and a subclass that overrides `__str__`
+            # would otherwise bypass the constructor's redaction.
+            return SuiteResult(error=redact(str(exc)))
+        finally:
+            await asyncio.shield(workspace.discard(label))
 
     async def run_script(
         self,
@@ -284,7 +401,7 @@ class Verifier:
         `SandboxError` **returned** as `ScriptResult(error=<redacted message>)`
         rather than raised, `VerifierNotReady` the only exception -- plus these:
 
-        * **Where the script is written.** `<workspace.results_dir(label)>/main.py`,
+        * **Where the script is written.** `<workspace.results_dir(label)>/_repolace_script.py`,
           mode 0644. That is outside both trees: not in the checkout, which
           `git add -A` would sweep into the next checkpoint commit and the PR, and
           not in the export, which is mounted read-only and which the host might
@@ -298,6 +415,47 @@ class Verifier:
           backend as `SandboxBackend.run_script`'s own `timeout_seconds` argument,
           which the Protocol already has.
 
+        **A script that times out returns no output**, however much it printed:
+        the backend's process runner discards it on the kill path. Say so to the
+        model rather than presenting an empty result as "it printed nothing".
+
+        `timeout_seconds` must be positive and finite (`ValueError` otherwise).
+
         Raises `VerifierNotReady` when no environment has been prepared.
         """
-        raise NotImplementedError("Verifier.run_script lands in stream A: sandbox")
+        _check_timeout(timeout_seconds)
+        if timeout_seconds is None:
+            raise ValueError("timeout_seconds is required: the tool owns the policy")
+        env = self._require_environment("run a script")
+        label = f"script-{next(self._script_numbers)}"
+        name = container_name(self.task_id, label)
+
+        try:
+            source_dir = await workspace.export_tree(label)
+            results_dir = await workspace.results_dir(label)
+            script_path = results_dir / Path(SCRIPT_PATH).name
+            await asyncio.to_thread(_write_script, script_path, code)
+            return await self.backend.run_script(
+                env,
+                source_dir,
+                script_path,
+                self.spec,
+                container_name=name,
+                timeout_seconds=timeout_seconds,
+            )
+        except SandboxError as exc:
+            return ScriptResult(exit_code=None, error=redact(str(exc)))
+        finally:
+            await asyncio.shield(workspace.discard(label))
+
+
+def _write_script(path: Path, code: str) -> None:
+    """The model's code as bytes on disk, readable by a uid that is not ours.
+
+    `errors="replace"` because the text comes from a model and a lone surrogate
+    would otherwise raise out of a tool call. The mode is set explicitly, since
+    `open`'s is masked by the umask and an unreadable script is a run that fails
+    with a permissions error the model would try to debug in its own code.
+    """
+    path.write_bytes(code.encode("utf-8", errors="replace"))
+    os.chmod(path, _SCRIPT_FILE_MODE)

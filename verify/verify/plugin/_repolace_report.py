@@ -24,6 +24,12 @@ import os
 SCHEMA_VERSION = 1
 DEFAULT_REPORT_PATH = "/results/report.jsonl"
 
+#: Per-run token the host put in the container's environment. Stamped into the
+#: `start` and `session` records so the host can tell this run's report from any
+#: other run's, whatever ends up at the report path. Absent when the plugin runs
+#: outside the sandbox, in which case no `nonce` key is written at all.
+NONCE_ENV_VAR = "REPOLACE_RUN_NONCE"
+
 #: ini options that change what runs or whether it passes, without touching a
 #: test file. `-o addopts=` clears only addopts, so these are recorded and the
 #: host requires them identical between baseline and attempt -- otherwise an
@@ -79,12 +85,20 @@ def _crash_message(report):
     return message[:_LONGREPR_LIMIT] if message else None
 
 
+def _stamp(record):
+    """Add the run nonce, when the host supplied one."""
+    nonce = os.environ.get(NONCE_ENV_VAR)
+    if nonce:
+        record["nonce"] = nonce
+    return record
+
+
 def pytest_configure(config):
     global _recorder
     try:
         path = os.environ.get("REPOLACE_REPORT_PATH", DEFAULT_REPORT_PATH)
         _recorder = _Recorder(path)
-        _recorder.write({
+        _recorder.write(_stamp({
             "kind": "start",
             "v": SCHEMA_VERSION,
             "pytest": _pytest_version(),
@@ -94,7 +108,7 @@ def pytest_configure(config):
             "inipath": str(config.inipath) if config.inipath else None,
             "ini": _watched_ini(config),
             "plugins": _plugin_names(config),
-        })
+        }))
     except Exception:
         _recorder = None
 
@@ -250,13 +264,13 @@ def pytest_sessionfinish(session, exitstatus):
     if _recorder is None:
         return
     try:
-        _recorder.write({
+        _recorder.write(_stamp({
             "kind": "session",
             "v": SCHEMA_VERSION,
             "exitstatus": int(exitstatus),
             "tests": _recorder._tests,
             "collect_failures": _recorder._collect_failures,
-        })
+        }))
     except Exception:
         pass
     finally:

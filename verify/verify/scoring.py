@@ -43,6 +43,13 @@ _FIXTURE_DIR_PARTS = frozenset({"__snapshots__", "cassettes", "testdata", "snaps
 #: pass with a diff that touches no test path.
 _CONFIG_FILES = frozenset({
     "pytest.ini", "tox.ini", "setup.cfg", "pyproject.toml", ".coveragerc",
+    # pytest also reads these, and they win over what the repository ships: with
+    # pytest 9, a `pytest.toml` takes precedence over an existing `pytest.ini` (it
+    # prints "ignoring pytest config in pytest.ini"), so adding one swaps the whole
+    # config without touching a protected file. A malformed one breaks the run
+    # outright. The fingerprint only watches twelve ini keys, so it would not see
+    # the swap either.
+    ".pytest.ini", "pytest.toml", ".pytest.toml",
     "conftest.py",
     # Imported by the interpreter before pytest exists, whenever the repo root
     # is on sys.path -- which a legacy-mode editable install arranges.
@@ -457,21 +464,25 @@ def _inadmissible(reason: str, **fields) -> Score:
     return Score(outcome=None, reason=reason, inadmissible=True, **fields)
 
 
-def score(
+def _preconditions(
     baseline: SuiteResult,
     attempt: SuiteResult,
     changed_files: list[str] | tuple[str, ...],
-    *,
-    baseline_files: tuple[str, ...] | None = None,
-    expected_fail_to_pass: tuple[str, ...] | None = None,
-    attempt_infrastructure_error: bool = False,
-) -> Score:
-    """Decide one attempt's outcome. First match wins; order is load-bearing.
+    baseline_files: tuple[str, ...] | None,
+    attempt_infrastructure_error: bool,
+) -> Score | None:
+    """The checks that decide whether the two runs can be compared at all.
 
-    `expected_fail_to_pass` is the curated per-instance ground truth -- the tests
-    the fixing PR added. When present, all of them must pass; "some baseline
-    failure went green" is not evidence about *this* issue. When absent the rule
-    degrades to that weaker claim, which is why an uncurated figure overstates.
+    The single home of "was the diff allowed, was the baseline usable, did the
+    environment drift", shared by `score()` and `agent_verdict()` so the
+    benchmark and the PR gate cannot disagree about what a run means. Returns the
+    `Score` for the first check that fails -- order is load-bearing, and each
+    reason string is one a caller or a test may match on -- or None when every
+    precondition holds and the caller may go on to compare test sets.
+
+    `agent_verdict` reads only `.reason` and `.disqualified` off the result: a
+    PR gate has no outcome and no "inadmissible" bucket, so every failure here is
+    simply `ok=False` for it.
     """
     disqualified = disqualifying_paths(changed_files, baseline, baseline_files)
     if disqualified:
@@ -501,6 +512,31 @@ def score(
     drift = fingerprint_changed(baseline, attempt)
     if drift:
         return Score(outcome=TaskOutcome.FAILED, reason=drift)
+
+    return None
+
+
+def score(
+    baseline: SuiteResult,
+    attempt: SuiteResult,
+    changed_files: list[str] | tuple[str, ...],
+    *,
+    baseline_files: tuple[str, ...] | None = None,
+    expected_fail_to_pass: tuple[str, ...] | None = None,
+    attempt_infrastructure_error: bool = False,
+) -> Score:
+    """Decide one attempt's outcome. First match wins; order is load-bearing.
+
+    `expected_fail_to_pass` is the curated per-instance ground truth -- the tests
+    the fixing PR added. When present, all of them must pass; "some baseline
+    failure went green" is not evidence about *this* issue. When absent the rule
+    degrades to that weaker claim, which is why an uncurated figure overstates.
+    """
+    failed_precondition = _preconditions(
+        baseline, attempt, changed_files, baseline_files, attempt_infrastructure_error
+    )
+    if failed_precondition is not None:
+        return failed_precondition
 
     if (
         expected_fail_to_pass is None
@@ -635,37 +671,21 @@ def agent_verdict(
     drift all mean harm was not ruled out, so all are `ok=False` with the reason
     saying which.
 
-    **Known duplication, owed by stream A.** The five precondition checks above
-    are a copy of the prefix of `score()`, written here so streams E and F can
-    test against a real verdict without waiting on A. Their reason strings are
-    identical to `score()`'s on purpose. Two copies of "was the baseline usable,
-    did the environment drift" are two chances for the PR gate and the benchmark
-    to disagree about what a run means, so A extracts the shared prefix into one
-    private helper that both call -- under the equivalence test in
-    `test_agent_verdict.py` (`TestAgreesWithScore`), which pins that `score()`
-    and this function report the same reason for every precondition, and which
-    must pass unchanged across that refactor.
+    **The five precondition checks are `_preconditions`, shared with `score()`.**
+    Two copies of "was the baseline usable, did the environment drift" would be
+    two chances for the PR gate and the benchmark to disagree about what a run
+    means, so there is one, and `TestAgreesWithScore` in `test_agent_verdict.py`
+    pins that both report the same reason for every precondition.
     """
-    disqualified = disqualifying_paths(changed_files, baseline, baseline_files)
-    if disqualified:
+    failed_precondition = _preconditions(
+        baseline, attempt, changed_files, baseline_files, attempt_infrastructure_error
+    )
+    if failed_precondition is not None:
         return Verdict(
             ok=False,
-            reason=f"diff touches test or config files: {', '.join(disqualified[:3])}",
-            disqualified=disqualified,
+            reason=failed_precondition.reason,
+            disqualified=failed_precondition.disqualified,
         )
-
-    if baseline.error:
-        return Verdict(ok=False, reason=f"baseline unscoreable: {baseline.error}")
-
-    if attempt_infrastructure_error:
-        return Verdict(ok=False, reason=f"infrastructure failure: {attempt.error}")
-
-    if attempt.error:
-        return Verdict(ok=False, reason=f"attempt unscoreable: {attempt.error}")
-
-    drift = fingerprint_changed(baseline, attempt)
-    if drift:
-        return Verdict(ok=False, reason=drift)
 
     silenced = neutralized(baseline, attempt)
     broke = regressions(baseline, attempt)

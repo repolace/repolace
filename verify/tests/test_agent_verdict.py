@@ -312,12 +312,12 @@ class TestReportsEveryKindOfHarm:
 
 
 class TestAgreesWithScore:
-    """The equivalence test stream A's refactor must keep green.
+    """`score()` and `agent_verdict()` report the same reason for every precondition.
 
-    The precondition prefix exists twice -- here and in `score()` -- until A
-    extracts it. These pin that the two report the *same reason* for every
-    precondition, which is the property a shared helper has to preserve and the
-    one a divergence between the benchmark and the PR gate would break.
+    Both call the one private `_preconditions` (`test_scoring_preconditions.py` pins
+    that they delegate to it). These pin the observable consequence: a divergence
+    between the benchmark and the PR gate over what a run means is what a second copy
+    of those checks would eventually cause.
     """
 
     DRIFT = {"rootdir": "/other", "ini": {}, "plugins": []}

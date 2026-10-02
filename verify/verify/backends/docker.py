@@ -1,6 +1,7 @@
 """The Docker implementation of `SandboxBackend`.
 
-Two phases with opposite postures, and the split is the whole security design:
+Two phases with opposite postures, and the split is the whole security design
+(a third command, `run_script`, is `run_tests`' containment with less access):
 
 * `prepare` builds an image **with network**, because installing a repository's
   dependencies needs one. Nothing under test runs here that the repository's own
@@ -17,7 +18,9 @@ written into `.git` -- which is not here at all, because `export_tree` omits it.
 """
 
 import asyncio
+import math
 import os
+import secrets
 import shutil
 import tempfile
 import time
@@ -26,12 +29,17 @@ from pathlib import Path
 
 import structlog
 
+from repolace_shared.git import redact
 from repolace_shared.process import ProcessResult, run_process
 from verify.config import (
+    ENV_NAME,
     PLUGIN_DIR,
     PLUGIN_MODULE,
     REPORT_PATH,
+    RESERVED_ENV,
     RESULTS_DIR,
+    RUN_NONCE_ENV_VAR,
+    SCRIPT_PATH,
     WORKDIR,
     DockerConfig,
 )
@@ -56,6 +64,38 @@ PROBE_TIMEOUT_SECONDS = 20.0
 #: How long the cleanup `docker rm -f` gets. Short on purpose: it runs on a path
 #: that is already going wrong, and blocking there would compound the problem.
 REMOVE_TIMEOUT_SECONDS = 30.0
+
+#: Pause before the single retry of a failed `docker rm -f`. A daemon that just
+#: failed one call is rarely ready for the identical one a millisecond later.
+REMOVE_RETRY_DELAY_SECONDS = 1.0
+
+#: `docker run`'s own exit code for "the CLI or daemon failed", as opposed to the
+#: contained command's exit status (126 and 127 are the contained command).
+_DOCKER_RUN_FAILED = 125
+
+
+def _looks_like_docker_failure(stderr: str) -> bool:
+    """Whether stderr reads like the docker CLI's own error rather than a script's."""
+    return stderr.lstrip().startswith("docker:") or "Error response from daemon" in stderr
+
+
+def _hide_host_paths(text: str, source_dir: Path, script_path: Path) -> str:
+    """Replace the host paths of one run with fixed placeholders, longest first.
+
+    Longest first so the workspace root does not eat the front of the longer
+    paths beneath it. A path of one character or less (`/`) is skipped: replacing
+    it would mangle everything.
+    """
+    replacements = {
+        str(script_path): "<script>",
+        str(script_path.parent): "<scratch>",
+        str(source_dir): "<export>",
+        str(source_dir.parent): "<workspace>",
+    }
+    for host_path in sorted(replacements, key=len, reverse=True):
+        if len(host_path) > 1:
+            text = text.replace(host_path, replacements[host_path])
+    return text
 
 #: Environment handed to the `docker` CLI. An allowlist for the same reason
 #: `sanitized_git_env` is one: this process holds the GitHub App private key,
@@ -102,25 +142,30 @@ def sanitized_docker_env() -> dict[str, str]:
     return {name: value for name, value in os.environ.items() if name in _ENV_ALLOWLIST}
 
 
-def build_run_argv(
-    config: DockerConfig,
-    spec: RepoSpec,
-    env: EnvironmentRef,
-    source_dir: Path,
-    results_dir: Path,
-    container_name: str,
-) -> tuple[str, ...]:
-    """Every flag the sandbox runs with, as one pure function.
+def _containment_argv(
+    config: DockerConfig, *, container_name: str, mounts: Sequence[str]
+) -> list[str]:
+    """Every flag that contains the sandbox, shared by every command that runs in it.
 
-    Pure, and tested flag by flag, because these are the containment controls
-    rather than decoration. Each of them fails *open*: a misspelled
-    `--secutiry-opt` is rejected by the CLI, but a dropped `--network=none` is
-    simply a container with network, and nothing about the run looks different.
+    One list for the pytest run and the scratch script alike, and that is the
+    point: the two paths used to be able to disagree only by someone editing
+    one and forgetting the other, and every flag here fails *open*. A script
+    path that quietly lacked `--network=none` would be a container with network
+    and an agent holding a shell in it. So a flag is added here or not at all,
+    and `test_docker_argv.py` runs each containment assertion over both builders.
+
+    Ends with the `-v` mounts, because they are the one containment decision
+    that differs per command -- what is writable, and what comes back out.
     """
     limits = config.limits
     argv: list[str] = [
         "run",
         "--rm",
+        # The image was built (or found) by `prepare` and is the only thing a run
+        # may start. Without this, a tag that is missing locally -- a pruned image,
+        # a typo in a spec -- would be silently pulled from a registry at run time,
+        # which is network use on the one path that must have none.
+        "--pull=never",
         # tini as pid 1. A suite that spawns background processes otherwise
         # leaves zombies that keep the pid cgroup populated until the cap trips.
         "--init",
@@ -170,18 +215,96 @@ def build_run_argv(
         # what makes stronger isolation a config change rather than a new backend.
         argv += ["--runtime", config.runtime]
 
+    for mount in mounts:
+        argv += ["-v", mount]
+    return argv
+
+
+def _extra_env_argv(spec: RepoSpec) -> list[str]:
+    """A spec's own environment variables. Refuses any name the sandbox reserves.
+
+    Raised rather than reordered so they come last: an `extra_env` that named
+    `PYTHONPATH` or `REPOLACE_RUN_NONCE` is a mistake in operator data, and a run
+    that quietly ignored (or quietly honoured) it would be a measurement nobody
+    chose. `spec.py` refuses the same names when the spec file is loaded, so this is
+    the backstop for a `RepoSpec` built in code.
+    """
+    malformed = sorted(name for name in spec.extra_env if not ENV_NAME.fullmatch(name))
+    if malformed:
+        # Before the reserved check, which compares whole keys: `HOME=/evil` is not
+        # `HOME`, yet docker would split it into the name HOME and win over ours.
+        raise ValueError(
+            f"spec {spec.key!r}: extra_env names must match [A-Za-z_][A-Za-z0-9_]*; "
+            f"got {', '.join(repr(name) for name in malformed)}"
+        )
+    reserved = sorted(set(spec.extra_env) & RESERVED_ENV)
+    if reserved:
+        raise ValueError(
+            f"spec {spec.key!r}: extra_env may not set {', '.join(reserved)}; "
+            f"the sandbox reserves them"
+        )
+    argv: list[str] = []
+    for name, value in sorted(spec.extra_env.items()):
+        argv += ["-e", f"{name}={value}"]
+    return argv
+
+
+def _timeout(requested: float | None, default: float) -> float:
+    """`None` means the default; anything else must be a positive finite number.
+
+    Not `requested or default`: `0` is falsy, so a spec asking for a zero-second
+    timeout would silently get the 30-minute default instead of an error.
+    """
+    if requested is None:
+        return default
+    if not (math.isfinite(requested) and requested > 0):
+        raise ValueError(f"timeout must be a positive number of seconds, got {requested!r}")
+    return requested
+
+
+def build_run_argv(
+    config: DockerConfig,
+    spec: RepoSpec,
+    env: EnvironmentRef,
+    source_dir: Path,
+    results_dir: Path,
+    container_name: str,
+    *,
+    forward_nonce: bool = False,
+) -> tuple[str, ...]:
+    """Every flag the pytest run uses, as one pure function.
+
+    Pure, and tested flag by flag, because these are the containment controls
+    rather than decoration. Each of them fails *open*: a misspelled
+    `--secutiry-opt` is rejected by the CLI, but a dropped `--network=none` is
+    simply a container with network, and nothing about the run looks different.
+
+    `forward_nonce` adds `-e REPOLACE_RUN_NONCE` -- the *name only*. The per-run token
+    that report is stamped with, so it can be told from any other run's, is the
+    plugin's to read from its environment, and `docker run -e NAME` forwards the value
+    from the docker CLI's own environment, which `run_tests` sets. The value is kept out
+    of this argv because argv is world-readable (`ps`) and is what gets logged when a run
+    times out -- the same reason the git credential never travels in argv. Optional only
+    so the argv can be built and asserted without it; `DockerBackend.run_tests` always
+    sets it.
+    """
     mount_suffix = ":ro" if spec.repo_readonly else ""
+    argv = _containment_argv(
+        config,
+        container_name=container_name,
+        mounts=(
+            f"{source_dir}:{WORKDIR}{mount_suffix}",
+            # Outside the source tree, so a suite that scribbles over its own
+            # working directory cannot destroy the report that says what it did.
+            f"{results_dir}:{RESULTS_DIR}",
+        ),
+    )
     argv += [
-        "-v",
-        f"{source_dir}:{WORKDIR}{mount_suffix}",
-        # Outside the source tree, so a suite that scribbles over its own
-        # working directory cannot destroy the report that says what it did.
-        "-v",
-        f"{results_dir}:{RESULTS_DIR}",
         "-w",
         WORKDIR,
         "-e",
         f"REPOLACE_REPORT_PATH={REPORT_PATH}",
+        *(["-e", RUN_NONCE_ENV_VAR] if forward_nonce else []),
         # Under --read-only, anything writing a dotfile into a nonexistent HOME
         # fails in a way that reads as a test failure rather than as a
         # configuration problem.
@@ -194,13 +317,20 @@ def build_run_argv(
     if spec.disable_plugin_autoload:
         argv += ["-e", "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1"]
 
-    for name, value in sorted(spec.extra_env.items()):
-        argv += ["-e", f"{name}={value}"]
+    argv += _extra_env_argv(spec)
 
     # Explicit, so a base image carrying its own ENTRYPOINT cannot turn the
     # pytest invocation into arguments for something else.
     argv += ["--entrypoint", spec.python_executable, env.identifier, "-m", "pytest"]
     argv += ["-p", PLUGIN_MODULE]
+    # Always pinned, not only when targets are overridden. With no ini file
+    # pytest derives rootdir from its arguments, so a run given `tests/test_a.py`
+    # can root at `/repo/tests` and every node id lose its `tests/` prefix -- a
+    # probe's ids would then match nothing the baseline recorded.
+    # One rootdir means one node-id space for the baseline, every attempt and
+    # every probe. The plugin fingerprints rootdir, so this is also what keeps
+    # that comparison from drifting between them.
+    argv += [f"--rootdir={WORKDIR}"]
     # Into the tmpfs, which dies with the container. Left at its default the
     # cache lands in /repo -- the bind-mounted export -- created by uid 65534
     # with mode 0755. The host cannot then delete inside a directory it does not
@@ -217,8 +347,69 @@ def build_run_argv(
         # caught rather than silently changing what "passing" means.
         argv += ["-o", "addopts="]
 
+    # Unconditional, and not a spec field: without it pytest stops the whole session
+    # at the first collection error (exit 2, nothing run, `passed` empty), so a
+    # module the patch broke -- or a hidden test module that cannot be imported --
+    # would hide every visible result, make two attempts that differ only in whether
+    # a hidden file imports give the agent different feedback, and leave
+    # `new_collect_failures` and the baseline's own broken modules dead code.
+    # With it the run exits 1, `collect_failures` is populated and the rest runs.
+    # More lenient than SWE-bench, where any collection error kills the run.
+    argv += ["--continue-on-collection-errors"]
+
     argv += list(spec.test_targets)
     argv += list(spec.extra_pytest_args)
+    return tuple(argv)
+
+
+def build_script_argv(
+    config: DockerConfig,
+    spec: RepoSpec,
+    env: EnvironmentRef,
+    source_dir: Path,
+    script_path: Path,
+    container_name: str,
+) -> tuple[str, ...]:
+    """Every flag a scratch script runs with. The same containment, less of everything else.
+
+    What differs from the pytest run is deliberate, and each difference makes
+    the script *less* able to do things, never more:
+
+    * **The source is `:ro` unconditionally.** Not through `spec.repo_readonly`:
+      a spec is per-repository data, and a protection that data can switch off
+      is only as trustworthy as the data. The pytest path honours that field
+      because some suites must write beside their code; a scratch script has no
+      such excuse, and a writable mount here would let one script plant a file
+      for the next probe to import.
+    * **No `/results` mount.** Nothing is parsed and nothing is written back to
+      the host. (Output still comes back, as bytes on the pipe, which the host
+      reads as data.)
+    * **The script is mounted `:ro` outside the tree**, so it never lands in the
+      checkout `git add -A` sweeps, nor in the export.
+    * `PYTHONPATH` is the source root, because a script's `sys.path[0]` is its
+      own directory (`/scratch`), so a flat-layout package would otherwise not
+      import. The pytest path needs no such variable: `python -m pytest` puts the
+      working directory, `/repo`, on `sys.path` itself.
+    * The script's file name is one no repository has. `sys.path[0]` comes ahead
+      of `PYTHONPATH`, so a script called `main.py` would shadow a repository's
+      own `main.py`.
+    """
+    argv = _containment_argv(
+        config,
+        container_name=container_name,
+        mounts=(f"{source_dir}:{WORKDIR}:ro", f"{script_path}:{SCRIPT_PATH}:ro"),
+    )
+    argv += [
+        "-w",
+        WORKDIR,
+        "-e",
+        "HOME=/tmp",
+        "-e",
+        f"PYTHONPATH={WORKDIR}",
+    ]
+    argv += _extra_env_argv(spec)
+    # Explicit entrypoint, for the same reason as the pytest path.
+    argv += ["--entrypoint", spec.python_executable, env.identifier, SCRIPT_PATH]
     return tuple(argv)
 
 
@@ -349,15 +540,35 @@ class DockerBackend:
         survives, holding the memory cgroup and the bind mount of a directory
         the workspace is about to delete. `--rm` does not help: it fires when the
         container exits, which is exactly what is not happening here.
+
+        "No such container" is the ordinary miss (it exited and `--rm` won the
+        race) and is logged quietly. Any *other* failure means a runaway script may
+        be outliving its timeout, which is the very thing this exists to prevent, so
+        it is a warning, and the removal is tried once more before giving up.
         """
-        try:
-            process = await self._run("rm", "--force", container_name, timeout=REMOVE_TIMEOUT_SECONDS)
-        except SandboxUnavailable:
-            return  # the daemon going away has already been reported elsewhere
-        if process.returncode != 0:
-            # Ordinary when the container exited normally and `--rm` won the
-            # race. Logged at debug so a real leak is still findable.
-            log.debug("verify.docker.remove.miss", container=container_name)
+        for attempt in (1, 2):
+            try:
+                process = await self._run(
+                    "rm", "--force", container_name, timeout=REMOVE_TIMEOUT_SECONDS
+                )
+            except SandboxUnavailable:
+                return  # the daemon going away has already been reported elsewhere
+            if process.returncode == 0 and not process.timed_out:
+                return
+            detail = self._text(process)
+            if "No such container" in detail:
+                log.debug("verify.docker.remove.miss", container=container_name)
+                return
+            log.warning(
+                "verify.docker.remove.failed",
+                container=container_name,
+                attempt=attempt,
+                exit_code=process.returncode,
+                timed_out=process.timed_out,
+                detail=redact(detail.strip())[-300:],
+            )
+            if attempt == 1:
+                await asyncio.sleep(REMOVE_RETRY_DELAY_SECONDS)
 
     async def run_tests(
         self,
@@ -368,15 +579,32 @@ class DockerBackend:
         *,
         container_name: str,
     ) -> SuiteResult:
-        """Run the suite with no network. Source files in, pass/fail data out."""
-        argv = build_run_argv(self.config, spec, env, source_dir, results_dir, container_name)
-        timeout = spec.timeout_seconds or self.config.run_timeout_seconds
+        """Run the suite with no network. Source files in, pass/fail data out.
+
+        A fresh nonce per run goes into the container and is required back in the
+        report, so a report that did not come from *this* container -- one a probe
+        planted by pointing the report path at another run's -- is refused rather
+        than parsed.
+
+        The nonce reaches the container through the docker CLI's *environment*, not its
+        argv: the argv carries only `-e REPOLACE_RUN_NONCE`, and the CLI forwards the
+        value. Argv is readable by every user on the host and is logged on a timeout; a
+        process environment is not. (It is still in the container's own config, as it
+        has to be -- the plugin reads it there -- so this narrows who on the host sees
+        it, it does not hide it from `docker inspect`.)
+        """
+        nonce = secrets.token_hex(16)
+        argv = build_run_argv(
+            self.config, spec, env, source_dir, results_dir, container_name, forward_nonce=True
+        )
+        cli_env = {**sanitized_docker_env(), RUN_NONCE_ENV_VAR: nonce}
+        timeout = _timeout(spec.timeout_seconds, self.config.run_timeout_seconds)
         log.info("verify.docker.run.start", container=container_name, image=env.identifier)
 
         started = time.perf_counter()
         clean = False
         try:
-            process = await self._run(*argv, timeout=timeout)
+            process = await self._run(*argv, timeout=timeout, env=cli_env)
             clean = not process.timed_out
         finally:
             if not clean:
@@ -386,7 +614,15 @@ class DockerBackend:
                 await asyncio.shield(self._force_remove(container_name))
         elapsed = time.perf_counter() - started
 
-        result = parse_report(Path(results_dir) / Path(REPORT_PATH).name, process, elapsed)
+        # Off the event loop: the report is bounded at 64 MB, and parsing one that
+        # size takes seconds that would otherwise stall every other task.
+        result = await asyncio.to_thread(
+            parse_report,
+            Path(results_dir) / Path(REPORT_PATH).name,
+            process,
+            elapsed,
+            nonce=nonce,
+        )
         log.info(
             "verify.docker.run.done",
             container=container_name,
@@ -408,5 +644,95 @@ class DockerBackend:
         container_name: str,
         timeout_seconds: float,
     ) -> ScriptResult:
-        """Run one scratch script with no network. Contract: `SandboxBackend.run_script`."""
-        raise NotImplementedError("DockerBackend.run_script lands in stream A: sandbox")
+        """Run one scratch script with no network. Contract: `SandboxBackend.run_script`.
+
+        Shares the timeout and cleanup discipline of `run_tests` -- the container
+        is removed by name when the deadline fires or the task is cancelled,
+        because killing the `docker run` client leaves it alive -- and nothing
+        else: no report, nothing parsed, nothing read back from the container but
+        its output bytes.
+
+        **`error` is for the runtime failing**, which is not the same as the script
+        failing. A non-zero exit is the agent's to read. The `docker` binary being
+        unusable (`SandboxUnavailable`) means the script never ran: no exit code, no
+        output. Exit 125 is the CLI's own code for "`docker run` itself failed", but
+        a script can exit 125 too, so it is only called a runtime failure when
+        stderr also looks like docker's own message (`docker: ...`, or `Error
+        response from daemon`). Even then the real exit code, stdout and stderr are
+        kept and the error text says it may be a script exit, because a forged
+        runtime failure would otherwise hide the script's real output and tell the
+        agent to stop using its sandbox.
+
+        **A script that times out returns no output**, however much it printed:
+        `run_process` discards it on the kill path. Known limit -- `run_process` is
+        shared and unchanged here.
+
+        Host paths (the export, the script, the workspace root) are replaced by
+        placeholders in anything taken from docker's own message: the result reaches
+        the model, and the task root is under a random directory it has no other
+        way to learn.
+
+        `timeout_seconds` must be positive; `ValueError` otherwise, never a
+        fallback to the 30-minute default.
+        """
+        timeout = _timeout(timeout_seconds, self.config.run_timeout_seconds)
+        argv = build_script_argv(self.config, spec, env, source_dir, script_path, container_name)
+        log.info("verify.docker.script.start", container=container_name, image=env.identifier)
+
+        started = time.perf_counter()
+        clean = False
+        try:
+            process = await self._run(*argv, timeout=timeout)
+            clean = not process.timed_out
+        except SandboxUnavailable as exc:
+            return ScriptResult(
+                exit_code=None, error=str(exc), duration_seconds=time.perf_counter() - started
+            )
+        finally:
+            if not clean:
+                await asyncio.shield(self._force_remove(container_name))
+        elapsed = time.perf_counter() - started
+
+        stdout = process.stdout.decode("utf-8", errors="replace")
+        stderr = process.stderr.decode("utf-8", errors="replace")
+        if process.timed_out:
+            # The kill's return code and the (discarded) output say nothing about
+            # the script, so none of it is passed on.
+            result = ScriptResult(exit_code=None, timed_out=True, duration_seconds=elapsed)
+        elif process.returncode == _DOCKER_RUN_FAILED and _looks_like_docker_failure(stderr):
+            def hide(text: str) -> str:
+                # Redacted too: in this branch the text is docker's own, and a
+                # registry or daemon message is the sort of thing that quotes a
+                # credential back.
+                return _hide_host_paths(redact(text), source_dir, script_path)
+
+            result = ScriptResult(
+                exit_code=process.returncode,
+                stdout=hide(stdout),
+                stderr=hide(stderr),
+                truncated=process.truncated,
+                duration_seconds=elapsed,
+                error=(
+                    f"{SandboxUnavailable(hide(stderr + chr(10) + stdout))} "
+                    f"(exit {_DOCKER_RUN_FAILED} is also what a script that exits "
+                    f"{_DOCKER_RUN_FAILED} produces; this may be a script exit, not a "
+                    f"runtime failure)"
+                ),
+            )
+        else:
+            result = ScriptResult(
+                exit_code=process.returncode,
+                stdout=stdout,
+                stderr=stderr,
+                truncated=process.truncated,
+                duration_seconds=elapsed,
+            )
+        log.info(
+            "verify.docker.script.done",
+            container=container_name,
+            exit_code=result.exit_code,
+            timed_out=result.timed_out,
+            error=result.error,
+            duration=result.duration_seconds,
+        )
+        return result
