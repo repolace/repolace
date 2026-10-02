@@ -492,34 +492,51 @@ class TestScriptNameIsOneNoRepositoryHas:
 
 
 class TestTheRunNonce:
-    def test_it_reaches_the_container_through_the_environment(self):
-        args = build_run_argv(
-            DockerConfig(), RepoSpec(key="a/b"), ENV, SOURCE, RESULTS, "c-0", nonce="abc123"
+    """The container is told to *forward* the nonce (`-e REPOLACE_RUN_NONCE`, no value); the
+    value rides in the docker CLI's environment, never its argv, which `ps` shows to every
+    user and which is logged when a run times out."""
+
+    @staticmethod
+    def forwarding(config=None, spec=None) -> tuple[str, ...]:
+        return build_run_argv(
+            config or DockerConfig(), spec or RepoSpec(key="a/b"), ENV, SOURCE, RESULTS, "c-0",
+            forward_nonce=True,
         )
 
-        assert has_pair(args, "-e", "REPOLACE_RUN_NONCE=abc123")
+    def test_the_name_is_forwarded(self):
+        assert has_pair(self.forwarding(), "-e", "REPOLACE_RUN_NONCE")
+
+    def test_no_value_is_in_the_argv(self):
+        """An `-e NAME=VALUE` spelling would carry it; the bare name is the point."""
+        args = self.forwarding()
+
+        assert not any(a.startswith("REPOLACE_RUN_NONCE=") for a in args)
+        assert "REPOLACE_RUN_NONCE" in args
+        assert args[args.index("REPOLACE_RUN_NONCE") - 1] == "-e"
 
     def test_it_comes_before_the_image(self):
-        args = build_run_argv(
-            DockerConfig(), RepoSpec(key="a/b"), ENV, SOURCE, RESULTS, "c-0", nonce="abc123"
-        )
+        args = self.forwarding()
 
-        assert args.index("REPOLACE_RUN_NONCE=abc123") < args.index(ENV.identifier)
+        assert args.index("REPOLACE_RUN_NONCE") < args.index(ENV.identifier)
 
-    def test_it_is_absent_when_none_is_given(self):
+    def test_it_is_absent_unless_asked_for(self):
         assert not any("REPOLACE_RUN_NONCE" in a for a in argv())
 
     def test_a_script_has_no_report_and_so_no_nonce(self):
         assert not any("REPOLACE_RUN_NONCE" in a for a in script_argv())
 
     def test_the_argv_is_otherwise_unchanged_by_it(self):
-        plain = argv()
-        stamped = build_run_argv(
-            DockerConfig(), RepoSpec(key="a/b"), ENV, SOURCE, RESULTS, "c-0", nonce="abc123"
-        )
-        position = stamped.index("REPOLACE_RUN_NONCE=abc123")
+        stamped = self.forwarding()
+        position = stamped.index("REPOLACE_RUN_NONCE")
 
-        assert stamped[: position - 1] + stamped[position + 1 :] == plain
+        assert stamped[: position - 1] + stamped[position + 1 :] == argv()
+
+    def test_the_old_keyword_is_gone(self):
+        """A caller still passing the value would put it back in argv; make that an error."""
+        with pytest.raises(TypeError):
+            build_run_argv(
+                DockerConfig(), RepoSpec(key="a/b"), ENV, SOURCE, RESULTS, "c-0", nonce="abc123"  # type: ignore[call-arg]
+            )
 
 
 class TestReservedEnvironment:
@@ -551,11 +568,11 @@ class TestReservedEnvironment:
 
     def test_the_reserved_names_are_still_set_by_the_sandbox_itself(self):
         args = build_run_argv(
-            DockerConfig(), RepoSpec(key="a/b"), ENV, SOURCE, RESULTS, "c-0", nonce="n"
+            DockerConfig(), RepoSpec(key="a/b"), ENV, SOURCE, RESULTS, "c-0", forward_nonce=True
         )
 
         for pair in ("HOME=/tmp", "PYTHONPATH=/opt/repolace", "REPOLACE_REPORT_PATH=/results/report.jsonl",
-                     "REPOLACE_RUN_NONCE=n"):
+                     "REPOLACE_RUN_NONCE"):
             assert has_pair(args, "-e", pair), pair
 
 
@@ -624,14 +641,15 @@ SCRIPT_FLAGS_BEFORE_THE_IMAGE = [
 ]
 
 PYTEST_ENV_BEFORE_THE_IMAGE = [
-    "REPOLACE_REPORT_PATH=/results/report.jsonl", "REPOLACE_RUN_NONCE=n", "HOME=/tmp", "PYTHONPATH=/opt/repolace",
+    "REPOLACE_REPORT_PATH=/results/report.jsonl", "REPOLACE_RUN_NONCE", "HOME=/tmp", "PYTHONPATH=/opt/repolace",
 ]
 SCRIPT_ENV_BEFORE_THE_IMAGE = ["HOME=/tmp", "PYTHONPATH=/repo"]
 
 
 def pytest_argv_with_nonce(config=None, spec=None) -> tuple[str, ...]:
     return build_run_argv(
-        config or DockerConfig(), spec or RepoSpec(key="a/b"), ENV, SOURCE, RESULTS, "c-0", nonce="n"
+        config or DockerConfig(), spec or RepoSpec(key="a/b"), ENV, SOURCE, RESULTS, "c-0",
+        forward_nonce=True,
     )
 
 

@@ -53,7 +53,7 @@ def production_args(root: Path, *, with_flag: bool = True) -> list[str]:
         Path("/src"),
         Path("/res"),
         "c-0",
-        nonce=NONCE,
+        forward_nonce=True,
     )
     args = list(argv[argv.index("pytest") + 1 :])
     args = [f"--rootdir={root}" if a == "--rootdir=/repo" else a for a in args]

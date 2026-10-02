@@ -270,7 +270,7 @@ def build_run_argv(
     results_dir: Path,
     container_name: str,
     *,
-    nonce: str | None = None,
+    forward_nonce: bool = False,
 ) -> tuple[str, ...]:
     """Every flag the pytest run uses, as one pure function.
 
@@ -279,10 +279,14 @@ def build_run_argv(
     `--secutiry-opt` is rejected by the CLI, but a dropped `--network=none` is
     simply a container with network, and nothing about the run looks different.
 
-    `nonce` is the per-run token `run_tests` generates and hands to the plugin
-    through the environment (`REPOLACE_RUN_NONCE`), so the report it writes can be
-    told from any other run's. Optional only so the argv can be built and asserted
-    without one; `DockerBackend.run_tests` always passes it.
+    `forward_nonce` adds `-e REPOLACE_RUN_NONCE` -- the *name only*. The per-run token
+    that report is stamped with, so it can be told from any other run's, is the
+    plugin's to read from its environment, and `docker run -e NAME` forwards the value
+    from the docker CLI's own environment, which `run_tests` sets. The value is kept out
+    of this argv because argv is world-readable (`ps`) and is what gets logged when a run
+    times out -- the same reason the git credential never travels in argv. Optional only
+    so the argv can be built and asserted without it; `DockerBackend.run_tests` always
+    sets it.
     """
     mount_suffix = ":ro" if spec.repo_readonly else ""
     argv = _containment_argv(
@@ -300,7 +304,7 @@ def build_run_argv(
         WORKDIR,
         "-e",
         f"REPOLACE_REPORT_PATH={REPORT_PATH}",
-        *(["-e", f"{RUN_NONCE_ENV_VAR}={nonce}"] if nonce is not None else []),
+        *(["-e", RUN_NONCE_ENV_VAR] if forward_nonce else []),
         # Under --read-only, anything writing a dotfile into a nonexistent HOME
         # fails in a way that reads as a test failure rather than as a
         # configuration problem.
@@ -581,18 +585,26 @@ class DockerBackend:
         report, so a report that did not come from *this* container -- one a probe
         planted by pointing the report path at another run's -- is refused rather
         than parsed.
+
+        The nonce reaches the container through the docker CLI's *environment*, not its
+        argv: the argv carries only `-e REPOLACE_RUN_NONCE`, and the CLI forwards the
+        value. Argv is readable by every user on the host and is logged on a timeout; a
+        process environment is not. (It is still in the container's own config, as it
+        has to be -- the plugin reads it there -- so this narrows who on the host sees
+        it, it does not hide it from `docker inspect`.)
         """
         nonce = secrets.token_hex(16)
         argv = build_run_argv(
-            self.config, spec, env, source_dir, results_dir, container_name, nonce=nonce
+            self.config, spec, env, source_dir, results_dir, container_name, forward_nonce=True
         )
+        cli_env = {**sanitized_docker_env(), RUN_NONCE_ENV_VAR: nonce}
         timeout = _timeout(spec.timeout_seconds, self.config.run_timeout_seconds)
         log.info("verify.docker.run.start", container=container_name, image=env.identifier)
 
         started = time.perf_counter()
         clean = False
         try:
-            process = await self._run(*argv, timeout=timeout)
+            process = await self._run(*argv, timeout=timeout, env=cli_env)
             clean = not process.timed_out
         finally:
             if not clean:
