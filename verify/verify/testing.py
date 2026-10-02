@@ -238,17 +238,19 @@ class FakeWorkspace:
     * Dirtiness is only what `set_dirty` / `record_attempt` say. The real one
       compares the actual tree and index with HEAD.
     * A label may be any `int` or `str`, including `"1"`, which aliases the int
-      `1` (the same `export-1` directory). `container_name` refuses that label
-      before a `Verifier` ever passes it here; the workspace itself does not.
+      `1` (the same `export-1` directory), and `"../x"`. `TaskWorkspace` refuses a
+      str label that does not start with a letter or uses anything but letters,
+      digits and `_.-` (it deletes the tree under the name); `container_name`
+      refuses the same labels before a `Verifier` ever passes one here. This fake
+      does neither, so a test of label hygiene belongs on the real workspace.
     * Re-exporting a label overwrites in place and keeps stale files (the real
       one does the same); only `discard` clears a label.
     * `discard` is `rmtree(ignore_errors=True)` on files this process owns, so it
       always works. The real one will meet files the sandbox's subuid created and
       the host cannot delete, so bounded disk over a 40-step loop is not
       guaranteed by the contract, only by the real implementation's best effort.
-    * `TaskWorkspace` has no `discard` yet, and its `export_tree` is annotated
-      `attempt: int`; the `Workspace` Protocol this implements is what stream A
-      brings it up to.
+    * `TaskWorkspace.discard` removes on a worker thread and logs rather than
+      raises when a path will not delete; this one is a plain `rmtree`.
     """
 
     def __init__(self, root: Path, *, dirty: bool = False) -> None:

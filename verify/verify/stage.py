@@ -13,6 +13,10 @@ the patch's doing or might be a dependency that resolved differently, and
 baseline exists to remove.
 """
 
+import asyncio
+import dataclasses
+import itertools
+import os
 import re
 import uuid
 from collections.abc import Mapping, Sequence
@@ -23,6 +27,8 @@ from typing import Protocol
 import structlog
 
 from verify.dockerfile import image_cache_key
+from verify.errors import SandboxError
+from verify.overlay import apply_overlay
 from verify.protocol import EnvironmentRef, RepoSpec, SandboxBackend, ScriptResult, SuiteResult
 from verify.spec import install_commands
 
@@ -36,6 +42,16 @@ _NAME_UNSAFE = re.compile(r"[^a-zA-Z0-9_.-]")
 #: than imported: `verify` has no business pulling SQLAlchemy and pgvector
 #: into a package whose whole point is to be swappable for a remote executor.
 BASELINE_ATTEMPT = 0
+
+#: Directory mode for what the overlay creates. Matches the export's
+#: (`TaskWorkspace`'s `_SANDBOX_DIR_MODE`, which this package does not import):
+#: the sandbox runs as an unprivileged uid that is not ours and needs to create
+#: entries beside its own tests.
+_OVERLAY_DIR_MODE = 0o777
+
+#: A scratch script is written here, mode 0644: readable by the sandbox uid, which
+#: is not the owner.
+_SCRIPT_FILE_MODE = 0o644
 
 #: What keys a run's export directory, results directory and container name.
 #:
@@ -146,6 +162,11 @@ class Verifier:
         # passed in must not be able to change what counts as hidden.
         self.overlay: Mapping[str, bytes] = MappingProxyType(dict(overlay or {}))
         self._env: EnvironmentRef | None = None
+        # Only ever advanced, so a label is never reused -- not even after the run
+        # that held it was discarded. `export-<label>` is written in place and the
+        # plugin appends to `report.jsonl`, so a reused label would mix two runs.
+        self._probe_numbers = itertools.count(1)
+        self._script_numbers = itertools.count(1)
 
     @property
     def prepared(self) -> bool:
@@ -173,16 +194,14 @@ class Verifier:
         a confidently wrong measurement, which is the worst shape this can fail
         in.
 
-        With a non-empty overlay this raises `NotImplementedError` until stream
-        A applies it. Loudly, and before anything is exported: running the suite
-        without the hidden tests would score the task against the wrong tests,
-        and that is a confidently wrong number, not an error anyone would see.
+        **The overlay goes on after the environment is prepared, never before.**
+        The image is built from the first export (`COPY source/ /repo/`) and is
+        shared through a cache whose key does not cover the tests, so an overlay
+        applied earlier would bake the hidden tests into a layer every later build
+        reuses. Applied here it lands only in this run's export directory -- the one
+        the sandbox mounts -- and on every scored run, baseline included, so the
+        baseline and each attempt see the same tests.
         """
-        if self.overlay:
-            raise NotImplementedError(
-                "applying the hidden-test overlay lands in stream A: sandbox"
-            )
-
         source_dir = await workspace.export_tree(attempt)
         results_dir = await workspace.results_dir(attempt)
 
@@ -202,6 +221,11 @@ class Verifier:
             # every comparison downstream of it.
             raise RuntimeError("the baseline has already run for this task")
 
+        if self.overlay:
+            await asyncio.to_thread(
+                apply_overlay, source_dir, self.overlay, dir_mode=_OVERLAY_DIR_MODE
+            )
+
         return await self.backend.run_tests(
             self._env,
             source_dir,
@@ -209,6 +233,14 @@ class Verifier:
             self.spec,
             container_name=container_name(self.task_id, attempt),
         )
+
+    def _require_environment(self, what: str) -> EnvironmentRef:
+        if self._env is None:
+            raise VerifierNotReady(
+                f"cannot {what}: no environment has been prepared (the baseline has not "
+                f"run, or its build failed)"
+            )
+        return self._env
 
     async def run_subset(
         self,
@@ -267,7 +299,28 @@ class Verifier:
         rootdir is pinned the same as for scored runs so node ids mean the same
         thing in both.
         """
-        raise NotImplementedError("Verifier.run_subset lands in stream A: sandbox")
+        env = self._require_environment("run a test subset")
+        label = f"probe-{next(self._probe_numbers)}"
+        # Targets and the timeout travel in the spec, the only channel the
+        # Protocol gives them. `None` leaves the spec's own timeout (and so the
+        # backend's default) in force.
+        spec = dataclasses.replace(
+            self.spec,
+            test_targets=tuple(targets),
+            timeout_seconds=self.spec.timeout_seconds if timeout_seconds is None else timeout_seconds,
+        )
+        name = container_name(self.task_id, label)
+
+        try:
+            source_dir = await workspace.export_tree(label)
+            results_dir = await workspace.results_dir(label)
+            return await self.backend.run_tests(
+                env, source_dir, results_dir, spec, container_name=name
+            )
+        except SandboxError as exc:
+            return SuiteResult(error=str(exc))
+        finally:
+            await asyncio.shield(workspace.discard(label))
 
     async def run_script(
         self,
@@ -300,4 +353,36 @@ class Verifier:
 
         Raises `VerifierNotReady` when no environment has been prepared.
         """
-        raise NotImplementedError("Verifier.run_script lands in stream A: sandbox")
+        env = self._require_environment("run a script")
+        label = f"script-{next(self._script_numbers)}"
+        name = container_name(self.task_id, label)
+
+        try:
+            source_dir = await workspace.export_tree(label)
+            results_dir = await workspace.results_dir(label)
+            script_path = results_dir / "main.py"
+            await asyncio.to_thread(_write_script, script_path, code)
+            return await self.backend.run_script(
+                env,
+                source_dir,
+                script_path,
+                self.spec,
+                container_name=name,
+                timeout_seconds=timeout_seconds,
+            )
+        except SandboxError as exc:
+            return ScriptResult(exit_code=None, error=str(exc))
+        finally:
+            await asyncio.shield(workspace.discard(label))
+
+
+def _write_script(path: Path, code: str) -> None:
+    """The model's code as bytes on disk, readable by a uid that is not ours.
+
+    `errors="replace"` because the text comes from a model and a lone surrogate
+    would otherwise raise out of a tool call. The mode is set explicitly, since
+    `open`'s is masked by the umask and an unreadable script is a run that fails
+    with a permissions error the model would try to debug in its own code.
+    """
+    path.write_bytes(code.encode("utf-8", errors="replace"))
+    os.chmod(path, _SCRIPT_FILE_MODE)
