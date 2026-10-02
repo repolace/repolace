@@ -17,6 +17,7 @@ import dataclasses
 import inspect
 import os
 import random
+import re
 import subprocess
 import sys
 import textwrap
@@ -726,14 +727,31 @@ class TestRender:
 
 
 class TestBaselineSummary:
-    def test_it_counts_and_lists_visible_tests_only(self):
+    def test_in_overlay_mode_it_lists_failing_visible_tests_and_gives_no_totals(self):
         baseline = suite(passed=[A, B, hid("p2p")], failed=[C, hid()], collect_failures=["pkg/c.py", HIDDEN_FILE])
 
         text = baseline_summary(baseline, HIDDEN, nonce="n0nce")
 
-        assert "2 passed, 1 failed" in text and "1 module(s) failed to import" in text
         assert C in text and "pkg/c.py" in text
+        assert "passed" not in text and "module(s) failed to import" not in text
         assert "test_hidden_issue" not in text and SECRET not in text
+
+    def test_in_product_mode_it_counts_and_lists_the_suite(self):
+        baseline = suite(passed=[A, B], failed=[C], collect_failures=["pkg/c.py"])
+
+        text = baseline_summary(baseline, frozenset(), overlay_mode=False, nonce="n0nce")
+
+        assert "2 passed, 1 failed" in text and "1 module(s) failed to import" in text and C in text
+
+    def test_a_hidden_path_alone_turns_the_totals_off_even_if_overlay_mode_is_off(self):
+        text = baseline_summary(suite(passed=[A, B]), frozenset({HIDDEN_FILE}), overlay_mode=False)
+
+        assert "passed" not in text
+
+    def test_overlay_mode_defaults_to_on(self):
+        """Fail closed, as `visible_feedback` does: forgetting to say gets the protection."""
+        assert inspect.signature(baseline_summary).parameters["overlay_mode"].default is True
+        assert "passed" not in baseline_summary(suite(passed=[A, B]), frozenset())
 
     @pytest.mark.parametrize("seed", range(60))
     def test_two_worlds_that_differ_only_in_the_hidden_tests_give_identical_text(self, seed):
@@ -748,7 +766,7 @@ class TestBaselineSummary:
         assert "unusable" in text and "9 failures" not in text and SECRET not in text
 
     def test_a_suite_with_nothing_wrong_is_one_line(self):
-        text = baseline_summary(suite(passed=[A, B]), frozenset())
+        text = baseline_summary(suite(passed=[A, B]), frozenset(), overlay_mode=False)
 
         assert text.count("\n") == 0 and "2 passed, 0 failed" in text
 
@@ -756,3 +774,43 @@ class TestBaselineSummary:
         text = baseline_summary(suite(failed=[C]), frozenset(), nonce="n0nce")
 
         assert "<baseline-n0nce>" in text and "</baseline-n0nce>" in text
+
+
+class TestReplacedFileDoesNotLeakThroughTheBaseline:
+    """The audit's E3, with real pytest: an overlay that REPLACES a visible test file."""
+
+    def test_no_count_in_the_baseline_text_equals_what_the_agents_own_probe_can_be_subtracted_from(self, tmp_path):
+        def write(rel: str, text: str) -> None:
+            path = tmp_path / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(textwrap.dedent(text))
+
+        write("pkg/__init__.py", "def f(x):\n    return x + 1\n")
+        visible_a = (
+            "from pkg import f\ndef test_a1():\n    assert f(1) == 2\n"
+            "def test_a2():\n    assert f(2) == 3\ndef test_a3():\n    assert f(3) == 4\n"
+        )
+        write("tests/test_a.py", visible_a)
+        write("tests/test_b.py", "from pkg import f\ndef test_b1():\n    assert f(0) == 1\ndef test_b2():\n    assert f(5) == 6\n")
+        probe = _real_pytest(tmp_path, "probe")  # the agent's own run_tests: no overlay
+        write("tests/test_a.py", visible_a + "def test_a4_f2p():\n    assert f(9) == 11\n")  # the overlay replaces it
+        baseline = _real_pytest(tmp_path, "baseline")
+        hidden = frozenset({"tests/test_a.py"})
+
+        text = baseline_summary(baseline, hidden, nonce="n0")
+
+        visible_total = len([i for i in baseline.passed if not i.startswith("tests/test_a.py")])
+        assert len(probe.passed) == 5 and visible_total == 2, "the experiment did not set the difference up"
+        assert "passed" not in text and "failed" not in text.replace("failing", "")
+        assert not re.search(rf"\b{visible_total}\b", text) and not re.search(rf"\b{len(probe.passed)}\b", text)
+
+    def test_a_regression_inside_the_replaced_file_is_invisible_to_feedback_but_not_to_the_verdict(self):
+        """The second consequence, pinned so nobody mistakes it for a bug: feedback is not told, the scored verdict is."""
+        baseline = suite(passed=[A, f"{HIDDEN_FILE}::t_visible_before"])
+        attempt = suite(passed=[A])
+
+        feedback_view = feedback(baseline, attempt)
+        scored_view = agent_verdict(baseline, attempt, ["src/app.py"], baseline_files=None)
+
+        assert feedback_view.clean and feedback_view.regressions == ()
+        assert scored_view.ok is False and scored_view.regressions == (f"{HIDDEN_FILE}::t_visible_before",)

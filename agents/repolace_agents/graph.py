@@ -151,7 +151,9 @@ async def localize(state: AgentState, runtime: Runtime[RunContext]) -> dict[str,
     deps = ctx.deps
     system = build_system_prompt(deps.limits, ctx.nonce)
     # The baseline reaches the prompt only through this call.
-    baseline_text = baseline_summary(deps.baseline, deps.hidden_paths, nonce=ctx.nonce)
+    baseline_text = baseline_summary(
+        deps.baseline, deps.hidden_paths, overlay_mode=overlay_mode(deps), nonce=ctx.nonce
+    )
     user = build_localize_message(
         deps.issue, deps.repo_overview, deps.retrieved, baseline_text, deps.limits, ctx.nonce
     )

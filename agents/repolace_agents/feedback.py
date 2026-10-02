@@ -456,28 +456,48 @@ def baseline_summary(
     baseline: SuiteResult,
     hidden_paths: Collection[str],
     *,
+    overlay_mode: bool = True,
     nonce: str = "",
 ) -> str:
-    """The baseline run, as the agent may know it: visible tests only.
+    """The baseline run, as the agent may know it.
 
     The localize message's account of the suite at the base commit, so the agent
     does not chase a failure that was there before it started. Filtered exactly
-    like an attempt, and an unusable baseline is a category, never raw text. Takes
-    no `overlay_mode`: it never shows output at all, so there is no raw text to
-    suppress -- only ids to filter, which `hidden_paths` decides. (A benchmark
-    task whose overlay is empty has no hidden ids in its baseline to filter.)
+    like an attempt, and an unusable baseline is a category, never raw text.
+
+    **In overlay mode there are no counts, only the names of failing tests.** A
+    benchmark overlay usually *replaces* an existing test file (the fixing PR
+    edited it), so the visible-after-filter totals are short by exactly the tests
+    that file held, and the agent can subtract them from what its own overlay-free
+    `run_tests` probe reports to learn which visible test file is the hidden one
+    (the audit's E3). The names listed are baseline ids, so they are in the
+    universe by construction; the residual is the same comparison on a *failing*
+    visible test inside the replaced file, which is rare and noted in the module
+    docstring. Product mode has no overlay, so its counts are plain facts.
+
+    **The second consequence of a replaced file is not a leak, and is worth
+    stating so nobody "fixes" it.** The tests inside it are invisible to this
+    feedback, so a regression there does not make the attempt unclean. The
+    *scored* verdict still sees them -- `score()` and `agent_verdict` run on the
+    unfiltered results -- so pass-to-pass is still enforced; feedback just does
+    not warn the agent about it.
     """
-    visible = _filter_result(baseline, _hidden_set(hidden_paths))
+    hidden = _hidden_set(hidden_paths)
+    overlay = overlay_mode or bool(hidden)
+    visible = _filter_result(baseline, hidden)
     if baseline.error:
         return _CATEGORY_TEXT[BASELINE_UNUSABLE]
 
-    headline = (
-        f"Baseline test run at the base commit, before any change (visible tests only): "
-        f"{len(visible.passed)} passed, {len(visible.failed)} failed"
-    )
-    if visible.collect_failures:
-        headline += f", {len(visible.collect_failures)} module(s) failed to import"
-    headline += "."
+    if overlay:
+        headline = "Baseline test run at the base commit, before any change."
+    else:
+        headline = (
+            f"Baseline test run at the base commit, before any change (visible tests only): "
+            f"{len(visible.passed)} passed, {len(visible.failed)} failed"
+        )
+        if visible.collect_failures:
+            headline += f", {len(visible.collect_failures)} module(s) failed to import"
+        headline += "."
 
     sections = [
         ("failing at the base commit", visible.failed),

@@ -318,11 +318,12 @@ class TestRetry:
 
     async def test_a_new_collection_failure_is_a_retry(self):
         llm = ScriptedLLM([submit_reply(), submit_reply()])
-        record = attempt_record(1, suite(passed=[A, B], collect_failures=["pkg/mod.py"]))
+        # A module the baseline collected tests from, so its name is one the model may be shown.
+        record = attempt_record(1, suite(passed=[A, B], collect_failures=["tests/test_a.py"]))
 
         result = await run(llm, ScriptedVerifier([record, clean(2)]))
 
-        assert result.attempts == 2 and "pkg/mod.py" in llm.calls[1].messages[-1]["content"]
+        assert result.attempts == 2 and "tests/test_a.py" in llm.calls[1].messages[-1]["content"]
 
     async def test_editing_a_test_is_a_retry(self):
         """`changed_files` reaches the verdict, which disqualifies a protected path."""
@@ -685,6 +686,19 @@ class TestOverlayModeThroughTheGraph:
         text = await self.message_after_red(IssueContext(7, "t", None, "u", None), frozenset({"tests/hidden.py"}))
 
         assert self.TAIL not in text
+
+    async def test_the_baseline_totals_are_shown_in_product_mode_and_never_in_benchmark_mode(self):
+        """The totals are how an overlay that replaced a visible file would be named, so they follow the mode."""
+        async def localize_message(issue):
+            llm = ScriptedLLM([submit_reply()])
+            await run(llm, ScriptedVerifier([clean(1)]), issue=issue, hidden_paths=frozenset())
+            return llm.calls[0].messages[1]["content"]
+
+        product = await localize_message(IssueContext(7, "t", None, "u", None))
+        benchmark = await localize_message(IssueContext(7, "t", None, "u", "inst-1"))
+
+        assert "2 passed, 0 failed" in product
+        assert "passed" not in benchmark.split("<repository-")[0] and "2 passed" not in benchmark
 
     async def test_a_product_task_shows_the_tail_so_the_agent_can_debug(self):
         """The control: the suppression above is the mode, not the stdout being absent."""
