@@ -10,7 +10,11 @@ every test having failed. Conflating them lets infrastructure flakiness deflate
 the benchmark number while looking like agent failure.
 """
 
+import errno
 import json
+import os
+import re
+import stat
 from collections import defaultdict
 from pathlib import Path
 
@@ -48,6 +52,44 @@ _EXIT_NAMES = {
 }
 
 _STDOUT_TAIL = 2000
+
+#: What replaces a character that has no business in a stored string.
+_REPLACEMENT = "\ufffd"
+
+#: NUL and every C0 control character except `\n` and `\t`, plus lone surrogates.
+#: Everything parsed here was written by code the host does not trust, and it ends
+#: up in Postgres TEXT, ARRAY and JSONB columns: a NUL is rejected by all three, and
+#: a lone surrogate cannot be encoded as UTF-8 at all. Either would fail the whole
+#: `record_baseline` stage with an error that names neither, which reads as an
+#: instrument failure rather than as a hostile report. (ESC and the rest of C0 are
+#: also what a terminal would act on if the text were ever echoed to one.)
+_UNSAFE_CHARS = re.compile("[\x00-\x08\x0b-\x1f\ud800-\udfff]")
+
+#: Fixed text for a report that is not a regular file. Names no path: it reaches the
+#: model through a probe, and a host path is how a probe learns where a sibling
+#: run's report lives.
+_NOT_REGULAR = (
+    "report is not a regular file (a symlink, pipe, device or directory was found "
+    "where the report belongs)"
+)
+
+#: Fixed text for a report that was not written by this run.
+_WRONG_RUN = "report was not written by this run (its run nonce is missing or wrong)"
+
+
+class _MissingReport(Exception):
+    """No report at all, or an empty one. Carries nothing: the caller knows the exit code."""
+
+
+def _clean(value):
+    """Replace unsafe characters in every string of a parsed JSON value, keys included."""
+    if isinstance(value, str):
+        return _UNSAFE_CHARS.sub(_REPLACEMENT, value)
+    if isinstance(value, list):
+        return [_clean(item) for item in value]
+    if isinstance(value, dict):
+        return {_clean(key): _clean(item) for key, item in value.items()}
+    return value
 
 
 def _verdict(reports: list[dict]) -> str:
@@ -87,6 +129,21 @@ def _verdict(reports: list[dict]) -> str:
     return "did_not_run"
 
 
+def _open_report(path: Path) -> int:
+    """Open the report without following a symlink or blocking on a pipe.
+
+    The sandbox owns the directory the report lives in, so whatever is at this path
+    is whatever the code under test left there. `O_NOFOLLOW` is what stops a link to
+    *another run's* report -- the baseline's, written with the hidden tests
+    overlaid -- being parsed as this one's and handed back to the agent. (The report
+    sits one component below the mount root and a hard link cannot cross bind
+    mounts, so a symlink is the only way to point this path elsewhere.)
+    `O_NONBLOCK` because opening a FIFO for reading otherwise waits for a writer
+    that will never come.
+    """
+    return os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+
+
 def _read_records(path: Path) -> tuple[list[dict], str | None]:
     """Parse the file line-wise, tolerating exactly one truncated trailing line.
 
@@ -95,18 +152,45 @@ def _read_records(path: Path) -> tuple[list[dict], str | None]:
     process. `read_text` on an arbitrarily large file would OOM the worker
     rather than the sandbox.
 
+    The file is opened once and every check is made on the descriptor, not the
+    path: a symlink, FIFO, device or directory is refused, and the size cap is read
+    off `fstat`, so the thing checked is the thing read. Raises `_MissingReport`
+    for no file or an empty one; every other refusal is a returned reason, so the
+    caller never has to tell them apart by exception type.
+
     Per-line flushing means a killed run leaves at most one partial line. A
     malformed line anywhere else is real corruption and must not be silently
     skipped -- tolerating it would let a forged report hide behind a deliberate
     syntax error.
     """
-    size = path.stat().st_size
-    if size > MAX_REPORT_BYTES:
-        return [], f"report is {size} bytes, above the {MAX_REPORT_BYTES} cap"
+    try:
+        descriptor = _open_report(path)
+    except FileNotFoundError:
+        raise _MissingReport from None
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:  # O_NOFOLLOW met a symlink
+            return [], _NOT_REGULAR
+        raise
+
+    handle = None
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            return [], _NOT_REGULAR
+        if info.st_size == 0:
+            raise _MissingReport
+        if info.st_size > MAX_REPORT_BYTES:
+            return [], f"report is {info.st_size} bytes, above the {MAX_REPORT_BYTES} cap"
+        handle = os.fdopen(descriptor, "r", encoding="utf-8", errors="replace")
+    finally:
+        # Every early return above lands here with the descriptor still ours; only
+        # a successful fdopen hands it to `handle`, whose `with` closes it below.
+        if handle is None:
+            os.close(descriptor)
 
     records: list[dict] = []
     pending: tuple[int, str] | None = None
-    with path.open("r", encoding="utf-8", errors="replace") as handle:
+    with handle:  # owns the descriptor from here
         for number, line in enumerate(handle, start=1):
             if pending is not None:
                 # The previous bad line was not the last one after all.
@@ -125,11 +209,31 @@ def _read_records(path: Path) -> tuple[list[dict], str | None]:
                 # docstring gives above -- a forged report must not be able to
                 # hide behind a bare scalar any more than behind a syntax error.
                 return records, f"line {number} is not a report record"
-            records.append(record)
+            records.append(_clean(record))
 
     if pending is not None:
         log.warning("verify.report.truncated_tail", line=pending[0])
     return records, None
+
+
+def _foreign_run(records: list[dict], nonce: str) -> bool:
+    """Whether this report fails to prove it was written by the run that expects it.
+
+    The plugin stamps the per-run nonce into its `start` and `session` records, and
+    the nonce was handed to the container as an environment variable only the host
+    and that container know. A report from any *other* run -- planted by a symlink,
+    or left over in a reused directory -- carries a different one, so it is refused
+    even if the symlink protection above is ever regressed.
+
+    A `start` record must be present (the plugin always writes one first), and
+    every `start` and `session` record must match. This is integrity against
+    substitution, **not** authentication of the code under test: that code shares
+    the container, and so the environment, with the plugin.
+    """
+    stamped = [r for r in records if r["kind"] in ("start", "session")]
+    if not any(r["kind"] == "start" for r in stamped):
+        return True
+    return any(r.get("nonce") != nonce for r in stamped)
 
 
 #: Required key -> expected type, per record kind. A record of a *known* kind
@@ -187,33 +291,67 @@ def _exitstatus_disagrees(
     return None
 
 
-def parse_report(path: Path, process: ProcessResult, elapsed: float) -> SuiteResult:
+def _describe(exc: Exception, path: Path) -> str:
+    """An exception as text that is safe to hand to the model: no host path in it.
+
+    An `OSError` is described by its errno alone -- its message names the file, and
+    the file is under a random per-task directory that a probe has no other way to
+    learn. Anything else keeps its message, with the report's own path scrubbed out
+    in case it was formatted in.
+    """
+    if isinstance(exc, OSError):
+        detail = exc.strerror or errno.errorcode.get(exc.errno or 0, "OS error")
+        return f"{type(exc).__name__}: {detail}"
+    text = str(exc)
+    # `realpath` rather than `Path.resolve`: this runs on the error path and must
+    # not raise, and `realpath` does not.
+    known = {str(path), str(path.parent), os.path.dirname(os.path.realpath(path))}
+    for host_path in sorted(known, key=len, reverse=True):
+        text = text.replace(host_path, "<results>")
+    return f"{type(exc).__name__}: {text}"
+
+
+def parse_report(
+    path: Path, process: ProcessResult, elapsed: float, *, nonce: str | None = None
+) -> SuiteResult:
     """Build a SuiteResult. Never raises for a bad report -- it sets `error`.
+
+    `nonce` is the per-run token the sandbox was given. When it is passed, a report
+    whose `start` and `session` records do not all carry it is unscoreable -- see
+    `_foreign_run`. The Docker backend always passes one; it is optional only so a
+    report produced outside a container (the plugin run under the host's pytest)
+    can still be parsed.
 
     The explicit checks in `_parse_report` are what *should* catch a bad report,
     and each one names what it caught. This wrapper exists because the promise
     in that first sentence is otherwise a claim rather than a property: the file
     is written by untrusted code inside the sandbox, and one unanticipated shape
     reaching this far would raise into the pipeline and turn a scoreable task
-    into a crash. It also covers the OSError paths -- `stat` and `open` racing a
-    file the sandbox is still deleting.
+    into a crash. It also covers the OSError paths -- `open` racing a file the
+    sandbox is still deleting.
+
+    No error text names a host path: it reaches the model through a probe, and the
+    path is where a sibling run's report lives (see `_describe`).
 
     Logged at error level deliberately. A bug here must be visible as a bug, not
-    disappear into the unscoreable bucket alongside ordinary flakiness.
+    disappear into the unscoreable bucket alongside ordinary flakiness. The log, for
+    the operator, does carry the path.
     """
     try:
-        return _parse_report(path, process, elapsed)
+        return _parse_report(path, process, elapsed, nonce)
     except Exception as exc:
         log.error("verify.report.unexpected", path=str(path), exc_info=True)
         return SuiteResult(
             exit_code=process.returncode,
             duration_seconds=round(elapsed, 3),
-            error=redact(f"verify: report could not be parsed ({type(exc).__name__}: {exc})"),
+            error=_clean(redact(f"verify: report could not be parsed ({_describe(exc, path)})")),
         )
 
 
-def _parse_report(path: Path, process: ProcessResult, elapsed: float) -> SuiteResult:
-    tail = redact(process.stdout.decode("utf-8", errors="replace"))[-_STDOUT_TAIL:]
+def _parse_report(
+    path: Path, process: ProcessResult, elapsed: float, nonce: str | None
+) -> SuiteResult:
+    tail = _clean(redact(process.stdout.decode("utf-8", errors="replace"))[-_STDOUT_TAIL:])
     exit_code = process.returncode
     base = {"exit_code": exit_code, "duration_seconds": round(elapsed, 3), "stdout_tail": tail}
 
@@ -225,7 +363,10 @@ def _parse_report(path: Path, process: ProcessResult, elapsed: float) -> SuiteRe
         return unscoreable(f"suite exceeded its {elapsed:.0f}s deadline and was killed")
     if exit_code == 137:
         return unscoreable("container killed (exit 137); most likely the memory limit")
-    if not path.is_file() or path.stat().st_size == 0:
+
+    try:
+        records, corruption = _read_records(path)
+    except _MissingReport:
         # Exit 4 (usage error) and an early internal error both run before any
         # hook fires, so no report exists at all. Naming that here saves the
         # next person a baffling debugging session.
@@ -233,8 +374,6 @@ def _parse_report(path: Path, process: ProcessResult, elapsed: float) -> SuiteRe
             f"no test report was written (exit {exit_code}); "
             f"a usage error or a startup failure runs before any plugin hook"
         )
-
-    records, corruption = _read_records(path)
     if corruption:
         return unscoreable(corruption)
 
@@ -242,6 +381,9 @@ def _parse_report(path: Path, process: ProcessResult, elapsed: float) -> SuiteRe
         problem = _malformed(record)
         if problem:
             return unscoreable(problem)
+
+    if nonce is not None and _foreign_run(records, nonce):
+        return unscoreable(_WRONG_RUN)
 
     # Every start/session record is now guaranteed an int `v`, so this cannot
     # raise on a mixed None/int set -- and a record missing `v` entirely is

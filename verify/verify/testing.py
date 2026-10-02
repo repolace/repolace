@@ -238,17 +238,24 @@ class FakeWorkspace:
     * Dirtiness is only what `set_dirty` / `record_attempt` say. The real one
       compares the actual tree and index with HEAD.
     * A label may be any `int` or `str`, including `"1"`, which aliases the int
-      `1` (the same `export-1` directory). `container_name` refuses that label
-      before a `Verifier` ever passes it here; the workspace itself does not.
-    * Re-exporting a label overwrites in place and keeps stale files (the real
-      one does the same); only `discard` clears a label.
+      `1` (the same `export-1` directory), and `"../x"`. `TaskWorkspace` refuses a
+      str label that does not start with a letter or uses anything but letters,
+      digits and `_.-` (it deletes the tree under the name); `container_name`
+      refuses the same labels before a `Verifier` ever passes one here. This fake
+      does neither, so a test of label hygiene belongs on the real workspace.
+    * Re-exporting a label, or asking again for its results directory, is allowed
+      here: it overwrites in place and keeps stale files. `TaskWorkspace` **raises**
+      `RuntimeError("... already exists; labels are single-use")` for both, because
+      whatever the sandbox left in a reused directory (a symlink, say) is not ours to
+      write through. Only `discard` clears a label in either. A test of reuse belongs
+      on the real workspace; this fake is deliberately not stricter, so a stream's
+      existing tests that export one label twice keep working.
     * `discard` is `rmtree(ignore_errors=True)` on files this process owns, so it
       always works. The real one will meet files the sandbox's subuid created and
       the host cannot delete, so bounded disk over a 40-step loop is not
       guaranteed by the contract, only by the real implementation's best effort.
-    * `TaskWorkspace` has no `discard` yet, and its `export_tree` is annotated
-      `attempt: int`; the `Workspace` Protocol this implements is what stream A
-      brings it up to.
+    * `TaskWorkspace.discard` removes on a worker thread and logs rather than
+      raises when a path will not delete; this one is a plain `rmtree`.
     """
 
     def __init__(self, root: Path, *, dirty: bool = False) -> None:

@@ -9,6 +9,7 @@ This is the test that would catch a producer/parser schema drift, which unit
 tests on either side individually cannot.
 """
 
+import json
 import subprocess
 import sys
 import textwrap
@@ -67,7 +68,9 @@ def test_parametrised(value):
 '''
 
 
-def run_suite(tmp_path: Path, suite: str, *extra: str) -> tuple[Path, ProcessResult]:
+def run_suite(
+    tmp_path: Path, suite: str, *extra: str, nonce: str | None = None
+) -> tuple[Path, ProcessResult]:
     (tmp_path / "test_sample.py").write_text(textwrap.dedent(suite))
     report = tmp_path / "report.jsonl"
     completed = subprocess.run(
@@ -86,6 +89,7 @@ def run_suite(tmp_path: Path, suite: str, *extra: str) -> tuple[Path, ProcessRes
             "REPOLACE_REPORT_PATH": str(report),
             "PYTHONDONTWRITEBYTECODE": "1",
             "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+            **({"REPOLACE_RUN_NONCE": nonce} if nonce is not None else {}),
         },
         capture_output=True,
         timeout=120,
@@ -230,3 +234,59 @@ class TestNoReport:
 
         assert process.returncode == 4
         assert result.error is not None and "no test report" in result.error
+
+
+class TestTheRunNonce:
+    """The host hands the container a per-run nonce; the plugin stamps it into the
+    report so a report from any other run can be told apart from this one's."""
+
+    NONCE = "c0ffee00" * 4
+
+    @staticmethod
+    def records(report: Path) -> list[dict]:
+        return [json.loads(line) for line in report.read_text().splitlines() if line.strip()]
+
+    def test_it_lands_in_the_start_and_session_records(self, tmp_path):
+        report, _process = run_suite(tmp_path, "def test_ok():\n    assert True\n", nonce=self.NONCE)
+
+        by_kind = {r["kind"]: r for r in self.records(report)}
+
+        assert by_kind["start"]["nonce"] == self.NONCE
+        assert by_kind["session"]["nonce"] == self.NONCE
+
+    def test_it_is_not_repeated_on_every_test_record(self, tmp_path):
+        """Two records prove whose report it is; stamping each test would only grow the file."""
+        report, _process = run_suite(tmp_path, "def test_ok():\n    assert True\n", nonce=self.NONCE)
+
+        stamped = [r["kind"] for r in self.records(report) if "nonce" in r]
+
+        assert sorted(stamped) == ["session", "start"]
+
+    def test_the_parser_accepts_the_real_report_with_the_nonce(self, tmp_path):
+        report, process = run_suite(tmp_path, "def test_ok():\n    assert True\n", nonce=self.NONCE)
+
+        result = parse_report(report, process, elapsed=1.0, nonce=self.NONCE)
+
+        assert result.error is None, result.error
+        assert any(n.endswith("::test_ok") for n in result.passed)
+
+    def test_the_parser_refuses_it_under_a_different_nonce(self, tmp_path):
+        report, process = run_suite(tmp_path, "def test_ok():\n    assert True\n", nonce=self.NONCE)
+
+        result = parse_report(report, process, elapsed=1.0, nonce="deadbeef" * 4)
+
+        assert result.error is not None and "not written by this run" in result.error
+
+    def test_a_run_without_one_writes_no_nonce_key_at_all(self, tmp_path):
+        """Outside the sandbox the variable is absent, and the key must be too --
+        not an empty string a parser could mistake for a match."""
+        report, _process = run_suite(tmp_path, "def test_ok():\n    assert True\n")
+
+        assert not any("nonce" in r for r in self.records(report))
+
+    def test_the_parser_refuses_a_report_that_has_none_when_it_expects_one(self, tmp_path):
+        report, process = run_suite(tmp_path, "def test_ok():\n    assert True\n")
+
+        assert "not written by this run" in parse_report(
+            report, process, elapsed=1.0, nonce=self.NONCE
+        ).error
