@@ -599,5 +599,11 @@ def build_toolbox(ctx: ToolContext) -> ToolBox:
     `.github/`) or the path is anything under `.git`; limits come from
     `ctx.limits`, `ctx.limits.max_probe_seconds` included; and the box is built
     as `ToolBox(tools, max_output_chars=ctx.limits.max_output_chars)`.
+
+    The implementation lives in `repolace_agents.tools.toolbox`. It is imported
+    inside the function because `toolbox` imports this module, so a top-level
+    import would be a cycle. Both import paths build the same box.
     """
-    raise NotImplementedError("build_toolbox lands in stream B: toolbox")
+    from repolace_agents.tools.toolbox import build_toolbox as _build_toolbox
+
+    return _build_toolbox(ctx)
