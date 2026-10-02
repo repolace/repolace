@@ -160,6 +160,23 @@ def tool_call(name: str, arguments: Mapping[str, Any] | None = None, *, id: str 
     )
 
 
+def malformed_tool_call(name: str, raw_arguments: str, *, id: str | None = None):
+    """A real gateway `ToolCall` whose arguments did not parse, as `LLMClient` builds one.
+
+    `arguments` is empty and `parse_error` says why, while `raw_arguments` keeps what the
+    model actually sent -- which is what the assistant message would echo back.
+    """
+    from repolace_gateway.client import ToolCall
+
+    try:
+        decoded = json.loads(raw_arguments)
+    except json.JSONDecodeError as exc:
+        error = f"arguments are not valid JSON: {exc}"
+    else:
+        error = f"arguments must be a JSON object, got {type(decoded).__name__}"
+    return ToolCall(id=id or f"call_{next(_call_ids)}", name=name, arguments={}, raw_arguments=raw_arguments, parse_error=error)
+
+
 def reply(content: str | None = None, *calls, cost: str = "0.01"):
     """A real gateway `LLMResponse`: the assistant turn, in the shape `LLMClient` builds it."""
     from repolace_gateway.client import LLMResponse, TokenUsage

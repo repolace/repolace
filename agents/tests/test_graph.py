@@ -49,6 +49,7 @@ from agents_support import (
     attempt_record,
     check_messages_valid,
     make_deps,
+    malformed_tool_call,
     object_schema,
     reply,
     scripted_toolbox,
@@ -393,6 +394,86 @@ class TestReplyBounds:
 
 def _chars(messages) -> int:
     return sum(len(m["content"]) for m in messages if isinstance(m.get("content"), str))
+
+
+class TestMalformedToolCallArguments:
+    """A call whose arguments did not parse must not poison the next request."""
+
+    BAD_JSON = {
+        "truncated JSON": '{"path": "a.py", "new": "x',
+        "single quotes": "{'path': 'a.py'}",
+        "two concatenated objects": '{"path": "a"}{"path": "b"}',
+        "bad escape": '{"path": "\\q"}',
+        "not JSON at all": "def f(): pass",
+    }
+
+    @staticmethod
+    def converter_accepts(messages) -> bool:
+        """LiteLLM's own Anthropic message converter -- the code that raised -- with no provider contact."""
+        from litellm.litellm_core_utils.prompt_templates.factory import anthropic_messages_pt
+
+        history = [m for m in messages if m["role"] != "system"]
+        try:
+            anthropic_messages_pt(history, model="claude-sonnet-5-5", llm_provider="anthropic")
+        except Exception:
+            return False
+        return True
+
+    @pytest.mark.parametrize("shape", list(BAD_JSON))
+    async def test_the_malformed_call_is_replayed_as_empty_arguments_and_the_next_request_is_buildable(self, shape):
+        raw = self.BAD_JSON[shape]
+        bad = malformed_tool_call("read_file", raw, id="bad")
+        good = tool_call("read_file", {"path": "ok.py"}, id="good")
+        scripted = reply(None, bad, good)
+        llm = ScriptedLLM([scripted, submit_reply()])
+        toolbox, tools = scripted_toolbox()
+
+        await run(llm, ScriptedVerifier([clean(1)]), tools=toolbox)
+
+        replayed = llm.calls[1].messages[2]["tool_calls"]
+        assert [(c["id"], c["function"]["arguments"]) for c in replayed] == [("bad", "{}"), ("good", '{"path": "ok.py"}')]
+        results = {m["tool_call_id"]: m["content"] for m in llm.calls[1].messages if m["role"] == "tool"}
+        assert "not a valid JSON object" in results["bad"], "the model must still be told what it got wrong"
+        assert tools["read_file"].calls == [{"path": "ok.py"}], "only the well-formed sibling ran"
+        assert self.converter_accepts(llm.calls[1].messages)
+        assert scripted.message["tool_calls"][0]["function"]["arguments"] == raw, "the gateway's response is not mutated"
+
+    @pytest.mark.parametrize("shape", list(BAD_JSON))
+    async def test_control_the_unrepaired_history_really_does_break_the_converter(self, shape):
+        """Otherwise the test above could pass because the converter accepts anything."""
+        messages = [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": None, "tool_calls": [
+                {"id": "c1", "type": "function", "function": {"name": "read_file", "arguments": self.BAD_JSON[shape]}}]},
+            {"role": "tool", "tool_call_id": "c1", "content": "the arguments were invalid"},
+        ]
+
+        assert not self.converter_accepts(messages)
+
+    async def test_valid_arguments_are_echoed_exactly(self):
+        spaced = tool_call("read_file", {"path": "a.py"}, id="c1")
+        llm = ScriptedLLM([reply(None, spaced), submit_reply()])
+
+        await run(llm, ScriptedVerifier([clean(1)]))
+
+        assert llm.calls[1].messages[2]["tool_calls"][0]["function"]["arguments"] == spaced.raw_arguments
+
+    async def test_valid_json_that_is_not_an_object_is_repaired_too(self):
+        llm = ScriptedLLM([reply(None, malformed_tool_call("read_file", "[1, 2]", id="arr")), submit_reply()])
+
+        await run(llm, ScriptedVerifier([clean(1)]))
+
+        assert llm.calls[1].messages[2]["tool_calls"][0]["function"]["arguments"] == "{}"
+        assert "not a valid JSON object" in llm.calls[1].messages[3]["content"]
+
+    async def test_a_reply_of_only_malformed_calls_does_not_cost_the_attempt(self):
+        """The reviewer's kill: one truncated call used to become LLM_ERROR and skip verify."""
+        llm = ScriptedLLM([reply(None, malformed_tool_call("read_file", self.BAD_JSON["truncated JSON"])), submit_reply()])
+        verifier = ScriptedVerifier([clean(1)])
+
+        result = await run(llm, verifier)
+
+        assert result.stop_reason is StopReason.SUBMITTED and verifier.calls == [1]
 
 
 class TestToolOutputIsEscaped:

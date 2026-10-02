@@ -134,15 +134,33 @@ def overlay_mode(deps: AgentDeps) -> bool:
 
 
 def _assistant_turn(response: Any) -> dict[str, Any]:
-    """The assistant message to append: the gateway's own, never empty.
+    """The assistant message to append: the gateway's own, never empty, with valid arguments.
 
     An assistant message with no content and no tool calls is rejected by some
     providers on the *next* call, which would turn one empty reply into a failed
     task. A placeholder is cheaper than that.
+
+    **A call whose arguments did not parse is echoed back with `"{}"`**, matched by
+    index. The gateway keeps `raw_arguments` verbatim so that a valid call round-trips
+    exactly, but replaying unparseable text (truncated JSON, single quotes, two
+    concatenated objects, a bad escape) makes LiteLLM's message converter raise a
+    non-transient error while building the next request. That becomes `LLM_ERROR`,
+    which skips verify, so a single truncated call would cost the whole attempt. The
+    model is still told what it got wrong: the tool result for that call carries the
+    parse error, which `ToolBox.dispatch` builds from `ToolCall.parse_error`.
     """
     message = dict(response.message)
     if not response.tool_calls and not message.get("content"):
         message["content"] = "(empty reply)"
+    raw_calls = message.get("tool_calls")
+    if raw_calls:
+        parsed = response.tool_calls
+        message["tool_calls"] = [
+            {**raw, "function": {**raw["function"], "arguments": "{}"}}
+            if index < len(parsed) and parsed[index].parse_error
+            else raw
+            for index, raw in enumerate(raw_calls)
+        ]
     return message
 
 
