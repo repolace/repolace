@@ -50,6 +50,7 @@ NUDGE = "Your last reply called no tool. Call a tool to continue, or call `submi
 SKIPPED_AFTER_SUBMIT = "not executed: the attempt ended when `submit` was called"
 TOO_MANY_CALLS = "not executed: too many tool calls in one reply; send fewer per reply"
 SKIPPED_BUDGET = "not executed: the task budget ran out"
+EMPTY_TOOL_OUTPUT = "(no output)"
 ELIDED = "[output from attempt {attempt} elided]"
 
 

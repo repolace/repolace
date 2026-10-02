@@ -45,6 +45,7 @@ from repolace_gateway.errors import LLMCallError, NoTaskScope
 from repolace_agents.contracts import AgentDeps, AgentLimits, AgentResult, StopReason
 from repolace_agents.feedback import baseline_summary, render_feedback, visible_feedback
 from repolace_agents.prompts import (
+    EMPTY_TOOL_OUTPUT,
     NUDGE,
     SKIPPED_AFTER_SUBMIT,
     SKIPPED_BUDGET,
@@ -53,7 +54,7 @@ from repolace_agents.prompts import (
     build_system_prompt,
     elided,
 )
-from repolace_agents.render import sanitize_text
+from repolace_agents.render import escape_invisible, sanitize_text
 from repolace_agents.state import AgentState
 
 _BUDGET_STOPS = {
@@ -287,7 +288,11 @@ async def agent(state: AgentState, runtime: Runtime[RunContext]) -> dict[str, An
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": SKIPPED_BUDGET})
                 continue
             outcome = await tools.dispatch(call)
-            messages.append({"role": "tool", "tool_call_id": call.id, "content": outcome.content})
+            # Tool output is untrusted too (file contents, search hits, test output): invisible
+            # characters are escaped, not deleted, so it still matches what `edit_file` is given.
+            # Empty content is replaced because some providers reject an empty tool message.
+            content = escape_invisible(outcome.content) or EMPTY_TOOL_OUTPUT
+            messages.append({"role": "tool", "tool_call_id": call.id, "content": content})
             if outcome.submitted:
                 submitted = True
                 summary = outcome.summary
