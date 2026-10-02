@@ -12,6 +12,7 @@ a model told a tool is unavailable stops calling it just as surely.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -24,6 +25,10 @@ from repolace_agents.tools.search import Grep, SearchCode
 from repolace_agents.tools.wording import TESTS_NOT_SHOWN
 
 MAX_SUMMARY_CHARS = 4000
+
+#: Control characters other than tab, newline and carriage return. An escape sequence or NUL in
+#: text the model wrote reaches a human's terminal or a PR body later.
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 class Submit:
@@ -50,6 +55,8 @@ class Submit:
     async def __call__(self, args: Mapping[str, Any]) -> ToolOutcome:
         summary = args["summary"]
         require_text("summary", summary)  # it is stored on the task row
+        if _CONTROL_CHARS.search(summary):
+            raise ToolError("the summary may not contain control characters (newlines and tabs are fine)")
         if not summary.strip():
             raise ToolError("the summary is blank; say what you changed and why")
         return ToolOutcome(content="submitted", submitted=True, summary=summary)

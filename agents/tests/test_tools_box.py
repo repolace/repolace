@@ -130,6 +130,19 @@ class TestSubmit:
 
         assert out.is_error and not out.submitted
 
+    @pytest.mark.parametrize("summary", ["done\x00", "\x1b[31mred\x1b[0m", "bell\x07", "del\x7f", "form\x0cfeed", "\x08"])
+    async def test_a_control_character_in_the_summary_is_refused(self, tmp_path, summary):
+        out = await make(tmp_path).call("submit", summary=summary)
+
+        assert out.is_error and not out.submitted and "control characters" in out.content
+
+    async def test_newlines_tabs_and_carriage_returns_are_fine_in_a_summary(self, tmp_path):
+        text = "Changed add():\n\t- handle None\r\n\t- keep the old default\n"
+
+        out = await make(tmp_path).call("submit", summary=text)
+
+        assert out.submitted and out.summary == text
+
     async def test_a_summary_that_cannot_be_stored_is_refused(self, tmp_path):
         out = await make(tmp_path).call("submit", summary="done \ud800")
 

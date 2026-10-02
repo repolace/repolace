@@ -31,11 +31,12 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from repolace_shared.git import GitError
+import structlog
 from verify.stage import VerifierNotReady
 
 from repolace_agents.tools.base import ToolContext, ToolError, ToolOutcome, ToolSpec
 from repolace_agents.tools.wording import TESTS_NOT_SHOWN
-from repolace_agents.tools.paths import confine, relative_posix, require_text, shown
+from repolace_agents.tools.paths import confine, printable, relative_posix, require_text, shown
 
 #: Per-stream cap for `run_python`, and the cap for a suite's output tail. Both are
 #: ceilings: a small `max_output_chars` shrinks them so the whole result still fits.
@@ -46,7 +47,7 @@ TEST_TAIL_CHARS = 6000
 MAX_LISTED_IDS = 50
 MAX_ID_CHARS = 200
 
-#: What the model may see of a sandbox error message.
+#: How much of a git error the model sees when a checkpoint fails (git's own text, about the model's tree).
 MAX_ERROR_CHARS = 200
 
 #: The file part of a target -- everything before `::`. The first character is a letter,
@@ -64,11 +65,34 @@ _NODE_ID = re.compile(r"[^\x00-\x1f\x7f]*")
 
 _FIRST_CHAR = re.compile(r"[A-Za-z0-9_.]")
 
+log = structlog.get_logger()
+
 _UNAVAILABLE = "the sandbox is unavailable: {why}; carry on by reading the code (read_file, grep)"
 
 
 def _unavailable(why: str) -> ToolError:
     return ToolError(_UNAVAILABLE.format(why=why))
+
+
+def _sandbox_failure(tool: str, error: str, *, what_timed_out: str, timeout_advice: str) -> ToolError:
+    """A fixed, categorised sentence for a sandbox error -- never the raw message.
+
+    `SuiteResult.error` / `ScriptResult.error` carry whatever the sandbox raised: up to a
+    500-character tail of a build or container log, the repository name, the container name
+    (which holds the task id). Free text from that path is text the model reads, written by a
+    process that ran code from the repository, so it is kept out of the tool result. The
+    model learns what *kind* of failure it was; the operator gets the text in the log.
+    Categories follow the message prefixes in `verify.errors`.
+    """
+    log.warning("tools.sandbox.failed", tool=tool, error=error)
+    lowered = error.lstrip().lower()
+    if lowered.startswith("container runtime unavailable"):
+        return _unavailable("the container runtime is not answering")
+    if lowered.startswith("environment build failed"):
+        return _unavailable("the environment could not be built")
+    if lowered.startswith("sandbox exceeded"):
+        return ToolError(f"{what_timed_out} exceeded its time limit and was stopped; {timeout_advice}")
+    return _unavailable("the sandbox could not complete the run")
 
 
 async def _checkpoint(ctx: ToolContext, message: str) -> None:
@@ -138,7 +162,10 @@ class RunPython:
         except VerifierNotReady:
             raise _unavailable("the test environment has not been prepared") from None
         if result.error:
-            raise _unavailable(shown(result.error, MAX_ERROR_CHARS))
+            raise _sandbox_failure(
+                "run_python", result.error,
+                what_timed_out="the script", timeout_advice="make it shorter or use a smaller timeout_seconds",
+            )
 
         header = [f"exit code: {result.exit_code if result.exit_code is not None else 'none'}"]
         if result.timed_out:
@@ -148,8 +175,8 @@ class RunPython:
         labels = ("--- stdout ---\n", "\n--- stderr ---\n")
         fixed = len("\n".join(header)) + 1 + sum(len(label) for label in labels)
         per_stream = max(0, min(SCRIPT_TAIL_CHARS, (ctx.limits.max_output_chars - fixed) // 2))
-        stdout = _tail(result.stdout, per_stream) or "(empty)"
-        stderr = _tail(result.stderr, per_stream) or "(empty)"
+        stdout = printable(_tail(result.stdout, per_stream)) or "(empty)"
+        stderr = printable(_tail(result.stderr, per_stream)) or "(empty)"
         return ToolOutcome("\n".join(header) + "\n" + labels[0] + stdout + labels[1] + stderr)
 
 
@@ -240,9 +267,9 @@ class RunTests:
         except VerifierNotReady:
             raise _unavailable("the test environment has not been prepared") from None
         if result.error:
-            raise ToolError(
-                _UNAVAILABLE.format(why=shown(result.error, MAX_ERROR_CHARS))
-                + " (if the run timed out, run fewer or narrower targets)"
+            raise _sandbox_failure(
+                "run_tests", result.error,
+                what_timed_out="the test run", timeout_advice="run fewer or narrower targets",
             )
 
         cap = ctx.limits.max_output_chars
@@ -258,7 +285,7 @@ class RunTests:
         head += _id_section("collection errors", result.collect_failures, cap // 6)
         head.append("--- end of pytest output ---")
         text = "\n".join(head) + "\n"
-        tail = _tail(result.stdout_tail, max(0, min(TEST_TAIL_CHARS, cap - len(text))))
+        tail = printable(_tail(result.stdout_tail, max(0, min(TEST_TAIL_CHARS, cap - len(text)))))
         return ToolOutcome(text + tail)
 
 
@@ -270,7 +297,9 @@ def _id_section(label: str, ids: Sequence[str], budget: int) -> list[str]:
     used = len(lines[0])
     listed = 0
     for test_id in ids[:MAX_LISTED_IDS]:
-        line = f"  {_tail(test_id, MAX_ID_CHARS)}"
+        # `printable`: a report line decoded from JSON can carry a lone surrogate, which would
+        # fail to encode in the next provider request.
+        line = f"  {printable(_tail(test_id, MAX_ID_CHARS))}"
         if used + len(line) > budget:
             break
         lines.append(line)
