@@ -43,7 +43,6 @@ TARGET_REFUSALS = [
     ".git/config",
     ".gitattributes",
     "::test_add",
-    "tests/test_core.py::test add",
     "@a.txt",
     "@tests/test_core.py",
 ]
@@ -249,6 +248,62 @@ class TestRunTests:
 
         assert not out.is_error, out.content
         assert h.subset_calls == [[reaches_the_sandbox_as]]
+
+    @pytest.mark.parametrize(
+        "node",
+        [
+            "test_x[a b]",
+            "test_x[(1, 2)]",
+            "test_x[<lambda>]",
+            "test_x[*]",
+            "test_x['q']",
+            'test_x["q"]',
+            "test_x[a|b]",
+            "test_x[50%]",
+            "test_x[a\\b]",
+            "test_x[\u00e9]",
+            "test add",
+            "test_x[--rootdir=/]",
+            "-p evil",
+        ],
+    )
+    async def test_a_node_id_after_the_double_colon_may_hold_any_printable_text(self, tmp_path, node):
+        # The file part is checked and confined; what follows `::` is one argv element behind it,
+        # so parametrised ids with spaces, quotes, `|`, `%` and the rest must be runnable.
+        h = make_harness(tmp_path)
+        target = f"tests/test_core.py::{node}"
+
+        out = await h.call("run_tests", targets=[target])
+
+        assert not out.is_error, out.content
+        assert h.subset_calls == [[target]]
+
+    @pytest.mark.parametrize("node", ["test_x[a\tb]", "test_x\nzz", "test_x\x00", "test_x\x1b[0m", "test_x\x7f"])
+    async def test_a_control_character_after_the_double_colon_is_refused_with_advice(self, tmp_path, node):
+        h = make_harness(tmp_path)
+
+        out = await h.call("run_tests", targets=[f"tests/test_core.py::{node}"])
+
+        assert out.is_error and "without its [params]" in out.content
+        assert h.subset_calls == [] and h.events == []
+
+    @pytest.mark.parametrize("path", ["my tests/test_a.py", "tests/test#1.py"])
+    async def test_a_path_with_a_space_or_a_hash_is_a_single_argument_and_runs(self, tmp_path, path):
+        h = make_harness(tmp_path)
+        (h.checkout / path).parent.mkdir(exist_ok=True)
+        (h.checkout / path).write_text("def test_a():\n    pass\n")
+
+        out = await h.call("run_tests", targets=[path])
+
+        assert not out.is_error, out.content
+        assert h.subset_calls == [[path]]
+
+    async def test_a_lone_surrogate_in_a_target_is_refused_not_a_crash(self, tmp_path):
+        h = make_harness(tmp_path)
+
+        out = await h.call("run_tests", targets=["tests/test_core.py::t\ud800"])
+
+        assert out.is_error and "not valid text" in out.content and h.subset_calls == []
 
     @pytest.mark.parametrize("target", TARGET_REFUSALS)
     async def test_a_hostile_target_is_refused_and_nothing_runs(self, tmp_path, target):

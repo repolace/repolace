@@ -48,13 +48,20 @@ MAX_ID_CHARS = 200
 #: What the model may see of a sandbox error message.
 MAX_ERROR_CHARS = 200
 
-#: A pytest node id or path, and nothing else: no space (so no second argument),
-#: no quote. The first character is a letter, digit, `.` or `_` -- never `-` (an
-#: option) and never `@` (pytest expands `@file` into arguments read from a file
-#: the agent can write, which would smuggle in `-o`, `-W`, `--junitxml=`...). `@`
-#: stays legal *inside* an id, for a parametrised `test_x[a@b]`. `fullmatch`,
-#: because `$` would accept a trailing newline.
-_SAFE_TARGET = re.compile(r"[A-Za-z0-9_.][\w./\[\]:,=@+-]*")
+#: The file part of a target -- everything before `::`. The first character is a letter,
+#: digit, `.` or `_`: never `-` (an option) and never `@` (pytest expands `@file` into
+#: arguments read from a file the agent can write, which would smuggle in `-o`, `-W`,
+#: `--junitxml=`...). The rest is the characters a real path has; a space or `#` is fine
+#: because the sandbox receives argv as a list, so each target is one argument whatever it
+#: holds. `fullmatch`, because `$` would accept a trailing newline.
+_SAFE_PATH = re.compile(r"[A-Za-z0-9_.][\w./\[\]#,=@+ -]*")
+
+#: The node-id part, after `::`: any text without control characters. Parametrised ids are
+#: arbitrary (`test_x[(1, 2)]`, `test_x[<lambda>]`, `test_x[a|b]`, `test_x[50%]`), and since
+#: this sits behind a file path inside one argv element it cannot become an option.
+_NODE_ID = re.compile(r"[^\x00-\x1f\x7f]*")
+
+_FIRST_CHAR = re.compile(r"[A-Za-z0-9_.]")
 
 _UNAVAILABLE = "the sandbox is unavailable: {why}; carry on by reading the code (read_file, grep)"
 
@@ -181,21 +188,27 @@ class RunTests:
         passes the character check as typed and would be the option `-x` once
         normalised, so the first-character rule is applied again to the result.
         """
+        require_text("target", target)
         if target.startswith("-"):
             raise ToolError(f"target {shown(target)!r} starts with '-', which pytest would read as an option; name a test file or node id")
-        if not _SAFE_TARGET.fullmatch(target):
-            raise ToolError(
-                f"target {shown(target)!r} is not a plain test path or node id: it must start with a letter, "
-                f"digit, '.' or '_', and use only letters, digits and . / _ - [ ] : , = @ + (no spaces or quotes)"
-            )
         path_part, separator, node = target.partition("::")
+        if not _SAFE_PATH.fullmatch(path_part):
+            raise ToolError(
+                f"target {shown(target)!r} is not a plain test path or node id: the file part must start with a "
+                f"letter, digit, '.' or '_' and use only letters, digits, spaces and . / _ - [ ] # , = @ +"
+            )
+        if not _NODE_ID.fullmatch(node):
+            raise ToolError(
+                f"target {shown(target)!r} has a control character after '::'; if a parametrised id is the "
+                f"problem, run the test without its [params]"
+            )
         # The read guard, so a target can no more name `../x`, a symlink or `.git/...`
         # than `read_file` can; and it must exist, so the name is a file we have seen.
         resolved = confine(self._ctx.checkout, path_part, write=False)
         if not os.path.lexists(resolved):
             raise ToolError(f"target {shown(target)!r}: {shown(path_part)!r} does not exist in the repository")
         normalised = relative_posix(self._ctx.checkout, resolved) + separator + node
-        if not _SAFE_TARGET.fullmatch(normalised):
+        if not _FIRST_CHAR.match(normalised):
             raise ToolError(f"target {shown(target)!r} names {shown(normalised)!r}, which pytest would not read as a plain path")
         return normalised
 
