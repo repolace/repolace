@@ -197,7 +197,7 @@ class TestGrepResourceLimits:
 
         out = await h.call("grep", pattern="((a{1,99}){1,99}){1,99}b")
 
-        assert out.is_error and ("Memory exhausted" in out.content or "too much memory" in out.content)
+        assert out.is_error and "too much memory or CPU time" in out.content and "fixed_string=true" in out.content
 
     async def test_the_child_is_single_threaded_and_the_path_stays_after_the_double_dash(self, h, monkeypatch):
         seen = []
@@ -214,7 +214,7 @@ class TestGrepResourceLimits:
         (argv, kwargs), = seen
         assert argv[:3] == ("--literal-pathspecs", "grep", "--threads=1")
         assert argv[-4:] == ("-e", "needle", "--", "src/pkg")
-        assert kwargs["max_memory_bytes"] == 512 * 1024 * 1024 and kwargs["max_cpu_seconds"] == 20
+        assert kwargs["max_memory_bytes"] == 512 * 1024 * 1024 and kwargs["max_cpu_seconds"] == 15
 
     async def test_a_signal_death_is_reported_as_a_resource_stop(self, h, monkeypatch):
         from repolace_agents.tools.gitproc import LimitedGitResult
@@ -238,7 +238,8 @@ class TestGrepResourceLimits:
         lines = out.content.splitlines()
         assert lines[-1].startswith("[grep output was cut at 2000 bytes")
         assert 0 < len(lines) - 1 < 200
-        assert all(line.startswith("src/pkg/lots.txt:") for line in lines[:-1])  # no half-record
+        # No half-record: the cut landed mid-line, and the line it landed in is dropped.
+        assert all(line.endswith(":hit line of text") for line in lines[:-1])
 
     async def test_a_timeout_still_reports_narrowing(self, h, monkeypatch):
         # `run_limited_git` raising GitTimeoutError is covered above; this holds that a real
@@ -248,6 +249,85 @@ class TestGrepResourceLimits:
         out = await h.call("grep", pattern="needle")
 
         assert out.is_error and "narrow it" in out.content
+
+
+class TestGrepNeverReportsNoMatchesWhenItWasCut:
+    """A cut search that found nothing it could show is INCOMPLETE, not empty."""
+
+    async def test_a_first_record_larger_than_the_cap_does_not_hide_later_matches(self, tmp_path, monkeypatch):
+        # A minified bundle sorts first and is one line over the cap; its record is dropped as a
+        # half-record, leaving no output at all while `zzz_real.py` really does match.
+        files = {
+            "aaa_bundle.min.js": "x" * 5000 + " needle " + "y" * 100 + "\n",
+            "zzz_real.py": "needle = 1\n",
+        }
+        h = make_harness(tmp_path, files=files)
+        monkeypatch.setattr(search_module, "GREP_MAX_OUTPUT_BYTES", 2000)
+
+        out = await h.call("grep", pattern="needle", fixed_string=True)
+
+        assert out.content.startswith("INCOMPLETE") and "does NOT mean" in out.content
+        assert "no matches for" not in out.content and "path" in out.content
+        narrowed = await h.call("grep", pattern="needle", fixed_string=True, path="zzz_real.py")
+        assert narrowed.content == "zzz_real.py:1:needle = 1"
+
+    async def test_a_glob_applied_after_the_cut_does_not_turn_it_into_no_matches(self, tmp_path, monkeypatch):
+        files = {f"aaa_docs/page_{n}.md": "needle in the docs\n" * 60 for n in range(3)}
+        files["src/real.py"] = "needle = 1\n"
+        h = make_harness(tmp_path, files=files)
+        monkeypatch.setattr(search_module, "GREP_MAX_OUTPUT_BYTES", 2000)
+
+        out = await h.call("grep", pattern="needle", fixed_string=True, glob="*.py")
+
+        assert out.content.startswith("INCOMPLETE") and "matching glob '*.py'" in out.content
+        assert "no matches for" not in out.content
+        assert (await h.call("grep", pattern="needle", fixed_string=True, path="src")).content == "src/real.py:1:needle = 1"
+
+    async def test_a_search_that_was_not_cut_still_says_no_matches(self, h):
+        out = await h.call("grep", pattern="zzz_not_anywhere")
+
+        assert out.content.startswith("no matches for") and "INCOMPLETE" not in out.content
+
+
+class TestGrepFailureMessages:
+    @pytest.mark.parametrize(
+        "stderr",
+        [
+            b"fatal: -e option, 'x': Memory exhausted\n",
+            b"fatal: Out of memory, malloc failed (tried to allocate 600000001 bytes)\n",
+            b"fatal: out of memory\n",
+        ],
+    )
+    async def test_git_reporting_out_of_memory_gets_the_same_advice_as_a_kill(self, h, monkeypatch, stderr):
+        from repolace_agents.tools.gitproc import LimitedGitResult
+
+        async def oom(*args, **kwargs):
+            return LimitedGitResult(returncode=128, stdout=b"", stderr=stderr, output_cut=False)
+
+        monkeypatch.setattr(search_module, "run_limited_git", oom)
+
+        out = await h.call("grep", pattern="needle")
+
+        assert out.is_error and "too much memory or CPU time" in out.content and "fixed_string=true" in out.content
+        assert "fatal" not in out.content
+
+    async def test_a_host_path_in_git_stderr_is_scrubbed(self, h, monkeypatch):
+        from repolace_agents.tools.gitproc import LimitedGitResult
+
+        async def dubious(*args, **kwargs):
+            message = f"fatal: detected dubious ownership in repository at '{h.checkout}'\n"
+            return LimitedGitResult(returncode=128, stdout=b"", stderr=message.encode(), output_cut=False)
+
+        monkeypatch.setattr(search_module, "run_limited_git", dubious)
+
+        out = await h.call("grep", pattern="needle")
+
+        assert out.is_error and str(h.checkout) not in out.content and str(h.checkout.parent) not in out.content
+
+    async def test_the_description_says_which_regex_dialect_this_is(self, h):
+        description = h.box.schemas()[2]["function"]["description"]
+
+        assert "\\d, \\w and \\s do not work" in description and "[0-9]" in description
 
 
 class TestGrepOutputIsHonest:

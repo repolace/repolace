@@ -45,12 +45,14 @@ if TYPE_CHECKING:  # `contracts` imports the tools package, so a runtime import 
 #: Wall-clock bound on one `git grep`.
 GREP_TIMEOUT_SECONDS = 20.0
 
-#: Address-space and CPU ceilings for the `git grep` child. 512 MiB is far above what a
+#: Address-space and CPU ceilings for the `git grep` child. The CPU ceiling is below the 20 s
+#: wall-clock timeout on purpose: a pure CPU blow-up then dies with the `fixed_string` advice
+#: instead of an anonymous timeout. 512 MiB is far above what a
 #: real search needs (single-threaded, a few tens of MiB) and far below what a counted-
 #: repetition pattern wants (measured ~5 GB resident after 12 s), so a hostile pattern
 #: dies at the limit instead of taking the worker host down with it.
 GREP_MAX_MEMORY_BYTES = 512 * 1024 * 1024
-GREP_MAX_CPU_SECONDS = 20
+GREP_MAX_CPU_SECONDS = 15
 
 #: Bytes of `git grep` output read back before the process is killed. `run_git` buffers
 #: everything git prints, which for `-e .` over a large repository is gigabytes.
@@ -59,6 +61,7 @@ GREP_MAX_OUTPUT_BYTES = 1024 * 1024
 #: A counted repetition with a bound at or above this is refused in a regex pattern.
 MAX_REPEAT_BOUND = 100
 
+_OUT_OF_MEMORY = re.compile(r"out of memory|memory exhausted", re.IGNORECASE)
 _BACKREFERENCE = re.compile(r"\\[1-9]")
 _REPEAT_BOUND = re.compile(r"\{(\d*)(?:,(\d*))?\}")
 
@@ -151,10 +154,11 @@ class Grep:
             description=(
                 "Search file contents with git grep: TRACKED files only, so a file you just created "
                 "is not searched until the next run_python or run_tests commits it. The pattern is a "
-                "POSIX extended regular expression, or a plain string with fixed_string. Output is "
-                "path:line:text. Narrow with path (a file or directory) and glob (for example '*.py'; "
-                "'*' matches across directories, and a glob with no '/' is also matched against the "
-                "file name alone). Binary files are skipped."
+                "POSIX extended regular expression (so \\d, \\w and \\s do not work: write [0-9], "
+                "[A-Za-z0-9_] and [[:space:]]; there is no lookahead and no (?i), use case_insensitive), or a "
+                "plain string with fixed_string. Output is path:line:text. Narrow with path (a file or "
+                "directory) and glob (for example '*.py'; '*' matches across directories, and a glob with "
+                "no '/' is also matched against the file name alone). Binary files are skipped."
             ),
             parameters={
                 "type": "object",
@@ -219,15 +223,20 @@ class Grep:
             ) from None
 
         if not result.output_cut and result.returncode not in (0, 1):
-            if result.returncode < 0:
+            stderr = result.stderr.decode("utf-8", errors="replace")
+            # Scrubbed of the checkout path: an infrastructure fault ("dubious ownership") names it.
+            first_line = (stderr.splitlines() or ["(no message)"])[0]
+            for host_path in {str(ctx.checkout), str(ctx.checkout.resolve())}:
+                first_line = first_line.replace(host_path, ".")
+            if result.returncode < 0 or _OUT_OF_MEMORY.search(first_line):
+                # A signal (SIGXCPU is the CPU limit) or git's own report that the pattern or a
+                # file needed more memory than the limit allows.
                 raise ToolError(
-                    "grep was stopped for using too much memory or CPU time; use fixed_string=true or a "
-                    "simpler pattern"
+                    "grep used too much memory or CPU time and was stopped; use fixed_string=true or a "
+                    "simpler pattern, and narrow with path"
                 )
             # 128 is an invalid regular expression -- but it is also what a broken repository
             # would give, and git's message tells the model which. (Exit 1 is "no matches".)
-            stderr = result.stderr.decode("utf-8", errors="replace")
-            first_line = (stderr.splitlines() or ["(no message)"])[0]
             raise ToolError(f"grep failed: {_clip(first_line, 300)}")
 
         output = result.stdout.decode("utf-8", errors="replace")
@@ -245,6 +254,15 @@ class Grep:
 
         if not matches:
             scope = f" matching glob {glob!r}" if glob is not None else ""
+            if result.output_cut:
+                # The cut happened before the glob and `.git*` filters ran, and a first record
+                # larger than the cap leaves nothing at all. "No matches" would be a false negative.
+                return ToolOutcome(
+                    f"INCOMPLETE: grep's output was cut at {GREP_MAX_OUTPUT_BYTES} bytes before any match "
+                    f"that passes your filters was seen, so this does NOT mean {shown(pattern)!r} has no "
+                    f"matches under {printable(pathspec)}{scope}. Narrow the search with path (a directory "
+                    f"or file; a glob is applied after the cut) and try again"
+                )
             return ToolOutcome(f"no matches for {shown(pattern)!r} in tracked files under {printable(pathspec)}{scope}")
         # Budgeted in characters, with room kept for up to two notices: a count limit does not
         # bound size, and the box would cut the notices off the end.
