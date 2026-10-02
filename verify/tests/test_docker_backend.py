@@ -408,18 +408,33 @@ class TestScriptContainment:
     async def test_the_resource_caps_bind(self, backend, spec, environment, tmp_path):
         """Read back from the cgroup, as CLAUDE.md records for `run_tests`. Rootless
         Docker without cgroup v2 delegation silently ignores these flags, so a green
-        run here is also the check that delegation is in place."""
+        run here is also the check that delegation is in place.
+
+        `memory.swap.max` is the one file CLAUDE.md never verified, so it is read
+        tolerantly (printed as `absent`) and checked only if it exists; the other
+        three are required, and a missing one is named in the failure message rather
+        than aborting the script before the later lines print.
+        """
         code = """
+            import os
             for name in ("memory.max", "memory.swap.max", "pids.max", "cpu.max"):
-                print(name, open("/sys/fs/cgroup/" + name).read().strip())
+                path = "/sys/fs/cgroup/" + name
+                print(name, open(path).read().strip() if os.path.exists(path) else "absent")
         """
         result, _ = await run_script(backend, spec, environment, tmp_path, "cgroup", code)
 
         assert result.error is None, result.error
-        assert "memory.max 2147483648" in result.stdout, result.stdout
-        assert "memory.swap.max 0" in result.stdout
-        assert "pids.max 512" in result.stdout
-        assert "cpu.max 200000 100000" in result.stdout
+        seen = {}
+        for line in result.stdout.splitlines():
+            name, _, value = line.partition(" ")
+            seen[name] = value
+        required = {"memory.max": "2147483648", "pids.max": "512", "cpu.max": "200000 100000"}
+        missing = [name for name in required if seen.get(name, "absent") == "absent"]
+        assert not missing, f"cgroup files not readable in the container: {missing}; got {seen}"
+        for name, expected in required.items():
+            assert seen[name] == expected, f"{name}: expected {expected!r}, got {seen[name]!r}"
+        if seen.get("memory.swap.max", "absent") != "absent":
+            assert seen["memory.swap.max"] == "0", f"memory.swap.max: got {seen['memory.swap.max']!r}"
 
     async def test_the_source_root_is_importable_through_pythonpath(
         self, backend, spec, environment, tmp_path
@@ -525,6 +540,11 @@ class TestProbesAndScriptsThroughTheVerifier:
         assert set(probe.failed) <= set(baseline.failed) and probe.failed
         assert probe.fingerprint["rootdir"] == baseline.fingerprint["rootdir"] == "/repo"
 
+    # A note on every test here that runs a probe: the sandbox writes into its own export
+    # (a `.hypothesis` directory, a `.coverage` file), as its subuid, and the host cannot
+    # delete entries it does not own. That is the known CLAUDE.md hazard, multiplied by
+    # the number of probes, which is why the workspace's parent directory has to be
+    # quota-limited in production and why `discard` logs a warning for what it leaves.
     async def test_probes_and_scripts_leave_no_directories_and_no_containers(
         self, backend, spec, origin_url, tmp_path
     ):
@@ -559,34 +579,107 @@ class TestProbesAndScriptsThroughTheVerifier:
             assert not (workspace.path / "_repolace_script.py").exists()
 
     async def test_the_overlay_runs_in_scored_runs_and_is_invisible_to_probes_and_the_image(
-        self, backend, spec, origin_url, tmp_path
+        self, backend, origin_url, tmp_path
     ):
         """The oracle must reach the scored runs and nothing else: not a probe, not
-        a script, and not the image layer the cache shares between tasks."""
+        a script, and not the image layer the cache shares between tasks.
+
+        A spec key of its own, so the image is *built* here from a clean export. With
+        the shared key an earlier test would already have built that tag from a tree
+        that never had the hidden file, and an overlay wrongly applied before `prepare`
+        would hit that cached image and the final assertion would still pass.
+        """
+        spec = RepoSpec(key=f"repolace/overlay-{uuid.uuid4().hex[:8]}")
         hidden = {"test_hidden.py": b"def test_hidden():\n    assert False\n"}
-        async with task_workspace(
-            "o", "r", target_branch="main", clone_url=origin_url, parent_dir=tmp_path
-        ) as workspace:
-            verifier = Verifier(backend, spec, uuid.uuid4(), overlay=hidden)
+        image = None
+        try:
+            async with task_workspace(
+                "o", "r", target_branch="main", clone_url=origin_url, parent_dir=tmp_path
+            ) as workspace:
+                verifier = Verifier(backend, spec, uuid.uuid4(), overlay=hidden)
 
-            baseline = await verifier.run(workspace, BASELINE_ATTEMPT)
-            # No targets: the whole visible tree, so a leaked hidden file would be collected.
-            probe = await verifier.run_subset(workspace, [])
-            script = await verifier.run_script(
-                workspace, "import os\nprint(os.path.exists('/repo/test_hidden.py'))", timeout_seconds=60.0
+                baseline = await verifier.run(workspace, BASELINE_ATTEMPT)
+                image = verifier._env.identifier
+                # No targets: the whole visible tree, so a leaked hidden file would be collected.
+                probe = await verifier.run_subset(workspace, [])
+                script = await verifier.run_script(
+                    workspace,
+                    "import os\nprint(os.path.exists('/repo/test_hidden.py'))",
+                    timeout_seconds=60.0,
+                )
+
+            assert "test_hidden.py::test_hidden" in baseline.failed
+            assert probe.scoreable, probe.error
+            assert "test_sample.py::test_passes" in probe.passed  # it really ran the visible suite
+            assert "test_hidden.py::test_hidden" not in probe.failed + probe.passed + probe.skipped
+            assert script.stdout.strip() == "False", script.error
+
+            in_image = subprocess.run(
+                [DockerConfig().docker_binary, "run", "--rm", "--network=none", "--pull=never",
+                 "--entrypoint", "python", image,
+                 "-c", "import os; print(os.path.exists('/repo/test_hidden.py'))"],
+                capture_output=True, text=True, check=True,
             )
+            assert in_image.stdout.strip() == "False"
+        finally:
+            if image is not None:
+                subprocess.run([DockerConfig().docker_binary, "rmi", "--force", image], capture_output=True)
 
-            image = verifier._env.identifier
 
-        assert "test_hidden.py::test_hidden" in baseline.failed
-        assert probe.scoreable, probe.error
-        assert "test_sample.py::test_passes" in probe.passed  # it really ran the visible suite
-        assert "test_hidden.py::test_hidden" not in probe.failed + probe.passed + probe.skipped
-        assert script.stdout.strip() == "False", script.error
 
-        in_image = subprocess.run(
-            [DockerConfig().docker_binary, "run", "--rm", "--network=none", "--entrypoint", "python", image,
-             "-c", "import os; print(os.path.exists('/repo/test_hidden.py'))"],
-            capture_output=True, text=True, check=True,
+class TestAProbeCannotSubstituteAnotherRunsReport:
+    """The attack that leaked the oracle: code under test replaces `/results/report.jsonl`
+    with a link to a sibling run's report -- here the baseline's, written by a real
+    earlier container with a different nonce. The host must refuse it, not parse it.
+
+    The swap runs from an `atexit` hook in a `conftest.py`, so it happens after the plugin
+    has closed its file, exactly when a hostile suite would do it. The host path of the
+    sibling is baked in; a real probe finds it from `/proc/self/mountinfo` or from an
+    error message, which is why errors carry no host paths either.
+    """
+
+    SWAPS = {
+        "symlink-to-the-baselines-report": "os.symlink({sibling!r}, path)",
+        "symlink-to-a-host-file": "os.symlink({secret!r}, path)",
+        "fifo": "os.mkfifo(path)",
+        "directory": "os.mkdir(path)",
+    }
+
+    CONFTEST = """
+import atexit, os
+
+def _swap():
+    path = "/results/report.jsonl"
+    os.remove(path)
+    {swap}
+
+atexit.register(_swap)
+"""
+
+    @pytest.mark.parametrize("kind", sorted(SWAPS))
+    async def test_the_swap_is_refused(self, backend, spec, environment, tmp_path, kind):
+        baseline_source = make_source(tmp_path, "sub-base", "def test_baseline_only():\n    assert False\n")
+        baseline_results = make_dir(tmp_path / "results-baseline")
+        baseline = await backend.run_tests(
+            environment, baseline_source, baseline_results, spec,
+            container_name=f"repolace-test-{uuid.uuid4().hex[:12]}",
         )
-        assert in_image.stdout.strip() == "False"
+        assert baseline.failed == ("test_sample.py::test_baseline_only",), baseline.error
+
+        secret = tmp_path / "host_secret.env"
+        secret.write_text("DATABASE_URL=postgres://user:pw@host/db\n")
+        swap = self.SWAPS[kind].format(sibling=str(baseline_results / "report.jsonl"), secret=str(secret))
+        probe_source = make_source(tmp_path, "sub-probe", "def test_probe_own():\n    assert True\n")
+        (probe_source / "conftest.py").write_text(self.CONFTEST.format(swap=swap))
+        probe_results = make_dir(tmp_path / "results-probe")
+
+        result = await backend.run_tests(
+            environment, probe_source, probe_results, spec,
+            container_name=f"repolace-test-{uuid.uuid4().hex[:12]}",
+        )
+
+        assert result.error is not None and "not a regular file" in result.error, result
+        assert "baseline_only" not in repr(result)
+        assert "pw@host" not in repr(result)
+        assert result.failed == () and result.passed == ()
+        assert str(tmp_path) not in repr(result)
