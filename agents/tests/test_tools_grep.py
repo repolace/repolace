@@ -27,6 +27,8 @@ FILES = {
     ":(exclude)src": "needle in a file named like pathspec magic\n",
     "-h": "needle in a file named like an option\n",
     "flags.txt": "use -v to be verbose\n",
+    ".github/workflows/ci.yml": "on: push  # needle in CI\n",
+    ".gitattributes": "* text  # needle in attributes\n",
 }
 
 
@@ -153,11 +155,145 @@ class TestGrep:
         async def slow(*args, **kwargs):
             raise GitTimeoutError(args, 20.0)
 
-        monkeypatch.setattr(search_module, "run_git", slow)
+        monkeypatch.setattr(search_module, "run_limited_git", slow)
 
         out = await h.call("grep", pattern="needle")
 
         assert out.is_error and "narrow it" in out.content
+
+
+class TestGrepResourceLimits:
+    """glibc's regex engine is not safe against a hostile pattern: only `-F` is."""
+
+    MEMORY_BOMB = "((a{1,200}){1,200}){1,200}b"  # 28 characters; ~5 GB resident under plain git
+    BACKREFERENCES = r"(.*)(.*)(.*)(.*)(.*)(.*)(.*)(.*)\1\2\3\4\5\6\7\8x"  # exponential in CPU
+
+    @pytest.mark.parametrize("pattern", [MEMORY_BOMB, BACKREFERENCES])
+    async def test_the_reviewers_patterns_are_refused_up_front(self, h, pattern):
+        out = await h.call("grep", pattern=pattern)
+
+        assert out.is_error and "fixed_string=true" in out.content
+
+    @pytest.mark.parametrize("pattern", ["(a)\\1", "x{100}", "x{1,100}", "x{100,}", "x{,150}", "(x{2}){3}{500}", "a{99999999999999999999}"])
+    async def test_a_backreference_or_a_bound_of_a_hundred_is_refused_in_a_regex(self, h, pattern):
+        out = await h.call("grep", pattern=pattern)
+
+        assert out.is_error and "fixed_string=true" in out.content
+
+    @pytest.mark.parametrize("pattern", ["x{99}", "x{1,99}", "(a|b){2}", "x{0}", "needle", r"a\.b", "[0-9]{1,3}"])
+    async def test_ordinary_patterns_and_small_bounds_still_run(self, h, pattern):
+        assert not (await h.call("grep", pattern=pattern)).is_error
+
+    async def test_the_same_text_is_fine_as_a_fixed_string(self, h):
+        for pattern in (self.MEMORY_BOMB, self.BACKREFERENCES, "x{100}"):
+            out = await h.call("grep", pattern=pattern, fixed_string=True)
+
+            assert not out.is_error and "no matches" in out.content
+
+    async def test_a_pattern_that_gets_past_the_check_still_dies_at_the_memory_limit(self, h, monkeypatch):
+        # ((a{1,99}){1,99}){1,99}b is under the bound check but still explodes. Run it with a
+        # small limit so the test bounds itself instead of eating the real 512 MiB.
+        monkeypatch.setattr(search_module, "GREP_MAX_MEMORY_BYTES", 128 * 1024 * 1024)
+
+        out = await h.call("grep", pattern="((a{1,99}){1,99}){1,99}b")
+
+        assert out.is_error and ("Memory exhausted" in out.content or "too much memory" in out.content)
+
+    async def test_the_child_is_single_threaded_and_the_path_stays_after_the_double_dash(self, h, monkeypatch):
+        seen = []
+        real = search_module.run_limited_git
+
+        async def spy(*args, **kwargs):
+            seen.append((args, kwargs))
+            return await real(*args, **kwargs)
+
+        monkeypatch.setattr(search_module, "run_limited_git", spy)
+
+        await h.call("grep", pattern="needle", path="src/pkg")
+
+        (argv, kwargs), = seen
+        assert argv[:3] == ("--literal-pathspecs", "grep", "--threads=1")
+        assert argv[-4:] == ("-e", "needle", "--", "src/pkg")
+        assert kwargs["max_memory_bytes"] == 512 * 1024 * 1024 and kwargs["max_cpu_seconds"] == 20
+
+    async def test_a_signal_death_is_reported_as_a_resource_stop(self, h, monkeypatch):
+        from repolace_agents.tools.gitproc import LimitedGitResult
+
+        async def killed(*args, **kwargs):
+            return LimitedGitResult(returncode=-24, stdout=b"", stderr=b"", output_cut=False)
+
+        monkeypatch.setattr(search_module, "run_limited_git", killed)
+
+        out = await h.call("grep", pattern="needle")
+
+        assert out.is_error and "too much memory or CPU time" in out.content
+
+    async def test_output_beyond_the_cap_is_cut_and_says_so(self, h, monkeypatch):
+        (h.checkout / "src/pkg/lots.txt").write_text("hit line of text\n" * 5000)
+        git(h.checkout, "add", "-A")
+        monkeypatch.setattr(search_module, "GREP_MAX_OUTPUT_BYTES", 2000)
+
+        out = await h.call("grep", pattern="hit", path="src/pkg/lots.txt", max_results=200)
+
+        lines = out.content.splitlines()
+        assert lines[-1].startswith("[grep output was cut at 2000 bytes")
+        assert 0 < len(lines) - 1 < 200
+        assert all(line.startswith("src/pkg/lots.txt:") for line in lines[:-1])  # no half-record
+
+    async def test_a_timeout_still_reports_narrowing(self, h, monkeypatch):
+        # `run_limited_git` raising GitTimeoutError is covered above; this holds that a real
+        # expiry (not a stub) maps the same way.
+        monkeypatch.setattr(search_module, "GREP_TIMEOUT_SECONDS", 0.0001)
+
+        out = await h.call("grep", pattern="needle")
+
+        assert out.is_error and "narrow it" in out.content
+
+
+class TestGrepOutputIsHonest:
+    async def test_a_file_name_with_a_newline_cannot_forge_a_record(self, tmp_path):
+        files = dict(FILES)
+        files["src/pkg/core.py"] = "def add(a, b):\n    return a + b\n"  # no needle here
+        files["forge/x\nsrc/pkg/core.py"] = "NEEDLE forged\n"
+        h = make_harness(tmp_path, files=files)
+
+        out = await h.call("grep", pattern="NEEDLE", fixed_string=True, path="forge")
+
+        assert not any(line.startswith("src/pkg/core.py:") for line in out.content.splitlines())
+        assert out.content == "forge/x\\x0asrc/pkg/core.py:1:NEEDLE forged"
+
+    async def test_a_file_name_with_control_characters_is_shown_escaped(self, tmp_path):
+        files = dict(FILES)
+        files["nl\nname.py"] = "NEEDLE here\n"
+        files["esc\x1b[31mred.py"] = "NEEDLE there\n"
+        h = make_harness(tmp_path, files=files)
+
+        out = await h.call("grep", pattern="NEEDLE", fixed_string=True)
+
+        assert "nl\\x0aname.py:1:NEEDLE here" in out.content
+        assert "esc\\x1b[31mred.py:1:NEEDLE there" in out.content
+        assert "\x1b" not in out.content
+
+    async def test_a_matched_nul_late_in_a_file_cannot_start_a_forged_record(self, tmp_path):
+        # `-I` only looks at the first 8000 bytes, so a NUL later in the file reaches the output.
+        files = dict(FILES)
+        files["late.txt"] = "x" * 9000 + "\nneedle\0src/pkg/core.py\0 7\0fake\n"
+        h = make_harness(tmp_path, files=files)
+
+        out = await h.call("grep", pattern="needle", path="late.txt")
+
+        assert not any(line.startswith("src/pkg/core.py:") for line in out.content.splitlines())
+
+    async def test_tracked_dot_git_family_files_are_not_searched_for_the_model(self, h):
+        # read_file and list_dir refuse them; grep must not be the way around that.
+        out = await h.call("grep", pattern="needle")
+
+        assert out.content.count("\n") >= 1
+        assert ".github" not in out.content and ".gitattributes" not in out.content
+        assert "no matches" in (await h.call("grep", pattern="needle in CI", path=".")).content
+
+    async def test_a_glob_cannot_resurrect_a_git_family_path(self, h):
+        assert "no matches" in (await h.call("grep", pattern="needle", glob="*.yml")).content
 
 
 class TestGrepInjection:
@@ -297,6 +433,16 @@ class TestSearchCode:
         out = await h.call("search_code", query="\ud800")
 
         assert out.is_error and "not valid text" in out.content
+        assert h.searches == []
+
+    @pytest.mark.parametrize("query", [" ", "   \t\n ", "\x00", "foo\x00bar", "\n"])
+    async def test_a_blank_query_or_one_with_a_nul_is_refused_before_the_index_is_called(self, tmp_path, query):
+        # Real retrieval raises ValueError on a blank query and Postgres rejects a NUL.
+        h = make_harness(tmp_path, hits=[hit()])
+
+        out = await h.call("search_code", query=query)
+
+        assert out.is_error and out.content == "query must contain visible text"
         assert h.searches == []
 
     async def test_no_hits_says_so_and_points_at_grep(self, tmp_path):
