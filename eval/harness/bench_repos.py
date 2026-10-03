@@ -680,19 +680,11 @@ def _selected(requested: str, available: Sequence[str], what: str) -> list[str]:
     return wanted
 
 
-def main(
-    argv: Sequence[str] | None = None,
-    *,
-    transport: httpx.AsyncBaseTransport | None = None,
-    token_reader: Callable[[], str | None] | None = None,
-    git_push: GitPush | None = None,
-    checkout: Checkout | None = None,
-    api_url: str = GITHUB_API,
-    git_url: str = GITHUB_GIT,
-) -> int:
-    """`repolace-eval fork`. The keyword arguments are test seams, not flags."""
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="repolace-eval fork",
+        # `fork --de --y` must not mean `--delete --yes`: a prefix match on a destructive flag.
+        allow_abbrev=False,
         description=f"Create the private bench-<instance_id> repositories in {BENCH_OWNER}/ and push each base commit. "
         f"Needs {TOKEN_ENV_VAR}; see the module docstring for scopes.",
     )
@@ -706,7 +698,21 @@ def main(
     )
     parser.add_argument("--delete", action="store_true", help="delete the listed bench-* repositories (irreversible)")
     parser.add_argument("--yes", action="store_true", help="with --delete: actually delete instead of listing")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    transport: httpx.AsyncBaseTransport | None = None,
+    token_reader: Callable[[], str | None] | None = None,
+    git_push: GitPush | None = None,
+    checkout: Checkout | None = None,
+    api_url: str = GITHUB_API,
+    git_url: str = GITHUB_GIT,
+) -> int:
+    """`repolace-eval fork`. The keyword arguments are test seams, not flags."""
+    args = build_parser().parse_args(argv)
 
     mapping_path = args.bench_repos_file or args.instances_dir / MAPPING_FILENAME
     try:

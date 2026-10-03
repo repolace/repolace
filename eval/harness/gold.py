@@ -333,17 +333,23 @@ def render_validation(verdicts: Sequence[InstanceVerdict], run_ids: Sequence[str
 # --- command line ---------------------------------------------------------------
 
 
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="repolace-eval gold", description="Analyse two gold runs and write VALIDATION.md.", allow_abbrev=False
+    )
+    parser.add_argument("--runs", default=",".join(DEFAULT_RUNS), help="the two gold run ids, comma-separated")
+    parser.add_argument("--instances-dir", type=Path, default=DEFAULT_INSTANCES_DIR)
+    parser.add_argument("--output", type=Path, default=None, help=f"default: <instances-dir>/{VALIDATION_FILENAME}")
+    return parser
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
     session_factory: Callable[[], AbstractAsyncContextManager[SessionFactory]] | None = None,
 ) -> int:
     """`repolace-eval gold`. Exit 0 if every instance is accepted, 1 if any is rejected, 2 on bad input."""
-    parser = argparse.ArgumentParser(prog="repolace-eval gold", description="Analyse two gold runs and write VALIDATION.md.")
-    parser.add_argument("--runs", default=",".join(DEFAULT_RUNS), help="the two gold run ids, comma-separated")
-    parser.add_argument("--instances-dir", type=Path, default=DEFAULT_INSTANCES_DIR)
-    parser.add_argument("--output", type=Path, default=None, help=f"default: <instances-dir>/{VALIDATION_FILENAME}")
-    args = parser.parse_args(argv)
+    args = build_parser().parse_args(argv)
 
     run_ids = [item for item in args.runs.split(",") if item]
     try:

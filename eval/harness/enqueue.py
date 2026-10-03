@@ -372,7 +372,9 @@ async def enqueue_tasks(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="repolace-eval enqueue", description="Enqueue benchmark tasks for one run.")
+    parser = argparse.ArgumentParser(
+        prog="repolace-eval enqueue", description="Enqueue benchmark tasks for one run.", allow_abbrev=False
+    )
     parser.add_argument("--eval-run-id", required=True)
     parser.add_argument("--instances", default="all", help="comma-separated instance ids, or 'all'")
     parser.add_argument("--runs", type=int, default=3, help="runs per instance (run_index 0..N-1)")
