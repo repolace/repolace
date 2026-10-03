@@ -221,6 +221,58 @@ class TestHeadlineIsPassedOverPlanned:
         assert report.headlines[0].repos == 2
 
 
+UNCURATED = "3 fail-to-pass, no regressions (uncurated: not evidence this issue specifically was fixed)"
+CURATED = "all 3 expected tests pass, no regressions"
+
+
+class TestPassesThatProveLess:
+    """A pass the instrument cannot stand behind is marked on the figure itself, and warned about first."""
+
+    def test_uncurated_passes_mark_the_headline_and_lead_the_warnings(self):
+        # The audit's repro: ten such rows printed 100% with no warning at all.
+        rows = sweep(0, ["passed"] * 10, score_reason=UNCURATED)
+        report = aggregate(rows, manifests={"run-a": run_manifest(10, runs=1)})
+        assert "UNCURATED (10 of 10 passes)" in report.headlines[0].flags
+        assert "UNCURATED (10 of 10 passes)" in report.warnings[0]
+        assert "not that this issue was fixed" in report.warnings[0]
+        assert "(100%) [95% interval over 10 instances: 100%-100%]** **UNCURATED (10 of 10 passes)**" in to_markdown(report)
+
+    def test_only_the_uncurated_passes_are_counted(self):
+        rows = [task_row(instance_id=f"inst-{i}", score_reason=CURATED if i % 2 else UNCURATED) for i in range(4)]
+        assert "UNCURATED (2 of 4 passes)" in headline_of(rows, run_manifest(4, runs=1)).flags
+
+    def test_a_curated_pass_is_not_marked(self):
+        rows = sweep(0, ["passed"] * 3, score_reason=CURATED)
+        assert headline_of(rows, run_manifest(3, runs=1)).flags == ()
+
+    def test_an_uncurated_failure_is_not_a_pass_to_mark(self):
+        rows = sweep(0, ["passed", "failed"], score_reason=UNCURATED)
+        assert "UNCURATED (1 of 1 passes)" in headline_of(rows, run_manifest(2, runs=1)).flags
+
+    def test_a_pass_that_made_no_llm_call_is_marked_and_warned_about(self):
+        # The audit's repro: 20 gold-agent rows filed under a normal run id, model None,
+        # zero LLM calls, printed 100%.
+        rows = sweep(0, ["passed"] * 20, model=None, llm_calls=0, cost=None)
+        report = aggregate(rows, manifests={"run-a": run_manifest(20, runs=1)})
+        assert "NO-LLM-CALL PASSES (20 of 20)" in report.headlines[0].flags
+        assert "gold or stub run" in report.warnings[0]
+        assert "**NO-LLM-CALL PASSES (20 of 20)**" in to_markdown(report)
+
+    def test_a_failure_with_no_llm_call_is_not_flagged(self):
+        rows = sweep(0, ["passed", "harness"], llm_calls=0)
+        assert headline_of(rows, run_manifest(2, runs=1)).flags == ("NO-LLM-CALL PASSES (1 of 1)",)
+        rows = [task_row(instance_id="inst-0"), task_row(instance_id="inst-1", llm_calls=0, **KINDS["harness"])]
+        assert headline_of(rows, run_manifest(2, runs=1)).flags == ()
+
+    @pytest.mark.parametrize("agent", ["gold", "stub"])
+    def test_a_manifest_that_says_the_run_was_not_an_llm_agent_is_refused(self, agent):
+        with pytest.raises(ReportError, match=f"is a '{agent}' run according to its manifest"):
+            aggregate(sweep(0, ["passed"]), manifests={"run-a": run_manifest(1, runs=1, agent=agent)})
+
+    def test_an_llm_manifest_is_accepted(self):
+        assert headline_of(sweep(0, ["passed"]), run_manifest(1, runs=1, agent="llm")).passed == 1
+
+
 class TestInterval:
     def test_it_is_over_instances_deterministic_and_documented(self, three_runs):
         manifest = run_manifest(10, runs=3)
