@@ -72,6 +72,7 @@ from harness.metrics import (
     BOOTSTRAP_SEED,
     CONFIDENCE,
     cluster_bootstrap_interval,
+    exact_sign_test,
     percentile,
 )
 from harness.run_manifest import ManifestError, RunManifest, load_manifest, manifest_path
@@ -114,7 +115,8 @@ SMALL_N_CAVEAT = (
     "At N = 15 to 20 instances the 95% interval is about 30 to 40 percentage points wide (a Wilson interval at "
     "p = 0.5 is 30-75% for N = 15 and 30-70% for N = 20), and one instance moves the rate by 1/N. The "
     "run-to-run range is the spread of the run rates with the instances held fixed. It is not an interval and "
-    "does not capture the uncertainty from having sampled N instances."
+    "does not capture the uncertainty from having sampled N instances. At this N, differences under about 30 "
+    "percentage points between two models on the same instances are not statistically distinguishable."
 )
 
 
@@ -582,6 +584,61 @@ class GoldSummary:
 
 
 @dataclass(frozen=True)
+class Comparison:
+    """Two models on the instances BOTH were scored on, first run of each. Discordant counts, no delta."""
+
+    model_a: str
+    model_b: str
+    compared: int
+    #: Instances at least one model has a row for that were not compared: the other
+    #: model has none, or one of the two rows was a harness error, inadmissible or unfinished.
+    not_compared: int
+    both_pass: int
+    neither_pass: int
+    a_only: int
+    b_only: int
+    #: Exact two-sided McNemar p-value; None with no discordant instance.
+    p_value: float | None
+
+
+_SCORED = (PASSED, FAILED, PASSED_WITH_TEST_EDIT)
+
+
+def _comparisons(agent_rows: Sequence[TaskRow]) -> tuple[Comparison, ...]:
+    """Pairwise model comparisons, paired by instance on `run_index == 0`.
+
+    Restricted to instances scored under both models: comparing each model's pass rate over
+    whatever instances it happened to finish is a comparison of two different sets. Only
+    discordant counts and an exact p-value are printed; a bare difference of two rates at
+    this N reads as a result and is not one.
+    """
+    first_runs: dict[str, dict[str, TaskRow]] = {}
+    for row in agent_rows:
+        if row.model and row.run_index == 0:
+            first_runs.setdefault(row.model, {})[row.instance_id] = row
+    out = []
+    models = sorted(first_runs)
+    for index, model_a in enumerate(models):
+        for model_b in models[index + 1:]:
+            rows_a, rows_b = first_runs[model_a], first_runs[model_b]
+            common = sorted(
+                i for i in set(rows_a) & set(rows_b)
+                if classify(rows_a[i]) in _SCORED and classify(rows_b[i]) in _SCORED
+            )
+            wins_a = {i for i in common if classify(rows_a[i]) == PASSED}
+            wins_b = {i for i in common if classify(rows_b[i]) == PASSED}
+            a_only, b_only = len(wins_a - wins_b), len(wins_b - wins_a)
+            both = len(wins_a & wins_b)
+            out.append(Comparison(
+                model_a=model_a, model_b=model_b, compared=len(common),
+                not_compared=len(set(rows_a) | set(rows_b)) - len(common),
+                both_pass=both, neither_pass=len(common) - both - a_only - b_only,
+                a_only=a_only, b_only=b_only, p_value=exact_sign_test(a_only, b_only),
+            ))
+    return tuple(out)
+
+
+@dataclass(frozen=True)
 class BucketCost:
     rows: int
     cost: Stats
@@ -642,6 +699,7 @@ class Report:
     #: Instances with finished rows and not one admissible row.
     instances_never_admissible: tuple[str, ...]
     models: dict[str, ModelBlock]
+    comparisons: tuple[Comparison, ...]
     targeted_p2p: TargetedP2P
     gold: GoldSummary
     warnings: tuple[str, ...]
@@ -942,6 +1000,7 @@ def aggregate(
         unfinished_cost_usd=sum(unfinished_costs) if unfinished_costs else None,
         instances_never_admissible=tuple(never_admissible),
         models=models,
+        comparisons=_comparisons(agent_rows),
         targeted_p2p=targeted_p2p,
         gold=gold,
         warnings=tuple(warnings),
@@ -1065,6 +1124,29 @@ def _stats_row(name: str, stats: Stats, fmt) -> str:
 _STATS_HEADER = "| measure | n | median | max | mean | p95 | total |\n|---|---|---|---|---|---|---|"
 
 
+def _comparison_lines(comparisons: Sequence[Comparison]) -> list[str]:
+    out = [
+        "## Model comparison",
+        "",
+        "Paired by instance on the first run of each model, over the instances BOTH models were scored on "
+        "(a harness error, an inadmissible or unfinished row, or an instance one model never ran is not "
+        "compared). Discordant counts and an exact two-sided McNemar p-value; no difference of rates is "
+        "printed, because at this N it reads as a result and is not one. Exact arithmetic: 8:0 gives "
+        "p = 0.008, 7:1 p = 0.07, 6:2 p = 0.29. At this N, differences under about 30 percentage points "
+        "between two models on the same instances are not statistically distinguishable.",
+        "",
+        "| model A | model B | compared | not compared | both pass | neither | A-only passes | B-only passes | exact p |",
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
+    for c in comparisons:
+        p = "n/a (no discordant instance)" if c.p_value is None else f"{c.p_value:.3f}"
+        out.append(
+            f"| {_cell(c.model_a)} | {_cell(c.model_b)} | {c.compared} | {c.not_compared} | {c.both_pass} | "
+            f"{c.neither_pass} | {c.a_only} | {c.b_only} | {p} |"
+        )
+    return out + [""]
+
+
 def _model_block_lines(block: ModelBlock) -> list[str]:
     out = [f"### {block.model}", "", _STATS_HEADER]
     out.append(_stats_row("cost (USD)", block.cost, _usd))
@@ -1145,6 +1227,8 @@ def to_markdown(report: Report) -> str:
     if report.instances_never_admissible:
         out += [f"Instances with no admissible row: {', '.join(report.instances_never_admissible)}.", ""]
 
+    if report.comparisons:
+        out += _comparison_lines(report.comparisons)
     out += ["## By model", "", "Counts. The model is that of each task's first LLM call; a task that fell back is labelled by its first.", "", _GROUP_HEADER]
     out += [_group_row(name, group) for name, group in report.by_model.items()] + [""]
     out += ["## By repository", "", "Counts, not rates: a repository holds a handful of instances.", "", _GROUP_HEADER]

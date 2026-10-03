@@ -556,6 +556,74 @@ class TestDuplicateRows:
             resolve_duplicates([], "newest")
 
 
+class TestModelComparison:
+    def pair(self, a_outcomes, b_outcomes, *, model_a="a/x", model_b="b/y"):
+        rows = [task_row(instance_id=f"inst-{i}", model=model_a, eval_run_id="run-a", outcome=o) for i, o in enumerate(a_outcomes)]
+        rows += [task_row(instance_id=f"inst-{i}", model=model_b, eval_run_id="run-b", outcome=o) for i, o in enumerate(b_outcomes)]
+        return aggregate(rows)
+
+    def test_discordant_counts_and_an_exact_p_value(self):
+        win, lose = O.PASSED, O.FAILED
+        # 8 instances only A passes, 12 neither: 8:0 -> p = 0.0078125
+        report = self.pair([win] * 8 + [lose] * 12, [lose] * 20)
+        (c,) = report.comparisons
+        assert (c.model_a, c.model_b, c.compared, c.not_compared) == ("a/x", "b/y", 20, 0)
+        assert (c.a_only, c.b_only, c.both_pass, c.neither_pass) == (8, 0, 0, 12)
+        assert c.p_value == pytest.approx(0.0078125)
+
+    def test_a_six_to_two_split_is_not_significant(self):
+        win, lose = O.PASSED, O.FAILED
+        report = self.pair([win] * 6 + [lose] * 2 + [win] * 4, [lose] * 6 + [win] * 2 + [win] * 4)
+        (c,) = report.comparisons
+        assert (c.a_only, c.b_only, c.both_pass) == (6, 2, 4)
+        assert c.p_value == pytest.approx(0.2890625)
+
+    def test_only_instances_scored_under_both_models_are_compared(self):
+        win, lose = O.PASSED, O.FAILED
+        rows = [task_row(instance_id="common", model="a/x", eval_run_id="run-a", outcome=win),
+                task_row(instance_id="common", model="b/y", eval_run_id="run-b", outcome=lose),
+                task_row(instance_id="only-a", model="a/x", eval_run_id="run-a", outcome=win),
+                task_row(instance_id="broken-b", model="a/x", eval_run_id="run-a", outcome=win),
+                task_row(instance_id="broken-b", model="b/y", eval_run_id="run-b", **KINDS["harness"]),
+                task_row(instance_id="unscored-b", model="a/x", eval_run_id="run-a", outcome=win),
+                task_row(instance_id="unscored-b", model="b/y", eval_run_id="run-b", **KINDS["inadmissible"])]
+        (c,) = aggregate(rows).comparisons
+        assert (c.compared, c.not_compared) == (1, 3)
+        assert (c.a_only, c.b_only) == (1, 0)
+
+    def test_only_the_first_run_of_each_model_is_paired(self):
+        rows = [task_row(instance_id="i", run_index=0, model="a/x", eval_run_id="run-a", outcome=O.PASSED),
+                task_row(instance_id="i", run_index=1, model="a/x", eval_run_id="run-a", outcome=O.FAILED),
+                task_row(instance_id="i", run_index=0, model="b/y", eval_run_id="run-b", outcome=O.FAILED)]
+        (c,) = aggregate(rows).comparisons
+        assert (c.compared, c.a_only) == (1, 1)
+
+    def test_passed_with_test_edit_is_scored_and_not_a_pass(self):
+        (c,) = self.pair([O.PASSED_WITH_TEST_EDIT], [O.PASSED]).comparisons
+        assert (c.compared, c.a_only, c.b_only) == (1, 0, 1)
+
+    def test_no_discordant_instance_has_no_p_value(self):
+        (c,) = self.pair([O.PASSED, O.FAILED], [O.PASSED, O.FAILED]).comparisons
+        assert c.p_value is None
+
+    def test_one_model_has_no_comparison(self):
+        assert aggregate(rows_for([O.PASSED])).comparisons == ()
+        assert "Model comparison" not in to_markdown(aggregate(rows_for([O.PASSED])))
+
+    def test_three_models_give_three_pairs(self):
+        rows = [task_row(instance_id="i", model=m, eval_run_id=f"run-{m}") for m in ("a/x", "b/y", "c/z")]
+        assert [(c.model_a, c.model_b) for c in aggregate(rows).comparisons] == [("a/x", "b/y"), ("a/x", "c/z"), ("b/y", "c/z")]
+
+    def test_the_markdown_prints_the_counts_the_p_value_and_the_caveat_and_no_difference(self):
+        win, lose = O.PASSED, O.FAILED
+        text = to_markdown(self.pair([win] * 8 + [lose] * 12, [lose] * 20))
+        assert "## Model comparison" in text
+        assert "| a/x | b/y | 20 | 0 | 0 | 12 | 8 | 0 | 0.008 |" in text
+        assert "differences under about 30 percentage points between two models on the same instances are not statistically distinguishable" in text.replace("\n", " ")
+        assert "8:0 gives p = 0.008, 7:1 p = 0.07, 6:2 p = 0.29" in text.replace("\n", " ")
+        assert "pp" not in text.split("## Model comparison")[1].split("## By model")[0]
+
+
 class TestPercentiles:
     def test_one_value_is_its_own_percentile(self):
         assert percentile([7.0], 95) == 7.0 and percentile([7.0], 0) == 7.0

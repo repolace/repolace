@@ -13,6 +13,7 @@ from harness.metrics import (
     chunk_reciprocal_rank,
     cluster_bootstrap_interval,
     distinct_in_order,
+    exact_sign_test,
     file_recall_at_k,
     file_reciprocal_rank,
     mean_of,
@@ -244,3 +245,25 @@ class TestPercentileLivesHere:
 
         assert reexported is percentile
         assert percentile([1.0, 2.0], 95) == pytest.approx(1.95)
+
+
+class TestExactSignTest:
+    """McNemar's exact test on discordant pairs: the arithmetic the report quotes."""
+
+    @pytest.mark.parametrize(
+        "b,c,expected",
+        [(8, 0, 0.0078125), (7, 1, 0.0703125), (6, 2, 0.2890625), (5, 3, 0.7265625), (4, 4, 1.0), (1, 0, 1.0)],
+    )
+    def test_the_published_cases(self, b, c, expected):
+        assert exact_sign_test(b, c) == pytest.approx(expected)
+        assert exact_sign_test(c, b) == pytest.approx(expected)
+
+    def test_no_discordant_pair_has_nothing_to_test(self):
+        assert exact_sign_test(0, 0) is None
+
+    def test_it_never_exceeds_one(self):
+        assert exact_sign_test(3, 3) == 1.0
+
+    def test_negative_counts_are_refused(self):
+        with pytest.raises(ValueError, match="must not be negative"):
+            exact_sign_test(-1, 2)
