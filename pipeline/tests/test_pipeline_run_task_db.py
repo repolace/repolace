@@ -358,6 +358,24 @@ class TestBenchmarkMode:
         assert row.score_reason == "all 1 expected tests pass, no regressions"
         assert "uncurated" not in row.score_reason
 
+    async def test_the_outcome_comes_from_the_last_scored_attempt_whether_or_not_the_agent_submitted(
+        self, db_session, db_session_factory, origin_url, instances
+    ):
+        """An agent that ran out of steps with a passing last attempt scored PASSED. Only whether to open a
+        PR may depend on how it stopped, and in benchmark mode the gate reads the score, not the stop."""
+        directory, _ = instances
+        task = await self.seed(db_session)
+
+        result, github = await run(
+            db_session_factory, origin_url, task, agent_that(StopReason.STEP_CAP),
+            FakeBackend(results=[BENCH_BASELINE, BENCH_AFTER]), instances_dir=directory,
+        )
+
+        row, _ = await reload(db_session_factory, task.id)
+        assert row.outcome is TaskOutcome.PASSED and result.outcome is TaskOutcome.PASSED
+        assert row.agent_stop_reason == "step_cap"
+        assert result.status is TaskStatus.PR_OPENED and len(github.pull_requests) == 1
+
     async def test_the_same_results_without_an_instance_read_uncurated(self, db_session, db_session_factory, origin_url):
         task = await seed_task(db_session)
 
