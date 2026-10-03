@@ -210,6 +210,62 @@ def make_cached_upstream(cache_dir: Path, repo: str = "psf/requests") -> str:
     return run_git_sync("rev-parse", "HEAD", cwd=path)
 
 
+# --- database rows ---------------------------------------------------------------
+
+_repo_ids = itertools.count(5000)
+
+
+async def add_installation(session, installation_id: int = 1) -> None:
+    from repolace_shared.db.models import GithubInstallation
+
+    if await session.get(GithubInstallation, installation_id) is None:
+        session.add(GithubInstallation(id=installation_id, account_login="repolace", account_id=1, account_type="Organization"))
+        await session.commit()
+
+
+async def add_repo(session, full_name: str, *, is_active: bool = True, installation_id: int = 1):
+    """A `registered_repos` row, as the App's installation sync would have written it."""
+    from repolace_shared.db.models import RegisteredRepo
+
+    await add_installation(session, installation_id)
+    owner, name = full_name.split("/")
+    repo = RegisteredRepo(
+        installation_id=installation_id, github_repo_id=next(_repo_ids), owner=owner, name=name,
+        full_name=full_name, default_branch="main", private=True, is_active=is_active,
+    )
+    session.add(repo)
+    await session.commit()
+    return repo
+
+
+async def add_task(
+    session, repo, *, eval_run_id: str | None = "run-1", instance_id: str | None = "a", run_index: int | None = 0,
+    status=None, started_at=None, **extra,
+):
+    from repolace_shared.db.models import Task, TaskStatus
+
+    task = Task(
+        repo_id=repo.id, issue_number=1, issue_title="t", issue_url="https://github.com/repolace/x",
+        target_branch="main", eval_run_id=eval_run_id, instance_id=instance_id, run_index=run_index,
+        status=status or TaskStatus.QUEUED, started_at=started_at, **extra,
+    )
+    session.add(task)
+    await session.commit()
+    return task
+
+
+async def add_llm_call(session, task, cost: str | None) -> None:
+    from decimal import Decimal
+
+    from repolace_shared.db.models import LLMCall
+
+    session.add(LLMCall(
+        task_id=task.id, stage="agent", model="m", provider="p",
+        cost_usd=None if cost is None else Decimal(cost),
+    ))
+    await session.commit()
+
+
 # --- fake children --------------------------------------------------------------
 
 #: A child that records its argv and its environment, then exits with a chosen code.
