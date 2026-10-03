@@ -191,10 +191,13 @@ class FakeGithubClient:
     so a test can make the preflight fail the way a missing App permission does.
     """
 
-    def __init__(self, permissions: dict[str, str] | None = None) -> None:
+    def __init__(
+        self, permissions: dict[str, str] | None = None, *, pull_request_error: Exception | None = None
+    ) -> None:
         self.permissions = (
             {"contents": "write", "pull_requests": "write"} if permissions is None else permissions
         )
+        self.pull_request_error = pull_request_error
         self.pull_requests: list[dict[str, Any]] = []
         self.token_requests = 0
         self.closed = False
@@ -209,6 +212,8 @@ class FakeGithubClient:
     async def create_pull_request(
         self, installation_id: int, owner: str, repo: str, head: str, base: str, title: str, body: str
     ) -> PullRequest:
+        if self.pull_request_error is not None:
+            raise self.pull_request_error
         number = len(self.pull_requests) + 1
         self.pull_requests.append(
             {
@@ -374,3 +379,14 @@ def attempt_record(attempt: int = 1, sha: str = "a" * 40, result: SuiteResult | 
         attempt=attempt, commit_sha=sha, result=result if result is not None else SuiteResult(passed=("t::a",)),
         infrastructure_error=False,
     )
+
+
+class NeverCalledLLM:
+    """An `LLMClientLike` for a test that needs the pipeline to build the toolbox and no model.
+
+    The pipeline gives an agent tools only when it was given a model, so a scripted agent that
+    drives the real tools needs *something* in `llm`. Calling it is a test bug, loudly.
+    """
+
+    async def complete(self, *args: Any, **kwargs: Any):
+        raise AssertionError("the scripted agent must not call a model")
