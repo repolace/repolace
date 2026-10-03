@@ -262,26 +262,46 @@ async def open_git_source(cache_dir: Path, repo: str) -> AsyncIterator[GitSource
 class GoldTargets:
     paths: tuple[str, ...]
     hunks: tuple[Span, ...]
+    #: `(path, reason)` for gold files retrieval cannot reach, kept out of the targets and reported.
+    dropped: tuple[tuple[str, str], ...] = ()
+
+
+NOT_PYTHON = "not a Python file: the indexer only chunks .py files"
+NO_CHANGED_LINES = "no changed old lines (a mode-only change or a pure rename)"
 
 
 def gold_targets(patch: str) -> GoldTargets:
-    """What the fix changed that already existed: file paths and old-side hunks.
+    """What the fix changed that retrieval could have found: Python files with changed old lines.
 
-    Files the patch only *adds* are not targets: they are absent from the index at
-    the base commit, so retrieval cannot find them, and counting them would charge
-    it for the impossible. Test and config paths are dropped too; the gold patch
-    has none by construction, and the filter keeps a hand-made instance honest.
+    Files the patch only *adds* are not targets: they are absent from the index at the base
+    commit. Neither is a gold file the indexer cannot hold -- the chunker is Python-only, so
+    `docs/guide.rst` is in no chunk -- nor one with no changed old line (a mode-only change,
+    a pure rename), which has a path and no hunk. Counting any of them would cap recall below
+    1.0 for a reason that is not retrieval; they are returned in `dropped` so the report can
+    say how many there were. Test and config paths are dropped silently: a gold patch has
+    none by construction, and the filter keeps a hand-made instance honest.
     """
     old_paths = [
         (change.old_path if change.status == RENAMED and change.old_path else change.path)
         for change in files_in_patch(patch)
         if change.status in (MODIFIED, DELETED, RENAMED)
     ]
-    wanted = [p for p in dict.fromkeys(old_paths) if not is_protected_path(p)]
     hunks = old_side_hunks(patch)
+    kept: list[str] = []
+    dropped: list[tuple[str, str]] = []
+    for path in dict.fromkeys(old_paths):
+        if is_protected_path(path):
+            continue
+        if not path.endswith(".py"):
+            dropped.append((path, NOT_PYTHON))
+        elif path not in hunks:
+            dropped.append((path, NO_CHANGED_LINES))
+        else:
+            kept.append(path)
     return GoldTargets(
-        paths=tuple(wanted),
-        hunks=tuple(Span(path, start, end) for path in wanted for start, end in hunks.get(path, [])),
+        paths=tuple(kept),
+        hunks=tuple(Span(path, start, end) for path in kept for start, end in hunks[path]),
+        dropped=tuple(dropped),
     )
 
 
@@ -362,6 +382,8 @@ class EvalRun:
     plans: list[RepoPlan]
     results: list[InstanceResult] = field(default_factory=list)
     skipped_instances: list[SkippedInstance] = field(default_factory=list)
+    #: `(instance_id, path, reason)`: gold files left out of the targets as unreachable.
+    dropped_targets: list[tuple[str, str, str]] = field(default_factory=list)
 
 
 async def plan_repo(
@@ -454,6 +476,9 @@ async def run_eval(
                 [spec for spec in all_specs if spec.repo == repo], instances_dir, source, limit=max_instances_per_repo,
             )
             run.skipped_instances.extend(skipped)
+            run.dropped_targets.extend(
+                (i.spec.instance_id, path, reason) for i in instances for path, reason in i.gold.dropped
+            )
             plan = await plan_repo(api, source, repo, instances, max_chunks_per_repo)
         run.plans.append(plan)
         if plan.skip_reason is None:
@@ -532,6 +557,9 @@ def to_markdown(run: EvalRun) -> str:
     if run.skipped_instances:
         out += ["", "Instances skipped (never scored as misses):", ""]
         out += [f"- {s.instance_id}: {s.reason}" for s in run.skipped_instances]
+    if run.dropped_targets:
+        out += ["", f"Gold files left out of the targets as unreachable ({len(run.dropped_targets)}):", ""]
+        out += [f"- {instance_id}: {path} ({reason})" for instance_id, path, reason in run.dropped_targets]
     summary = summarize(run)
     if summary:
         out += ["", "## By embedding strategy (all repositories pooled)", "", _HEADER.format(first="index / query strategy")]

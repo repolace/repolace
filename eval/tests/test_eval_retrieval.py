@@ -30,6 +30,8 @@ from harness.retrieval_eval import (
     EVAL_INSTALLATION_ID,
     STRATEGIES,
     EvalRun,
+    NOT_PYTHON,
+    NO_CHANGED_LINES,
     GoldTargets,
     Query,
     RepoPlan,
@@ -105,6 +107,45 @@ class TestGoldTargets:
         after[27] = "B"
         gold = gold_targets(diff("pkg/mod.py", LINES, after))
         assert gold.paths == ("pkg/mod.py",) and len(gold.hunks) == 2
+
+
+class TestUnreachableGoldFiles:
+    """A gold file retrieval cannot reach is dropped and counted, not scored as a miss."""
+
+    def test_a_non_python_gold_file_is_dropped_with_the_reason(self):
+        patch = diff("pkg/mod.py", LINES, [*LINES, "x"]) + diff("docs/guide.rst", LINES, [*LINES, "y"])
+        gold = gold_targets(patch)
+        assert gold.paths == ("pkg/mod.py",)
+        assert gold.hunks == (Span("pkg/mod.py", 30, 30),)
+        assert gold.dropped == (("docs/guide.rst", NOT_PYTHON),)
+
+    def test_a_mode_only_change_is_dropped(self):
+        patch = "diff --git a/pkg/run.py b/pkg/run.py\nold mode 100644\nnew mode 100755\n"
+        gold = gold_targets(patch)
+        assert gold.paths == () and gold.dropped == (("pkg/run.py", NO_CHANGED_LINES),)
+
+    def test_a_pure_rename_is_dropped_by_its_old_path(self):
+        rename = "diff --git a/pkg/a.py b/pkg/b.py\nsimilarity index 100%\nrename from pkg/a.py\nrename to pkg/b.py\n"
+        gold = gold_targets(rename)
+        assert gold.paths == () and gold.dropped == (("pkg/a.py", NO_CHANGED_LINES),)
+
+    def test_a_rename_with_an_edit_is_kept(self):
+        rename = (
+            "diff --git a/pkg/a.py b/pkg/b.py\nsimilarity index 90%\nrename from pkg/a.py\nrename to pkg/b.py\n"
+            "--- a/pkg/a.py\n+++ b/pkg/b.py\n@@ -1 +1 @@\n-x\n+y\n"
+        )
+        assert gold_targets(rename).dropped == ()
+
+    def test_a_gold_patch_of_only_unreachable_files_has_no_targets_at_all(self):
+        gold = gold_targets(diff("docs/guide.rst", LINES, [*LINES, "y"]))
+        assert gold.paths == () and gold.hunks == () and len(gold.dropped) == 1
+
+    def test_dropped_files_never_get_hunks(self):
+        gold = gold_targets(diff("README.md", LINES, ["top", *LINES]))
+        assert gold.hunks == ()
+
+    def test_a_python_file_with_changes_is_not_dropped(self):
+        assert gold_targets(diff("pkg/mod.py", LINES, ["top", *LINES])).dropped == ()
 
 
 # --- ids ---------------------------------------------------------------------
@@ -530,6 +571,20 @@ class TestRun:
         first = run.results[0].metrics
         assert first.file_rr == 0.5 and first.chunk_rr == 0.5
         assert first.file_recall[5] == 1.0 and first.chunk_recall[5] == 1.0
+
+    async def test_dropped_gold_files_are_listed_in_the_run_and_the_report(self, instances_world, db_session_factory):
+        _, instances_dir, cache_dir, _, shas = instances_world
+        await cache_of(instances_world)
+        gold = diff("pkg/mod.py", LINES, [*LINES, "x"]) + diff("docs/guide.rst", LINES, [*LINES, "y"])
+        write_instance(instances_dir, "psf__requests-2004", base_commit=shas["old"], gold_patch=gold)
+
+        run = await run_eval(db_session_factory, FakeApi(ranked=[Span("pkg/mod.py", 1, 4)]).api(), instances_dir=instances_dir,
+                             cache_dir=cache_dir, strategies=["truncate"], query_strategies=["truncate"])
+
+        assert run.dropped_targets == [("psf__requests-2004", "docs/guide.rst", NOT_PYTHON)]
+        text = to_markdown(run)
+        assert "Gold files left out of the targets as unreachable (1):" in text
+        assert f"- psf__requests-2004: docs/guide.rst ({NOT_PYTHON})" in text
 
     async def test_a_wide_chunk_retrieved_alone_does_not_recall_a_hunk_inside_a_narrower_one(self, instances_world, db_session_factory):
         _, instances_dir, cache_dir, *_ = instances_world
