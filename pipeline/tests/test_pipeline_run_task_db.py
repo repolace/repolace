@@ -14,6 +14,7 @@ were never written by anything).
 """
 
 import re
+from contextlib import asynccontextmanager
 from decimal import Decimal
 
 import pytest
@@ -25,7 +26,7 @@ from repolace_gateway.errors import LLMCallError, UnpricedModelError
 from repolace_gateway.recorder import CallRecord, Recorder
 from repolace_gateway.redaction import Redactor
 from repolace_shared.db.models import TaskOutcome, TaskStatus
-from repolace_shared.git import agent_branch_name
+from repolace_shared.git import agent_branch_name, task_workspace
 from repolace_shared.instances import dump_instance
 from retrieval.index import _repo_lock_key
 from verify.errors import EnvironmentBuildFailed
@@ -608,6 +609,36 @@ class TestNoAgentCausedStopFailsTheTask:
         row, _ = await reload(db_session_factory, task.id)
         assert result.status is TaskStatus.COMPLETED and row.error_message is None
         assert github.pull_requests == []
+
+    async def test_a_squash_that_finds_no_net_change_is_no_pr_not_a_harness_error(
+        self, db_session, db_session_factory, origin_url
+    ):
+        """The gate saw a change and the squash saw none. Reachable only by reading "change" twice and
+        getting two answers, and never the agent's doing -- but failing the task would be wrong the other way."""
+        task = await seed_task(db_session, open_pr_on_failure=True)
+
+        @asynccontextmanager
+        async def workspace_whose_squash_finds_nothing(*args, **kwargs):
+            async with task_workspace(*args, clone_url=origin_url, **kwargs) as workspace:
+                async def nothing(message):
+                    return None
+
+                workspace.squash = nothing
+                yield workspace
+
+        github = FakeGithubClient()
+        result = await run_task(
+            task.id, db_session_factory, github, FakeBackend(results=[BASELINE, AFTER]),
+            agent=agent_that(StopReason.SUBMITTED),
+            workspace_factory=workspace_whose_squash_finds_nothing,
+            embedder_warmup=lambda: None,
+        )
+
+        row, _ = await reload(db_session_factory, task.id)
+        assert result.status is row.status is TaskStatus.COMPLETED and row.error_message is None
+        assert github.pull_requests == []
+        assert "no net change" in result.pr_gate_reason
+        assert row.changed_files == ["src/app.py"], "the change the agent made is still recorded"
 
     async def test_an_agent_that_lets_a_budget_exception_escape_still_completes(
         self, db_session, db_session_factory, origin_url
