@@ -17,14 +17,14 @@ import re
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import text
 
 import repolace_pipeline.run as run_module
 from repolace_gateway.budget import BudgetExceeded, BudgetLimit, TaskBudget, current_scope
 from repolace_gateway.errors import LLMCallError, UnpricedModelError
 from repolace_gateway.recorder import CallRecord, Recorder
 from repolace_gateway.redaction import Redactor
-from repolace_shared.db.models import Task, TaskOutcome, TaskStatus, TaskTestRun
+from repolace_shared.db.models import TaskOutcome, TaskStatus
 from repolace_shared.git import agent_branch_name
 from repolace_shared.instances import dump_instance
 from retrieval.index import _repo_lock_key
@@ -38,7 +38,10 @@ from repolace_pipeline.errors import TaskNotClaimable
 from repolace_pipeline.runners import GoldAgent
 
 from pipeline_support import (
+    AFTER,
     APP_SOURCE,
+    BASELINE,
+    VISIBLE_TEST,
     FakeGithubClient,
     FakeToolCall,
     NeverCalledLLM,
@@ -48,19 +51,14 @@ from pipeline_support import (
     git,
     local_workspace_factory,
     make_instance,
+    reload,
     seed_task,
 )
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db, pytest.mark.usefixtures("embedder")]
 
 EDITED_APP = APP_SOURCE + "\n# edited by the agent\n"
-VISIBLE_TEST = "tests/test_app.py::test_parse_config_reads_pairs"
 HIDDEN_TEST = "tests/test_hidden.py::test_empty_config"
-
-#: A suite that passes before and after: the normal case for a live issue, where the bug is
-#: simply not covered, so `score()` is inadmissible and only the verdict can gate.
-BASELINE = SuiteResult(passed=(VISIBLE_TEST,), collected_files=("tests/test_app.py",))
-AFTER = SuiteResult(passed=(VISIBLE_TEST,), collected_files=("tests/test_app.py",))
 
 #: A benchmark baseline: the curated test is red, and collected because the overlay is on disk.
 BENCH_BASELINE = SuiteResult(
@@ -84,15 +82,6 @@ async def run(factory, origin_url, task, agent, backend, *, github=None, **kwarg
         **kwargs,
     )
     return result, github
-
-
-async def reload(factory, task_id) -> tuple[Task, list[TaskTestRun]]:
-    async with factory() as session:
-        task = await session.get(Task, task_id)
-        runs = (
-            await session.execute(select(TaskTestRun).where(TaskTestRun.task_id == task_id).order_by(TaskTestRun.attempt))
-        ).scalars().all()
-    return task, list(runs)
 
 
 async def spend(factory, task_id, cost: str, model: str = "claude-sonnet-5-5") -> None:
