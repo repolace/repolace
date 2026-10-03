@@ -1,0 +1,11 @@
+# Example of eval/instances/bench_repos.toml, which `repolace-eval fork` writes.
+#
+# One line per benchmark instance whose repository is ready: private, Actions
+# disabled, and holding the instance's base commit on `main`. The value is always
+# exactly `repolace/bench-<instance_id>`; the loader refuses anything else, so
+# editing a line to point at another repository is an error, not a redirect.
+#
+# `repolace-eval enqueue` reads this file to find each instance's registered
+# repository, and `repolace-eval fork --delete` deletes only what it lists.
+"psf__requests-2317" = "repolace/bench-psf__requests-2317"
+"pytest-dev__pytest-5227" = "repolace/bench-pytest-dev__pytest-5227"
