@@ -5,6 +5,7 @@ them against the module docstring's definitions by hand.
 """
 
 import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -24,9 +25,11 @@ from harness.report import (
     classify,
     describe,
     export_predictions,
+    find_duplicates,
     load_manifests,
     main,
     percentile,
+    resolve_duplicates,
     to_json,
     to_markdown,
 )
@@ -482,6 +485,77 @@ class TestModels:
         assert any("appear more than once" in w for w in aggregate(rows).warnings)
 
 
+T1 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+
+class TestDuplicateRows:
+    """A re-run needs a new eval run id, so it creates a second row for the same pair."""
+
+    def rerun_rows(self):
+        first = [task_row(instance_id=f"inst-{i}", eval_run_id="run-a", created_at=T1, outcome=O.FAILED) for i in range(5)]
+        again = [task_row(instance_id=f"inst-{i}", eval_run_id="run-b", created_at=T1 + timedelta(days=1)) for i in range(5)]
+        return first + again
+
+    def test_the_same_pair_in_two_runs_is_a_duplicate(self):
+        assert len(find_duplicates(self.rerun_rows())) == 5
+
+    def test_a_row_with_no_model_is_a_wildcard_so_the_pair_is_still_a_duplicate(self):
+        # The audit's repro: the duplicate key included the model, so a model-less first
+        # attempt beside the real-model re-run got no warning.
+        rows = [task_row(eval_run_id="run-a", model=None, llm_calls=0, **KINDS["harness"]), task_row(eval_run_id="run-b")]
+        assert len(find_duplicates(rows)) == 1
+        assert any("appear more than once" in w for w in aggregate(rows).warnings)
+
+    def test_two_different_models_on_the_same_pair_are_a_comparison_not_a_duplicate(self):
+        rows = [task_row(eval_run_id="run-a", model="a/x"), task_row(eval_run_id="run-b", model="b/y")]
+        assert find_duplicates(rows) == []
+
+    def test_gold_rows_repeat_on_purpose_and_are_never_duplicates(self):
+        rows = [task_row(eval_run_id="gold-1"), task_row(eval_run_id="gold-2")]
+        assert find_duplicates(rows) == []
+        kept, dropped = resolve_duplicates(rows, "latest")
+        assert len(kept) == 2 and dropped == ()
+
+    def test_the_default_refuses_and_lists_them(self):
+        with pytest.raises(ReportError, match=r"5 \(instance, run_index\) pair\(s\) have more than one row.*inst-0#0 \(run-a, run-b\).*--supersede latest"):
+            resolve_duplicates(self.rerun_rows())
+
+    def test_latest_keeps_the_newest_of_each_pair_and_prints_what_it_dropped(self):
+        rows = self.rerun_rows()
+        kept, dropped = resolve_duplicates(rows, "latest")
+        assert len(kept) == 5 and {r.eval_run_id for r in kept} == {"run-b"}
+        assert [(d.instance_id, d.eval_run_id) for d in dropped] == [(f"inst-{i}", "run-a") for i in range(5)]
+        assert all("superseded by the newer row in run-b" in d.detail for d in dropped)
+
+    def test_the_audits_double_count_is_gone(self):
+        # Five failed rows re-run under run-b: 10 rows for 5 pairs. Superseded, 5 rows count once.
+        kept, dropped = resolve_duplicates(self.rerun_rows(), "latest")
+        report = aggregate(kept, superseded=dropped)
+        assert report.overall.rows == 5 and report.overall.counts[PASSED] == 5
+        assert len(report.superseded) == 5
+        assert any("--supersede latest dropped 5 older row(s)" in w for w in report.warnings)
+        assert "### Superseded by --supersede latest (5), not counted anywhere" in to_markdown(report)
+
+    def test_a_row_with_no_created_at_is_the_oldest(self):
+        rows = [task_row(eval_run_id="run-a", created_at=None), task_row(eval_run_id="run-b", created_at=T1)]
+        kept, _ = resolve_duplicates(rows, "latest")
+        assert [r.eval_run_id for r in kept] == ["run-b"]
+
+    def test_three_rows_for_a_pair_keep_only_the_newest(self):
+        rows = [task_row(eval_run_id=f"run-{c}", created_at=T1 + timedelta(hours=h)) for c, h in (("a", 2), ("b", 3), ("c", 1))]
+        kept, dropped = resolve_duplicates(rows, "latest")
+        assert [r.eval_run_id for r in kept] == ["run-b"] and len(dropped) == 2
+
+    def test_no_duplicates_changes_nothing_in_either_mode(self):
+        rows = rows_for([O.PASSED, O.FAILED])
+        for mode in ("none", "latest"):
+            assert resolve_duplicates(rows, mode) == (rows, ())
+
+    def test_an_unknown_mode_is_refused(self):
+        with pytest.raises(ReportError, match="unknown --supersede mode 'newest'"):
+            resolve_duplicates([], "newest")
+
+
 class TestPercentiles:
     def test_one_value_is_its_own_percentile(self):
         assert percentile([7.0], 95) == 7.0 and percentile([7.0], 0) == 7.0
@@ -739,6 +813,10 @@ class TestCommandLine:
         assert main(["--help"]) == 0
         out = capsys.readouterr().out
         assert "--gold-run" in out and "--allow-partial" in out and "--expect" in out and "--runs-dir" in out
+        assert "--supersede" in out
+
+    def test_an_unknown_supersede_mode_is_a_usage_error(self):
+        assert main(["--run", "x", "--supersede", "oldest"]) == 2
 
     def test_a_bad_option_is_a_usage_error(self, capsys):
         assert main(["--nope"]) == 2
