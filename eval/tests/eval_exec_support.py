@@ -283,16 +283,17 @@ async def add_llm_call(session, task, cost: str | None) -> None:
 #: A stand-in for `repolace-run-task`. It records what it was given, optionally
 #: claims its row exactly as the pipeline does (`UPDATE ... WHERE status = 'queued'`),
 #: and then does what its per-task plan says: sleep, spend, finish the row, hang,
-#: leave a grandchild behind, exit with a chosen code. `CHILD_PLAN` maps task id (or
-#: "*") to the plan; a plan without "claim" never touches the database.
+#: leave a grandchild behind, exit with a chosen code. `REPOLACE_CHILD_PLAN` maps task id (or
+#: "*") to the plan; a plan without "claim" never touches the database. Its own settings use
+#: the REPOLACE_ prefix because the runner passes the child an allowlisted environment.
 RECORDING_CHILD = r"""
 import asyncio, json, os, subprocess, sys, time
 
-out = os.environ["CHILD_RECORD_DIR"]
+out = os.environ["REPOLACE_CHILD_RECORD_DIR"]
 task = sys.argv[1]
-plans = json.loads(os.environ.get("CHILD_PLAN", "{}"))
+plans = json.loads(os.environ.get("REPOLACE_CHILD_PLAN", "{}"))
 plan = plans.get(task, plans.get("*", {}))
-dsn = os.environ.get("CHILD_DB_DSN")
+dsn = os.environ.get("REPOLACE_CHILD_DB_DSN")
 
 
 def sql(statement):
@@ -311,7 +312,8 @@ def sql(statement):
 with open(os.path.join(out, task + ".json"), "w") as handle:
     json.dump({"argv": sys.argv[1:], "gateway": os.environ.get("GATEWAY_STAGE_MODELS"),
                "has_bench_token": "REPOLACE_BENCH_GITHUB_TOKEN" in os.environ,
-               "has_other": os.environ.get("CHILD_KEEP_ME"), "start": time.time(), "pid": os.getpid()}, handle)
+               "has_other": os.environ.get("REPOLACE_CHILD_KEEP_ME"), "env_names": sorted(os.environ),
+               "start": time.time(), "pid": os.getpid()}, handle)
 print("child output on stdout", flush=True)
 print("child output on stderr", file=sys.stderr, flush=True)
 if plan.get("claim"):

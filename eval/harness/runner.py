@@ -58,7 +58,9 @@ import asyncio
 import json
 import os
 import re
+import signal
 import sys
+import threading
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -168,7 +170,8 @@ class RunSummary:
 
     @property
     def healthy(self) -> bool:
-        return all(r.outcome in (Outcome.RAN,) for r in self.results)
+        # A child that exited 0 but left its row RUNNING was marked FAILED: that is not a clean run.
+        return all(r.outcome is Outcome.RAN and not r.marked_failed for r in self.results)
 
 
 # --- the child process ------------------------------------------------------------
@@ -187,8 +190,31 @@ def child_argv(command: Sequence[str], task_id: uuid.UUID, config: RunnerConfig)
     return argv
 
 
+#: What the child (and the docker and pgrep helpers) may inherit, by name. An allowlist,
+#: like every other environment builder in this repository: subtracting one variable
+#: would hand the child whatever else happens to be exported in the operator's shell
+#: (a `GH_TOKEN`, cloud credentials, a provider key meant for something else). Provider
+#: keys and the GitHub App key reach the child through `.env` and pydantic-settings, not
+#: through the process environment, so the child does not need them here.
+_ENV_EXACT = frozenset({
+    "PATH", "HOME", "USER", "LOGNAME", "LANG", "TZ", "TMPDIR", "XDG_RUNTIME_DIR", "VIRTUAL_ENV",
+    "DOCKER_HOST", "DATABASE_URL", "GIT_SSL_CAINFO",
+    "http_proxy", "https_proxy", "no_proxy", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+})
+_ENV_PREFIXES = ("LC_", "HF_", "TRANSFORMERS_", "LITELLM_", "SSL_", "UV_", "GATEWAY_", "REPOLACE_")
+
+
+def allowlisted_env(base: Mapping[str, str]) -> dict[str, str]:
+    """`base` reduced to the allowlist, and never the repository tool's token."""
+    return {
+        name: value
+        for name, value in base.items()
+        if name != TOKEN_ENV_VAR and (name in _ENV_EXACT or name.startswith(_ENV_PREFIXES))
+    }
+
+
 def child_env(base: Mapping[str, str], model: str | None) -> dict[str, str]:
-    env = {name: value for name, value in base.items() if name != TOKEN_ENV_VAR}
+    env = allowlisted_env(base)
     if model is not None:
         env[GATEWAY_STAGE_MODELS_VAR] = json.dumps({"agent": model})
     return env
@@ -214,7 +240,12 @@ async def _sample_peak_rss(pid: int, interval: float, peak: list[int]) -> None:
 
 
 async def remove_task_containers(
-    task_id: uuid.UUID, *, process_runner: ProcessRunner = run_process, docker: str = "docker", timeout: float = 30.0
+    task_id: uuid.UUID,
+    *,
+    process_runner: ProcessRunner = run_process,
+    docker: str = "docker",
+    timeout: float = 30.0,
+    env: Mapping[str, str] | None = None,
 ) -> tuple[str, ...]:
     """`docker ps -q --filter name=repolace-<12 hex>` then `docker rm -f` for any survivors.
 
@@ -226,7 +257,7 @@ async def remove_task_containers(
     """
     prefix = f"repolace-{task_id.hex[:12]}"
     try:
-        listed = await process_runner(docker, "ps", "-q", "--filter", f"name={prefix}", timeout=timeout)
+        listed = await process_runner(docker, "ps", "-q", "--filter", f"name={prefix}", timeout=timeout, env=env)
         if listed.timed_out or listed.returncode != 0:
             log.error("runner.docker.ps_failed", prefix=prefix, returncode=listed.returncode)
             return ()
@@ -234,11 +265,33 @@ async def remove_task_containers(
         # `docker ps -q` prints hex ids; anything else is not passed to `rm`.
         ids = tuple(item for item in ids if _CONTAINER_ID.fullmatch(item))
         if ids:
-            await process_runner(docker, "rm", "-f", *ids, timeout=timeout)
+            await process_runner(docker, "rm", "-f", *ids, timeout=timeout, env=env)
     except OSError as exc:
         log.error("runner.docker.unavailable", prefix=prefix, error=str(exc))
         return ()
     return ids
+
+
+async def _settle_interrupted(
+    task: QueuedTask,
+    factory: SessionFactory,
+    *,
+    process_runner: ProcessRunner,
+    docker: str,
+    env: Mapping[str, str],
+) -> None:
+    """After killing an interrupted child: RUNNING -> FAILED, and remove its containers.
+
+    Shielded, so the cleanup survives the cancellation that is unwinding around it,
+    and best-effort: a failure here must not replace the interrupt being handled. A
+    row that was never claimed stays QUEUED, as on a timeout.
+    """
+    async def settle() -> None:
+        await fail_if_running(factory, task.task_id, "runner: interrupted")
+        await remove_task_containers(task.task_id, process_runner=process_runner, docker=docker, env=env)
+
+    with suppress(Exception):
+        await asyncio.shield(settle())
 
 
 async def _run_child(
@@ -286,7 +339,11 @@ async def _run_child(
             with suppress(TimeoutError):
                 await asyncio.wait_for(process.wait(), REAP_TIMEOUT_SECONDS)
         except asyncio.CancelledError:
+            # Interrupted (SIGTERM, SIGHUP, Ctrl-C): the child is in its own session, so
+            # nothing else will stop it and it would keep spending. Kill it, then settle
+            # its row and its containers before letting the cancellation continue.
             kill_process_tree(pgid, argv)
+            await _settle_interrupted(task, factory, process_runner=process_runner, docker=docker, env=env)
             raise
         finally:
             sampler.cancel()
@@ -299,7 +356,7 @@ async def _run_child(
     if timed_out:
         outcome = Outcome.TIMED_OUT
         marked = await fail_if_running(factory, task.task_id, "runner: timeout")
-        removed = await remove_task_containers(task.task_id, process_runner=process_runner, docker=docker)
+        removed = await remove_task_containers(task.task_id, process_runner=process_runner, docker=docker, env=env)
     else:
         assert returncode is not None
         outcome = classify(returncode)
@@ -409,22 +466,30 @@ async def run_queue(
         finally:
             semaphore.release()
 
-    for task in queue:
-        await semaphore.acquire()
-        # After acquiring, so the spend of the tasks that just finished is counted.
-        reason = cannot_start
-        if reason is None and config.max_total_usd is not None:
-            spent = await run_cost_usd(factory, config.eval_run_id)
-            if spent >= config.max_total_usd:
-                reason = f"cost cap reached: ${spent} spent of ${config.max_total_usd}"
-        if reason is not None:
-            semaphore.release()
-            summary.stopped = reason
-            break
-        workers.append(asyncio.create_task(dispatch(task)))
+    try:
+        for task in queue:
+            await semaphore.acquire()
+            # After acquiring, so the spend of the tasks that just finished is counted.
+            reason = cannot_start
+            if reason is None and config.max_total_usd is not None:
+                spent = await run_cost_usd(factory, config.eval_run_id)
+                if spent >= config.max_total_usd:
+                    reason = f"cost cap reached: ${spent} spent of ${config.max_total_usd}"
+            if reason is not None:
+                semaphore.release()
+                summary.stopped = reason
+                break
+            workers.append(asyncio.create_task(dispatch(task)))
 
-    # All of them, finished or not, so an exception in one is raised here, not lost.
-    await asyncio.gather(*workers)
+        # All of them, finished or not, so an exception in one is raised here, not lost.
+        await asyncio.gather(*workers)
+    except asyncio.CancelledError:
+        # Cancelled while dispatching or waiting: every child still running must be killed
+        # and settled before this unwinds, or it outlives the runner and keeps spending.
+        for worker in workers:
+            worker.cancel()
+        await asyncio.gather(*workers, return_exceptions=True)
+        raise
     summary.not_dispatched = queued_total - len(workers)
     summary.total_cost_usd = await run_cost_usd(factory, config.eval_run_id)
     return summary
@@ -442,10 +507,12 @@ class AbandonedReport:
     unknown: list[QueuedTask] = field(default_factory=list)
 
 
-async def _process_matches(task_id: uuid.UUID, process_runner: ProcessRunner) -> bool | None:
+async def _process_matches(
+    task_id: uuid.UUID, process_runner: ProcessRunner, env: Mapping[str, str] | None = None
+) -> bool | None:
     """True if a process's command line contains the task id, False if none, None if unknown."""
     try:
-        result = await process_runner("pgrep", "-f", "--", str(task_id), timeout=15.0)
+        result = await process_runner("pgrep", "-f", "--", str(task_id), timeout=15.0, env=env)
     except OSError:
         return None
     if result.timed_out:
@@ -460,12 +527,15 @@ async def mark_abandoned(
     *,
     process_runner: ProcessRunner = run_process,
     grace_seconds: float = ABANDONED_GRACE_SECONDS,
+    env: Mapping[str, str] | None = None,
 ) -> AbandonedReport:
     """RUNNING -> FAILED (`runner: abandoned`) for stale rows with no live process. Never QUEUED."""
     report = AbandonedReport()
+    # The helper gets the allowlisted environment, never the operator's whole shell.
+    tool_env = allowlisted_env(os.environ if env is None else env)
     stale = await running_older_than(factory, eval_run_id, timedelta(seconds=timeout_seconds + grace_seconds))
     for task in stale:
-        matches = await _process_matches(task.task_id, process_runner)
+        matches = await _process_matches(task.task_id, process_runner, tool_env)
         if matches is None:
             report.unknown.append(task)
         elif matches:
@@ -533,6 +603,23 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _cancel_on_signals(received: list[int]) -> None:
+    """Turn SIGTERM and SIGHUP into a cancellation of the running task.
+
+    Without it Python's default handler ends the runner on the spot, and every child
+    (each in its own session) keeps running and spending, with its row left RUNNING.
+    A cancellation instead reaches `_run_child`, which kills the child and settles its
+    row. Only installable from the main thread; elsewhere (a test driving `main` from a
+    worker thread) the default behaviour stands.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        return
+    loop = asyncio.get_running_loop()
+    task = asyncio.current_task()
+    for signum in (signal.SIGTERM, signal.SIGHUP):
+        loop.add_signal_handler(signum, lambda signum=signum: (received.append(signum), task.cancel()))
+
+
 def _print_summary(summary: RunSummary) -> None:
     counts: dict[str, int] = {}
     for result in summary.results:
@@ -548,9 +635,10 @@ def _print_summary(summary: RunSummary) -> None:
     if summary.stopped:
         print(f"stopped dispatching: {summary.stopped}; {summary.not_dispatched} task(s) left QUEUED", file=sys.stderr)
     for result in summary.results:
-        if result.outcome is not Outcome.RAN:
+        if result.outcome is not Outcome.RAN or result.marked_failed:
+            note = " and left its row RUNNING (now FAILED)" if result.marked_failed else ""
             print(
-                f"  {result.outcome.value}: {result.task.instance_id} run {result.task.run_index} "
+                f"  {result.outcome.value}{note}: {result.task.instance_id} run {result.task.run_index} "
                 f"({result.task.task_id}, exit {result.returncode})",
                 file=sys.stderr,
             )
@@ -571,11 +659,21 @@ def main(
         print(f"repolace-eval run: {exc}", file=sys.stderr)
         return 2
 
+    if args.agent == "llm" and not args.mark_abandoned and args.max_total_usd is None:
+        print(
+            "repolace-eval run: --max-total-usd is required for --agent llm: a sweep spends real money "
+            "and the per-task cap does not bound the total",
+            file=sys.stderr,
+        )
+        return 2
+
     from repolace_shared.logging import configure_logging
 
     configure_logging("eval-runner")
+    received: list[int] = []
 
     async def run() -> int:
+        _cancel_on_signals(received)
         async with (session_factory or open_session_factory)() as factory:
             if args.mark_abandoned:
                 report = await mark_abandoned(
@@ -607,6 +705,14 @@ def main(
     except ManifestError as exc:
         print(f"repolace-eval run: {exc}", file=sys.stderr)
         return 2
+    except asyncio.CancelledError:
+        signum = received[0] if received else signal.SIGTERM
+        print(
+            f"repolace-eval run: interrupted by {signal.Signals(signum).name}; running children were killed and "
+            f"their rows marked FAILED ('runner: interrupted'); rows not yet started stay QUEUED",
+            file=sys.stderr,
+        )
+        return 128 + signum
 
 
 if __name__ == "__main__":
