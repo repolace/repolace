@@ -280,3 +280,49 @@ class TestTheOverlay:
         scorer, _, _ = await scorer_for(workspace, backend, overlay=self.OVERLAY)
 
         assert await scorer.verify_attempt(1) is None
+
+
+class TestWhatTheScorerRemembers:
+    """`attempts` and `last_record` are what `AgentResult` is defined by, so a runner that dies can be completed from them."""
+
+    async def test_it_starts_with_nothing(self, workspace):
+        scorer, _, _ = await scorer_for(workspace, FakeBackend(results=[BASELINE]))
+
+        assert (scorer.attempts, scorer.last_record) == (0, None)
+
+    async def test_attempts_counts_the_records_returned_not_the_calls_made(self, workspace):
+        backend = FakeBackend(results=[BASELINE, PASSING, PASSING])
+        scorer, _, _ = await scorer_for(workspace, backend)
+        assert await scorer.verify_attempt(1) is None
+        edit(workspace, "src/a.py", "A = 1\n")
+        first = await scorer.verify_attempt(2)
+        assert await scorer.verify_attempt(3) is None
+        edit(workspace, "src/b.py", "B = 1\n")
+        second = await scorer.verify_attempt(4)
+
+        assert scorer.attempts == 2
+        assert scorer.last_record is second and second is not first
+
+    async def test_a_none_leaves_the_last_record_as_it_was(self, workspace):
+        backend = FakeBackend(results=[BASELINE, PASSING])
+        scorer, _, _ = await scorer_for(workspace, backend)
+        edit(workspace, "src/a.py", "A = 1\n")
+        record = await scorer.verify_attempt(1)
+
+        assert await scorer.verify_attempt(2) is None
+
+        assert scorer.last_record is record and scorer.attempts == 1
+
+    async def test_a_failed_recording_does_not_count_as_a_scored_attempt(self, workspace):
+        async def broken(attempt, sha, result):
+            raise OSError("database is gone")
+
+        verifier = Verifier(FakeBackend(results=[BASELINE, PASSING]), RepoSpec(key="acme/sample"), TASK_ID)
+        await verifier.run(workspace, 0)
+        scorer = AttemptScorer(verifier=verifier, workspace=workspace, record=broken)
+        edit(workspace, "src/a.py", "A = 1\n")
+
+        with pytest.raises(OSError):
+            await scorer.verify_attempt(1)
+
+        assert (scorer.attempts, scorer.last_record) == (0, None)

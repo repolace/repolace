@@ -73,6 +73,18 @@ class AttemptScorer:
         self._record = record
         self._last_sha: str | None = None
         self._last_number = 0
+        self._last_record: AttemptRecord | None = None
+        self._count = 0
+
+    @property
+    def attempts(self) -> int:
+        """How many scored attempts have been returned: `AgentResult.attempts`, as the contract defines it."""
+        return self._count
+
+    @property
+    def last_record(self) -> AttemptRecord | None:
+        """The last scored attempt, or None. Only ever replaced by a record, never cleared."""
+        return self._last_record
 
     async def verify_attempt(self, attempt: int) -> AttemptRecord | None:
         """Commit the tree, score it, record it. `None` means there was nothing to score.
@@ -107,8 +119,11 @@ class AttemptScorer:
         result, infrastructure_error = await run_scored_suite(self._verifier, workspace, attempt)
         await self._record(attempt, sha, result)
 
-        self._last_sha = sha
-        self._last_number = attempt
-        return AttemptRecord(
+        record = AttemptRecord(
             attempt=attempt, commit_sha=sha, result=result, infrastructure_error=infrastructure_error
         )
+        self._last_sha = sha
+        self._last_number = attempt
+        self._last_record = record
+        self._count += 1
+        return record
