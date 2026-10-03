@@ -196,8 +196,27 @@ def load_bench_repos(path: Path) -> dict[str, str]:
     return mapping
 
 
+def atomic_write_text(path: Path, text: str) -> None:
+    """Write `text` to `path` through a temporary file in the same directory and a rename.
+
+    A crash or an interrupt mid-write leaves the previous file or none, never a
+    truncated one: these files are records of what exists (repositories, a run's
+    manifest, a validation report) and a half-written one reads as a different
+    truth. Shared by `enqueue` and `gold`; mode 0644.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+        os.chmod(temporary, 0o644)
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+
+
 def _write_bench_repos(path: Path, mapping: Mapping[str, str]) -> None:
-    """Write the file atomically: a crash mid-run must not truncate the record of what exists."""
     lines = [
         "# Written by `repolace-eval fork`. instance_id -> benchmark repository.",
         "# An entry means the repository is private, has Actions disabled and holds the base commit.",
@@ -205,16 +224,7 @@ def _write_bench_repos(path: Path, mapping: Mapping[str, str]) -> None:
     # `json.dumps` of a plain string is a valid TOML basic string; keys are quoted
     # because an instance id may contain '.', which a bare TOML key would split.
     lines += [f"{json.dumps(key)} = {json.dumps(mapping[key])}" for key in sorted(mapping)]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write("\n".join(lines) + "\n")
-        os.chmod(temporary, 0o644)
-        os.replace(temporary, path)
-    except BaseException:
-        Path(temporary).unlink(missing_ok=True)
-        raise
+    atomic_write_text(path, "\n".join(lines) + "\n")
 
 
 # --- the GitHub client ----------------------------------------------------------

@@ -7,17 +7,49 @@ silently went missing is absent from the headline without anything having failed
 
 from __future__ import annotations
 
+import json
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 from sqlalchemy import func, select
 
-from eval_exec_support import add_repo, make_instance, write_instances
+from eval_exec_support import add_repo, make_instance, run_git_sync, write_instances
 from harness.bench_repos import load_bench_repos
-from harness.enqueue import EnqueueError, build_parser, enqueue_tasks, main
+from harness.enqueue import (
+    DEFAULT_WALL_CLOCK_SECONDS,
+    MANIFEST_KEYS,
+    EnqueueError,
+    ManifestError,
+    ManifestInputs,
+    build_parser,
+    code_limits,
+    enqueue_tasks,
+    main,
+    manifest_path,
+    read_manifest,
+)
 from repolace_shared.db.models import Task, TaskStatus
-from repolace_shared.instances import load_instances
+
+FIXED_NOW = datetime(2026, 10, 3, 12, 0, 0, tzinfo=timezone.utc)
+
+
+@pytest.fixture
+def repo_root(tmp_path: Path) -> Path:
+    """A small git repository standing in for the repolace checkout, so no test reads the real one."""
+    path = tmp_path / "repolace-checkout"
+    path.mkdir()
+    run_git_sync("init", "-q", "-b", "main", cwd=path)
+    (path / "tracked").write_text("v1\n")
+    run_git_sync("add", "tracked", cwd=path)
+    run_git_sync("commit", "-q", "-m", "one", cwd=path)
+    return path
+
+
+@pytest.fixture
+def inputs(tmp_path: Path, repo_root: Path) -> ManifestInputs:
+    return ManifestInputs(runs_dir=tmp_path / "runs", repo_root=repo_root, model="claude-test", clock=lambda: FIXED_NOW)
 
 
 def instances_for(*ids: str):
@@ -28,7 +60,8 @@ def bench(*ids: str) -> dict[str, str]:
     return {i: f"repolace/bench-{i}" for i in ids}
 
 
-async def enqueue(factory, ids=("a", "b"), *, repos=None, **kwargs):
+async def enqueue(factory, manifest, ids=("a", "b"), *, repos=None, **kwargs):
+    kwargs["manifest"] = manifest
     kwargs.setdefault("eval_run_id", "run-1")
     kwargs.setdefault("instances_requested", "all")
     kwargs.setdefault("runs", 3)
@@ -38,6 +71,14 @@ async def enqueue(factory, ids=("a", "b"), *, repos=None, **kwargs):
 @pytest.mark.anyio
 @pytest.mark.db
 class TestRows:
+    @pytest.fixture(autouse=True)
+    def _wire(self, inputs):
+        self.inputs = inputs
+
+    async def enqueue(self, factory, **kwargs):
+        ids = kwargs.pop("ids", ("a", "b"))
+        return await enqueue(factory, self.inputs, ids, **kwargs)
+
     async def seed_repos(self, session, *ids):
         return {i: await add_repo(session, f"repolace/bench-{i}") for i in ids}
 
@@ -47,7 +88,7 @@ class TestRows:
     async def test_creates_one_queued_row_per_instance_and_run_with_the_right_fields(self, db_session, db_session_factory):
         repos = await self.seed_repos(db_session, "a", "b")
 
-        result = await enqueue(db_session_factory, runs=3, open_pr_on_failure=True)
+        result = await self.enqueue(db_session_factory, runs=3, open_pr_on_failure=True)
 
         assert (result.created, result.already_present) == (6, 0)
         rows = await self.all_tasks(db_session)
@@ -67,7 +108,7 @@ class TestRows:
     async def test_open_pr_on_failure_defaults_off(self, db_session, db_session_factory):
         await self.seed_repos(db_session, "a")
 
-        await enqueue(db_session_factory, ids=("a",), runs=1)
+        await self.enqueue(db_session_factory, ids=("a",), runs=1)
 
         (row,) = await self.all_tasks(db_session)
         assert row.open_pr_on_failure is False
@@ -75,7 +116,7 @@ class TestRows:
     async def test_the_issue_url_is_the_bench_repository_and_names_no_upstream(self, db_session, db_session_factory):
         await self.seed_repos(db_session, "psf__requests-2317")
 
-        await enqueue(db_session_factory, ids=("psf__requests-2317",), runs=1)
+        await self.enqueue(db_session_factory, ids=("psf__requests-2317",), runs=1)
 
         (row,) = await self.all_tasks(db_session)
         assert row.issue_url == "https://github.com/repolace/bench-psf__requests-2317"
@@ -84,32 +125,32 @@ class TestRows:
 
     async def test_a_rerun_creates_nothing_and_keeps_the_same_rows(self, db_session, db_session_factory):
         await self.seed_repos(db_session, "a", "b")
-        await enqueue(db_session_factory)
+        await self.enqueue(db_session_factory)
         before = {r.id for r in await self.all_tasks(db_session)}
 
-        again = await enqueue(db_session_factory)
+        again = await self.enqueue(db_session_factory)
 
         assert (again.created, again.already_present) == (0, 6)
         assert {r.id for r in await self.all_tasks(db_session)} == before
 
-    async def test_a_rerun_with_more_runs_adds_only_the_missing_ones(self, db_session, db_session_factory):
+    async def test_a_rerun_asking_for_more_runs_is_a_different_sweep_and_is_refused(self, db_session, db_session_factory):
         await self.seed_repos(db_session, "a", "b")
-        await enqueue(db_session_factory, runs=2)
+        await self.enqueue(db_session_factory, runs=2)
 
-        more = await enqueue(db_session_factory, runs=3)
+        with pytest.raises(ManifestError, match="runs_per_instance"):
+            await self.enqueue(db_session_factory, runs=3)
 
-        assert (more.created, more.already_present) == (2, 4)
         count = await db_session.scalar(select(func.count()).select_from(Task))
-        assert count == 6
+        assert count == 4, "a refused sweep must not insert anything"
 
     async def test_a_rerun_does_not_touch_a_row_that_has_already_moved_on(self, db_session, db_session_factory):
         await self.seed_repos(db_session, "a")
-        await enqueue(db_session_factory, ids=("a",), runs=1)
+        await self.enqueue(db_session_factory, ids=("a",), runs=1)
         row = (await self.all_tasks(db_session))[0]
         row.status = TaskStatus.COMPLETED
         await db_session.commit()
 
-        again = await enqueue(db_session_factory, ids=("a",), runs=1)
+        again = await self.enqueue(db_session_factory, ids=("a",), runs=1)
 
         assert again.created == 0
         await db_session.refresh(row)
@@ -117,16 +158,16 @@ class TestRows:
 
     async def test_a_different_run_id_is_a_separate_run(self, db_session, db_session_factory):
         await self.seed_repos(db_session, "a")
-        await enqueue(db_session_factory, ids=("a",), runs=1, eval_run_id="run-1")
+        await self.enqueue(db_session_factory, ids=("a",), runs=1, eval_run_id="run-1")
 
-        other = await enqueue(db_session_factory, ids=("a",), runs=1, eval_run_id="run-2")
+        other = await self.enqueue(db_session_factory, ids=("a",), runs=1, eval_run_id="run-2")
 
         assert other.created == 1
 
     async def test_a_subset_enqueues_only_the_chosen_instances(self, db_session, db_session_factory):
         await self.seed_repos(db_session, "a", "b")
 
-        await enqueue(db_session_factory, instances_requested="b", runs=1)
+        await self.enqueue(db_session_factory, instances_requested="b", runs=1)
 
         assert [r.instance_id for r in await self.all_tasks(db_session)] == ["b"]
 
@@ -134,7 +175,7 @@ class TestRows:
         await self.seed_repos(db_session, "a")  # `b` has no registered_repos row
 
         with pytest.raises(EnqueueError) as raised:
-            await enqueue(db_session_factory)
+            await self.enqueue(db_session_factory)
 
         message = str(raised.value)
         assert "repolace/bench-b" in message and "Re-sync" in message
@@ -142,7 +183,7 @@ class TestRows:
 
     async def test_every_problem_is_reported_at_once(self, db_session, db_session_factory):
         with pytest.raises(EnqueueError) as raised:
-            await enqueue(db_session_factory)
+            await self.enqueue(db_session_factory)
 
         message = str(raised.value)
         assert "repolace/bench-a" in message and "repolace/bench-b" in message
@@ -151,7 +192,7 @@ class TestRows:
         await add_repo(db_session, "repolace/bench-a", is_active=False)
 
         with pytest.raises(EnqueueError, match="inactive"):
-            await enqueue(db_session_factory, ids=("a",))
+            await self.enqueue(db_session_factory, ids=("a",))
 
         assert await db_session.scalar(select(func.count()).select_from(Task)) == 0
 
@@ -159,7 +200,7 @@ class TestRows:
         await self.seed_repos(db_session, "a", "b")
 
         with pytest.raises(EnqueueError, match="repolace-eval fork"):
-            await enqueue(db_session_factory, ids=("a", "b"), repos=("a",))
+            await self.enqueue(db_session_factory, ids=("a", "b"), repos=("a",))
 
         assert await db_session.scalar(select(func.count()).select_from(Task)) == 0
 
@@ -167,7 +208,7 @@ class TestRows:
         await self.seed_repos(db_session, "a")
 
         with pytest.raises(EnqueueError, match="not an instance"):
-            await enqueue(db_session_factory, ids=("a",), instances_requested="a,nope")
+            await self.enqueue(db_session_factory, ids=("a",), instances_requested="a,nope")
 
     async def test_an_instance_with_no_usable_title_is_refused(self, db_session, db_session_factory):
         await self.seed_repos(db_session, "a")
@@ -175,7 +216,8 @@ class TestRows:
 
         with pytest.raises(EnqueueError, match="title"):
             await enqueue_tasks(
-                db_session_factory, blank, bench("a"), eval_run_id="run-1", instances_requested="all", runs=1
+                db_session_factory, blank, bench("a"), eval_run_id="run-1", instances_requested="all", runs=1,
+                manifest=self.inputs,
             )
 
     @pytest.mark.parametrize("run_id", ["", "../x", "a/b", "a b", "-x", ".x", "x" * 65, "a\n"])
@@ -183,7 +225,7 @@ class TestRows:
         await self.seed_repos(db_session, "a")
 
         with pytest.raises(EnqueueError):
-            await enqueue(db_session_factory, ids=("a",), eval_run_id=run_id)
+            await self.enqueue(db_session_factory, ids=("a",), eval_run_id=run_id)
 
         assert await db_session.scalar(select(func.count()).select_from(Task)) == 0
 
@@ -192,7 +234,273 @@ class TestRows:
         await self.seed_repos(db_session, "a")
 
         with pytest.raises(EnqueueError, match="--runs"):
-            await enqueue(db_session_factory, ids=("a",), runs=runs)
+            await self.enqueue(db_session_factory, ids=("a",), runs=runs)
+
+
+@pytest.mark.anyio
+@pytest.mark.db
+class TestManifest:
+    """`eval/runs/<run>/manifest.json`: what the report checks the database against."""
+
+    @pytest.fixture(autouse=True)
+    def _wire(self, inputs):
+        self.inputs = inputs
+
+    async def run(self, factory, *, inputs=None, ids=("a", "b"), runs=2, run_id="run-1", **kwargs):
+        return await enqueue(
+            factory, inputs or self.inputs, ids, eval_run_id=run_id, runs=runs, **kwargs
+        )
+
+    def path(self, run_id="run-1") -> Path:
+        return manifest_path(self.inputs.runs_dir, run_id)
+
+    async def seed(self, session):
+        for instance_id in ("a", "b"):
+            await add_repo(session, f"repolace/bench-{instance_id}")
+
+    async def test_it_has_exactly_the_agreed_keys(self, db_session, db_session_factory):
+        await self.seed(db_session)
+
+        await self.run(db_session_factory)
+
+        document = json.loads(self.path().read_text())
+        assert set(document) == set(MANIFEST_KEYS) == {
+            "eval_run_id", "created_at", "git_sha", "model", "stage_models", "limits",
+            "runs_per_instance", "instance_ids", "agent",
+        }
+
+    async def test_its_values_describe_the_sweep(self, db_session, db_session_factory, repo_root):
+        await self.seed(db_session)
+
+        result = await self.run(db_session_factory, runs=3, instances_requested="a,b")
+
+        document = read_manifest(self.path())
+        assert result.manifest_created is True
+        assert document["eval_run_id"] == "run-1"
+        assert document["created_at"] == "2026-10-03T12:00:00+00:00"
+        assert datetime.fromisoformat(document["created_at"]).utcoffset() == timedelta(0)
+        assert document["git_sha"] == run_git_sync("rev-parse", "HEAD", cwd=repo_root)
+        assert document["model"] == "claude-test"
+        assert document["stage_models"] == {"agent": "claude-test"}
+        assert document["runs_per_instance"] == 3
+        assert document["instance_ids"] == ["a", "b"]
+        assert document["agent"] == "llm"
+
+    async def test_the_limits_are_the_ones_in_code_plus_the_runners_wall_clock(self, db_session, db_session_factory):
+        from repolace_agents.contracts import AgentLimits
+        from repolace_gateway.budget import DEFAULT_MAX_CALLS, DEFAULT_MAX_USD, DEFAULT_MAX_WALL_SECONDS
+
+        await self.seed(db_session)
+
+        await self.run(db_session_factory)
+
+        limits = read_manifest(self.path())["limits"]
+        assert limits == {
+            "task_cost_cap_usd": float(DEFAULT_MAX_USD),
+            "task_call_cap": DEFAULT_MAX_CALLS,
+            "budget_wall_clock_seconds": float(DEFAULT_MAX_WALL_SECONDS),
+            "max_steps_per_attempt": AgentLimits().max_steps_per_attempt,
+            "max_attempts": AgentLimits().max_attempts,
+            "runner_wall_clock_seconds": DEFAULT_WALL_CLOCK_SECONDS,
+        }
+        assert limits["task_cost_cap_usd"] == 2.0 and limits["max_attempts"] == 3 and limits["max_steps_per_attempt"] == 40
+        assert set(limits) >= set(code_limits())
+
+    async def test_the_instance_ids_are_sorted_and_unique(self, db_session, db_session_factory):
+        await self.seed(db_session)
+
+        await self.run(db_session_factory, instances_requested="b,a,b")
+
+        assert read_manifest(self.path())["instance_ids"] == ["a", "b"]
+
+    async def test_it_is_written_before_any_row_exists(self, db_session, db_session_factory):
+        """A database failure on the insert leaves the manifest and no rows, never the reverse."""
+        await self.seed(db_session)
+
+        class FailingInsert:
+            def __call__(self):
+                session = db_session_factory()
+                execute = session.execute
+
+                async def guarded(statement, *args, **kwargs):
+                    if "INSERT INTO tasks" in str(statement):
+                        raise RuntimeError("database fell over")
+                    return await execute(statement, *args, **kwargs)
+
+                session.execute = guarded
+                return session
+
+        with pytest.raises(RuntimeError, match="fell over"):
+            await self.run(FailingInsert())
+
+        assert self.path().exists()
+        assert await db_session.scalar(select(func.count()).select_from(Task)) == 0
+
+    async def test_a_rerun_with_the_same_inputs_leaves_the_file_byte_identical(self, db_session, db_session_factory):
+        await self.seed(db_session)
+        await self.run(db_session_factory)
+        before = self.path().read_bytes()
+        later = ManifestInputs(
+            runs_dir=self.inputs.runs_dir, repo_root=self.inputs.repo_root, model="claude-test",
+            clock=lambda: FIXED_NOW + timedelta(days=3),
+        )
+
+        result = await self.run(db_session_factory, inputs=later)
+
+        assert result.manifest_created is False
+        assert self.path().read_bytes() == before, "the original creation time must survive a re-run"
+
+    @pytest.mark.parametrize(
+        ("change", "differs"),
+        [
+            ({"runs": 3}, "runs_per_instance"),
+            ({"ids": ("a",)}, "instance_ids"),
+            ({"model": "another-model"}, "model"),
+            ({"timeout_seconds": 100.0}, "limits"),
+        ],
+    )
+    async def test_a_different_sweep_under_the_same_run_id_is_refused_and_inserts_nothing(
+        self, db_session, db_session_factory, change, differs
+    ):
+        await self.seed(db_session)
+        await self.run(db_session_factory)
+        rows_before = await db_session.scalar(select(func.count()).select_from(Task))
+        before = self.path().read_bytes()
+        kwargs = dict(change)
+        replaced = ManifestInputs(
+            runs_dir=self.inputs.runs_dir, repo_root=self.inputs.repo_root,
+            model=kwargs.pop("model", "claude-test"), timeout_seconds=kwargs.pop("timeout_seconds", DEFAULT_WALL_CLOCK_SECONDS),
+            clock=lambda: FIXED_NOW,
+        )
+
+        with pytest.raises(ManifestError, match=differs):
+            await self.run(db_session_factory, inputs=replaced, **kwargs)
+
+        assert await db_session.scalar(select(func.count()).select_from(Task)) == rows_before
+        assert self.path().read_bytes() == before
+
+    async def test_a_new_commit_is_a_different_sweep(self, db_session, db_session_factory, repo_root):
+        await self.seed(db_session)
+        await self.run(db_session_factory)
+        (repo_root / "tracked").write_text("v2\n")
+        run_git_sync("commit", "-q", "-am", "two", cwd=repo_root)
+
+        with pytest.raises(ManifestError, match="git_sha"):
+            await self.run(db_session_factory)
+
+    async def test_a_different_agent_is_a_different_sweep(self, db_session, db_session_factory):
+        await self.seed(db_session)
+        await self.run(db_session_factory)
+        gold = ManifestInputs(runs_dir=self.inputs.runs_dir, repo_root=self.inputs.repo_root, agent="gold", clock=lambda: FIXED_NOW)
+
+        with pytest.raises(ManifestError, match="agent"):
+            await self.run(db_session_factory, inputs=gold)
+
+    async def test_a_second_run_id_has_its_own_manifest(self, db_session, db_session_factory):
+        await self.seed(db_session)
+        await self.run(db_session_factory, run_id="run-1")
+
+        await self.run(db_session_factory, run_id="run-2", runs=5)
+
+        assert read_manifest(self.path("run-1"))["runs_per_instance"] == 2
+        assert read_manifest(self.path("run-2"))["runs_per_instance"] == 5
+
+    async def test_no_temporary_file_is_left_beside_it(self, db_session, db_session_factory):
+        await self.seed(db_session)
+
+        await self.run(db_session_factory)
+
+        assert [p.name for p in self.path().parent.iterdir()] == ["manifest.json"]
+
+    async def test_an_unreadable_existing_manifest_is_refused_not_overwritten(self, db_session, db_session_factory):
+        await self.seed(db_session)
+        self.path().parent.mkdir(parents=True)
+        self.path().write_text("{not json")
+
+        with pytest.raises(ManifestError, match="cannot read"):
+            await self.run(db_session_factory)
+
+        assert self.path().read_text() == "{not json"
+        assert await db_session.scalar(select(func.count()).select_from(Task)) == 0
+
+    async def test_a_manifest_with_the_wrong_keys_is_refused(self, db_session, db_session_factory):
+        await self.seed(db_session)
+        self.path().parent.mkdir(parents=True)
+        self.path().write_text(json.dumps({"eval_run_id": "run-1"}))
+
+        with pytest.raises(ManifestError, match="exactly the keys"):
+            await self.run(db_session_factory)
+
+    async def test_a_resolution_failure_writes_no_manifest(self, db_session, db_session_factory):
+        # No registered repositories at all.
+        with pytest.raises(EnqueueError, match="Re-sync"):
+            await self.run(db_session_factory)
+
+        assert not self.path().exists()
+
+    async def test_a_modified_tracked_tree_is_refused(self, db_session, db_session_factory, repo_root):
+        await self.seed(db_session)
+        (repo_root / "tracked").write_text("uncommitted\n")
+
+        with pytest.raises(ManifestError, match="modified"):
+            await self.run(db_session_factory)
+
+        assert not self.path().exists()
+        assert await db_session.scalar(select(func.count()).select_from(Task)) == 0
+
+    async def test_the_allow_flag_records_the_sha_of_a_modified_tree(self, db_session, db_session_factory, repo_root):
+        await self.seed(db_session)
+        (repo_root / "tracked").write_text("uncommitted\n")
+        dirty_ok = ManifestInputs(
+            runs_dir=self.inputs.runs_dir, repo_root=repo_root, model="claude-test", allow_dirty_tree=True,
+            clock=lambda: FIXED_NOW,
+        )
+
+        await self.run(db_session_factory, inputs=dirty_ok)
+
+        assert read_manifest(self.path())["git_sha"] == run_git_sync("rev-parse", "HEAD", cwd=repo_root)
+
+    async def test_untracked_files_do_not_count_as_a_modified_tree(self, db_session, db_session_factory, repo_root):
+        await self.seed(db_session)
+        (repo_root / "scratch.txt").write_text("not tracked\n")
+
+        await self.run(db_session_factory)
+
+        assert self.path().exists()
+
+    async def test_the_llm_agent_needs_a_model(self, db_session, db_session_factory):
+        await self.seed(db_session)
+        nameless = ManifestInputs(runs_dir=self.inputs.runs_dir, repo_root=self.inputs.repo_root, model=None, clock=lambda: FIXED_NOW)
+
+        with pytest.raises(ManifestError, match="--model"):
+            await self.run(db_session_factory, inputs=nameless)
+
+        assert not self.path().exists()
+
+    @pytest.mark.parametrize("agent", ["gold", "stub"])
+    async def test_an_agent_that_calls_no_model_records_none_and_no_stage_models(self, db_session, db_session_factory, agent):
+        await self.seed(db_session)
+        no_model = ManifestInputs(runs_dir=self.inputs.runs_dir, repo_root=self.inputs.repo_root, agent=agent, clock=lambda: FIXED_NOW)
+
+        await self.run(db_session_factory, inputs=no_model)
+
+        document = read_manifest(self.path())
+        assert (document["agent"], document["model"], document["stage_models"]) == (agent, "none", {})
+
+    async def test_an_unknown_agent_is_refused(self, db_session, db_session_factory):
+        await self.seed(db_session)
+        odd = ManifestInputs(runs_dir=self.inputs.runs_dir, repo_root=self.inputs.repo_root, agent="human", model="m", clock=lambda: FIXED_NOW)
+
+        with pytest.raises(ManifestError, match="--agent"):
+            await self.run(db_session_factory, inputs=odd)
+
+    async def test_a_hostile_run_id_cannot_place_the_manifest_outside_the_runs_directory(self, db_session, db_session_factory):
+        await self.seed(db_session)
+
+        with pytest.raises(EnqueueError):
+            await self.run(db_session_factory, run_id="../escape")
+
+        assert not (self.inputs.runs_dir.parent / "escape").exists()
 
 
 class TestCommandLine:
@@ -223,7 +531,7 @@ class TestCommandLine:
         directory = self.directory(tmp_path, "a", mapped=())
         (directory / "bench_repos.toml").write_text('"a" = "repolace/repolace"\n')
 
-        code = main(["--eval-run-id", "r", "--instances-dir", str(directory)], session_factory=self.forbidden_factory)
+        code = main(["--eval-run-id", "r", "--model", "m", "--instances-dir", str(directory)], session_factory=self.forbidden_factory)
 
         assert code == 2
         assert "bench" in capsys.readouterr().err
@@ -231,7 +539,7 @@ class TestCommandLine:
     def test_an_instance_without_a_bench_repo_is_a_usage_error_naming_fork(self, tmp_path, capsys):
         directory = self.directory(tmp_path, "a", "b", mapped=("a",))
 
-        code = main(["--eval-run-id", "r", "--instances-dir", str(directory)], session_factory=self.forbidden_factory)
+        code = main(["--eval-run-id", "r", "--model", "m", "--instances-dir", str(directory)], session_factory=self.forbidden_factory)
 
         assert code == 2
         assert "repolace-eval fork" in capsys.readouterr().err
@@ -246,3 +554,24 @@ class TestCommandLine:
         assert args.runs == 3
         assert args.open_pr_on_failure is False
         assert args.instances == "all"
+        assert args.agent == "llm" and args.model is None and args.allow_dirty_tree is False
+        assert args.timeout_seconds == DEFAULT_WALL_CLOCK_SECONDS == 5400.0
+
+    def test_the_llm_agent_without_a_model_is_a_usage_error(self, tmp_path, capsys):
+        directory = self.directory(tmp_path, "a")
+
+        code = main(["--eval-run-id", "r", "--instances-dir", str(directory)], session_factory=self.forbidden_factory)
+
+        assert code == 2
+        assert "--model" in capsys.readouterr().err
+
+    @pytest.mark.parametrize("seconds", ["0", "-5", "inf", "nan"])
+    def test_a_nonsense_timeout_is_a_usage_error(self, tmp_path, seconds):
+        directory = self.directory(tmp_path, "a")
+
+        code = main(
+            ["--eval-run-id", "r", "--model", "m", "--timeout-seconds", seconds, "--instances-dir", str(directory)],
+            session_factory=self.forbidden_factory,
+        )
+
+        assert code == 2

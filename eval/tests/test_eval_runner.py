@@ -32,11 +32,20 @@ from eval_exec_support import (
 from harness import runner
 from harness.bench_repos import TOKEN_ENV_VAR
 from harness.db import queued_tasks, run_cost_usd
+from harness.enqueue import (
+    DEFAULT_WALL_CLOCK_SECONDS,
+    ManifestError,
+    ManifestInputs,
+    build_manifest,
+    ensure_manifest,
+    manifest_path,
+)
 from harness.runner import (
     ABANDONED_GRACE_SECONDS,
     Outcome,
     RunnerConfig,
     build_parser,
+    check_manifest,
     child_argv,
     child_env,
     classify,
@@ -656,6 +665,116 @@ class TestAbandoned:
             source = path.read_text()
             assert not re.search(r"values\([^)]*TaskStatus\.QUEUED", source, re.S), path.name
             assert not re.search(r"status\s*=\s*['\"]queued['\"]", source), path.name
+
+
+def write_manifest(runs_dir: Path, *, agent="llm", model="claude-test", timeout=DEFAULT_WALL_CLOCK_SECONDS, run=RUN) -> Path:
+    inputs = ManifestInputs(runs_dir=runs_dir, agent=agent, model=model, timeout_seconds=timeout)
+    document = build_manifest(
+        eval_run_id=run, git_sha="a" * 40, instance_ids=["a"], runs=1, inputs=inputs,
+        created_at=datetime(2026, 10, 3, tzinfo=timezone.utc),
+    )
+    path = manifest_path(runs_dir, run)
+    ensure_manifest(path, document)
+    return path
+
+
+class TestManifestAgreement:
+    """The manifest describes the sweep; a runner that disagrees with it would make that a lie."""
+
+    def test_matching_flags_pass(self, tmp_path):
+        write_manifest(tmp_path / "runs")
+
+        assert check_manifest(tmp_path / "runs", config(model="claude-test")) is True
+
+    def test_no_manifest_is_reported_not_refused(self, tmp_path):
+        assert check_manifest(tmp_path / "runs", config(model="claude-test")) is False
+
+    @pytest.mark.parametrize(
+        ("override", "mentions"),
+        [
+            ({"model": "another-model"}, "model"),
+            ({"model": None}, "model"),
+            ({"timeout_seconds": 60.0}, "timeout"),
+            ({"agent": "gold", "model": None}, "agent"),
+        ],
+    )
+    def test_a_disagreeing_flag_is_refused_and_named(self, tmp_path, override, mentions):
+        write_manifest(tmp_path / "runs")
+
+        with pytest.raises(ManifestError, match=mentions):
+            check_manifest(tmp_path / "runs", config(**{"model": "claude-test", **override}))
+
+    def test_the_model_is_not_compared_for_an_agent_that_calls_none(self, tmp_path):
+        write_manifest(tmp_path / "runs", agent="gold", model=None)
+
+        assert check_manifest(tmp_path / "runs", config(agent="gold", model="whatever")) is True
+
+    def test_a_malformed_manifest_is_refused(self, tmp_path):
+        path = write_manifest(tmp_path / "runs")
+        path.write_text("[]")
+
+        with pytest.raises(ManifestError):
+            check_manifest(tmp_path / "runs", config(model="claude-test"))
+
+    def test_main_exits_two_on_a_mismatch_before_touching_the_database(self, tmp_path, capsys):
+        write_manifest(tmp_path / "runs")
+
+        @asynccontextmanager
+        async def seam():
+            # Opening the database is allowed (the check runs inside `run_queue`),
+            # but nothing may be dispatched.
+            from unittest import mock
+
+            yield mock.MagicMock()
+
+        code = main(
+            ["--eval-run-id", RUN, "--runs-dir", str(tmp_path / "runs"), "--model", "wrong"],
+            session_factory=seam, child_command=("/nonexistent",),
+        )
+
+        assert code == 2
+        assert "does not match this invocation" in capsys.readouterr().err
+
+
+@pytest.mark.anyio
+@pytest.mark.db
+class TestManifestAndDispatch:
+    async def test_a_mismatch_dispatches_nothing_and_leaves_the_rows_queued(self, db_session, db_session_factory, tmp_path):
+        repo = await add_repo(db_session, "repolace/bench-x")
+        await add_task(db_session, repo, instance_id="a", run_index=0)
+        write_manifest(tmp_path / "runs", model="claude-test")
+
+        with pytest.raises(ManifestError):
+            await run_queue(
+                db_session_factory, config(model="other"), runs_dir=tmp_path / "runs",
+                child_command=child_command(), base_env=child_base_env(tmp_path),
+            )
+
+        assert len(await queued_tasks(db_session_factory, RUN)) == 1
+        assert records(tmp_path) == {}
+
+    async def test_agreement_dispatches_and_reports_the_manifest_as_found(self, db_session, db_session_factory, tmp_path):
+        repo = await add_repo(db_session, "repolace/bench-x")
+        await add_task(db_session, repo, instance_id="a", run_index=0)
+        write_manifest(tmp_path / "runs", model="claude-test")
+
+        summary = await run_queue(
+            db_session_factory, config(model="claude-test"), runs_dir=tmp_path / "runs",
+            child_command=child_command(), base_env=child_base_env(tmp_path),
+        )
+
+        assert summary.manifest_found is True and len(summary.results) == 1
+
+    async def test_no_manifest_still_dispatches_and_says_so(self, db_session, db_session_factory, tmp_path):
+        repo = await add_repo(db_session, "repolace/bench-x")
+        await add_task(db_session, repo, instance_id="a", run_index=0)
+
+        summary = await run_queue(
+            db_session_factory, config(), runs_dir=tmp_path / "runs",
+            child_command=child_command(), base_env=child_base_env(tmp_path),
+        )
+
+        assert summary.manifest_found is False and len(summary.results) == 1
 
 
 @pytest.mark.anyio
