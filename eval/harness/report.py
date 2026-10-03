@@ -106,10 +106,22 @@ CONTAMINATION_CAVEAT = (
     "issues, and it is not comparable with numbers reported on other benchmarks."
 )
 SUBSET_CAVEAT = (
-    "The instances are a filtered subset (pure-Python pytest repositories whose test patches and gold "
-    "patches passed the selection filters), not the official Verified set, so the number is not the "
-    "published SWE-bench Verified score. A cross-check against the official harness is possible with "
-    "the predictions export."
+    "These instances are a filtered subset of SWE-bench Verified, not the official set, so the number is not the "
+    "published Verified score. How the subset was chosen matters: (1) only seven repositories are allowed "
+    "(pure-Python pytest projects), so most of Verified is excluded; (2) a simple-fix filter rejects instances whose "
+    "gold patch touches test or configuration paths, deletes or renames a file, or is binary, so the set skews "
+    "toward pure source edits; (3) instances were taken round-robin across repositories under a per-repository "
+    "cap, not in proportion to Verified; (4) gold validation and the preference for fast suites pruned the set "
+    "further; (5) the selection seed is a degree of freedom, so it must be fixed and recorded before the first "
+    "agent run. The predictions export allows a cross-check with the official SWE-bench harness, but that check "
+    "uses different pass criteria (node-id format, pass-to-pass scope), so exact agreement is not expected."
+)
+#: Printed beside the headline figure, where the number is read.
+HEADLINE_SCOPE = (
+    "These instances are a filtered subset of SWE-bench Verified (pure-Python pytest repositories, gold-validated, "
+    "simple-fix filter) that models have probably seen, so this is not the published Verified score and does not "
+    "predict performance on unseen issues. At this N, differences under about 30 percentage points between two "
+    "models on the same instances are not statistically distinguishable."
 )
 SMALL_N_CAVEAT = (
     "At N = 15 to 20 instances the 95% interval is about 30 to 40 percentage points wide (a Wilson interval at "
@@ -304,6 +316,8 @@ class Headline:
     git_sha: str | None
     anchored: bool
     instances: int
+    #: The planned instances, sorted.
+    instance_ids: tuple[str, ...]
     #: Distinct repositories among the planned instances whose repository is known.
     repos: int
     runs_per_instance: int
@@ -382,7 +396,7 @@ def _headline(
 
     common = dict(
         run_id=run_id, model=model, git_sha=manifest.git_sha if manifest is not None else None,
-        anchored=manifest is not None, instances=len(instance_ids), repos=len(repos),
+        anchored=manifest is not None, instances=len(instance_ids), instance_ids=tuple(instance_ids), repos=len(repos),
         runs_per_instance=runs_per_instance, planned=len(planned),
         missing=tuple(missing), unfinished=tuple(unfinished), unplanned=unplanned,
     )
@@ -811,6 +825,18 @@ def _model_block(label: str, rows: Sequence[TaskRow]) -> ModelBlock:
     )
 
 
+def _overall(agent_rows: Sequence[TaskRow], headlines: Sequence[Headline]) -> GroupSummary:
+    """Counts over every agent row, with `instances` counting only those in a headline's denominator.
+
+    A stray row for an instance the manifest does not plan (or an instance filed under
+    the wrong run) must not inflate N: the number of instances stated beside a rate is
+    the number the rate is over.
+    """
+    summary = summarize(agent_rows)
+    planned = {i for h in headlines for i in h.instance_ids}
+    return replace(summary, instances=len(planned)) if planned else summary
+
+
 def aggregate(
     rows: Sequence[TaskRow],
     *,
@@ -979,7 +1005,7 @@ def aggregate(
         agent_runs=tuple(agent_runs),
         gold_runs=tuple(sorted({r.eval_run_id for r in gold_rows})),
         headlines=headlines,
-        overall=summarize(agent_rows),
+        overall=_overall(agent_rows, headlines),
         mixed_models=len(real_models) > 1,
         by_model=by_model,
         by_repo=by_repo,
@@ -1083,6 +1109,7 @@ def _headline_lines(h: Headline) -> list[str]:
         f"{h.runs_per_instance} run{'' if h.runs_per_instance == 1 else 's'} each, model {h.model or 'unknown'}, "
         f"pipeline commit {sha}."
     )
+    out += ["", HEADLINE_SCOPE]
     sec = h.secondary
     if sec is not None:
         out += [
