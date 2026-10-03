@@ -14,8 +14,8 @@ import json
 import os
 import re
 import subprocess
-import uuid
-from collections.abc import Iterable, Sequence
+import sys
+from collections.abc import Iterable
 from pathlib import Path
 
 import httpx
@@ -268,31 +268,59 @@ async def add_llm_call(session, task, cost: str | None) -> None:
 
 # --- fake children --------------------------------------------------------------
 
-#: A child that records its argv and its environment, then exits with a chosen code.
-RECORDING_CHILD = """
-import json, os, sys, time
+#: A stand-in for `repolace-run-task`. It records what it was given, optionally
+#: claims its row exactly as the pipeline does (`UPDATE ... WHERE status = 'queued'`),
+#: and then does what its per-task plan says: sleep, spend, finish the row, hang,
+#: leave a grandchild behind, exit with a chosen code. `CHILD_PLAN` maps task id (or
+#: "*") to the plan; a plan without "claim" never touches the database.
+RECORDING_CHILD = r"""
+import asyncio, json, os, subprocess, sys, time
+
 out = os.environ["CHILD_RECORD_DIR"]
 task = sys.argv[1]
+plans = json.loads(os.environ.get("CHILD_PLAN", "{}"))
+plan = plans.get(task, plans.get("*", {}))
+dsn = os.environ.get("CHILD_DB_DSN")
+
+
+def sql(statement):
+    import asyncpg
+
+    async def go():
+        connection = await asyncpg.connect(dsn)
+        try:
+            await connection.execute(statement, task)
+        finally:
+            await connection.close()
+
+    asyncio.run(go())
+
+
 with open(os.path.join(out, task + ".json"), "w") as handle:
     json.dump({"argv": sys.argv[1:], "gateway": os.environ.get("GATEWAY_STAGE_MODELS"),
                "has_bench_token": "REPOLACE_BENCH_GITHUB_TOKEN" in os.environ,
-               "start": time.time()}, handle)
-time.sleep(float(os.environ.get("CHILD_SLEEP", "0")))
+               "has_other": os.environ.get("CHILD_KEEP_ME"), "start": time.time(), "pid": os.getpid()}, handle)
+print("child output on stdout", flush=True)
+print("child output on stderr", file=sys.stderr, flush=True)
+if plan.get("claim"):
+    sql("UPDATE tasks SET status = 'running', started_at = now() WHERE id = $1::uuid AND status = 'queued'")
+if plan.get("grandchild"):
+    grandchild = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(3600)"])
+    with open(os.path.join(out, task + ".grandchild"), "w") as handle:
+        handle.write(str(grandchild.pid))
+if plan.get("cost"):
+    sql("INSERT INTO llm_calls (id, task_id, stage, model, provider, cost_usd) "
+        "VALUES (gen_random_uuid(), $1::uuid, 'agent', 'm', 'p', " + str(plan["cost"]) + ")")
+time.sleep(plan.get("sleep", 0))
+if plan.get("finish"):
+    sql("UPDATE tasks SET status = '" + plan["finish"] + "' WHERE id = $1::uuid")
+if plan.get("hang"):
+    time.sleep(3600)
 with open(os.path.join(out, task + ".end"), "w") as handle:
     handle.write(str(time.time()))
-sys.exit(int(os.environ.get("CHILD_EXIT", "0")))
+sys.exit(plan.get("exit", 0))
 """
 
 
 def child_command(script: str = RECORDING_CHILD) -> tuple[str, ...]:
-    import sys
-
     return (sys.executable, "-c", script)
-
-
-def task_ids(count: int) -> list[uuid.UUID]:
-    return [uuid.UUID(int=index + 1) for index in range(count)]
-
-
-def names(items: Sequence[object]) -> list[str]:
-    return [str(item) for item in items]
