@@ -37,6 +37,7 @@ from harness.retrieval_eval import (
     RetrievalEvalError,
     RetrievalUnavailable,
     eval_github_repo_id,
+    indexed_chunk_spans,
     ensure_eval_repo,
     gold_targets,
     load_eval_instances,
@@ -48,7 +49,7 @@ from harness.retrieval_eval import (
     to_markdown,
 )
 from harness.select_instances import CloneCache
-from repolace_shared.db.models import CodeChunk, GithubInstallation, RegisteredRepo
+from repolace_shared.db.models import ChunkType, CodeChunk, GithubInstallation, RegisteredRepo
 from repolace_shared.github.schemas import Repository, RepoOwner
 from repolace_shared.instances import load_instances
 
@@ -151,9 +152,11 @@ class TestApiBinding:
 class FakeApi:
     """Records every call; `ranked` is what `search` returns for every query."""
 
-    def __init__(self, ranked: list[Span] | None = None, chunk_count: int = 100) -> None:
+    def __init__(self, ranked: list[Span] | None = None, chunk_count: int = 100, corpus: list[Span] | None = None) -> None:
         self.ranked = ranked if ranked is not None else []
         self.chunk_count = chunk_count
+        #: The indexed chunks of the gold files; by default exactly what is retrieved.
+        self.corpus = corpus
         self.reindexed: list[tuple[str, str]] = []
         self.searched: list[tuple[str, str]] = []
         self.queries: list[tuple[str, str | None]] = []
@@ -174,7 +177,13 @@ class FakeApi:
             self.queries.append((title, body))
             return Query(semantic=f"{title} {body}", keyword="f1")
 
-        return RetrievalApi(reindex=reindex, search=search, build_query=build_query, count_chunks=lambda path: self.chunk_count)
+        async def chunk_spans(session, repo_id, paths) -> list[Span]:
+            return list(self.ranked if self.corpus is None else self.corpus)
+
+        return RetrievalApi(
+            reindex=reindex, search=search, build_query=build_query, count_chunks=lambda path: self.chunk_count,
+            chunk_spans=chunk_spans,
+        )
 
 
 @pytest.fixture
@@ -312,7 +321,7 @@ class TestPlanning:
         fake = FakeApi()
         api = fake.api()
         api = RetrievalApi(api.reindex, api.search, api.build_query,
-                           lambda path: seen.append(git_text(path, "rev-parse", "HEAD")) or 5)
+                           lambda path: seen.append(git_text(path, "rev-parse", "HEAD")) or 5, api.chunk_spans)
         _, instances_dir, *_ = instances_world
         async with open_git_source(cache_dir, "psf/requests") as source:
             instances, _ = await load_eval_instances(list(load_instances(instances_dir).values()), instances_dir, source)
@@ -395,6 +404,35 @@ class TestEvalRows:
         await db_session.commit()
         with pytest.raises(RetrievalEvalError, match="not an inactive eval row"):
             await ensure_eval_repo(db_session, "psf/requests", "truncate")
+
+
+@pytest.mark.anyio
+@pytest.mark.db
+class TestIndexedChunkSpans:
+    async def seed(self, db_session):
+        row = await ensure_eval_repo(db_session, "psf/requests", "truncate")
+        for path, start, end in (("pkg/mod.py", 1, 30), ("pkg/mod.py", 6, 9), ("pkg/other.py", 1, 3)):
+            db_session.add(CodeChunk(
+                repo_id=row.id, commit_sha="a" * 40, file_path=path, start_line=start, end_line=end,
+                chunk_type=ChunkType.FUNCTION, symbol_name="f", content="def f(): pass", embedding=[0.0] * 768,
+            ))
+        await db_session.commit()
+        return row
+
+    async def test_it_returns_the_spans_of_the_requested_files_only(self, db_session):
+        row = await self.seed(db_session)
+        spans = await indexed_chunk_spans(db_session, row.id, ["pkg/mod.py"])
+        assert sorted((s.path, s.start, s.end) for s in spans) == [("pkg/mod.py", 1, 30), ("pkg/mod.py", 6, 9)]
+
+    async def test_it_is_scoped_to_one_repo(self, db_session):
+        row = await self.seed(db_session)
+        other = await ensure_eval_repo(db_session, "psf/requests", "head_tail")
+        assert await indexed_chunk_spans(db_session, other.id, ["pkg/mod.py"]) == []
+        assert len(await indexed_chunk_spans(db_session, row.id, ["pkg/mod.py", "pkg/other.py"])) == 3
+
+    async def test_no_paths_is_no_query_and_no_spans(self, db_session):
+        row = await self.seed(db_session)
+        assert await indexed_chunk_spans(db_session, row.id, []) == []
 
 
 @pytest.mark.anyio
@@ -493,6 +531,44 @@ class TestRun:
         assert first.file_rr == 0.5 and first.chunk_rr == 0.5
         assert first.file_recall[5] == 1.0 and first.chunk_recall[5] == 1.0
 
+    async def test_a_wide_chunk_retrieved_alone_does_not_recall_a_hunk_inside_a_narrower_one(self, instances_world, db_session_factory):
+        _, instances_dir, cache_dir, *_ = instances_world
+        await cache_of(instances_world)
+        # The gold hunk is pkg/mod.py line 2. The module chunk's span covers the file; the
+        # function chunk is the hunk's innermost chunk. Only the module chunk is retrieved.
+        wide, inner = Span("pkg/mod.py", 1, 30), Span("pkg/mod.py", 1, 4)
+        fake = FakeApi(ranked=[wide], corpus=[wide, inner])
+
+        run = await run_eval(db_session_factory, fake.api(), instances_dir=instances_dir, cache_dir=cache_dir,
+                             strategies=["truncate"], query_strategies=["truncate"], max_instances_per_repo=1)
+
+        (result,) = run.results
+        assert result.metrics.chunk_recall[5] == 0.0 and result.metrics.chunk_rr == 0.0
+        assert result.metrics.file_recall[5] == 1.0
+
+    async def test_retrieving_the_innermost_chunk_does_recall_it(self, instances_world, db_session_factory):
+        _, instances_dir, cache_dir, *_ = instances_world
+        await cache_of(instances_world)
+        wide, inner = Span("pkg/mod.py", 1, 30), Span("pkg/mod.py", 1, 4)
+        fake = FakeApi(ranked=[wide, inner], corpus=[wide, inner])
+
+        run = await run_eval(db_session_factory, fake.api(), instances_dir=instances_dir, cache_dir=cache_dir,
+                             strategies=["truncate"], query_strategies=["truncate"], max_instances_per_repo=1)
+
+        assert run.results[0].metrics.chunk_recall[5] == 1.0 and run.results[0].metrics.chunk_rr == 0.5
+
+    async def test_a_hunk_no_indexed_chunk_overlaps_is_counted_unreachable_not_missed(self, instances_world, db_session_factory):
+        _, instances_dir, cache_dir, *_ = instances_world
+        await cache_of(instances_world)
+        fake = FakeApi(ranked=[Span("pkg/other.py", 1, 4)], corpus=[Span("pkg/other.py", 1, 4)])
+
+        run = await run_eval(db_session_factory, fake.api(), instances_dir=instances_dir, cache_dir=cache_dir,
+                             strategies=["truncate"], query_strategies=["truncate"], max_instances_per_repo=1)
+
+        metrics = run.results[0].metrics
+        assert metrics.unreachable_hunks == 1 and metrics.chunk_recall[5] is None
+        assert "Gold hunks no indexed chunk overlaps: 1" in to_markdown(run)
+
     async def test_the_query_is_built_from_the_issue_title_and_the_full_statement(self, instances_world, db_session_factory):
         _, instances_dir, cache_dir, *_ = instances_world
         await cache_of(instances_world)
@@ -547,7 +623,7 @@ class TestRun:
         await cache_of(instances_world)
         fake = FakeApi()
         api = fake.api()
-        empty = RetrievalApi(api.reindex, api.search, lambda title, body: Query("  ", ""), api.count_chunks)
+        empty = RetrievalApi(api.reindex, api.search, lambda title, body: Query("  ", ""), api.count_chunks, api.chunk_spans)
         with pytest.raises(RetrievalEvalError, match="empty query"):
             await run_eval(db_session_factory, empty, instances_dir=instances_dir, cache_dir=cache_dir,
                            strategies=["truncate"], query_strategies=["truncate"])
@@ -645,6 +721,8 @@ class TestAgainstTheRealRetrieval:
 
         assert len(run.results) == 2 * 2
         assert all(r.metrics.file_recall[20] is not None for r in run.results)
+        # The gold hunk is inside f1, which the real index chunked: reachable, and so scored.
+        assert all(r.metrics.unreachable_hunks == 0 and r.metrics.chunk_recall[20] is not None for r in run.results)
         assert {strategy for _, strategy in embedder.text_calls} == {"truncate", "head_tail"}
         assert {strategy for _, strategy in embedder.query_calls} == {"truncate", "head_tail"}
         chunks = await db_session.scalar(select(func.count()).select_from(CodeChunk))

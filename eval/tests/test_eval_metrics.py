@@ -16,10 +16,13 @@ from harness.metrics import (
     exact_sign_test,
     file_recall_at_k,
     file_reciprocal_rank,
+    innermost_overlapping,
     mean_of,
     percentile,
     score_query,
+    reachable_hunks,
     spans_overlap,
+    strictly_contains,
 )
 
 
@@ -267,3 +270,123 @@ class TestExactSignTest:
     def test_negative_counts_are_refused(self):
         with pytest.raises(ValueError, match="must not be negative"):
             exact_sign_test(-1, 2)
+
+
+AUDIT_SOURCE = '''import os
+
+CONST = 1
+
+
+def helper(x):
+    y = x + 1
+    z = y * 2
+    return z
+
+
+class Box:
+    """A box."""
+
+    size = 3
+
+    def small(self):
+        return self.size
+
+    def big(self):
+        a = 1
+        b = 2
+        c = 3
+        return a + b + c
+
+
+__all__ = ["helper", "Box"]
+'''
+
+
+def audit_corpus() -> dict[str, Span]:
+    """The real chunker's spans for the audit's file: a 27-line module with 3 lines of module content."""
+    from retrieval.chunker import chunk_python_file
+
+    return {c.symbol_name: Span(c.file_path, c.start_line, c.end_line) for c in chunk_python_file("pkg/m.py", AUDIT_SOURCE)}
+
+
+class TestInnermostChunkRule:
+    """A chunk's span is not its content: the module chunk spans the file and holds three lines of it."""
+
+    def setup_method(self):
+        self.chunks = audit_corpus()
+        self.corpus = list(self.chunks.values())
+
+    def recall(self, retrieved, hunk_line, *, corpus="given", k=5):
+        hunks = [Span("pkg/m.py", hunk_line, hunk_line)]
+        return chunk_recall_at_k(retrieved, hunks, k, self.corpus if corpus == "given" else None)
+
+    def test_the_real_chunker_gives_the_spans_the_audit_measured(self):
+        assert self.chunks["pkg/m.py"] == Span("pkg/m.py", 1, 27)
+        assert self.chunks["helper"] == Span("pkg/m.py", 6, 9)
+        assert self.chunks["Box"] == Span("pkg/m.py", 12, 24)
+
+    def test_a_retrieved_module_chunk_does_not_recall_a_hunk_inside_a_function(self):
+        # The audit's repro: this scored 1.0.
+        assert self.recall([self.chunks["pkg/m.py"]], 8) == 0.0
+
+    def test_the_function_chunk_does_recall_it(self):
+        assert self.recall([self.chunks["helper"]], 8) == 1.0
+
+    def test_the_module_chunk_and_the_function_chunk_together_recall_it_through_the_function(self):
+        assert self.recall([self.chunks["pkg/m.py"], self.chunks["helper"]], 8, k=1) == 0.0
+        assert self.recall([self.chunks["pkg/m.py"], self.chunks["helper"]], 8, k=2) == 1.0
+
+    def test_a_class_skeleton_does_not_recall_a_hunk_inside_a_method(self):
+        assert self.recall([self.chunks["Box"]], 18) == 0.0
+        assert self.recall([self.chunks["small"]], 18) == 1.0
+
+    def test_a_hunk_in_the_class_body_outside_any_method_is_the_skeletons(self):
+        assert self.recall([self.chunks["Box"]], 15) == 1.0
+        assert self.recall([self.chunks["pkg/m.py"]], 15) == 0.0
+
+    def test_a_hunk_in_module_level_code_is_the_module_chunks(self):
+        assert self.recall([self.chunks["pkg/m.py"]], 3) == 1.0
+        assert self.recall([self.chunks["pkg/m.py"]], 26) == 1.0
+        assert self.recall([self.chunks["helper"]], 3) == 0.0
+
+    def test_one_of_two_hunks_found_is_half(self):
+        hunks = [Span("pkg/m.py", 8, 8), Span("pkg/m.py", 22, 22)]
+        assert chunk_recall_at_k([self.chunks["helper"]], hunks, 5, self.corpus) == 0.5
+
+    def test_the_reciprocal_rank_skips_a_wide_chunk_that_is_not_innermost(self):
+        hunks = [Span("pkg/m.py", 8, 8)]
+        ranked = [self.chunks["pkg/m.py"], self.chunks["Box"], self.chunks["helper"]]
+        assert chunk_reciprocal_rank(ranked, hunks, self.corpus) == pytest.approx(1 / 3)
+
+    def test_without_a_corpus_the_rule_is_the_weaker_retrieved_only_form(self):
+        # Documented limitation: with nothing to compare against, the lone wide chunk counts.
+        assert self.recall([self.chunks["pkg/m.py"]], 8, corpus=None) == 1.0
+        # But a retrieved inner chunk still outranks the wide one beside it.
+        assert self.recall([self.chunks["pkg/m.py"], self.chunks["helper"]], 8, corpus=None, k=1) == 0.0
+
+    def test_unreachable_hunks_are_dropped_and_counted_not_scored_as_misses(self):
+        hunks = [Span("pkg/m.py", 8, 8), Span("pkg/m.py", 40, 40), Span("other.py", 3, 3)]
+        kept, dropped = reachable_hunks(hunks, self.corpus)
+        assert kept == [Span("pkg/m.py", 8, 8)] and dropped == 2
+
+    def test_a_query_whose_hunks_are_all_unreachable_has_no_chunk_score(self):
+        scored = score_query([Span("pkg/m.py", 6, 9)], {"pkg/m.py"}, [Span("pkg/m.py", 40, 40)], ks=(5,), corpus=self.corpus)
+        assert scored.unreachable_hunks == 1
+        assert scored.chunk_recall[5] is None and scored.chunk_rr is None
+        assert scored.file_recall[5] == 1.0
+
+    def test_score_query_threads_the_corpus_through(self):
+        scored = score_query([self.chunks["pkg/m.py"]], {"pkg/m.py"}, [Span("pkg/m.py", 8, 8)], ks=(5,), corpus=self.corpus)
+        assert scored.chunk_recall[5] == 0.0 and scored.chunk_rr == 0.0 and scored.file_recall[5] == 1.0
+
+    def test_strictly_contains(self):
+        outer, inner = Span("a.py", 1, 10), Span("a.py", 3, 5)
+        assert strictly_contains(outer, inner) and not strictly_contains(inner, outer)
+        assert not strictly_contains(outer, outer)
+        assert not strictly_contains(Span("a.py", 1, 10), Span("b.py", 3, 5))
+        assert strictly_contains(Span("a.py", 1, 10), Span("a.py", 1, 5))
+
+    def test_equal_spans_are_both_innermost(self):
+        twin_a, twin_b = Span("a.py", 3, 5), Span("a.py", 3, 5)
+        assert innermost_overlapping(Span("a.py", 4, 4), [twin_a, twin_b, Span("a.py", 1, 9)]) == {twin_a}
+        assert len(innermost_overlapping(Span("a.py", 4, 4), [Span("a.py", 2, 5), Span("a.py", 3, 6)])) == 2
