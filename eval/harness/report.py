@@ -93,6 +93,10 @@ _BUCKETS = (PASSED, FAILED, PASSED_WITH_TEST_EDIT, INADMISSIBLE, HARNESS_ERROR, 
 
 #: `agent_stop_reason` of a run the model provider failed. Counted, never excluded.
 LLM_ERROR = "llm_error"
+#: What `verify.scoring.score` writes into the reason of a PASSED task scored without
+#: a curated fail-to-pass list: "some baseline failure went green", which is not
+#: evidence about THIS issue.
+UNCURATED_MARKER = "uncurated"
 
 CONTAMINATION_CAVEAT = (
     "SWE-bench Verified is public and widely used, so these instances and their upstream fixes are "
@@ -346,6 +350,11 @@ def _headline(
 
     models = sorted({r.model for r in rows if r.model})
     model = manifest.model if manifest is not None else (models[0] if len(models) == 1 else None)
+    if manifest is not None and manifest.agent != "llm":
+        raise ReportError(
+            f"run {run_id} is a {manifest.agent!r} run according to its manifest, not an LLM agent run: "
+            f"refusing to report it as one"
+        )
     repos = {instance_repos.get(i) or next((r.repo for r in rows if r.instance_id == i and r.repo), None) for i in instance_ids}
     repos.discard(None)
     runs_per_instance = manifest.runs_per_instance if manifest is not None else max(per_instance_runs.values(), default=0)
@@ -369,6 +378,13 @@ def _headline(
         flags.append(f"PARTIAL ({len(planned) - not_finished} of {len(planned)})")
 
     passed = sum(1 for b in buckets.values() if b == PASSED)
+    passes = [by_pair[pair] for pair, bucket in buckets.items() if bucket == PASSED]
+    uncurated = sum(1 for r in passes if UNCURATED_MARKER in (r.score_reason or ""))
+    if uncurated:
+        flags.append(f"UNCURATED ({uncurated} of {passed} passes)")
+    no_calls = sum(1 for r in passes if r.llm_calls == 0)
+    if no_calls:
+        flags.append(f"NO-LLM-CALL PASSES ({no_calls} of {passed})")
     pass_counts = [sum(1 for pair in planned if pair[0] == i and buckets.get(pair) == PASSED) for i in instance_ids]
     run_counts = [per_instance_runs[i] for i in instance_ids]
     interval = None
@@ -644,6 +660,18 @@ def aggregate(
                 f"{headline.run_id}: {len(headline.unplanned)} row(s) are not in the manifest's grid and are "
                 f"ignored by the headline: {', '.join(headline.unplanned[:5])}."
             )
+        for flag in headline.flags:
+            if flag.startswith("UNCURATED"):
+                warnings.insert(0, (
+                    f"{headline.run_id}: {flag}. These passes were scored without a curated fail-to-pass list, "
+                    f"so each means only that some test that failed at the base commit now passes -- not that "
+                    f"this issue was fixed. The headline overstates until the curated list is wired in."
+                ))
+            elif flag.startswith("NO-LLM-CALL"):
+                warnings.insert(0, (
+                    f"{headline.run_id}: {flag}. A pass that made no LLM call is a gold or stub run, not an "
+                    f"agent run: check the run id (a gold run belongs under --gold-run)."
+                ))
         if "UNEQUAL RUNS PER INSTANCE" in headline.flags:
             warnings.append(
                 f"{headline.run_id}: instances have different numbers of runs; the headline is the pooled "
