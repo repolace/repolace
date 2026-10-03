@@ -36,14 +36,8 @@ from eval_exec_support import (
 from harness import runner
 from harness.bench_repos import TOKEN_ENV_VAR
 from harness.db import queued_tasks, run_cost_usd
-from harness.enqueue import (
-    DEFAULT_WALL_CLOCK_SECONDS,
-    ManifestError,
-    ManifestInputs,
-    build_manifest,
-    ensure_manifest,
-    manifest_path,
-)
+from harness.enqueue import DEFAULT_WALL_CLOCK_SECONDS, ManifestInputs, build_manifest, ensure_manifest
+from harness.run_manifest import ManifestError, manifest_path
 from harness.runner import (
     ABANDONED_GRACE_SECONDS,
     Outcome,
@@ -680,9 +674,8 @@ def write_manifest(runs_dir: Path, *, agent="llm", model="claude-test", timeout=
         eval_run_id=run, git_sha="a" * 40, instance_ids=["a"], runs=1, inputs=inputs,
         created_at=datetime(2026, 10, 3, tzinfo=timezone.utc),
     )
-    path = manifest_path(runs_dir, run)
-    ensure_manifest(path, document)
-    return path
+    ensure_manifest(runs_dir, document)
+    return manifest_path(runs_dir, run)
 
 
 class TestManifestAgreement:
@@ -715,6 +708,26 @@ class TestManifestAgreement:
         write_manifest(tmp_path / "runs", agent="gold", model=None)
 
         assert check_manifest(tmp_path / "runs", config(agent="gold", model="whatever")) is True
+
+    def test_a_manifest_with_an_unknown_key_is_refused_as_the_report_loader_refuses_it(self, tmp_path):
+        import json as _json
+
+        path = write_manifest(tmp_path / "runs")
+        document = _json.loads(path.read_text())
+        document["typo_instance_idz"] = []
+        path.write_text(_json.dumps(document))
+
+        with pytest.raises(ManifestError, match="unknown key"):
+            check_manifest(tmp_path / "runs", config(model="claude-test"))
+
+    def test_a_manifest_copied_under_another_runs_directory_is_refused(self, tmp_path):
+        path = write_manifest(tmp_path / "runs", run="run-1")
+        other = tmp_path / "runs" / "run-2"
+        other.mkdir()
+        (other / "manifest.json").write_text(path.read_text())
+
+        with pytest.raises(ManifestError, match="sits in"):
+            check_manifest(tmp_path / "runs", config(eval_run_id="run-2", model="claude-test"))
 
     def test_a_malformed_manifest_is_refused(self, tmp_path):
         path = write_manifest(tmp_path / "runs")

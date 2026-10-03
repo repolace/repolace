@@ -84,13 +84,8 @@ from harness.db import (
     run_cost_usd,
     running_older_than,
 )
-from harness.enqueue import (
-    DEFAULT_RUNS_DIR,
-    DEFAULT_WALL_CLOCK_SECONDS,
-    ManifestError,
-    manifest_path,
-    read_manifest,
-)
+from harness.enqueue import DEFAULT_RUNS_DIR, DEFAULT_WALL_CLOCK_SECONDS
+from harness.run_manifest import ManifestError, load_manifest, manifest_path
 from repolace_shared.paths import PathEscapesRoot, resolve_within
 from repolace_shared.process import REAP_TIMEOUT_SECONDS, ProcessResult, kill_process_tree, run_process
 
@@ -396,13 +391,13 @@ def check_manifest(runs_dir: Path, config: RunnerConfig) -> bool:
     path = manifest_path(runs_dir, config.eval_run_id)
     if not path.exists():
         return False
-    manifest = read_manifest(path)
+    manifest = load_manifest(path)
     problems = []
-    if manifest["agent"] != config.agent:
-        problems.append(f"agent: the manifest says {manifest['agent']!r}, this run was given {config.agent!r}")
-    if config.agent == "llm" and manifest["model"] != config.model:
-        problems.append(f"model: the manifest says {manifest['model']!r}, this run was given {config.model!r}")
-    recorded = manifest["limits"].get("runner_wall_clock_seconds") if isinstance(manifest["limits"], dict) else None
+    if manifest.agent != config.agent:
+        problems.append(f"agent: the manifest says {manifest.agent!r}, this run was given {config.agent!r}")
+    if config.agent == "llm" and manifest.model != config.model:
+        problems.append(f"model: the manifest says {manifest.model!r}, this run was given {config.model!r}")
+    recorded = manifest.limits.get("runner_wall_clock_seconds")
     if recorded != config.timeout_seconds:
         problems.append(
             f"timeout: the manifest says {recorded!r} seconds, this run was given {config.timeout_seconds!r}"

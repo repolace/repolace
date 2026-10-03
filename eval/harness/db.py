@@ -35,7 +35,9 @@ _EVAL_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
 
 
 def check_eval_run_id(value: object) -> str:
-    if not isinstance(value, str) or _EVAL_RUN_ID.fullmatch(value) is None:
+    # `..` is refused too, as `harness.run_manifest.check_run_id` refuses it: the two must
+    # accept the same ids, or a run id could pass here and fail when its manifest is written.
+    if not isinstance(value, str) or _EVAL_RUN_ID.fullmatch(value) is None or ".." in value:
         raise ValueError(
             f"eval run id {value!r} must be 1-64 characters, start with a letter or digit, "
             f"and use only letters, digits, '_', '.', '-'"
