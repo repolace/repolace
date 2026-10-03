@@ -16,10 +16,7 @@ import pytest
 from repolace_pipeline.edit import (
     NOT_A_FIX,
     apply_stub_edit,
-    commit_message,
-    pr_title,
     render_marker,
-    render_pr_body,
 )
 
 from pipeline_support import TASK_ID, chunk, empty_request, request
@@ -80,6 +77,14 @@ class TestRenderMarker:
         marker = render_marker(request(chunk(class_name="Loader", symbol_name="load")))
 
         assert "Loader.load" in marker
+
+    def test_the_marker_does_not_claim_the_suite_was_skipped(self):
+        """The marker said so truthfully until Verify was wired in, and then went on saying it. The marker is the one
+        part of a stub run a human reads inside the diff, so a stale claim there is the expensive kind."""
+        marker = render_marker(request())
+
+        assert "skipped" not in marker.lower()
+        assert "nothing was scored" not in marker.lower()
 
     def test_no_retrieval_is_a_programming_error_not_a_blank_marker(self):
         """The editor cannot invent a target. run_task guards this earlier too."""
@@ -148,54 +153,6 @@ class TestApplyStubEdit:
         expected = self.write_source(tmp_path)
 
         assert apply_stub_edit(tmp_path, request()) == expected
-
-
-class TestPullRequestText:
-    def test_title_names_the_issue_and_flags_the_smoke_test(self):
-        title = pr_title(request())
-
-        assert "#7" in title
-        assert "repolace" in title
-
-    def test_body_lists_every_retrieved_chunk(self):
-        body = render_pr_body(request(chunk(file_path="a.py"), chunk(file_path="b.py")))
-
-        assert "a.py" in body and "b.py" in body
-
-    def test_body_never_closes_the_issue(self):
-        """Merging must not close an issue that was never fixed."""
-        body = render_pr_body(request()).lower()
-
-        for keyword in ("closes #", "fixes #", "resolves #"):
-            assert keyword not in body
-
-    def test_body_does_not_claim_the_suite_was_skipped(self):
-        """It said so truthfully until Verify was wired in, and then went on
-        saying it. The marker and the body are the only parts of a task a human
-        reads on GitHub, so a stale claim there is the expensive kind."""
-        body = render_pr_body(request())
-
-        assert "skipped" not in body.lower()
-        assert "nothing was scored" not in body.lower()
-
-    def test_the_marker_does_not_claim_the_suite_was_skipped(self):
-        marker = render_marker(request())
-
-        assert "skipped" not in marker.lower()
-
-    def test_body_says_it_is_not_a_fix_and_asks_for_a_close(self):
-        body = render_pr_body(request())
-
-        assert NOT_A_FIX in body
-        assert "close this pull request" in body.lower()
-
-    def test_body_marks_empty_retrieval_explicitly(self):
-        body = render_pr_body(empty_request())
-
-        assert "No chunks retrieved" in body
-
-    def test_commit_message_says_not_a_fix(self):
-        assert "Not a fix" in commit_message(request())
 
 
 class TestApplyStubEditConfinement:
