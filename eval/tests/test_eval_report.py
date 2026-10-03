@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from eval_support import rows_for, task_row
+from eval_support import rows_for, run_manifest, task_row
 from harness.report import (
     CONTAMINATION_CAVEAT,
     FAILED,
@@ -17,12 +17,14 @@ from harness.report import (
     PASSED,
     PASSED_WITH_TEST_EDIT,
     UNFINISHED,
+    ReportError,
     TaskRow,
     aggregate,
     attach_instance_data,
     classify,
     describe,
     export_predictions,
+    load_manifests,
     main,
     percentile,
     to_json,
@@ -30,6 +32,7 @@ from harness.report import (
 )
 from repolace_shared.db.models import TaskOutcome as O
 from repolace_shared.db.models import TaskStatus as S
+from harness.run_manifest import dump_manifest
 from repolace_shared.instances import InstanceSpec
 
 KINDS = {
@@ -50,7 +53,7 @@ def sweep(run_index: int, kinds: list[str], **overrides) -> list[TaskRow]:
     ]
 
 
-#: Ten instances, three runs. Per run: (passed, admissible, total) =
+#: Ten instances, three runs. Per run: (passed, admissible, planned) =
 #: run 0: (5, 8, 10)   run 1: (6, 9, 10)   run 2: (4, 9, 10)
 RUN_0 = ["passed"] * 5 + ["failed"] * 2 + ["pwte", "inadmissible", "harness"]
 RUN_1 = ["passed"] * 6 + ["failed"] * 3 + ["harness"]
@@ -98,19 +101,27 @@ class TestClassification:
             assert classify(task_row(status=status, outcome=None)) == INADMISSIBLE
 
 
+def headline_of(rows, manifest=None, **kwargs):
+    """The one headline of a one-run report."""
+    report = aggregate(rows, manifests={manifest.eval_run_id: manifest} if manifest else None, **kwargs)
+    (headline,) = report.headlines
+    return headline
+
+
 class TestLlmErrorRows:
     def test_scored_llm_error_rows_stay_in_the_denominator(self):
         # The audit's repro: 8 passed, 6 failed, 6 llm_error scored FAILED. Dropping the
         # llm_error rows printed 8/14 = 57.1%; counting them is 8/20 = 40%.
         rows = sweep(0, ["passed"] * 8 + ["failed"] * 6 + ["llm_error"] * 6)
+        headline = headline_of(rows, run_manifest(20, runs=1))
+        assert (headline.passed, headline.planned, headline.rate) == (8, 20, 8 / 20)
+        assert (headline.secondary.passed, headline.secondary.admissible) == (8, 20)
         overall = aggregate(rows).overall
-        assert overall.passed_over_admissible.mean == pytest.approx(8 / 20)
-        assert (overall.passed_over_admissible.numerator, overall.passed_over_admissible.denominator) == (8, 20)
         assert overall.counts[HARNESS_ERROR] == 0 and overall.counts[FAILED] == 12
 
     def test_a_passed_llm_error_row_counts_as_a_pass(self):
         rows = [task_row(instance_id="a", outcome=O.PASSED, agent_stop_reason="llm_error"), task_row(instance_id="b", outcome=O.FAILED)]
-        assert aggregate(rows).overall.passed_over_admissible.mean == 0.5
+        assert headline_of(rows, run_manifest(["a", "b"], runs=1)).passed == 1
 
     def test_llm_error_rows_are_shown_in_their_own_column_and_a_warning(self):
         rows = sweep(0, ["passed", "failed", "llm_error", "llm_error"])
@@ -133,125 +144,247 @@ class TestLlmErrorRows:
         assert "outcome=-" in ref.detail
 
 
-class TestHeadlineArithmetic:
+class TestHeadlineIsPassedOverPlanned:
+    """`passed / planned`, every non-pass a non-pass. The secondary figure excludes, and says so."""
+
     def test_the_three_runs_pin_every_number(self, three_runs):
-        overall = aggregate(three_runs).overall
+        headline = headline_of(three_runs, run_manifest(10, runs=3))
 
-        assert overall.instances == 10 and overall.rows == 30 and overall.runs_label == "3 runs"
-        assert overall.counts == {
-            PASSED: 15, FAILED: 9, PASSED_WITH_TEST_EDIT: 2, INADMISSIBLE: 2, HARNESS_ERROR: 2, UNFINISHED: 0,
-        }
+        assert (headline.instances, headline.runs_per_instance, headline.planned) == (10, 3, 30)
+        assert (headline.passed, headline.rate) == (15, 15 / 30)
+        assert headline.anchored and headline.withheld is None and headline.flags == ()
+        assert [(r.run_index, r.passed, r.planned) for r in headline.per_run] == [(0, 5, 10), (1, 6, 10), (2, 4, 10)]
+        assert headline.run_range == (pytest.approx(0.4), pytest.approx(0.6))
+        # The secondary: harness errors (2) and inadmissible rows (2) taken out of the denominator.
+        secondary = headline.secondary
+        assert (secondary.passed, secondary.admissible) == (15, 8 + 9 + 9)
+        assert (secondary.excluded_harness_errors, secondary.excluded_inadmissible) == (2, 2)
+        assert secondary.rate == pytest.approx(15 / 26)
 
-        admissible = overall.passed_over_admissible
-        assert [(r.run_index, r.numerator, r.denominator) for r in admissible.runs] == [(0, 5, 8), (1, 6, 9), (2, 4, 9)]
-        assert admissible.mean == pytest.approx((5 / 8 + 6 / 9 + 4 / 9) / 3)
-        assert (admissible.minimum, admissible.maximum) == (pytest.approx(4 / 9), pytest.approx(6 / 9))
-        assert (admissible.numerator, admissible.denominator) == (15, 26)
+    def test_every_non_pass_is_a_non_pass_in_the_headline_denominator(self):
+        rows = sweep(0, ["passed", "failed", "pwte", "inadmissible", "harness"])
+        headline = headline_of(rows, run_manifest(5, runs=1))
+        assert (headline.passed, headline.planned, headline.rate) == (1, 5, 0.2)
 
-        total = overall.passed_over_total
-        assert [(r.numerator, r.denominator) for r in total.runs] == [(5, 10), (6, 10), (4, 10)]
-        assert total.mean == pytest.approx((5 / 10 + 6 / 10 + 4 / 10) / 3)
-        assert (total.minimum, total.maximum) == (pytest.approx(0.4), pytest.approx(0.6))
-        assert (total.numerator, total.denominator) == (15, 30)
+    def test_the_secondary_excludes_exactly_the_instrument_failures(self):
+        rows = sweep(0, ["passed", "failed", "pwte", "inadmissible", "harness"])
+        secondary = headline_of(rows, run_manifest(5, runs=1)).secondary
+        assert (secondary.passed, secondary.admissible, secondary.rate) == (1, 3, 1 / 3)
+        assert (secondary.excluded_harness_errors, secondary.excluded_inadmissible) == (1, 1)
 
-    def test_the_mean_is_of_per_run_rates_not_the_pooled_rate(self):
-        # Run 0: 1/1 = 100%. Run 1: 1/4 = 25%. Mean of rates 62.5%; pooled 2/5 = 40%.
-        rows = sweep(0, ["passed"]) + sweep(1, ["passed", "failed", "failed", "failed"])
-        admissible = aggregate(rows).overall.passed_over_admissible
-        assert admissible.mean == pytest.approx(0.625)
-        assert admissible.numerator / admissible.denominator == pytest.approx(0.4)
-
-    def test_a_harness_error_leaves_the_first_rate_and_stays_in_the_second(self):
-        rows = sweep(0, ["passed", "failed", "harness"])
-        overall = aggregate(rows).overall
-        assert overall.passed_over_admissible.mean == pytest.approx(1 / 2)
-        assert overall.passed_over_total.mean == pytest.approx(1 / 3)
-
-    def test_an_inadmissible_row_leaves_the_first_rate_and_stays_in_the_second(self):
-        rows = sweep(0, ["passed", "failed", "inadmissible"])
-        overall = aggregate(rows).overall
-        assert overall.passed_over_admissible.mean == pytest.approx(1 / 2)
-        assert overall.passed_over_total.mean == pytest.approx(1 / 3)
-
-    def test_passed_with_test_edit_is_never_a_pass_and_stays_in_both_denominators(self):
-        rows = sweep(0, ["passed", "pwte", "pwte"])
-        overall = aggregate(rows).overall
-        assert overall.passed_over_admissible.mean == pytest.approx(1 / 3)
-        assert overall.passed_over_total.mean == pytest.approx(1 / 3)
-        assert overall.counts[PASSED] == 1
-
-    def test_a_signed_off_test_edit_is_still_not_a_pass(self):
+    def test_passed_with_test_edit_is_never_a_pass_even_when_signed_off(self):
         rows = [task_row(**KINDS["pwte"], test_edit_approved=True), task_row(instance_id="b", **KINDS["failed"])]
-        report = aggregate(rows)
-        assert report.overall.passed_over_admissible.mean == 0.0
-        assert (report.passed_with_test_edit.approved, report.passed_with_test_edit.pending) == (1, 0)
+        report = aggregate(rows, manifests={"run-a": run_manifest(["inst-0", "b"], runs=1)})
+        # (the first row's instance id is "psf__requests-1001" by default: it is unplanned)
+        assert report.passed_with_test_edit.approved == 1
+        assert report.headlines[0].passed == 0
 
     def test_every_finished_row_is_in_exactly_one_bucket(self, three_runs):
         counts = aggregate(three_runs).overall.counts
-        assert sum(counts.values()) == 30
-        total_denominator = aggregate(three_runs).overall.passed_over_total.denominator
-        assert total_denominator == sum(counts[b] for b in (PASSED, FAILED, PASSED_WITH_TEST_EDIT, INADMISSIBLE, HARNESS_ERROR))
+        assert sum(counts.values()) == 30 and counts[PASSED] == 15 and counts[FAILED] == 9
+        assert (counts[PASSED_WITH_TEST_EDIT], counts[INADMISSIBLE], counts[HARNESS_ERROR]) == (2, 2, 2)
 
-    def test_unfinished_rows_are_in_no_rate_and_the_report_says_so(self):
-        rows = sweep(0, ["passed", "failed", "unfinished", "unfinished"])
-        report = aggregate(rows)
-        assert report.overall.passed_over_admissible.mean == pytest.approx(1 / 2)
-        assert report.overall.passed_over_total.denominator == 2
-        assert report.overall.counts[UNFINISHED] == 2
-        assert any(w.startswith("PARTIAL: 2 row(s)") for w in report.warnings)
+    def test_the_markdown_leads_with_counts_then_the_percentage_then_the_interval(self, three_runs):
+        text = to_markdown(aggregate(three_runs, manifests={"run-a": run_manifest(10, runs=3)}))
+        assert "**Pass rate: 15 of 30 instance-runs (50%) [95% interval over 10 instances: " in text
+        assert "N = 10 instances from 1 Python repository, 3 runs each, model anthropic/test-main, pipeline commit c0ffee" in text
+        assert "Secondary, not the headline: passed / admissible = 15 of 26 (58%), excluding 2 harness-error and 2 inadmissible row(s) (listed)." in text
+        assert "Every planned (instance, run) row is counted: 2 harness-error and 2 inadmissible row(s)" in text
 
-    def test_a_run_with_only_unfinished_rows_is_not_a_run(self):
-        rows = sweep(0, ["passed", "failed"]) + sweep(1, ["unfinished", "unfinished"])
-        overall = aggregate(rows).overall
-        assert overall.run_indexes == (0,)
-        assert overall.runs_label == "1 run"
+    def test_the_run_to_run_range_says_it_is_not_an_interval(self, three_runs):
+        text = to_markdown(aggregate(three_runs, manifests={"run-a": run_manifest(10, runs=3)}))
+        assert "Run-to-run range of the 3 run rates: 40%-60%. This holds the instances fixed; it is not an interval." in text
+        assert "| 0 | 5 of 10 (50%) | 50% |" in text
 
-    def test_a_run_with_no_admissible_row_is_left_out_of_the_mean_not_counted_as_zero(self):
-        rows = sweep(0, ["passed", "failed"]) + sweep(1, ["harness", "harness"])
-        admissible = aggregate(rows).overall.passed_over_admissible
-        assert [r.rate for r in admissible.runs] == [0.5, None]
-        assert admissible.mean == 0.5
-        assert (admissible.minimum, admissible.maximum) == (0.5, 0.5)
+    def test_a_single_run_has_no_range(self):
+        headline = headline_of(sweep(0, ["passed", "failed"]), run_manifest(2, runs=1))
+        assert headline.run_range is None and len(headline.per_run) == 1
 
-    def test_no_rows_gives_no_rate_and_no_error(self):
-        overall = aggregate([]).overall
-        assert overall.passed_over_admissible.mean is None and overall.rows == 0
+    def test_one_instance_has_no_interval_and_the_text_says_why(self):
+        rows = [task_row(instance_id="inst-0", run_index=r) for r in range(3)]
+        report = aggregate(rows, manifests={"run-a": run_manifest(1, runs=3)})
+        assert report.headlines[0].interval is None
+        assert "no interval: fewer than 2 instances" in to_markdown(report)
 
-    def test_all_excluded_gives_no_admissible_rate(self):
-        overall = aggregate(sweep(0, ["harness", "inadmissible"])).overall
-        assert overall.passed_over_admissible.mean is None
-        assert overall.passed_over_total.mean == 0.0
+    def test_no_rows_and_no_manifest_is_no_headline_and_no_error(self):
+        report = aggregate([])
+        assert report.headlines == () and "No agent runs." in to_markdown(report)
 
-    def test_instances_never_admissible_are_named(self, three_runs):
-        # inst-9 is a harness error twice and inadmissible once.
-        assert aggregate(three_runs).instances_never_admissible == ("inst-9",)
+    def test_repositories_come_from_the_instance_data_even_for_a_missing_row(self):
+        rows = [task_row(instance_id="inst-0", repo=None)]
+        headline = headline_of(
+            rows, run_manifest(2, runs=1), allow_partial=True,
+        )
+        assert headline.repos == 0
+        report = aggregate(rows, manifests={"run-a": run_manifest(2, runs=1)}, allow_partial=True,
+                           instance_repos={"inst-0": "psf/requests", "inst-1": "pallets/flask"})
+        assert report.headlines[0].repos == 2
 
-    def test_the_warnings_name_each_exclusion(self, three_runs):
-        warnings = "\n".join(aggregate(three_runs).warnings)
-        assert "2 harness error row(s) are excluded" in warnings
-        assert "2 inadmissible row(s)" in warnings
-        assert "inst-9" in warnings
+
+class TestInterval:
+    def test_it_is_over_instances_deterministic_and_documented(self, three_runs):
+        manifest = run_manifest(10, runs=3)
+        first = headline_of(three_runs, manifest).interval
+        again = headline_of(list(reversed(three_runs)), manifest).interval
+        assert first == again
+        assert (first.instances, first.resamples, first.seed, first.confidence) == (10, 10_000, 0, 0.95)
+        assert first.low < 0.5 < first.high
+
+    def test_it_is_wider_than_one_that_pretends_the_runs_are_independent(self):
+        # 20 instances x 3 runs: 7 always pass, 8 never, 5 mixed (28 of 60). An interval
+        # over the sixty rows would be about 24 points wide; over instances it is wider.
+        passes = [3] * 7 + [1, 1, 2, 2, 1] + [0] * 8
+        rows = []
+        for i, k in enumerate(passes):
+            for run in range(3):
+                rows.append(task_row(instance_id=f"inst-{i}", run_index=run, outcome=O.PASSED if run < k else O.FAILED))
+        interval = headline_of(rows, run_manifest(20, runs=3)).interval
+        assert 0.30 < interval.high - interval.low < 0.46
+
+    def test_the_wording_pins_whole_number_percentages(self):
+        passes = [3] * 7 + [1, 1, 2, 2, 1] + [0] * 8
+        rows = [
+            task_row(instance_id=f"inst-{i}", run_index=run, outcome=O.PASSED if run < k else O.FAILED)
+            for i, k in enumerate(passes) for run in range(3)
+        ]
+        text = to_markdown(aggregate(rows, manifests={"run-a": run_manifest(20, runs=3)}))
+        assert "**Pass rate: 28 of 60 instance-runs (47%) [95% interval over 20 instances: " in text
+        import re
+
+        match = re.search(r"interval over 20 instances: (\d+)%-(\d+)%\]", text)
+        assert match and 25 <= int(match[1]) <= 35 and 58 <= int(match[2]) <= 70
+
+
+class TestPlannedGrid:
+    def test_a_run_with_unfinished_rows_withholds_its_headline(self):
+        # The audit's repro: a partial sweep whose unfinished rows are exactly the failures
+        # printed 66.7% beside a top-of-page warning. Now there is no figure at all.
+        rows = sweep(0, ["passed"] * 10, ) + sweep(1, ["passed"] * 10) + sweep(2, ["unfinished"] * 10)
+        headline = headline_of(rows, run_manifest(10, runs=3))
+        assert headline.rate is None and headline.interval is None and headline.per_run == ()
+        assert headline.withheld.startswith("headline withheld: 10 of 30 planned rows missing/unfinished (0 missing, 10 unfinished)")
+        assert len(headline.unfinished) == 10 and headline.missing == ()
+
+    def test_the_markdown_prints_no_pass_rate_for_a_withheld_run(self):
+        rows = sweep(0, ["passed"] * 10) + sweep(1, ["unfinished"] * 10)
+        text = to_markdown(aggregate(rows, manifests={"run-a": run_manifest(10, runs=2)}))
+        assert "Headline withheld: 10 of 20 planned rows missing/unfinished" in text
+        assert "Pass rate:" not in text
+        assert "Unfinished (10): inst-0#1" in text
+
+    def test_a_planned_row_that_does_not_exist_withholds_it_and_is_listed(self):
+        rows = sweep(0, ["passed"] * 8)  # inst-8 and inst-9 never ran
+        report = aggregate(rows, manifests={"run-a": run_manifest(10, runs=1)})
+        headline = report.headlines[0]
+        assert headline.withheld.startswith("headline withheld: 2 of 10 planned rows missing/unfinished (2 missing, 0 unfinished)")
+        assert headline.missing == ("inst-8#0", "inst-9#0")
+        assert [(r.instance_id, r.run_index) for r in report.missing] == [("inst-8", 0), ("inst-9", 0)]
+        assert "### Missing (2)" in to_markdown(report)
+
+    def test_allow_partial_prints_the_figure_marked_partial_with_the_gaps_as_non_passes(self):
+        rows = sweep(0, ["passed"] * 8)
+        headline = headline_of(rows, run_manifest(10, runs=1), allow_partial=True)
+        assert headline.withheld is None
+        assert (headline.passed, headline.planned, headline.rate) == (8, 10, 0.8)
+        assert "PARTIAL (8 of 10)" in headline.flags
+        assert "**Pass rate: 8 of 10 instance-runs (80%)" in to_markdown(aggregate(rows, manifests={"run-a": run_manifest(10, runs=1)}, allow_partial=True))
+
+    def test_a_manifest_with_no_rows_at_all_withholds_everything(self):
+        report = aggregate([], manifests={"run-a": run_manifest(4, runs=2)})
+        assert report.headlines[0].withheld.startswith("headline withheld: 8 of 8 planned rows missing/unfinished")
+
+    def test_a_row_the_manifest_does_not_plan_is_ignored_and_named(self):
+        rows = sweep(0, ["passed", "passed"]) + [task_row(instance_id="stray", outcome=O.PASSED)]
+        report = aggregate(rows, manifests={"run-a": run_manifest(2, runs=1)})
+        assert report.headlines[0].passed == 2 and report.headlines[0].planned == 2
+        assert report.headlines[0].unplanned == ("stray#0",)
+        assert any("not in the manifest's grid" in w and "stray#0" in w for w in report.warnings)
+
+    def test_a_long_missing_list_is_truncated_in_the_markdown(self):
+        text = to_markdown(aggregate([], manifests={"run-a": run_manifest(30, runs=1)}))
+        assert "Missing (30): inst-0#0" in text and "... (10 more)" in text
+
+    def test_each_run_has_its_own_headline_and_nothing_is_pooled(self):
+        rows = sweep(0, ["passed", "passed"]) + [
+            task_row(instance_id=f"inst-{i}", eval_run_id="run-b", model="openai/other", outcome=O.FAILED) for i in range(2)
+        ]
+        report = aggregate(rows, manifests={"run-a": run_manifest(2, runs=1), "run-b": run_manifest(2, runs=1, run_id="run-b", model="openai/other")})
+        assert [(h.run_id, h.model, h.passed, h.planned) for h in report.headlines] == [
+            ("run-a", "anthropic/test-main", 2, 2), ("run-b", "openai/other", 0, 2),
+        ]
+
+
+class TestUnanchoredRuns:
+    def test_no_manifest_marks_the_headline_unanchored_and_warns(self):
+        report = aggregate(sweep(0, ["passed", "failed"]))
+        headline = report.headlines[0]
+        assert not headline.anchored and "UNANCHORED" in headline.flags
+        assert (headline.passed, headline.planned) == (1, 2)
+        assert any("No run manifest for run-a" in w for w in report.warnings)
+        assert "**UNANCHORED**" in to_markdown(report)
+        assert "pipeline commit unknown (no manifest)" in to_markdown(report)
+
+    def test_unfinished_rows_withhold_an_unanchored_headline_too(self):
+        headline = headline_of(sweep(0, ["passed", "unfinished"]))
+        assert headline.withheld.startswith("headline withheld: 1 of 2 planned rows")
+
+    def test_unequal_runs_per_instance_are_marked_and_the_pooled_count_is_the_figure(self):
+        # One instance with 3 passing runs, nine instances with one failing run each:
+        # an average of instance rates would say 10%; the pooled count is 3 of 12.
+        rows = [task_row(instance_id="inst-0", run_index=r) for r in range(3)]
+        rows += [task_row(instance_id=f"inst-{i}", run_index=0, outcome=O.FAILED) for i in range(1, 10)]
+        headline = headline_of(rows)
+        assert "UNEQUAL RUNS PER INSTANCE" in headline.flags
+        assert (headline.passed, headline.planned, headline.rate) == (3, 12, 0.25)
+
+    def test_a_one_row_run_does_not_weigh_like_a_nine_row_run(self):
+        # The audit's repro: run 0 = 1 of 1, run 1 = 0 of 9 printed 50% beside a pooled 1 of 10.
+        rows = [task_row(instance_id="inst-0", run_index=0)] + [
+            task_row(instance_id=f"inst-{i}", run_index=1, outcome=O.FAILED) for i in range(9)
+        ]
+        headline = headline_of(rows)
+        assert (headline.passed, headline.planned, headline.rate) == (1, 10, 0.1)
+
+
+class TestManifestLoading:
+    def test_a_manifest_that_exists_anchors_its_run(self, tmp_path):
+        dump_manifest(run_manifest(3, runs=2), tmp_path)
+        manifests = load_manifests(tmp_path, ["run-a"], None)
+        assert manifests["run-a"].runs_per_instance == 2
+
+    def test_a_missing_manifest_is_skipped_by_default_and_an_error_when_expected(self, tmp_path):
+        assert load_manifests(tmp_path, ["run-a"], None) == {}
+        with pytest.raises(ReportError, match="no manifest for run-a"):
+            load_manifests(tmp_path, ["run-a"], True)
+
+    def test_no_expect_ignores_manifests_that_exist(self, tmp_path):
+        dump_manifest(run_manifest(3, runs=2), tmp_path)
+        assert load_manifests(tmp_path, ["run-a"], False) == {}
+
+    def test_a_malformed_manifest_is_an_error_never_a_silent_fallback(self, tmp_path):
+        (tmp_path / "run-a").mkdir()
+        (tmp_path / "run-a" / "manifest.json").write_text('{"eval_run_id": "run-a"}')
+        with pytest.raises(ReportError, match="missing key"):
+            load_manifests(tmp_path, ["run-a"], None)
 
 
 class TestModels:
-    def test_a_single_run_model_is_labelled_one_run_and_the_other_three(self):
+    def test_per_model_counts_are_kept_apart(self):
         rows = []
         for run in range(3):
             rows += rows_for([O.PASSED, O.FAILED], run_index=run, prefix="m", model="anthropic/main")
         rows += rows_for([O.PASSED, O.PASSED], run_index=0, prefix="m", model="openai/other", eval_run_id="run-b")
         report = aggregate(rows)
 
-        assert report.by_model["anthropic/main"].runs_label == "3 runs"
-        assert report.by_model["openai/other"].runs_label == "1 run"
-        assert report.by_model["openai/other"].passed_over_admissible.mean == 1.0
-        assert report.by_model["anthropic/main"].passed_over_admissible.mean == 0.5
+        assert (report.by_model["anthropic/main"].passed, report.by_model["anthropic/main"].finished) == (3, 6)
+        assert (report.by_model["openai/other"].passed, report.by_model["openai/other"].finished) == (2, 2)
 
-    def test_pooled_models_are_flagged_and_not_a_statement_about_either(self):
+    def test_mixed_models_are_flagged_and_never_pooled_into_one_headline(self):
         rows = rows_for([O.PASSED], model="a/x") + rows_for([O.FAILED], prefix="other", model="b/y", eval_run_id="run-b")
         report = aggregate(rows)
         assert report.mixed_models
         assert any("MIXED MODELS (a/x, b/y)" in w for w in report.warnings)
-        assert "pooled across models" in to_markdown(report)
+        assert len(report.headlines) == 2
 
     def test_one_model_is_not_mixed(self):
         assert not aggregate(rows_for([O.PASSED, O.FAILED])).mixed_models
@@ -375,8 +508,8 @@ class TestByRepoAndTargetedP2P:
             task_row(instance_id="d", repo=None, outcome=O.FAILED, targeted_p2p=None),
         ]
         report = aggregate(rows)
-        assert report.by_repo["psf/requests"].passed_over_admissible.mean == 0.5
-        assert report.by_repo["pallets/flask"].passed_over_admissible.mean == 1.0
+        assert (report.by_repo["psf/requests"].passed, report.by_repo["psf/requests"].finished) == (1, 2)
+        assert (report.by_repo["pallets/flask"].passed, report.by_repo["pallets/flask"].finished) == (1, 1)
         assert report.by_repo["(unknown)"].counts[FAILED] == 1
 
     def test_targeted_pass_to_pass_rows_and_instances_are_counted(self):
@@ -453,38 +586,35 @@ class TestGoldValidation:
 
 
 class TestRendering:
-    def test_the_markdown_states_the_numbers_the_counts_and_the_exclusions(self, three_runs):
-        text = to_markdown(aggregate(three_runs))
-        assert "**N = 10 instances**, 3 runs, 30 rows." in text
-        assert "| passed / admissible | 57.9% (min 44.4%, max 66.7%; 3 runs) | 15/26 |" in text
-        assert "| passed / total | 50.0% (min 40.0%, max 60.0%; 3 runs) | 15/30 |" in text
+    def test_the_markdown_states_the_counts_and_the_exclusions(self, three_runs):
+        text = to_markdown(aggregate(three_runs, manifests={"run-a": run_manifest(10, runs=3)}))
         assert "### Harness errors (2)" in text
         assert "### Inadmissible (2)" in text
         assert "### passed_with_test_edit (2: 0 approved, 2 pending)" in text
-        assert "never a pass and stays in both denominators" in text.replace("\n", " ")
+        assert "every planned row that did not pass is a non-pass" in text.replace("\n", " ")
         assert "baseline unscoreable: container timed out" in text
 
-    def test_the_markdown_carries_the_contamination_caveat(self, three_runs):
-        assert CONTAMINATION_CAVEAT in to_markdown(aggregate(three_runs))
-
-    def test_a_single_run_says_one_run_and_no_spread(self):
-        text = to_markdown(aggregate(rows_for([O.PASSED, O.FAILED])))
-        assert "50.0% (1 run, no spread)" in text
+    def test_the_markdown_carries_the_contamination_caveat_and_the_interval_magnitude(self, three_runs):
+        text = to_markdown(aggregate(three_runs))
+        assert CONTAMINATION_CAVEAT in text
+        assert "about 30 to 40 percentage points wide" in text
 
     def test_a_table_cell_cannot_break_the_table(self):
         row = task_row(outcome=None, score_reason="a | b\nc")
         assert "a \\| b c" in to_markdown(aggregate([row]))
 
     def test_json_round_trips_the_key_numbers(self, three_runs):
-        document = json.loads(to_json(aggregate(three_runs)))
+        document = json.loads(to_json(aggregate(three_runs, manifests={"run-a": run_manifest(10, runs=3)})))
         assert document["overall"]["counts"]["passed"] == 15
-        assert document["overall"]["passed_over_admissible"]["numerator"] == 15
-        assert document["overall"]["passed_over_admissible"]["denominator"] == 26
+        headline = document["headlines"][0]
+        assert (headline["passed"], headline["planned"], headline["anchored"]) == (15, 30, True)
+        assert headline["interval"]["instances"] == 10 and headline["secondary"]["admissible"] == 26
         assert document["instances_never_admissible"] == ["inst-9"]
         assert document["caveats"][0] == CONTAMINATION_CAVEAT
 
     def test_the_report_is_deterministic(self, three_runs):
-        assert to_json(aggregate(three_runs)) == to_json(aggregate(list(reversed(three_runs))))
+        manifests = {"run-a": run_manifest(10, runs=3)}
+        assert to_json(aggregate(three_runs, manifests=manifests)) == to_json(aggregate(list(reversed(three_runs)), manifests=manifests))
         assert to_markdown(aggregate(three_runs)) == to_markdown(aggregate(list(reversed(three_runs))))
 
 
@@ -524,7 +654,8 @@ class TestCommandLine:
 
     def test_help_exits_zero(self, capsys):
         assert main(["--help"]) == 0
-        assert "--gold-run" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "--gold-run" in out and "--allow-partial" in out and "--expect" in out and "--runs-dir" in out
 
     def test_a_bad_option_is_a_usage_error(self, capsys):
         assert main(["--nope"]) == 2
