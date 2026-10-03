@@ -511,6 +511,7 @@ def _positive_usd(text: str) -> Decimal:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="repolace-eval run",
+        allow_abbrev=False,
         description="Run the QUEUED tasks of one benchmark run as repolace-run-task subprocesses. "
         "See the module docstring for memory, exit codes and the never-requeue rule.",
     )

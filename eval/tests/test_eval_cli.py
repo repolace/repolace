@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
 from types import ModuleType
 
 import pytest
 
+from eval_exec_support import TOKEN, FakeGithub, make_instance, write_instances
+from harness import bench_repos, enqueue, gold, runner
 from harness.cli import SUBCOMMANDS, main
 
 
@@ -123,3 +126,57 @@ class TestRealModules:
 
         assert exit_info.value.code == 0
         assert f"repolace-eval {name}" in capsys.readouterr().out
+
+
+class TestEveryModuleExists:
+    @pytest.mark.parametrize("name", sorted(SUBCOMMANDS))
+    def test_every_subcommand_module_is_on_disk(self, name):
+        """Now that the harness data side is merged, no entry in the table points at nothing."""
+        module = SUBCOMMANDS[name][0]
+        assert importlib.util.find_spec(module) is not None, f"{name} -> {module} does not exist"
+
+    def test_a_subcommand_name_is_matched_exactly_not_as_a_prefix(self, capsys):
+        assert main(["ru"], importer=lambda name: pytest.fail("must not import")) == 2
+        assert "unknown subcommand 'ru'" in capsys.readouterr().err
+
+
+PARSERS = {
+    "fork": (bench_repos.build_parser, []),
+    "enqueue": (enqueue.build_parser, ["--eval-run-id", "r"]),
+    "run": (runner.build_parser, ["--eval-run-id", "r"]),
+    "gold": (gold.build_parser, []),
+}
+
+
+class TestNoAbbreviations:
+    """`fork --de --y` once deleted repositories: argparse matched the prefixes of --delete and --yes."""
+
+    @pytest.mark.parametrize("name", sorted(PARSERS))
+    def test_no_long_option_accepts_a_shortened_form(self, name, capsys):
+        build, required = PARSERS[name]
+        options = [o for o in build()._option_string_actions if o.startswith("--") and o != "--help" and len(o) > 4]
+        assert options
+        for option in options:
+            shortened = option[:-1]
+            if shortened in build()._option_string_actions:
+                continue
+            with pytest.raises(SystemExit) as raised:
+                build().parse_args([*required, shortened])
+            assert raised.value.code == 2, shortened
+            assert "unrecognized arguments" in capsys.readouterr().err, f"{name}: {shortened} was not rejected as unknown"
+
+    def test_the_destructive_flags_of_fork_are_not_reachable_by_prefix(self, tmp_path):
+        directory = tmp_path / "instances"
+        directory.mkdir()
+        write_instances(directory, make_instance("a"))
+        (directory / "bench_repos.toml").write_text('"a" = "repolace/bench-a"\n')
+        github = FakeGithub(existing=["bench-a"])
+
+        with pytest.raises(SystemExit) as raised:
+            bench_repos.main(
+                ["--instances-dir", str(directory), "--de", "--y"],
+                transport=github.transport(), token_reader=lambda: TOKEN,
+            )
+
+        assert raised.value.code == 2
+        assert github.requests == [] and "bench-a" in github.repos
