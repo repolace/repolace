@@ -126,11 +126,21 @@ def _read_snippet(checkout: Path, chunk: RetrievedChunk, max_lines: int, max_cha
     taken: list[str] = []
     try:
         with path.open("r", encoding="utf-8", errors="replace") as handle:
-            for number, line in enumerate(handle, start=1):
-                if number > last:
+            number = 0
+            while number < last:
+                # At most `max_chars + 1` characters at a time, so a one-megabyte line (minified or
+                # generated code, or a repository that wants to see this process run out of memory) is
+                # never held whole: the cap on the result is also the cap on what is read.
+                piece = handle.readline(max_chars + 1)
+                if not piece:
                     break
+                number += 1
+                while not piece.endswith("\n"):
+                    rest = handle.readline(max_chars + 1)
+                    if not rest or rest.endswith("\n"):
+                        break  # end of file, or end of this line: the remainder was read and dropped
                 if number >= first:
-                    taken.append(line)
+                    taken.append(piece)
     except (FileNotFoundError, IsADirectoryError, NotADirectoryError):
         # The index can outlive a file that a later commit deleted.
         return ""

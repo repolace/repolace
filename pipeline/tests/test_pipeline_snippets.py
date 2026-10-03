@@ -57,6 +57,54 @@ class TestSearchHit:
 
         assert len(hit.snippet) == 500
 
+    def test_a_huge_line_is_never_read_whole(self, checkout, monkeypatch):
+        """The cap on the result is also the cap on what is read: a line of three megabytes is consumed in pieces of
+        at most `max_chars + 1` characters, and the lines after it are still found."""
+        (checkout / "src" / "app.py").write_text("x" * 3_000_000 + "\nline two\nline three\n")
+        sizes: list[int] = []
+        real_open = Path.open
+
+        class Spy:
+            """Offers only `readline`, so iterating the handle (which buffers a whole line) would fail."""
+
+            def __init__(self, handle):
+                self._handle = handle
+
+            def readline(self, size=-1):
+                sizes.append(size)
+                return self._handle.readline(size)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                self._handle.close()
+
+        def open_spying(self, mode="r", *args, **kwargs):
+            handle = real_open(self, mode, *args, **kwargs)
+            return Spy(handle) if mode == "r" else handle
+
+        monkeypatch.setattr(Path, "open", open_spying)
+
+        hit = search_hit(chunk(start_line=2, end_line=3), checkout, 60, max_chars=500)
+
+        assert hit.snippet == "line two\nline three\n"
+        assert sizes and all(0 < size <= 501 for size in sizes), sorted(set(sizes))
+        assert len(sizes) >= 3_000_000 // 501, "the long line was walked in bounded pieces"
+
+    def test_a_chunk_that_starts_on_the_huge_line_gets_its_first_characters(self, checkout):
+        (checkout / "src" / "app.py").write_text("y" * 2_000_000 + "\nafter\n")
+
+        hit = search_hit(chunk(start_line=1, end_line=1), checkout, 60, max_chars=300)
+
+        assert hit.snippet == "y" * 300
+
+    def test_a_line_exactly_at_the_cap_is_kept_and_the_next_line_is_not_swallowed(self, checkout):
+        (checkout / "src" / "app.py").write_text("z" * 500 + "\nnext\n")
+
+        assert search_hit(chunk(start_line=2, end_line=2), checkout, 60, max_chars=500).snippet == "next\n"
+        assert search_hit(chunk(start_line=1, end_line=1), checkout, 60, max_chars=500).snippet == "z" * 500
+
     def test_a_chunk_past_the_end_of_a_shortened_file_is_an_empty_snippet(self, checkout):
         assert search_hit(chunk(start_line=500, end_line=520), checkout, 60).snippet == ""
 
