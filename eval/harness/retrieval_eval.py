@@ -63,6 +63,7 @@ from harness.metrics import (
     QueryMetrics,
     Span,
     aggregate_metrics,
+    cluster_bootstrap_interval,
     score_query,
 )
 from harness.patches import DELETED, MODIFIED, RENAMED, PatchError, files_in_patch, old_side_hunks
@@ -523,6 +524,85 @@ def summarize_by_repo(run: EvalRun) -> dict[tuple[str, str, str], AggregateMetri
     return {key: aggregate_metrics(values) for key, values in sorted(grouped.items())}
 
 
+#: The cell every other cell is compared with: the strategy production would run today.
+BASELINE_CELL = ("truncate", "truncate")
+#: How much chunk MRR a strategy must gain over the baseline before the grid says to switch. A
+#: documented default, not a measured one: 10 points is a sizeable gain at this N, and the rule
+#: also needs the interval to exclude zero.
+DEFAULT_MIN_GAIN_PP = 10.0
+
+
+@dataclass(frozen=True)
+class PairedDelta:
+    """One cell against the baseline cell, on the instances both scored, for one metric."""
+
+    strategy: str
+    query_strategy: str
+    metric: str
+    paired: int
+    #: Mean per-instance difference in percentage points; None with no paired instance.
+    mean_pp: float | None
+    #: 95% percentile bootstrap over instances, in points; None below two paired instances.
+    low_pp: float | None
+    high_pp: float | None
+
+    def meets_rule(self, min_gain_pp: float) -> bool:
+        """At least `min_gain_pp` better on average AND an interval that excludes zero."""
+        return (
+            self.mean_pp is not None and self.low_pp is not None
+            and self.mean_pp >= min_gain_pp and self.low_pp > 0
+        )
+
+
+_METRICS = {
+    "chunk MRR": lambda m: m.chunk_rr,
+    "file MRR": lambda m: m.file_rr,
+}
+PRIMARY_METRIC = "chunk MRR"
+
+
+def paired_deltas(run: EvalRun) -> list[PairedDelta]:
+    """Every non-baseline cell against `truncate / truncate`, paired by instance.
+
+    Eight cells on fifteen to twenty queries invite a winner's curse: with enough cells one
+    always looks better. Differences are paired (same instance in both cells) and carry an
+    interval over instances, so a cell must beat the baseline across instances and not on
+    average noise. Instances a metric could not score in either cell are left out of that
+    comparison, and `paired` says how many were left in.
+    """
+    by_cell: dict[tuple[str, str], dict[str, QueryMetrics]] = defaultdict(dict)
+    for result in run.results:
+        by_cell[(result.strategy, result.query_strategy)][result.instance_id] = result.metrics
+    baseline = by_cell.get(BASELINE_CELL)
+    if baseline is None:
+        return []
+    out = []
+    for cell in sorted(by_cell):
+        if cell == BASELINE_CELL:
+            continue
+        for name, extract in _METRICS.items():
+            deltas = []
+            for instance_id, metrics in sorted(by_cell[cell].items()):
+                theirs, mine = extract(metrics), extract(baseline[instance_id]) if instance_id in baseline else None
+                if theirs is not None and mine is not None:
+                    deltas.append(theirs - mine)
+            interval = cluster_bootstrap_interval(deltas, [1.0] * len(deltas)) if deltas else None
+            out.append(PairedDelta(
+                strategy=cell[0], query_strategy=cell[1], metric=name, paired=len(deltas),
+                mean_pp=sum(deltas) / len(deltas) * 100 if deltas else None,
+                low_pp=interval[0] * 100 if interval else None, high_pp=interval[1] * 100 if interval else None,
+            ))
+    return out
+
+
+def _delta_cell(delta: PairedDelta | None) -> str:
+    if delta is None or delta.mean_pp is None:
+        return "n/a"
+    if delta.low_pp is None:
+        return f"{delta.mean_pp:+.1f} pp (n = {delta.paired}, no interval)"
+    return f"{delta.mean_pp:+.1f} pp [{delta.low_pp:+.1f}, {delta.high_pp:+.1f}] (n = {delta.paired})"
+
+
 def _pct(value: float | None) -> str:
     return "n/a" if value is None else f"{value * 100:.1f}%"
 
@@ -530,23 +610,56 @@ def _pct(value: float | None) -> str:
 def _row(label: str, agg: AggregateMetrics) -> str:
     cells = [_pct(agg.file_recall[k].mean) for k in DEFAULT_KS] + [_pct(agg.chunk_recall[k].mean) for k in DEFAULT_KS]
     cells += [_pct(agg.file_mrr.mean), _pct(agg.chunk_mrr.mean)]
-    scored = f"{agg.file_mrr.scored}/{agg.queries}"
+    scored = f"{agg.file_mrr.scored} / {agg.chunk_mrr.scored} of {agg.queries}"
     return f"| {label} | {scored} | " + " | ".join(cells) + " |"
 
 
 _HEADER = (
-    "| {first} | queries with gold | file R@5 | file R@10 | file R@20 | chunk R@5 | chunk R@10 | chunk R@20 "
+    "| {first} | scored: file / chunk | file R@5 | file R@10 | file R@20 | chunk R@5 | chunk R@10 | chunk R@20 "
     "| file MRR | chunk MRR |\n|---|---|---|---|---|---|---|---|---|---|"
 )
 
 
-def to_markdown(run: EvalRun) -> str:
+def _grid_lines(run: EvalRun, min_gain_pp: float) -> list[str]:
+    deltas = paired_deltas(run)
+    cells = sorted({(d.strategy, d.query_strategy) for d in deltas})
+    out = [
+        "",
+        "## Reading the grid",
+        "",
+        f"Primary metric: {PRIMARY_METRIC}. Pick a strategy over {BASELINE_CELL[0]} / {BASELINE_CELL[1]} only if "
+        f"its paired {PRIMARY_METRIC} gain is at least {min_gain_pp:g} percentage points with the 95% interval over "
+        f"instances excluding 0. This is one of {max(len(cells), 1)} comparisons, on the same instances the agent "
+        f"is benchmarked on, so a winner is exploratory: with this many cells on this few queries one always looks "
+        f"better.",
+        "",
+    ]
+    if not deltas:
+        return out + [f"No {BASELINE_CELL[0]} / {BASELINE_CELL[1]} cell in this run, so there is nothing to pair against.", ""]
+    by_key = {(d.strategy, d.query_strategy, d.metric): d for d in deltas}
+    out += [
+        f"| cell | paired instances | {PRIMARY_METRIC} vs baseline [95% interval over instances] | meets the switch rule | file MRR vs baseline |",
+        "|---|---|---|---|---|",
+    ]
+    for strategy, query_strategy in cells:
+        primary = by_key[(strategy, query_strategy, PRIMARY_METRIC)]
+        out.append(
+            f"| {strategy} / {query_strategy} | {primary.paired} | {_delta_cell(primary)} | "
+            f"{'yes' if primary.meets_rule(min_gain_pp) else 'no'} | {_delta_cell(by_key[(strategy, query_strategy, 'file MRR')])} |"
+        )
+    return out
+
+
+def to_markdown(run: EvalRun, min_gain_pp: float = DEFAULT_MIN_GAIN_PP) -> str:
     out = ["# Retrieval eval", ""]
     out += [
         "Gold is the fix's old-side Python files and changed lines. File R@k is the gold files among the files "
         "of the first k chunks (the search returns 20 chunks, not 20 files). Chunk R@k is over gold hunks, "
         "crediting only a hunk's innermost chunks. MRR is over the top 20 chunks only; a miss scores 0. A query "
-        "with no gold of a kind is not scored on that kind: the scored columns say how many were.",
+        "with no gold of a kind is not scored on that kind: the `scored` column says how many queries each kind "
+        "had (file and chunk metrics skip different queries). Retrieval breaks score ties by chunk id (a UUID), "
+        "which can change after an incremental reindex, so the order among tied chunks is not stable between runs "
+        "and a small difference between cells can be tie noise.",
         "",
         "## Plan",
         "",
@@ -566,6 +679,7 @@ def to_markdown(run: EvalRun) -> str:
     if summary:
         out += ["", "## By embedding strategy (all repositories pooled)", "", _HEADER.format(first="index / query strategy")]
         out += [_row(f"{index} / {query}", agg) for (index, query), agg in summary.items()]
+        out += _grid_lines(run, min_gain_pp)
         out += ["", "## By repository", "", _HEADER.format(first="repo, index / query strategy")]
         out += [_row(f"{repo}, {index} / {query}", agg) for (repo, index, query), agg in summarize_by_repo(run).items()]
         first = [r for r in run.results if r.query_strategy == run.query_strategies[0] and r.strategy == run.strategies[0]]
@@ -604,6 +718,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-instances-per-repo", type=int, default=None)
     parser.add_argument("--max-chunks-per-repo", type=int, default=DEFAULT_MAX_CHUNKS_PER_REPO)
     parser.add_argument("--max-index-equivalents", type=int, default=DEFAULT_MAX_INDEX_EQUIVALENTS)
+    parser.add_argument(
+        "--min-gain-pp", type=float, default=DEFAULT_MIN_GAIN_PP,
+        help="chunk-MRR gain over truncate/truncate, in percentage points, a strategy needs to meet the switch rule",
+    )
     parser.add_argument("--plan", action="store_true", help="count chunks and print the bill; embed nothing, write nothing")
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
     parser.add_argument("--output", type=Path, default=None)
@@ -640,7 +758,7 @@ async def _amain(args: argparse.Namespace) -> int:
         if engine is not None:
             await engine.dispose()
 
-    text = to_json(run) if args.format == "json" else to_markdown(run)
+    text = to_json(run) if args.format == "json" else to_markdown(run, args.min_gain_pp)
     if args.output is not None:
         args.output.write_text(text, encoding="utf-8")
     else:
@@ -653,6 +771,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         args = _parser().parse_args(list(argv) if argv is not None else None)
     except SystemExit as exc:
         return exc.code if isinstance(exc.code, int) else 2
+    if args.min_gain_pp < 0:
+        print("repolace-eval retrieval-eval: --min-gain-pp must not be negative", file=sys.stderr)
+        return 2
     try:
         return asyncio.run(_amain(args))
     except (RetrievalEvalError, SelectError, InstanceError) as exc:
