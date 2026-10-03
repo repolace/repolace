@@ -16,18 +16,32 @@ per file; counting the same file twice would let one noisy file fill the top-k
 and make "k files" mean fewer files. A file is ranked at its first appearance.
 
 **Chunk-level recall is over gold *hunks*, not chunks.** A gold hunk is recalled
-if any of the top-k chunks overlaps it (same path, line ranges intersect, both
-inclusive). Counting chunks instead would let a class skeleton and its method,
-which overlap by construction, each count as a separate find.
+if one of the top-k chunks is among the hunk's *innermost* overlapping chunks.
+Counting chunks instead would let a class skeleton and its method, which overlap
+by construction, each count as a separate find.
+
+**Why innermost.** A chunk's span is not its content. A class skeleton's span is the
+whole class and a module chunk's span runs from the first to the last top-level
+statement, so a gold hunk inside a function lies inside the module chunk's span
+though the module chunk does not contain its text (it holds the imports and
+constants). Crediting any overlapping chunk let a retrieved module chunk "recall" a
+hunk in `helper()`: a 27-line file with three lines of module content scored chunk
+R@5 = 1.0 for a hunk it never showed. So, for each hunk, any overlapping chunk whose
+span STRICTLY contains another overlapping chunk's span is discarded, and what is
+left is credited. That needs the file's chunks, not only the retrieved ones (the
+module chunk that was retrieved has to be compared with the function chunk that was
+not), so the scoring functions take the indexed `corpus`. Without one they fall back
+to the retrieved chunks alone, which is weaker and says so. A hunk that no indexed
+chunk overlaps is unreachable: it is dropped from the score and counted.
 """
 
 from __future__ import annotations
 
 import math
 import random
-from math import comb
 from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
+from math import comb
 
 #: The cut-offs the retrieval eval reports.
 DEFAULT_KS = (5, 10, 20)
@@ -87,27 +101,75 @@ def file_reciprocal_rank(ranked_paths: Sequence[str], gold_paths: Collection[str
     return 0.0
 
 
-def hunks_recalled(ranked_chunks: Sequence[Span], gold_hunks: Sequence[Span], k: int) -> int:
-    """How many gold hunks are overlapped by at least one of the first `k` chunks."""
+def strictly_contains(outer: Span, inner: Span) -> bool:
+    """`outer` covers all of `inner` and is not the same span."""
+    return (
+        outer.path == inner.path
+        and outer.start <= inner.start
+        and inner.end <= outer.end
+        and (outer.start, outer.end) != (inner.start, inner.end)
+    )
+
+
+def innermost_overlapping(hunk: Span, pool: Iterable[Span]) -> frozenset[Span]:
+    """The chunks of `pool` that overlap `hunk` and contain no other overlapping chunk's span.
+
+    Equal spans are not "strictly" containing each other, so both are kept.
+    """
+    overlapping = [chunk for chunk in set(pool) if spans_overlap(chunk, hunk)]
+    return frozenset(
+        chunk for chunk in overlapping
+        if not any(strictly_contains(chunk, other) for other in overlapping)
+    )
+
+
+def reachable_hunks(gold_hunks: Sequence[Span], corpus: Sequence[Span]) -> tuple[list[Span], int]:
+    """The hunks some indexed chunk overlaps, and how many none did.
+
+    A hunk on a line no chunk covers (a comment between functions outside every span, a
+    file the indexer skipped) cannot be retrieved by any query, so charging it as a miss
+    would lower recall for a reason that is not retrieval.
+    """
+    kept = [hunk for hunk in gold_hunks if innermost_overlapping(hunk, corpus)]
+    return kept, len(gold_hunks) - len(kept)
+
+
+def hunks_recalled(
+    ranked_chunks: Sequence[Span], gold_hunks: Sequence[Span], k: int, corpus: Sequence[Span] | None = None,
+) -> int:
+    """How many gold hunks have one of their innermost overlapping chunks in the first `k`.
+
+    `corpus` is the file's indexed chunks. Without it the innermost rule can only compare
+    the retrieved chunks with each other, so a wide chunk retrieved alone is still credited.
+    """
     _check_k(k)
-    top = ranked_chunks[:k]
-    return sum(1 for hunk in gold_hunks if any(spans_overlap(chunk, hunk) for chunk in top))
+    pool = ranked_chunks if corpus is None else corpus
+    top = set(ranked_chunks[:k])
+    return sum(1 for hunk in gold_hunks if top & innermost_overlapping(hunk, pool))
 
 
-def chunk_recall_at_k(ranked_chunks: Sequence[Span], gold_hunks: Sequence[Span], k: int) -> float | None:
+def chunk_recall_at_k(
+    ranked_chunks: Sequence[Span], gold_hunks: Sequence[Span], k: int, corpus: Sequence[Span] | None = None,
+) -> float | None:
     """Fraction of gold hunks recalled by the first `k` chunks. `None` if there are no hunks."""
     _check_k(k)
     if not gold_hunks:
         return None
-    return hunks_recalled(ranked_chunks, gold_hunks, k) / len(gold_hunks)
+    return hunks_recalled(ranked_chunks, gold_hunks, k, corpus) / len(gold_hunks)
 
 
-def chunk_reciprocal_rank(ranked_chunks: Sequence[Span], gold_hunks: Sequence[Span]) -> float | None:
-    """1 / rank of the first chunk overlapping any gold hunk; 0.0 if none; `None` if no hunks."""
+def chunk_reciprocal_rank(
+    ranked_chunks: Sequence[Span], gold_hunks: Sequence[Span], corpus: Sequence[Span] | None = None,
+) -> float | None:
+    """1 / rank of the first chunk that is an innermost overlap of any gold hunk; 0.0 if none; `None` if no hunks."""
     if not gold_hunks:
         return None
+    pool = ranked_chunks if corpus is None else corpus
+    credited: set[Span] = set()
+    for hunk in gold_hunks:
+        credited |= innermost_overlapping(hunk, pool)
     for rank, chunk in enumerate(ranked_chunks, start=1):
-        if any(spans_overlap(chunk, hunk) for hunk in gold_hunks):
+        if chunk in credited:
             return 1.0 / rank
     return 0.0
 
@@ -120,6 +182,8 @@ class QueryMetrics:
     chunk_recall: dict[int, float | None]
     file_rr: float | None
     chunk_rr: float | None
+    #: Gold hunks that no indexed chunk overlapped, dropped from the chunk metrics.
+    unreachable_hunks: int = 0
 
 
 def score_query(
@@ -127,14 +191,24 @@ def score_query(
     gold_paths: Collection[str],
     gold_hunks: Sequence[Span],
     ks: Sequence[int] = DEFAULT_KS,
+    corpus: Sequence[Span] | None = None,
 ) -> QueryMetrics:
-    """All metrics for one query from its ranked chunks, in rank order."""
+    """All metrics for one query from its ranked chunks, in rank order.
+
+    `corpus` is the indexed chunks of the gold files. Pass it: it is what makes the
+    chunk metrics innermost-aware and lets unreachable hunks be dropped and counted
+    (see the module docstring). Without it the chunk metrics are the weaker form.
+    """
     ranked_paths = [chunk.path for chunk in ranked_chunks]
+    unreachable = 0
+    if corpus is not None:
+        gold_hunks, unreachable = reachable_hunks(gold_hunks, corpus)
     return QueryMetrics(
         file_recall={k: file_recall_at_k(ranked_paths, gold_paths, k) for k in ks},
-        chunk_recall={k: chunk_recall_at_k(ranked_chunks, gold_hunks, k) for k in ks},
+        chunk_recall={k: chunk_recall_at_k(ranked_chunks, gold_hunks, k, corpus) for k in ks},
         file_rr=file_reciprocal_rank(ranked_paths, gold_paths),
-        chunk_rr=chunk_reciprocal_rank(ranked_chunks, gold_hunks),
+        chunk_rr=chunk_reciprocal_rank(ranked_chunks, gold_hunks, corpus),
+        unreachable_hunks=unreachable,
     )
 
 

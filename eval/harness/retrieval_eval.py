@@ -66,7 +66,7 @@ from harness.metrics import (
 )
 from harness.patches import DELETED, MODIFIED, RENAMED, PatchError, files_in_patch, old_side_hunks
 from harness.select_instances import GOLD_PATCH_SUFFIX, SelectError, cache_path
-from repolace_shared.db.models import GithubInstallation, RegisteredRepo
+from repolace_shared.db.models import CodeChunk, GithubInstallation, RegisteredRepo
 from repolace_shared.git.repo import run_git
 from repolace_shared.instances import InstanceError, InstanceSpec, load_instances
 from repolace_shared.paths import PathEscapesRoot, resolve_within
@@ -112,6 +112,20 @@ class RetrievalApi:
     build_query: Callable[[str, str | None], Query]
     #: chunk count of a checkout, without embedding anything
     count_chunks: Callable[[Path], int]
+    #: (session, repo_id, paths) -> the indexed chunks of those files, so the chunk
+    #: metrics can tell a chunk's span from its content (see `harness.metrics`)
+    chunk_spans: Callable[[AsyncSession, uuid.UUID, Sequence[str]], Awaitable[list[Span]]]
+
+
+async def indexed_chunk_spans(session: AsyncSession, repo_id: uuid.UUID, paths: Sequence[str]) -> list[Span]:
+    """The spans of every indexed chunk of `paths` in one repo, as the index holds them."""
+    if not paths:
+        return []
+    rows = await session.execute(
+        select(CodeChunk.file_path, CodeChunk.start_line, CodeChunk.end_line)
+        .where(CodeChunk.repo_id == repo_id, CodeChunk.file_path.in_(list(paths)))
+    )
+    return [Span(path, start, end) for path, start, end in rows.all()]
 
 
 def _require_parameters(function: Callable, names: set[str], label: str) -> None:
@@ -151,7 +165,9 @@ def load_retrieval_api() -> RetrievalApi:
     def count_chunks(path: Path) -> int:
         return sum(len(chunk_file(path, file)) for file in find_python_files(path))
 
-    return RetrievalApi(reindex=reindex, search=search, build_query=make_query, count_chunks=count_chunks)
+    return RetrievalApi(
+        reindex=reindex, search=search, build_query=make_query, count_chunks=count_chunks, chunk_spans=indexed_chunk_spans,
+    )
 
 
 # --- eval-only rows ----------------------------------------------------------
@@ -391,11 +407,14 @@ async def evaluate_repo_strategy(
             query = api.build_query(spec.issue_title, spec.problem_statement)
             if not query.semantic.strip():
                 raise RetrievalEvalError(f"{spec.instance_id}: the issue yields an empty query")
+            # The gold files' chunks as indexed at this commit: what lets the chunk metrics
+            # credit the innermost chunk of a hunk and not any wide span that overlaps it.
+            corpus = await api.chunk_spans(session, repo_id, instance.gold.paths)
             for query_strategy in query_strategies:
                 ranked = await api.search(session, repo_id, query, SEARCH_LIMIT, query_strategy)
                 results.append(InstanceResult(
                     repo=repo, strategy=strategy, query_strategy=query_strategy, instance_id=spec.instance_id,
-                    metrics=score_query(ranked, instance.gold.paths, instance.gold.hunks),
+                    metrics=score_query(ranked, instance.gold.paths, instance.gold.hunks, corpus=corpus),
                     chunks_written=written,
                 ))
     return results
@@ -519,6 +538,13 @@ def to_markdown(run: EvalRun) -> str:
         out += [_row(f"{index} / {query}", agg) for (index, query), agg in summary.items()]
         out += ["", "## By repository", "", _HEADER.format(first="repo, index / query strategy")]
         out += [_row(f"{repo}, {index} / {query}", agg) for (repo, index, query), agg in summarize_by_repo(run).items()]
+        first = [r for r in run.results if r.query_strategy == run.query_strategies[0] and r.strategy == run.strategies[0]]
+        unreachable = sum(r.metrics.unreachable_hunks for r in first)
+        out += [
+            "",
+            f"Gold hunks no indexed chunk overlaps: {unreachable}. They are dropped from the chunk metrics and "
+            f"not scored as misses; the chunk metrics credit only a hunk's innermost chunks.",
+        ]
         written = [r for r in run.results if r.query_strategy == run.query_strategies[0]]
         out += ["", f"Chunks written across the run (first instance of each repo/strategy is the full index): "
                     f"{sum(r.chunks_written for r in written)}."]
