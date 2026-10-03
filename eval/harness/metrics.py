@@ -11,9 +11,13 @@ hit) would move the mean for reasons that have nothing to do with retrieval.
 scores `0.0`, not `1/(cut-off+1)`: the rank is unknown, and inventing one would
 credit retrieval for results it never returned.
 
-**File-level ranks are over distinct files.** Retrieval returns chunks, several
-per file; counting the same file twice would let one noisy file fill the top-k
-and make "k files" mean fewer files. A file is ranked at its first appearance.
+**File-level metrics are over the first k CHUNKS.** Retrieval returns a bounded list
+of chunks (twenty), several per file, and "the gold files among the files of the
+first k chunks" is what such a list can say. Ranking *distinct files* instead
+would make R@10 and R@20 the same pool whenever the twenty chunks cover few files
+(often about eight), and would make the number depend on how many files a strategy
+spreads its chunks over, which differs between strategies. A file's rank is the
+rank of its first chunk.
 
 **Chunk-level recall is over gold *hunks*, not chunks.** A gold hunk is recalled
 if one of the top-k chunks is among the hunk's *innermost* overlapping chunks.
@@ -70,32 +74,25 @@ def _check_k(k: int) -> None:
         raise ValueError(f"k must be at least 1, got {k}")
 
 
-def distinct_in_order(items: Iterable[str]) -> list[str]:
-    seen: set[str] = set()
-    ordered = []
-    for item in items:
-        if item not in seen:
-            seen.add(item)
-            ordered.append(item)
-    return ordered
-
-
 def file_recall_at_k(ranked_paths: Sequence[str], gold_paths: Collection[str], k: int) -> float | None:
-    """Fraction of gold files among the first `k` distinct ranked files. `None` if no gold."""
+    """Fraction of gold files among the files of the first `k` ranked chunks. `None` if no gold.
+
+    `ranked_paths` is the path of each chunk in rank order, so a file appearing in
+    several chunks is listed several times and `k` counts chunks, not files.
+    """
     _check_k(k)
     gold = set(gold_paths)
     if not gold:
         return None
-    top = set(distinct_in_order(ranked_paths)[:k])
-    return len(gold & top) / len(gold)
+    return len(gold & set(ranked_paths[:k])) / len(gold)
 
 
 def file_reciprocal_rank(ranked_paths: Sequence[str], gold_paths: Collection[str]) -> float | None:
-    """1 / rank of the first gold file (over distinct files); 0.0 if none retrieved; `None` if no gold."""
+    """1 / rank of the first chunk in a gold file; 0.0 if none retrieved; `None` if no gold."""
     gold = set(gold_paths)
     if not gold:
         return None
-    for rank, path in enumerate(distinct_in_order(ranked_paths), start=1):
+    for rank, path in enumerate(ranked_paths, start=1):
         if path in gold:
             return 1.0 / rank
     return 0.0
