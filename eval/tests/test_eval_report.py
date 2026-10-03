@@ -366,6 +366,37 @@ class TestPlannedGrid:
         ]
 
 
+class TestMixedModelsInOneRun:
+    def two_models(self) -> list[TaskRow]:
+        return [
+            task_row(instance_id=f"inst-{i}", model="a/x" if i < 3 else "b/y", outcome=O.PASSED) for i in range(6)
+        ]
+
+    def test_a_run_that_switched_model_has_no_pooled_headline(self):
+        # The audit's repro: a model switch mid-sweep fired a warning and still printed one pooled rate.
+        headline = headline_of(self.two_models(), run_manifest(6, runs=1))
+        assert headline.rate is None and headline.interval is None
+        assert "mixed models within the run (a/x, b/y): no pooled figure, read the By model counts" in headline.withheld
+
+    def test_the_markdown_prints_the_per_model_counts_and_no_pass_rate(self):
+        text = to_markdown(aggregate(self.two_models(), manifests={"run-a": run_manifest(6, runs=1)}))
+        assert "Pass rate:" not in text
+        assert "| a/x | 3 | 3 | 3 |" in text and "| b/y | 3 | 3 | 3 |" in text
+
+    def test_a_partial_and_mixed_run_gives_both_reasons(self):
+        rows = self.two_models()[:5]
+        headline = headline_of(rows, run_manifest(6, runs=1))
+        assert "1 of 6 planned rows missing/unfinished" in headline.withheld and "mixed models" in headline.withheld
+
+    def test_allow_partial_does_not_override_mixed_models(self):
+        headline = headline_of(self.two_models(), run_manifest(6, runs=1), allow_partial=True)
+        assert headline.rate is None and "mixed models" in headline.withheld
+
+    def test_a_row_with_no_model_is_not_a_second_model(self):
+        rows = [task_row(instance_id="inst-0"), task_row(instance_id="inst-1", model=None, llm_calls=0, **KINDS["harness"])]
+        assert headline_of(rows, run_manifest(2, runs=1)).withheld is None
+
+
 class TestUnanchoredRuns:
     def test_no_manifest_marks_the_headline_unanchored_and_warns(self):
         report = aggregate(sweep(0, ["passed", "failed"]))

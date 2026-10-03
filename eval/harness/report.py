@@ -367,11 +367,22 @@ def _headline(
     )
 
     not_finished = len(missing) + len(unfinished)
+    reasons = []
     if not_finished and not allow_partial:
+        reasons.append(
+            f"{not_finished} of {len(planned)} planned rows missing/unfinished "
+            f"({len(missing)} missing, {len(unfinished)} unfinished); pass --allow-partial to print it marked PARTIAL"
+        )
+    if len(models) > 1:
+        # A model switched mid-sweep, or two models were filed under one run id. One
+        # rate over both is a statement about neither; the By model counts are the figures.
+        reasons.append(
+            f"mixed models within the run ({', '.join(models)}): no pooled figure, read the By model counts"
+        )
+    if reasons:
         return Headline(
             **common, passed=sum(1 for b in buckets.values() if b == PASSED), rate=None, interval=None,
-            withheld=f"headline withheld: {not_finished} of {len(planned)} planned rows missing/unfinished "
-                     f"({len(missing)} missing, {len(unfinished)} unfinished); pass --allow-partial to print it marked PARTIAL",
+            withheld="headline withheld: " + "; ".join(reasons),
             flags=tuple(flags), per_run=(), run_range=None, secondary=None,
         )
     if not_finished:
