@@ -993,6 +993,20 @@ class TestDumpHardening:
 
         assert list(file.parent.iterdir()) == []
 
+
+    def test_a_nul_byte_in_the_problem_statement_is_an_instance_error(self, file):
+        """It becomes `tasks.issue_body`, and Postgres rejects NUL in a text column: without this
+        it escaped as a raw driver error halfway through an enqueue, after the manifest was written."""
+        with pytest.raises(InstanceError, match="NUL"):
+            dump_instance(make_instance(problem_statement="crash\x00here"), file)
+
+        assert list(file.parent.iterdir()) == []
+
+    def test_a_problem_statement_without_nul_still_loads(self, file):
+        dump_instance(make_instance(problem_statement="tabs\tand\nnewlines\r\nare fine"), file)
+
+        assert load_instance(file).problem_statement == "tabs\tand\nnewlines\r\nare fine"
+
     def test_a_circular_spec_is_an_instance_error(self, file):
         looped: dict = {}
         looped["self"] = looped
