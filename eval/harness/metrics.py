@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import math
 import random
+from math import comb
 from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 
@@ -249,3 +250,21 @@ def cluster_bootstrap_interval(
     low, high = percentile(statistics_, tail), percentile(statistics_, 100 - tail)
     assert low is not None and high is not None
     return low, high
+
+
+def exact_sign_test(b: int, c: int) -> float | None:
+    """Two-sided exact p-value for `b` against `c` discordant pairs (McNemar's exact test).
+
+    Under the null a discordant pair is equally likely to go either way, so the
+    smaller count is binomial(b + c, 1/2). `None` with no discordant pair, where
+    there is nothing to test. Used for two models scored on the same instances:
+    8:0 gives p = 0.008, 7:1 p = 0.07, 6:2 p = 0.29 -- at 20 instances a 20 to 30
+    point gap between two models is not statistically distinguishable.
+    """
+    if b < 0 or c < 0:
+        raise ValueError(f"counts must not be negative, got {b} and {c}")
+    n = b + c
+    if n == 0:
+        return None
+    tail = sum(comb(n, i) for i in range(min(b, c) + 1))
+    return min(1.0, 2 * tail / 2**n)
