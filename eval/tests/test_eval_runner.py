@@ -14,6 +14,9 @@ import asyncio
 import json
 import os
 import re
+import signal
+import subprocess
+import sys
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -23,6 +26,7 @@ from pathlib import Path
 
 import pytest
 from eval_exec_support import (
+    RECORDING_CHILD,
     TOKEN,
     add_llm_call,
     add_repo,
@@ -44,6 +48,7 @@ from harness.runner import (
     ABANDONED_GRACE_SECONDS,
     Outcome,
     RunnerConfig,
+    allowlisted_env,
     build_parser,
     check_manifest,
     child_argv,
@@ -56,6 +61,7 @@ from harness.runner import (
     run_queue,
 )
 from repolace_shared.db.models import Task, TaskStatus
+from repolace_shared.paths import PathEscapesRoot
 from repolace_shared.process import ProcessResult
 
 RUN = "run-1"
@@ -70,12 +76,14 @@ class FakeProcesses:
 
     def __init__(self, *, ps_output: bytes = b"", ps_returncode: int = 0, pgrep=None) -> None:
         self.calls: list[tuple[str, ...]] = []
+        self.envs: list[dict | None] = []
         self.ps_output = ps_output
         self.ps_returncode = ps_returncode
         self.pgrep = pgrep or (lambda task_id: ProcessResult(1, b"", b""))
 
     async def __call__(self, program: str, *args: str, **kwargs) -> ProcessResult:
         self.calls.append((program, *args))
+        self.envs.append(kwargs.get("env"))
         if program == "pgrep":
             return self.pgrep(args[-1])
         if args[0] == "ps":
@@ -88,14 +96,14 @@ def child_base_env(tmp_path: Path, plan: dict | None = None, dsn: str | None = N
     records.mkdir(exist_ok=True)
     env = {
         "PATH": os.environ["PATH"],
-        "CHILD_RECORD_DIR": str(records),
-        "CHILD_PLAN": json.dumps(plan or {}),
+        "REPOLACE_CHILD_RECORD_DIR": str(records),
+        "REPOLACE_CHILD_PLAN": json.dumps(plan or {}),
         TOKEN_ENV_VAR: TOKEN,
-        "CHILD_KEEP_ME": "kept",
+        "REPOLACE_CHILD_KEEP_ME": "kept",
         **extra,
     }
     if dsn is not None:
-        env["CHILD_DB_DSN"] = dsn.replace("+asyncpg", "")
+        env["REPOLACE_CHILD_DB_DSN"] = dsn.replace("+asyncpg", "")
     return env
 
 
@@ -138,14 +146,13 @@ class TestPureHelpers:
         argv = child_argv(("run-task",), uuid.uuid4(), config(agent="gold", open_pr=True))
         assert argv[-3:] == ["--agent", "gold", "--no-pr"]
 
-    def test_the_child_environment_drops_the_bench_token_and_keeps_everything_else(self):
+    def test_the_child_environment_keeps_what_it_needs_and_drops_the_bench_token_and_provider_keys(self):
         base = {TOKEN_ENV_VAR: TOKEN, "DATABASE_URL": "postgres://x", "HF_HOME": "/hf", "ANTHROPIC_API_KEY": "k",
                 "LITELLM_LOCAL_MODEL_COST_MAP": "True"}
 
         env = child_env(base, None)
 
-        assert TOKEN_ENV_VAR not in env
-        assert {k: v for k, v in env.items()} == {k: v for k, v in base.items() if k != TOKEN_ENV_VAR}
+        assert env == {"DATABASE_URL": "postgres://x", "HF_HOME": "/hf", "LITELLM_LOCAL_MODEL_COST_MAP": "True"}
         assert TOKEN_ENV_VAR in base, "the caller's mapping must not be mutated"
 
     def test_a_model_key_becomes_gateway_stage_models(self):
@@ -728,7 +735,7 @@ class TestManifestAgreement:
             yield mock.MagicMock()
 
         code = main(
-            ["--eval-run-id", RUN, "--runs-dir", str(tmp_path / "runs"), "--model", "wrong"],
+            ["--eval-run-id", RUN, "--runs-dir", str(tmp_path / "runs"), "--model", "wrong", "--max-total-usd", "100"],
             session_factory=seam, child_command=("/nonexistent",),
         )
 
@@ -800,7 +807,7 @@ class TestMain:
         self.inherit(monkeypatch, child_base_env(tmp_path))
 
         code = await asyncio.to_thread(
-            main, ["--eval-run-id", RUN, "--runs-dir", str(tmp_path / "runs"), "-k", "1"],
+            main, ["--eval-run-id", RUN, "--runs-dir", str(tmp_path / "runs"), "-k", "1", "--max-total-usd", "100"],
             session_factory=self.factory_seam(db_session_factory), child_command=child_command(),
         )
 
@@ -813,7 +820,7 @@ class TestMain:
         self.inherit(monkeypatch, child_base_env(tmp_path, {str(task.id): {"exit": 1}}))
 
         code = await asyncio.to_thread(
-            main, ["--eval-run-id", RUN, "--runs-dir", str(tmp_path / "runs")],
+            main, ["--eval-run-id", RUN, "--runs-dir", str(tmp_path / "runs"), "--max-total-usd", "100"],
             session_factory=self.factory_seam(db_session_factory), child_command=child_command(),
         )
 
@@ -840,3 +847,328 @@ class TestMain:
         assert stale.status is TaskStatus.FAILED
         assert queued.status is TaskStatus.QUEUED, "--mark-abandoned must not dispatch anything"
         assert not (tmp_path / "runs").exists()
+
+
+ALLOWED = {
+    "PATH": "/usr/bin", "HOME": "/home/x", "USER": "x", "LOGNAME": "x", "LANG": "C.UTF-8", "LC_ALL": "C", "LC_CTYPE": "C",
+    "TZ": "UTC", "TMPDIR": "/tmp", "XDG_RUNTIME_DIR": "/run/user/1000", "VIRTUAL_ENV": "/venv",
+    "DOCKER_HOST": "unix:///run/user/1000/docker.sock", "DATABASE_URL": "postgresql://x", "GIT_SSL_CAINFO": "/ca",
+    "HF_HOME": "/hf", "HF_HUB_OFFLINE": "1", "TRANSFORMERS_CACHE": "/tf", "LITELLM_LOCAL_MODEL_COST_MAP": "True",
+    "SSL_CERT_FILE": "/ssl", "UV_CACHE_DIR": "/uv", "GATEWAY_MODELS_PATH": "/m.toml", "REPOLACE_ANYTHING": "1",
+    "http_proxy": "p", "https_proxy": "p", "no_proxy": "n", "HTTP_PROXY": "p", "HTTPS_PROXY": "p", "NO_PROXY": "n",
+}
+LEAKS = {
+    "GH_TOKEN": "ghs_exported_in_the_shell", "GITHUB_TOKEN": "x", "ANTHROPIC_API_KEY": "sk-ant-x", "OPENAI_API_KEY": "sk-x",
+    "AWS_SECRET_ACCESS_KEY": "x", "AWS_ACCESS_KEY_ID": "x", "GITHUB_APP_PRIVATE_KEY_BASE64": "LS0t", "SSH_AUTH_SOCK": "/s",
+    "GEMINI_API_KEY": "x", "REDIS_URL": "redis://x", "CELERY_BROKER_URL": "amqp://x", TOKEN_ENV_VAR: TOKEN,
+}
+
+
+class TestEnvironmentAllowlist:
+    """The child and the docker/pgrep helpers see a named subset of the environment, never the whole shell."""
+
+    def test_the_allowlisted_names_pass_and_nothing_else_does(self):
+        env = child_env({**ALLOWED, **LEAKS}, None)
+
+        assert env == ALLOWED
+
+    def test_the_repository_tools_token_is_excluded_even_though_its_prefix_is_allowed(self):
+        assert TOKEN_ENV_VAR.startswith("REPOLACE_")
+        assert TOKEN_ENV_VAR not in child_env({TOKEN_ENV_VAR: TOKEN, "REPOLACE_OTHER": "1"}, None)
+        assert TOKEN_ENV_VAR not in allowlisted_env({TOKEN_ENV_VAR: TOKEN})
+
+    def test_names_that_merely_contain_an_allowed_prefix_are_not_allowed(self):
+        env = child_env({"MY_HF_TOKEN": "x", "XLC_ALL": "x", "AWS_UV_KEY": "x", "ghs_GATEWAY_": "x"}, None)
+
+        assert env == {}
+
+    def test_the_model_is_added_after_filtering(self):
+        env = child_env({**LEAKS}, "claude-test")
+
+        assert env == {"GATEWAY_STAGE_MODELS": json.dumps({"agent": "claude-test"})}
+
+    @pytest.mark.anyio
+    @pytest.mark.db
+    async def test_an_exported_secret_never_reaches_a_running_child(self, db_session, db_session_factory, tmp_path):
+        repo = await add_repo(db_session, "repolace/bench-x")
+        task = await add_task(db_session, repo, instance_id="a", run_index=0)
+
+        await run_queue(
+            db_session_factory, config(), runs_dir=tmp_path / "runs", child_command=child_command(),
+            base_env={**child_base_env(tmp_path), **LEAKS, "HF_HOME": "/hf"},
+        )
+
+        names = set(records(tmp_path)[str(task.id)]["env_names"])
+        assert not names & set(LEAKS), sorted(names & set(LEAKS))
+        assert {"PATH", "HF_HOME", "REPOLACE_CHILD_RECORD_DIR"} <= names
+
+    @pytest.mark.anyio
+    @pytest.mark.db
+    async def test_docker_and_pgrep_get_the_allowlisted_environment_too(self, db_session, db_session_factory, tmp_path, monkeypatch):
+        repo = await add_repo(db_session, "repolace/bench-x")
+        await add_task(db_session, repo, instance_id="fresh", run_index=0, status=TaskStatus.QUEUED)
+        stale = await add_task(
+            db_session, repo, instance_id="stale", run_index=1, status=TaskStatus.RUNNING, started_at=ago(hours=3)
+        )
+        for name, value in LEAKS.items():
+            monkeypatch.setenv(name, value)
+        processes = FakeProcesses(ps_output=b"aabbccddeeff\n")
+
+        await mark_abandoned(db_session_factory, RUN, 600.0, process_runner=processes)
+        await remove_task_containers(stale.id, process_runner=processes, env=allowlisted_env(os.environ))
+
+        assert processes.envs and all(env is not None for env in processes.envs)
+        for env in processes.envs:
+            assert not set(env) & set(LEAKS), sorted(set(env) & set(LEAKS))
+
+
+@pytest.mark.anyio
+@pytest.mark.db
+class TestReportingGaps:
+    async def test_a_child_that_exits_zero_with_its_row_still_running_makes_the_run_unhealthy(
+        self, db_session, db_session_factory, tmp_path, postgres_url
+    ):
+        repo = await add_repo(db_session, "repolace/bench-x")
+        task = await add_task(db_session, repo, instance_id="a", run_index=0)
+        env = child_base_env(tmp_path, {str(task.id): {"claim": True}}, dsn=postgres_url)  # claims, exits 0, never finishes
+
+        summary = await run_queue(
+            db_session_factory, config(), runs_dir=tmp_path / "runs", child_command=child_command(), base_env=env
+        )
+
+        (result,) = summary.results
+        assert result.outcome is Outcome.RAN and result.marked_failed is True
+        assert summary.healthy is False
+        await db_session.refresh(task)
+        assert task.status is TaskStatus.FAILED
+
+    async def test_main_exits_one_and_names_the_task(self, db_session, db_session_factory, tmp_path, postgres_url, capsys, monkeypatch):
+        repo = await add_repo(db_session, "repolace/bench-x")
+        task = await add_task(db_session, repo, instance_id="a", run_index=0)
+        for name, value in child_base_env(tmp_path, {str(task.id): {"claim": True}}, dsn=postgres_url).items():
+            monkeypatch.setenv(name, value)
+
+        @asynccontextmanager
+        async def seam():
+            yield db_session_factory
+
+        code = await asyncio.to_thread(
+            main, ["--eval-run-id", RUN, "--runs-dir", str(tmp_path / "runs"), "--max-total-usd", "100"],
+            session_factory=seam, child_command=child_command(),
+        )
+
+        assert code == 1
+        err = capsys.readouterr().err
+        assert "left its row RUNNING (now FAILED)" in err and str(task.id) in err
+
+    async def test_a_clean_run_is_still_healthy(self, db_session, db_session_factory, tmp_path, postgres_url):
+        repo = await add_repo(db_session, "repolace/bench-x")
+        task = await add_task(db_session, repo, instance_id="a", run_index=0)
+        env = child_base_env(tmp_path, {str(task.id): {"claim": True, "finish": "completed"}}, dsn=postgres_url)
+
+        summary = await run_queue(
+            db_session_factory, config(), runs_dir=tmp_path / "runs", child_command=child_command(), base_env=env
+        )
+
+        assert summary.healthy is True
+
+
+class TestSpendLimitIsRequired:
+    def boom_factory(self):
+        @asynccontextmanager
+        async def seam():
+            raise RuntimeError("the database was opened")
+            yield  # pragma: no cover
+
+        return seam
+
+    def test_the_llm_agent_needs_max_total_usd(self, tmp_path, capsys):
+        code = main(["--eval-run-id", RUN, "--runs-dir", str(tmp_path)], session_factory=self.boom_factory())
+
+        assert code == 2
+        assert "--max-total-usd" in capsys.readouterr().err
+
+    @pytest.mark.parametrize("extra", [["--agent", "gold", "--no-pr"], ["--mark-abandoned"]])
+    def test_gold_and_the_abandoned_sweep_do_not(self, tmp_path, extra):
+        with pytest.raises(RuntimeError, match="the database was opened"):
+            main(["--eval-run-id", RUN, "--runs-dir", str(tmp_path), *extra], session_factory=self.boom_factory())
+
+    def test_with_the_cap_the_llm_agent_proceeds(self, tmp_path):
+        with pytest.raises(RuntimeError, match="the database was opened"):
+            main(
+                ["--eval-run-id", RUN, "--runs-dir", str(tmp_path), "--max-total-usd", "5"],
+                session_factory=self.boom_factory(),
+            )
+
+
+def alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+async def wait_until(predicate, timeout=30.0, step=0.1) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if await predicate():
+            return True
+        await asyncio.sleep(step)
+    return False
+
+
+@pytest.mark.anyio
+@pytest.mark.db
+class TestInterruption:
+    """A killed or hung-up runner must not leave children spending and rows RUNNING."""
+
+    async def start(self, db_session, repo_name="repolace/bench-x"):
+        repo = await add_repo(db_session, repo_name)
+        return await add_task(db_session, repo, instance_id="a", run_index=0)
+
+    async def claimed(self, db_session, task) -> bool:
+        await db_session.refresh(task)
+        return task.status is TaskStatus.RUNNING
+
+    async def assert_children_gone(self, tmp_path, task) -> None:
+        record = records(tmp_path)[str(task.id)]
+        grandchild = int((tmp_path / "records" / f"{task.id}.grandchild").read_text())
+        gone = await wait_until(lambda: asyncio.sleep(0, result=not alive(record["pid"]) and not alive(grandchild)), 10)
+        if not gone:
+            for pid in (record["pid"], grandchild):
+                if alive(pid):
+                    os.kill(pid, signal.SIGKILL)
+        assert gone, "the child's process group survived the interrupt"
+
+    async def test_cancelling_the_run_kills_the_children_settles_their_rows_and_removes_their_containers(
+        self, db_session, db_session_factory, tmp_path, postgres_url
+    ):
+        task = await self.start(db_session)
+        env = child_base_env(tmp_path, {str(task.id): {"claim": True, "grandchild": True, "hang": True}}, dsn=postgres_url)
+        processes = FakeProcesses(ps_output=b"aabbccddeeff\n")
+        running = asyncio.create_task(
+            run_queue(
+                db_session_factory, config(timeout_seconds=300), runs_dir=tmp_path / "runs",
+                child_command=child_command(), base_env=env, process_runner=processes,
+            )
+        )
+        assert await wait_until(lambda: self.claimed(db_session, task)), "the child never claimed its row"
+
+        running.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await running
+
+        await self.assert_children_gone(tmp_path, task)
+        await db_session.refresh(task)
+        assert task.status is TaskStatus.FAILED and task.error_message == "runner: interrupted"
+        prefix = f"repolace-{task.id.hex[:12]}"
+        assert ("docker", "ps", "-q", "--filter", f"name={prefix}") in processes.calls
+        assert ("docker", "rm", "-f", "aabbccddeeff") in processes.calls
+
+    async def test_an_interrupt_leaves_a_row_that_was_never_claimed_queued(
+        self, db_session, db_session_factory, tmp_path
+    ):
+        task = await self.start(db_session)
+        env = child_base_env(tmp_path, {str(task.id): {"hang": True}})  # never claims
+        running = asyncio.create_task(
+            run_queue(
+                db_session_factory, config(timeout_seconds=300), runs_dir=tmp_path / "runs",
+                child_command=child_command(), base_env=env, process_runner=FakeProcesses(),
+            )
+        )
+        assert await wait_until(lambda: asyncio.sleep(0, result=bool(records(tmp_path)))), "the child never started"
+
+        running.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await running
+
+        await db_session.refresh(task)
+        assert task.status is TaskStatus.QUEUED, "a row nobody claimed is not the runner's to fail"
+
+    @pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGHUP], ids=["SIGTERM", "SIGHUP"])
+    async def test_a_real_runner_process_given_the_signal_kills_its_children(
+        self, db_session, tmp_path, postgres_url, signum
+    ):
+        """The shipped `main` in a real process: the signal must reach `_run_child`, not just end Python."""
+        task = await self.start(db_session)
+        driver = tmp_path / "driver.py"
+        driver.write_text(
+            "import json, os, pathlib, sys\n"
+            "from harness.runner import main\n"
+            "from repolace_shared.process import ProcessResult\n"
+            "calls = pathlib.Path(os.environ['DRIVER_CALLS'])\n"
+            "async def fake(program, *args, **kwargs):\n"
+            "    with calls.open('a') as handle:\n"
+            "        handle.write(json.dumps([program, *args]) + '\\n')\n"
+            "    return ProcessResult(0, b'', b'')\n"
+            "sys.exit(main(sys.argv[1:], child_command=(sys.executable, '-c', os.environ['DRIVER_CHILD']), process_runner=fake))\n"
+        )
+        env = child_base_env(tmp_path, {str(task.id): {"claim": True, "grandchild": True, "hang": True}}, dsn=postgres_url)
+        env.update({
+            "DATABASE_URL": postgres_url, "DRIVER_CALLS": str(tmp_path / "calls.jsonl"), "DRIVER_CHILD": RECORDING_CHILD,
+        })
+        out = (tmp_path / "driver.out").open("w")
+        process = subprocess.Popen(
+            [sys.executable, str(driver), "--eval-run-id", RUN, "--runs-dir", str(tmp_path / "runs"),
+             "--max-total-usd", "100", "--timeout-seconds", "300", "-k", "1"],
+            env=env, stdout=out, stderr=subprocess.STDOUT, start_new_session=True,
+        )
+        try:
+            assert await wait_until(lambda: self.claimed(db_session, task)), (tmp_path / "driver.out").read_text()[-2000:]
+
+            process.send_signal(signum)
+            code = await asyncio.to_thread(process.wait, 30)
+        finally:
+            if process.poll() is None:
+                process.kill()
+            out.close()
+
+        assert code == 128 + signum, (tmp_path / "driver.out").read_text()[-2000:]
+        await self.assert_children_gone(tmp_path, task)
+        await db_session.refresh(task)
+        assert task.status is TaskStatus.FAILED and task.error_message == "runner: interrupted"
+        calls = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
+        assert ["docker", "ps", "-q", "--filter", f"name=repolace-{task.id.hex[:12]}"] in calls
+        assert f"interrupted by {signum.name}" in (tmp_path / "driver.out").read_text()
+
+
+@pytest.mark.anyio
+@pytest.mark.db
+class TestPathConfinement:
+    """Every path built from a run id or a task id goes through `resolve_within`."""
+
+    async def test_a_symlinked_run_directory_is_refused(self, db_session, db_session_factory, tmp_path):
+        repo = await add_repo(db_session, "repolace/bench-x")
+        await add_task(db_session, repo, instance_id="a", run_index=0)
+        runs = tmp_path / "runs"
+        runs.mkdir()
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        (runs / RUN).symlink_to(elsewhere)
+
+        with pytest.raises(ValueError, match="symlink"):
+            await run_queue(
+                db_session_factory, config(), runs_dir=runs, child_command=child_command(), base_env=child_base_env(tmp_path)
+            )
+
+        assert list(elsewhere.iterdir()) == [], "nothing may be written through the link"
+        assert len(await queued_tasks(db_session_factory, RUN)) == 1
+
+    async def test_a_symlinked_log_file_is_refused_not_written_through(self, db_session, db_session_factory, tmp_path):
+        repo = await add_repo(db_session, "repolace/bench-x")
+        task = await add_task(db_session, repo, instance_id="a", run_index=0)
+        run_dir = tmp_path / "runs" / RUN
+        run_dir.mkdir(parents=True)
+        victim = tmp_path / "victim.txt"
+        victim.write_text("precious")
+        (run_dir / f"{task.id}.log").symlink_to(victim)
+
+        with pytest.raises(PathEscapesRoot):
+            await run_queue(
+                db_session_factory, config(), runs_dir=tmp_path / "runs", child_command=child_command(),
+                base_env=child_base_env(tmp_path),
+            )
+
+        assert victim.read_text() == "precious"
+        assert records(tmp_path) == {}, "no child may be started when its log path is refused"
