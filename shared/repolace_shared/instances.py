@@ -305,6 +305,13 @@ def _validate(spec: InstanceSpec, where: str) -> None:
     _check_instance_id(spec.instance_id, where)
     if not spec.repo:
         raise InstanceError(f"{where}: repo is empty")
+    # `problem_statement` becomes `tasks.issue_body`, a Postgres text column, and Postgres
+    # rejects a NUL byte there. Refusing it at load time is an `InstanceError` naming the
+    # instance; left alone it escapes later as a raw driver error halfway through an enqueue.
+    if "\x00" in spec.problem_statement:
+        raise InstanceError(
+            f"{where}: problem_statement contains a NUL byte, which Postgres text columns reject"
+        )
     if not isinstance(spec.base_commit, str) or not _BASE_COMMIT.fullmatch(spec.base_commit):
         raise InstanceError(
             f"{where}: base_commit {spec.base_commit!r} must be a full 40-character lowercase hex sha "
