@@ -191,14 +191,31 @@ class Stats:
     total: float | None
 
 
+#: A p95 needs enough points to have a tail. Below this it is within a rank or two of
+#: the maximum, and printing it beside n = 20 invites reading it as a tail estimate;
+#: the median and the maximum are what such a sample can honestly give.
+P95_MIN_N = 40
+
+LATENCY_NOTE = (
+    "Latency is claim to completion: it includes the clone, indexing, the baseline run, the agent, verification "
+    "and the push, excludes the time a task waited in the queue, and includes contention from the sweep's "
+    "parallel runs, so it is not what one task takes alone."
+)
+CENSORING_NOTE = (
+    "The per-task budget (the $2 cap) and the wall-clock limit CENSOR cost and latency: a task stopped by either "
+    "shows the limit, not what it would have cost to finish, so these figures are floors for the tasks that hit one."
+)
+
+
 def describe(values: Sequence[float]) -> Stats:
+    """n, mean, median, max, total; `p95` only from `P95_MIN_N` points up."""
     if not values:
         return Stats(0, None, None, None, None, None, None)
     return Stats(
         n=len(values),
         mean=sum(values) / len(values),
         median=statistics.median(values),
-        p95=percentile(values, 95),
+        p95=percentile(values, 95) if len(values) >= P95_MIN_N else None,
         minimum=min(values),
         maximum=max(values),
         total=sum(values),
@@ -565,6 +582,41 @@ class GoldSummary:
 
 
 @dataclass(frozen=True)
+class BucketCost:
+    rows: int
+    cost: Stats
+    latency: Stats
+
+
+@dataclass(frozen=True)
+class ModelBlock:
+    """Everything that is a distribution, for ONE model.
+
+    Cost, latency, tokens, attempts and stop reasons are never pooled across models:
+    a mean between a $0.10 and a $5.00 model is a number no task ever cost.
+    """
+
+    model: str
+    #: Finished rows of this model (harness errors included: the money was spent).
+    rows: int
+    cost: Stats
+    cost_rows_without_data: int
+    total_cost_usd: float
+    passes: int
+    #: Total cost of every finished row, failures included, over passes: what a pass
+    #: costs once the attempts that did not pass are paid for. None with no passes.
+    cost_per_pass: float | None
+    latency: Stats
+    latency_rows_without_data: int
+    #: Cost and latency by outcome bucket (passed, failed, ...): a pass and a
+    #: failure that hit the budget are different populations.
+    by_bucket: dict[str, BucketCost]
+    tokens: TokenTotals
+    attempts: dict[int, int]
+    stop_reasons: dict[str, int]
+
+
+@dataclass(frozen=True)
 class Report:
     agent_runs: tuple[str, ...]
     gold_runs: tuple[str, ...]
@@ -589,13 +641,7 @@ class Report:
     unfinished_cost_usd: float | None
     #: Instances with finished rows and not one admissible row.
     instances_never_admissible: tuple[str, ...]
-    cost_usd: Stats
-    cost_rows_without_data: int
-    latency_seconds: Stats
-    latency_rows_without_data: int
-    tokens: TokenTotals
-    attempts: dict[int, int]
-    stop_reasons: dict[str, int]
+    models: dict[str, ModelBlock]
     targeted_p2p: TargetedP2P
     gold: GoldSummary
     warnings: tuple[str, ...]
@@ -668,6 +714,45 @@ def _gold_summary(gold_rows: Sequence[TaskRow], agent_instances: Iterable[str]) 
     )
 
 
+def _model_block(label: str, rows: Sequence[TaskRow]) -> ModelBlock:
+    costs = [float(r.cost_usd) for r in rows if r.cost_usd is not None]
+    latencies = [v for v in (_latency(r) for r in rows) if v is not None]
+    passes = sum(1 for r in rows if classify(r) == PASSED)
+    input_tokens = sum(r.input_tokens for r in rows)
+    cached = sum(r.cached_input_tokens for r in rows)
+    by_bucket = {}
+    for bucket in (PASSED, FAILED, PASSED_WITH_TEST_EDIT, INADMISSIBLE, HARNESS_ERROR):
+        members = [r for r in rows if classify(r) == bucket]
+        if members:
+            by_bucket[bucket] = BucketCost(
+                rows=len(members),
+                cost=describe([float(r.cost_usd) for r in members if r.cost_usd is not None]),
+                latency=describe([v for v in (_latency(r) for r in members) if v is not None]),
+            )
+    return ModelBlock(
+        model=label,
+        rows=len(rows),
+        cost=describe(costs),
+        cost_rows_without_data=len(rows) - len(costs),
+        total_cost_usd=sum(costs),
+        passes=passes,
+        cost_per_pass=sum(costs) / passes if passes else None,
+        latency=describe(latencies),
+        latency_rows_without_data=len(rows) - len(latencies),
+        by_bucket=by_bucket,
+        tokens=TokenTotals(
+            calls=sum(r.llm_calls for r in rows),
+            unpriced_calls=sum(r.unpriced_calls for r in rows),
+            input_tokens=input_tokens,
+            cached_input_tokens=cached,
+            output_tokens=sum(r.output_tokens for r in rows),
+            cache_read_ratio=cached / input_tokens if input_tokens else None,
+        ),
+        attempts=dict(sorted(Counter(r.attempts for r in rows).items())),
+        stop_reasons=dict(sorted(Counter(r.agent_stop_reason or "(none)" for r in rows).items())),
+    )
+
+
 def aggregate(
     rows: Sequence[TaskRow],
     *,
@@ -716,18 +801,13 @@ def aggregate(
     }
     never_admissible = sorted({r.instance_id for r in finished} - admissible_instances)
 
-    costs = [float(r.cost_usd) for r in finished if r.cost_usd is not None]
-    latencies = [v for v in (_latency(r) for r in finished) if v is not None]
-    input_tokens = sum(r.input_tokens for r in finished)
-    cached = sum(r.cached_input_tokens for r in finished)
-    tokens = TokenTotals(
-        calls=sum(r.llm_calls for r in finished),
-        unpriced_calls=sum(r.unpriced_calls for r in finished),
-        input_tokens=input_tokens,
-        cached_input_tokens=cached,
-        output_tokens=sum(r.output_tokens for r in finished),
-        cache_read_ratio=cached / input_tokens if input_tokens else None,
-    )
+    models = {
+        (model or "(no model call)"): _model_block(
+            model or "(no model call)", [r for r in finished if r.model == model],
+        )
+        for model in sorted({r.model for r in finished}, key=lambda m: (m is None, m or ""))
+    }
+    unpriced_calls = sum(r.unpriced_calls for r in finished)
 
     unfinished_costs = [float(r.cost_usd) for r in by_bucket[UNFINISHED] if r.cost_usd is not None]
     approved = sum(1 for r in by_bucket[PASSED_WITH_TEST_EDIT] if r.test_edit_approved)
@@ -814,10 +894,8 @@ def aggregate(
             f"{', '.join(f'{d.instance_id}#{d.run_index} ({d.eval_run_id})' for d in superseded[:5])}"
             f"{' ...' if len(superseded) > 5 else ''}."
         )
-    if tokens.unpriced_calls:
-        warnings.append(
-            f"{tokens.unpriced_calls} LLM call(s) carry no cost; the cost figures understate spend."
-        )
+    if unpriced_calls:
+        warnings.append(f"{unpriced_calls} LLM call(s) carry no cost; the cost figures understate spend.")
     if not gold_rows:
         warnings.append(
             "No gold-validation rows were supplied: nothing here shows the instrument can score these "
@@ -863,13 +941,7 @@ def aggregate(
         superseded=tuple(superseded),
         unfinished_cost_usd=sum(unfinished_costs) if unfinished_costs else None,
         instances_never_admissible=tuple(never_admissible),
-        cost_usd=describe(costs),
-        cost_rows_without_data=len(finished) - len(costs),
-        latency_seconds=describe(latencies),
-        latency_rows_without_data=len(finished) - len(latencies),
-        tokens=tokens,
-        attempts=dict(sorted(Counter(r.attempts for r in finished).items())),
-        stop_reasons=dict(sorted(Counter(r.agent_stop_reason or "(none)" for r in finished).items())),
+        models=models,
         targeted_p2p=targeted_p2p,
         gold=gold,
         warnings=tuple(warnings),
@@ -982,11 +1054,51 @@ def _refs_table(refs: Sequence[RowRef]) -> list[str]:
     return lines + [""]
 
 
-def _stats_line(name: str, stats: Stats, fmt) -> str:
+def _stats_row(name: str, stats: Stats, fmt) -> str:
+    p95 = fmt(stats.p95) if stats.p95 is not None else f"- (n < {P95_MIN_N})"
     return (
-        f"| {name} | {stats.n} | {fmt(stats.mean)} | {fmt(stats.median)} | {fmt(stats.p95)} | "
-        f"{fmt(stats.minimum)} | {fmt(stats.maximum)} | {fmt(stats.total)} |"
+        f"| {name} | {stats.n} | {fmt(stats.median)} | {fmt(stats.maximum)} | {fmt(stats.mean)} | "
+        f"{p95} | {fmt(stats.total)} |"
     )
+
+
+_STATS_HEADER = "| measure | n | median | max | mean | p95 | total |\n|---|---|---|---|---|---|---|"
+
+
+def _model_block_lines(block: ModelBlock) -> list[str]:
+    out = [f"### {block.model}", "", _STATS_HEADER]
+    out.append(_stats_row("cost (USD)", block.cost, _usd))
+    out.append(_stats_row("latency (s)", block.latency, _num))
+    per_pass = _usd(block.cost_per_pass) if block.cost_per_pass is not None else "n/a (no passes)"
+    out += [
+        "",
+        f"Total spend {_usd(block.total_cost_usd)} over {block.rows} finished task(s) and {block.passes} pass(es): "
+        f"cost per pass {per_pass} (every finished task's cost, failures included, over the passes).",
+        f"Rows without cost data: {block.cost_rows_without_data}. Rows without both timestamps: {block.latency_rows_without_data}.",
+        "",
+        "By outcome bucket:",
+        "",
+        "| bucket | tasks | median cost | max cost | median latency (s) | max latency (s) |",
+        "|---|---|---|---|---|---|",
+    ]
+    for bucket, part in block.by_bucket.items():
+        out.append(
+            f"| {bucket} | {part.rows} | {_usd(part.cost.median)} | {_usd(part.cost.maximum)} | "
+            f"{_num(part.latency.median)} | {_num(part.latency.maximum)} |"
+        )
+    t = block.tokens
+    out += [
+        "",
+        f"LLM calls: {t.calls} ({t.unpriced_calls} unpriced). Input tokens: {t.input_tokens:,} (of which cache reads "
+        f"{t.cached_input_tokens:,}, {_pct(t.cache_read_ratio)}). Output tokens: {t.output_tokens:,}.",
+        "",
+        "| attempts | tasks |",
+        "|---|---|",
+    ]
+    out += [f"| {attempts} | {count} |" for attempts, count in block.attempts.items()]
+    out += ["", "| agent stop reason | tasks |", "|---|---|"]
+    out += [f"| {_cell(reason)} | {count} |" for reason, count in block.stop_reasons.items()]
+    return out + [""]
 
 
 def to_markdown(report: Report) -> str:
@@ -1038,30 +1150,9 @@ def to_markdown(report: Report) -> str:
     out += ["## By repository", "", "Counts, not rates: a repository holds a handful of instances.", "", _GROUP_HEADER]
     out += [_group_row(name, group) for name, group in report.by_repo.items()] + [""]
 
-    out += [
-        "## Cost, latency, tokens",
-        "",
-        "Per finished task (harness errors included: the money was spent). p95 on a small n is within a rank or two of the maximum.",
-        "",
-        "| measure | n | mean | median | p95 | min | max | total |",
-        "|---|---|---|---|---|---|---|---|",
-        _stats_line("cost (USD)", report.cost_usd, _usd),
-        _stats_line("latency (s)", report.latency_seconds, _num),
-        "",
-        f"Rows without cost data: {report.cost_rows_without_data}. Rows without both timestamps: {report.latency_rows_without_data}.",
-        "",
-        f"LLM calls: {report.tokens.calls} ({report.tokens.unpriced_calls} unpriced). Input tokens: "
-        f"{report.tokens.input_tokens:,} (of which cache reads {report.tokens.cached_input_tokens:,}, "
-        f"{_pct(report.tokens.cache_read_ratio)}). Output tokens: {report.tokens.output_tokens:,}.",
-        "",
-        "## Attempts and stop reasons",
-        "",
-        "| attempts | tasks |",
-        "|---|---|",
-    ]
-    out += [f"| {attempts} | {count} |" for attempts, count in report.attempts.items()]
-    out += ["", "| agent stop reason | tasks |", "|---|---|"]
-    out += [f"| {_cell(reason)} | {count} |" for reason, count in report.stop_reasons.items()]
+    out += ["## Cost, latency, tokens", "", f"Per model, over its finished tasks (harness errors included: the money was spent). {LATENCY_NOTE}", "", CENSORING_NOTE, ""]
+    for block in report.models.values():
+        out += _model_block_lines(block)
 
     out += [
         "",

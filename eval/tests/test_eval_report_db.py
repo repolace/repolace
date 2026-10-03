@@ -144,7 +144,7 @@ class TestBuildReport:
         (headline,) = report.headlines
         assert (headline.passed, headline.planned) == (2, 5) and "UNANCHORED" in headline.flags
         assert (headline.secondary.passed, headline.secondary.admissible) == (2, 3)
-        assert report.cost_usd.total == pytest.approx(0.75)
+        assert report.models["anthropic/test-main"].total_cost_usd == pytest.approx(0.75)
 
     async def test_a_manifest_anchors_the_headline_to_the_planned_grid_not_to_the_rows(self, db_session):
         repo = await seed_bench_repo(db_session)

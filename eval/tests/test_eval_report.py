@@ -581,65 +581,135 @@ class TestPercentiles:
         with pytest.raises(ValueError):
             percentile([1.0], q)
 
-    def test_describe_reports_n_mean_median_p95_and_total(self):
+    def test_describe_reports_n_mean_median_max_and_total_but_no_p95_on_a_small_sample(self):
         stats = describe([0.2, 0.4, 1.0])
         assert stats.n == 3
         assert stats.mean == pytest.approx(1.6 / 3)
         assert stats.median == 0.4
-        assert stats.p95 == pytest.approx(0.4 + (1.0 - 0.4) * 0.9)
+        assert stats.p95 is None
         assert (stats.minimum, stats.maximum, stats.total) == (0.2, 1.0, pytest.approx(1.6))
+
+    def test_p95_appears_from_forty_points_up(self):
+        assert describe([float(i) for i in range(39)]).p95 is None
+        assert describe([float(i) for i in range(40)]).p95 == pytest.approx(37.05)
 
     def test_describe_of_nothing(self):
         assert describe([]).n == 0 and describe([]).mean is None
 
 
 class TestCostLatencyTokens:
+    def block(self, rows, model="anthropic/test-main"):
+        return aggregate(rows).models[model]
+
     def test_cost_stats_cover_finished_rows_including_harness_errors(self):
         rows = [
             task_row(instance_id="a", cost="0.20"),
             task_row(instance_id="b", cost="0.40"),
             task_row(instance_id="c", cost="1.00", **KINDS["harness"]),
         ]
-        stats = aggregate(rows).cost_usd
-        assert stats.n == 3 and stats.total == pytest.approx(1.6) and stats.median == 0.4
+        stats = self.block(rows).cost
+        assert stats.n == 3 and stats.total == pytest.approx(1.6) and stats.median == 0.4 and stats.maximum == 1.0
 
     def test_a_row_with_no_cost_is_counted_not_averaged_as_zero(self):
-        report = aggregate([task_row(instance_id="a", cost="0.20"), task_row(instance_id="b", cost=None)])
-        assert report.cost_usd.n == 1 and report.cost_usd.mean == 0.2
-        assert report.cost_rows_without_data == 1
+        block = self.block([task_row(instance_id="a", cost="0.20"), task_row(instance_id="b", cost=None)])
+        assert block.cost.n == 1 and block.cost.mean == 0.2 and block.cost_rows_without_data == 1
 
     def test_unfinished_spend_is_reported_separately(self):
         rows = [task_row(instance_id="a", cost="0.20"), task_row(instance_id="b", cost="0.70", **KINDS["unfinished"])]
         report = aggregate(rows)
-        assert report.cost_usd.total == pytest.approx(0.2)
+        assert report.models["anthropic/test-main"].cost.total == pytest.approx(0.2)
         assert report.unfinished_cost_usd == pytest.approx(0.7)
 
     def test_latency_is_completed_minus_started(self):
-        stats = aggregate([task_row(instance_id="a", seconds=10), task_row(instance_id="b", seconds=30)]).latency_seconds
+        stats = self.block([task_row(instance_id="a", seconds=10), task_row(instance_id="b", seconds=30)]).latency
         assert (stats.n, stats.mean, stats.median) == (2, 20.0, 20.0)
 
     def test_a_row_without_both_timestamps_or_with_a_negative_span_is_skipped_and_counted(self):
         backwards = task_row(instance_id="c", seconds=-5)
-        report = aggregate([task_row(instance_id="a", seconds=10), task_row(instance_id="b", seconds=None), backwards])
-        assert report.latency_seconds.n == 1 and report.latency_rows_without_data == 2
+        block = self.block([task_row(instance_id="a", seconds=10), task_row(instance_id="b", seconds=None), backwards])
+        assert block.latency.n == 1 and block.latency_rows_without_data == 2
 
     def test_token_totals_and_the_cache_read_ratio(self):
         rows = [
             task_row(instance_id="a", input_tokens=1000, cached_input_tokens=250, output_tokens=10, llm_calls=2),
             task_row(instance_id="b", input_tokens=3000, cached_input_tokens=750, output_tokens=30, llm_calls=4),
         ]
-        tokens = aggregate(rows).tokens
+        tokens = self.block(rows).tokens
         assert (tokens.input_tokens, tokens.cached_input_tokens, tokens.output_tokens, tokens.calls) == (4000, 1000, 40, 6)
         assert tokens.cache_read_ratio == 0.25
 
     def test_no_input_tokens_means_no_ratio(self):
         row = task_row(input_tokens=0, cached_input_tokens=0, llm_calls=0, cost=None)
-        assert aggregate([row]).tokens.cache_read_ratio is None
+        assert self.block([row]).tokens.cache_read_ratio is None
 
     def test_unpriced_calls_are_warned_about(self):
         report = aggregate([task_row(unpriced_calls=2)])
-        assert report.tokens.unpriced_calls == 2
+        assert report.models["anthropic/test-main"].tokens.unpriced_calls == 2
         assert any("2 LLM call(s) carry no cost" in w for w in report.warnings)
+
+
+class TestCostIsNeverPooledAcrossModels:
+    def two_models(self):
+        cheap = [task_row(instance_id=f"c-{i}", model="cheap/m", cost="0.10", seconds=10) for i in range(2)]
+        dear = [task_row(instance_id=f"d-{i}", model="dear/m", cost="5.00", seconds=1000) for i in range(2)]
+        return cheap + dear
+
+    def test_each_model_has_its_own_cost_and_latency(self):
+        # The audit's repro: pooling gave a mean cost of $2.55 between a $0.10 and a $5.00 model.
+        models = aggregate(self.two_models()).models
+        assert models["cheap/m"].cost.mean == pytest.approx(0.10) and models["dear/m"].cost.mean == pytest.approx(5.00)
+        assert models["cheap/m"].latency.median == 10 and models["dear/m"].latency.median == 1000
+
+    def test_the_markdown_has_one_block_per_model_and_no_pooled_cost_row(self):
+        text = to_markdown(aggregate(self.two_models()))
+        assert "### cheap/m" in text and "### dear/m" in text
+        assert "$2.5500" not in text
+
+    def test_tokens_attempts_and_stop_reasons_are_per_model_too(self):
+        rows = [task_row(instance_id="a", model="a/x", attempts=1), task_row(instance_id="b", model="b/y", attempts=3, agent_stop_reason="max_attempts")]
+        models = aggregate(rows).models
+        assert models["a/x"].attempts == {1: 1} and models["b/y"].attempts == {3: 1}
+        assert models["a/x"].stop_reasons == {"submitted": 1} and models["b/y"].stop_reasons == {"max_attempts": 1}
+
+
+class TestCostPerPass:
+    def test_it_is_all_the_spend_over_the_passes(self):
+        # A pass costs $0.20 and a failure $1.80: the mean per task is $1.00 and a pass costs $2.00.
+        rows = [task_row(instance_id="a", cost="0.20"), task_row(instance_id="b", cost="1.80", outcome=O.FAILED)]
+        block = aggregate(rows).models["anthropic/test-main"]
+        assert block.cost.mean == pytest.approx(1.0)
+        assert block.total_cost_usd == pytest.approx(2.0) and block.passes == 1 and block.cost_per_pass == pytest.approx(2.0)
+
+    def test_no_passes_has_no_cost_per_pass_and_the_text_says_so(self):
+        report = aggregate([task_row(outcome=O.FAILED)])
+        assert report.models["anthropic/test-main"].cost_per_pass is None
+        assert "cost per pass n/a (no passes)" in to_markdown(report)
+
+    def test_the_markdown_states_the_cost_per_pass(self):
+        rows = [task_row(instance_id="a", cost="0.20"), task_row(instance_id="b", cost="1.80", outcome=O.FAILED)]
+        assert "cost per pass $2.0000" in to_markdown(aggregate(rows))
+
+    def test_cost_and_latency_are_split_by_outcome_bucket(self):
+        rows = [
+            task_row(instance_id="a", cost="0.20", seconds=10),
+            task_row(instance_id="b", cost="1.80", seconds=100, outcome=O.FAILED),
+        ]
+        by_bucket = aggregate(rows).models["anthropic/test-main"].by_bucket
+        assert by_bucket["passed"].cost.median == 0.2 and by_bucket["failed"].cost.median == 1.8
+        assert by_bucket["passed"].latency.median == 10 and by_bucket["failed"].latency.median == 100
+        assert "harness_error" not in by_bucket
+
+
+class TestDefinitions:
+    def test_latency_is_defined_and_the_censoring_is_stated(self):
+        text = to_markdown(aggregate([task_row()]))
+        assert "Latency is claim to completion" in text and "excludes the time a task waited in the queue" in text
+        assert "includes contention from the sweep's parallel runs" in text
+        assert "CENSOR cost and latency" in text and "the $2 cap" in text
+
+    def test_a_small_sample_shows_median_and_max_not_a_p95(self):
+        text = to_markdown(aggregate(rows_for([O.PASSED] * 5)))
+        assert "| cost (USD) | 5 | $0.5000 | $0.5000 | $0.5000 | - (n < 40) |" in text
 
 
 class TestDistributions:
@@ -651,9 +721,9 @@ class TestDistributions:
             task_row(instance_id="d", attempts=0, **KINDS["harness"]),
             task_row(instance_id="e", attempts=2, **KINDS["unfinished"]),
         ]
-        report = aggregate(rows)
-        assert report.attempts == {0: 1, 1: 2, 3: 1}
-        assert report.stop_reasons == {"(none)": 1, "max_attempts": 1, "submitted": 2}
+        block = aggregate(rows).models["anthropic/test-main"]
+        assert block.attempts == {0: 1, 1: 2, 3: 1}
+        assert block.stop_reasons == {"(none)": 1, "max_attempts": 1, "submitted": 2}
 
 
 class TestByRepoAndTargetedP2P:
