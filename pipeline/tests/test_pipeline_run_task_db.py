@@ -900,6 +900,119 @@ class TestWhatDoesFailTheTask:
         assert result.error_message.startswith("agent: TypeError") and "AgentResult" in result.error_message
 
 
+class TestATerminalWriteCannotStrandARow:
+    """A row left `running` while the result says FAILED -- perhaps with a pull request already open -- is never
+    reaped and never counted. Every way the last write can fail must still end in a terminal row."""
+
+    async def test_a_diff_with_a_nul_in_it_is_recorded_not_refused(self, db_session, db_session_factory, origin_url):
+        """git emits a NUL that sits past the first 8000 bytes it sniffs; Postgres cannot store one in text."""
+        task = await seed_task(db_session)
+
+        async def script(deps):
+            edit(deps, "src/big.py", "x = 1\n" * 2000 + "\x00\n")
+            record = await deps.verify_attempt(1)
+            return agent_result(StopReason.SUBMITTED, record)
+
+        result, github = await run(db_session_factory, origin_url, task, ScriptedAgent(script), FakeBackend(results=[BASELINE, AFTER]))
+
+        row, _ = await reload(db_session_factory, task.id)
+        assert result.status is row.status is TaskStatus.PR_OPENED, result.error_message
+        assert row.completed_at is not None and row.pr_number == 1
+        assert "\x00" not in row.patch_diff and "\ufffd" in row.patch_diff
+        assert row.changed_files == ["src/big.py"]
+
+    async def test_a_failed_write_after_the_pr_still_ends_in_a_failed_row_that_says_the_pr_exists(
+        self, db_session, db_session_factory, origin_url, monkeypatch
+    ):
+        """The first write fails in a way that aborts the transaction; the failure record is written in full, which
+        only works if `_fail` rolls back first."""
+        task = await seed_task(db_session)
+        real = run_module.write_terminal
+        statuses = []
+
+        async def fails_once_and_aborts_the_transaction(state, task_id, **columns):
+            statuses.append(columns["status"])
+            if len(statuses) == 1:
+                await state.execute(text("select 1/0"))
+            return await real(state, task_id, **columns)
+
+        monkeypatch.setattr(run_module, "write_terminal", fails_once_and_aborts_the_transaction)
+        agent = agent_that(StopReason.SUBMITTED, spent=(db_session_factory, task.id, "0.3"))
+
+        result, github = await run(db_session_factory, origin_url, task, agent, FakeBackend(results=[BASELINE, AFTER]))
+
+        row, _ = await reload(db_session_factory, task.id)
+        assert statuses == [TaskStatus.PR_OPENED, TaskStatus.FAILED]
+        assert result.status is row.status is TaskStatus.FAILED
+        assert row.error_message.startswith("finalize: ") and row.completed_at is not None
+        assert (row.pr_number, row.pr_url) == (1, "https://github.test/acme/sample/pull/1"), "the PR exists and the row says so"
+        # The failure was recorded in full, which needs the aborted transaction rolled back first.
+        assert row.cost_usd == Decimal("0.3")
+        assert row.changed_files == ["src/app.py"] and row.agent_stop_reason == "submitted"
+
+    async def test_when_even_the_full_failure_write_fails_the_minimal_one_is_made(
+        self, db_session, db_session_factory, origin_url, monkeypatch
+    ):
+        task = await seed_task(db_session)
+
+        async def always_fails(state, task_id, **columns):
+            await state.execute(text("select 1/0"))
+
+        monkeypatch.setattr(run_module, "write_terminal", always_fails)
+
+        result, _ = await run(
+            db_session_factory, origin_url, task, agent_that(StopReason.SUBMITTED), FakeBackend(results=[BASELINE, AFTER])
+        )
+
+        row, _ = await reload(db_session_factory, task.id)
+        assert result.status is TaskStatus.FAILED
+        assert row.status is TaskStatus.FAILED, "never left `running`"
+        assert row.error_message.startswith("finalize: ") and row.completed_at is not None
+        assert row.pr_number == 1, "the minimal write still says that a pull request is open"
+        assert row.changed_files is None and row.patch_diff is None, "and carries nothing the database could refuse"
+
+    async def test_a_cost_query_that_fails_on_the_success_path_does_not_fail_the_task(
+        self, db_session, db_session_factory, origin_url, monkeypatch
+    ):
+        task = await seed_task(db_session)
+
+        async def blip(factory, task_id):
+            raise RuntimeError("database blip")
+
+        monkeypatch.setattr(run_module, "task_cost", blip)
+
+        result, _ = await run(
+            db_session_factory, origin_url, task, agent_that(StopReason.STEP_CAP), FakeBackend(results=[BASELINE, AFTER])
+        )
+
+        row, _ = await reload(db_session_factory, task.id)
+        assert result.status is row.status is TaskStatus.COMPLETED and row.error_message is None
+        assert row.cost_usd is None, "unknown is recorded as unknown"
+
+    async def test_a_failure_in_the_agent_stage_still_counts_the_attempts_the_scorer_recorded(
+        self, db_session, db_session_factory, origin_url
+    ):
+        task = await seed_task(db_session)
+
+        async def script(deps):
+            edit(deps, "src/first.py", "FIRST = 1\n")
+            await deps.verify_attempt(1)
+            edit(deps, "src/second.py", "SECOND = 1\n")
+            await deps.verify_attempt(2)
+            raise UnpricedModelError("no price for some/model")
+
+        result, _ = await run(
+            db_session_factory, origin_url, task, ScriptedAgent(script),
+            FakeBackend(results=[BASELINE, SuiteResult(passed=()), AFTER]),
+        )
+
+        row, runs = await reload(db_session_factory, task.id)
+        assert result.status is TaskStatus.FAILED
+        assert result.attempts == 2 and row.retry_count == 1
+        assert [r.attempt for r in runs] == [0, 1, 2]
+        assert row.agent_stop_reason is None, "the agent never returned a reason"
+
+
 class TestRewindToTheLastScoredCommit:
     """`last_attempt` is the only scored state. These drive the real tools, whose probes leave unscored checkpoint commits."""
 

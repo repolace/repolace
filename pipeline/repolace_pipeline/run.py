@@ -76,7 +76,7 @@ from repolace_pipeline.attempts import AttemptScorer, run_scored_suite
 from repolace_pipeline.context import RetrievedChunk, repo_overview, search_hit
 from repolace_pipeline.edit import StubEditRequest
 from repolace_pipeline.errors import PipelineError, StageFailed, TaskNotClaimable, TaskNotFound
-from repolace_pipeline.finalize import first_model, task_cost, write_terminal
+from repolace_pipeline.finalize import first_model, task_cost, write_failure_minimal, write_terminal
 from repolace_pipeline.gate import PrDecision, pr_decision
 from repolace_pipeline.pr import PrFacts, commit_message, pr_title, render_pr_body
 from repolace_pipeline.runners import StubAgent
@@ -165,12 +165,19 @@ class _Progress:
     and `_fail` has only a stage name and a message. `_run_stages` updates this as each fact
     becomes known; `_fail` writes whatever is there. It carries plain data only -- it is read
     after a rollback, when an ORM attribute would raise `MissingGreenlet`.
+
+    `scorer` is the one live object, and it is read-only here: when the agent stage itself fails
+    there is no `AgentResult`, but the scorer still knows how many attempts were scored.
     """
 
     result: AgentResult | None = None
     changed_files: list[str] | None = None
     patch_diff: str | None = None
     patch_sha: str | None = None
+    #: Set once a pull request exists, so a task that fails *after* opening one still says so.
+    pr_number: int | None = None
+    pr_url: str | None = None
+    scorer: AttemptScorer | None = None
 
 
 @dataclass(frozen=True)
@@ -274,7 +281,12 @@ async def _fail(
     cost = await _best_effort_cost(session_factory, task_id)
     result = progress.result
     stop_reason = result.stop_reason.value if result is not None else None
-    attempts = result.attempts if result is not None else 0
+    # From the result when the agent returned one, else from the scorer: an agent stage that
+    # failed still scored whatever it scored, and those rows are in `task_test_runs`.
+    if result is not None:
+        attempts = result.attempts
+    else:
+        attempts = progress.scorer.attempts if progress.scorer is not None else 0
     try:
         # Roll back first: a mid-pipeline DB error would otherwise leave the
         # session dirty and make the failure record itself unwritable.
@@ -293,12 +305,22 @@ async def _fail(
             patch_sha=progress.patch_sha,
             patch_diff=progress.patch_diff,
             changed_files=progress.changed_files,
-            pr_number=None,
-            pr_url=None,
+            pr_number=progress.pr_number,
+            pr_url=progress.pr_url,
         )
         await state.commit()
     except SQLAlchemyError as exc:
-        log.error("pipeline.state.write_failed", error=str(exc))
+        log.error("pipeline.state.full_write_failed", error=str(exc)[:300])
+        # The row must not stay `running` with the result saying FAILED -- and perhaps a PR open.
+        # So the least it can say, with nothing in it the database could refuse.
+        try:
+            await state.rollback()
+            await write_failure_minimal(
+                state, task_id, error_message=detail, pr_number=progress.pr_number, pr_url=progress.pr_url
+            )
+            await state.commit()
+        except SQLAlchemyError as fallback_exc:
+            log.error("pipeline.state.write_failed", error=str(fallback_exc)[:300])
     return RunResult(
         task_id,
         TaskStatus.FAILED,
@@ -582,6 +604,7 @@ async def _run_stages(
         scorer = AttemptScorer(
             verifier=verifier, workspace=workspace, record=partial(record_test_run, session_factory, task.id)
         )
+        progress.scorer = scorer
 
         async with _stage("agent"):
             # The gateway scope: every model call is attributable to this task and charged to its
@@ -630,7 +653,8 @@ async def _run_stages(
         )
         log.info("pipeline.gate", open=decision.open, reason=decision.reason)
 
-        cost = await task_cost(session_factory, task.id)
+        # Best effort: a database blip here must not turn a finished agent run into a harness error.
+        cost = await _best_effort_cost(session_factory, task.id)
         pull_request = None
         squashed: str | None = None
         if decision.open:
@@ -677,6 +701,7 @@ async def _run_stages(
                         title=pr_title(facts),
                         body=render_pr_body(facts),
                     )
+                progress.pr_number, progress.pr_url = pull_request.number, pull_request.html_url
 
         # The sha of what the task produced: the squashed commit if a PR was opened (the commit
         # on GitHub), else the scored commit at HEAD.
@@ -684,23 +709,24 @@ async def _run_stages(
         progress.patch_sha = patch_sha
 
     status = TaskStatus.PR_OPENED if pull_request is not None else TaskStatus.COMPLETED
-    await write_terminal(
-        state,
-        task.id,
-        status=status,
-        outcome=scored.outcome,
-        score_reason=scored.reason,
-        error_message=None,
-        agent_stop_reason=result.stop_reason.value,
-        retry_count=max(0, result.attempts - 1),
-        cost_usd=cost,
-        patch_sha=patch_sha,
-        patch_diff=diff,
-        changed_files=changed,
-        pr_number=pull_request.number if pull_request is not None else None,
-        pr_url=pull_request.html_url if pull_request is not None else None,
-    )
-    await state.commit()
+    async with _stage("finalize"):
+        await write_terminal(
+            state,
+            task.id,
+            status=status,
+            outcome=scored.outcome,
+            score_reason=scored.reason,
+            error_message=None,
+            agent_stop_reason=result.stop_reason.value,
+            retry_count=max(0, result.attempts - 1),
+            cost_usd=cost,
+            patch_sha=patch_sha,
+            patch_diff=diff,
+            changed_files=changed,
+            pr_number=pull_request.number if pull_request is not None else None,
+            pr_url=pull_request.html_url if pull_request is not None else None,
+        )
+        await state.commit()
     log.info(
         "pipeline.task.pr_opened" if pull_request is not None else "pipeline.task.completed",
         outcome=scored.outcome.value if scored.outcome else None,
