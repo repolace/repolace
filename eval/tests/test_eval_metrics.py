@@ -12,7 +12,6 @@ from harness.metrics import (
     chunk_recall_at_k,
     chunk_reciprocal_rank,
     cluster_bootstrap_interval,
-    distinct_in_order,
     exact_sign_test,
     file_recall_at_k,
     file_reciprocal_rank,
@@ -45,9 +44,17 @@ class TestFileRecall:
     def test_empty_gold_has_no_recall_not_zero_and_not_one(self):
         assert file_recall_at_k(["a.py"], set(), 5) is None
 
-    def test_one_file_repeated_does_not_fill_the_top_k(self):
-        # Five chunks of a.py are one file: b.py is rank 2, inside k=2.
-        assert file_recall_at_k(["a.py"] * 5 + ["b.py"], {"b.py"}, 2) == 1.0
+    def test_k_counts_chunks_so_one_files_chunks_use_up_the_budget(self):
+        ranked = ["a.py"] * 5 + ["b.py"]
+        assert file_recall_at_k(ranked, {"b.py"}, 5) == 0.0
+        assert file_recall_at_k(ranked, {"b.py"}, 6) == 1.0
+
+    def test_recall_at_10_and_at_20_differ_even_when_the_chunks_cover_few_files(self):
+        # Twelve chunks of one file, then the gold file: over distinct files R@10 and R@20
+        # were both 1.0 (two files). Over chunks the gold file is the 13th.
+        ranked = ["a.py"] * 12 + ["b.py"]
+        assert file_recall_at_k(ranked, {"b.py"}, 10) == 0.0
+        assert file_recall_at_k(ranked, {"b.py"}, 20) == 1.0
 
     def test_duplicate_gold_paths_count_once(self):
         assert file_recall_at_k(["a.py"], ["a.py", "a.py"], 1) == 1.0
@@ -57,13 +64,10 @@ class TestFileRecall:
         with pytest.raises(ValueError, match="k must be at least 1"):
             file_recall_at_k(["a.py"], {"a.py"}, k)
 
-    def test_distinct_in_order_keeps_the_first_appearance(self):
-        assert distinct_in_order(["b", "a", "b", "c", "a"]) == ["b", "a", "c"]
-
 
 class TestFileReciprocalRank:
-    def test_reciprocal_of_the_first_gold_rank_over_distinct_files(self):
-        assert file_reciprocal_rank(["x.py", "x.py", "y.py", "g.py"], {"g.py"}) == pytest.approx(1 / 3)
+    def test_reciprocal_of_the_rank_of_the_first_chunk_in_a_gold_file(self):
+        assert file_reciprocal_rank(["x.py", "x.py", "y.py", "g.py"], {"g.py"}) == pytest.approx(1 / 4)
 
     def test_first_of_several_gold_files_wins(self):
         assert file_reciprocal_rank(["a.py", "g2.py", "g1.py"], {"g1.py", "g2.py"}) == 0.5

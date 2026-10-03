@@ -25,8 +25,9 @@ these are never listed, deactivated or reactivated; a test pins that. The rows
 `DELETE FROM registered_repos WHERE installation_id = -1` removes them.
 
 **What the numbers mean** (see `harness.metrics` for the arithmetic): file recall
-is over distinct files; chunk recall is over gold *hunks* (a hunk is recalled if
-any top-k chunk overlaps it); a query with no old-side gold (a patch that only
+is the gold files among the files of the first k *chunks* (the search returns
+twenty chunks, not twenty files); chunk recall is over gold *hunks* (a hunk is
+recalled if one of its innermost overlapping chunks is among the first k); a query with no old-side gold (a patch that only
 adds files) is skipped and counted, not scored as a miss; an insertion is
 anchored to the old line it follows. The gold patch is read from the
 `<id>.gold.patch` that `select` writes beside each instance. It never reaches an
@@ -542,9 +543,10 @@ _HEADER = (
 def to_markdown(run: EvalRun) -> str:
     out = ["# Retrieval eval", ""]
     out += [
-        "Gold is the fix's old-side files and changed lines. A query with no old-side gold is not scored "
-        "(the `queries with gold` column says how many were). Chunk recall is over gold hunks. "
-        "MRR is over the top 20 only; a miss scores 0.",
+        "Gold is the fix's old-side Python files and changed lines. File R@k is the gold files among the files "
+        "of the first k chunks (the search returns 20 chunks, not 20 files). Chunk R@k is over gold hunks, "
+        "crediting only a hunk's innermost chunks. MRR is over the top 20 chunks only; a miss scores 0. A query "
+        "with no gold of a kind is not scored on that kind: the scored columns say how many were.",
         "",
         "## Plan",
         "",
