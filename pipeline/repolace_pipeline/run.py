@@ -793,6 +793,16 @@ def _judge(
     With no scored attempt there is nothing to compare, and the outcome is FAILED: the agent
     was given the issue and produced no result a suite ran against. Not inadmissible -- that
     word is for an instrument that failed, and this instrument worked.
+
+    **What "the two runs are comparable" rests on.** Every pytest run -- the baseline, each
+    attempt and each probe -- is started with the same argv, which since the sandbox stream
+    carries `--rootdir=/repo` and `--continue-on-collection-errors`. The first pins one node-id
+    space, so an id in the baseline names the same test in an attempt (without it a different
+    set of targets changes the rootdir and renames every id). The second makes a module that
+    stops importing lose its tests *without aborting the session*, so it is reported as a
+    collection failure the verdict names, not as an unscoreable run. And `fingerprint_changed`
+    compares the rootdir, the watched ini options and the registered plugins between the two,
+    which is what refuses a comparison the argv alone could not have guaranteed.
     """
     last = result.last_attempt
     if last is None:

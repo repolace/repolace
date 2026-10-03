@@ -80,6 +80,14 @@ class TestSanitizeMarkdown:
     def test_no_image_syntax_survives_in_any_spelling(self, text):
         assert "![" not in sanitize_markdown(text)
 
+    def test_an_image_takes_its_alt_text_with_it(self):
+        """Removed, not turned into a link: alt text is attacker-written like any other text, and the
+        documented behaviour is that an image is gone."""
+        clean = sanitize_markdown("see ![diagram](x.png) here")
+
+        assert "diagram" not in clean
+        assert clean.split() == ["see", "here"]
+
     def test_a_link_keeps_its_text_and_loses_its_destination(self):
         clean = sanitize_markdown("read [the docs](https://evil.example/phish) now")
 
