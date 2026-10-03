@@ -965,6 +965,29 @@ class TestOnlyWhatThisToolCreated:
         assert out.count("deleting repolace/bench-a") == 1
 
 
+class TestDeleteReposDirectly:
+    def test_repeated_ids_handed_to_delete_repos_are_deleted_once_not_a_keyerror(self, workdir):
+        """The CLI dedupes `--instances`, but the function is called without it too."""
+        seed(workdir, "a", "b")
+        github = FakeGithub()
+        assert run_fork(workdir, github, RecordingPush(github.events)) == 0
+        output: list[str] = []
+
+        async def go():
+            client = GithubBench(TOKEN, base_url=API, transport=github.transport())
+            try:
+                return await bench_repos.delete_repos(
+                    ["a", "a", "b", "a"], client, mapping_path=workdir["mapping"], out=output.append
+                )
+            finally:
+                await client.aclose()
+
+        failures = asyncio.run(go())
+
+        assert failures == 0 and github.repos == {}
+        assert output == ["deleted repolace/bench-a", "deleted repolace/bench-b"]
+
+
 class TestIncompleteRepositories:
     """A repository this tool created and then failed on must stay deletable."""
 
