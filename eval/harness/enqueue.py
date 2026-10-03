@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
+import dataclasses
 import re
 import sys
 import uuid
@@ -53,19 +53,14 @@ from pathlib import Path
 import structlog
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
 
-from harness.bench_repos import (
-    DEFAULT_INSTANCES_DIR,
-    MAPPING_FILENAME,
-    BenchRepoError,
-    atomic_write_text,
-    load_bench_repos,
-)
+from harness.bench_repos import DEFAULT_INSTANCES_DIR, MAPPING_FILENAME, BenchRepoError, load_bench_repos
 from harness.db import SessionFactory, check_eval_run_id, open_session_factory
+from harness.run_manifest import AGENTS, ManifestError, RunManifest, dump_manifest, load_manifest, manifest_path
 from repolace_shared.db.models import RegisteredRepo, Task, TaskStatus
 from repolace_shared.git.repo import GitError, run_git
 from repolace_shared.instances import InstanceError, InstanceSpec, load_instances
-from repolace_shared.paths import PathEscapesRoot, resolve_within
 
 #: Benchmark tasks target `main` of the benchmark repository: `fork` pushes the
 #: base commit there.
@@ -78,35 +73,19 @@ DEFAULT_RUNS_DIR = _REPO_ROOT / "eval" / "runs"
 #: manifest that records it, and imported by `runner`, so the two cannot drift.
 DEFAULT_WALL_CLOCK_SECONDS = 5400.0
 
-MANIFEST_FILENAME = "manifest.json"
-#: The keys of `manifest.json`, exactly -- no more, no fewer. Stream D's report
-#: loader reads these; this tuple is the one place the two are reconciled.
-MANIFEST_KEYS: tuple[str, ...] = (
-    "eval_run_id",
-    "created_at",
-    "git_sha",
-    "model",
-    "stage_models",
-    "limits",
-    "runs_per_instance",
-    "instance_ids",
-    "agent",
-)
-MANIFEST_AGENTS: tuple[str, ...] = ("llm", "gold", "stub")
 #: What `model` holds for an agent that calls no model.
 NO_MODEL = "none"
 
-log = structlog.get_logger()
+#: Characters a problem statement may not contain. NUL is rejected by Postgres text
+#: columns (after the manifest is on disk), and the rest of the C0 controls (and DEL)
+#: have no business in an issue body; tab, newline and carriage return are fine.
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
-_GIT_SHA = re.compile(r"[0-9a-f]{40}")
+log = structlog.get_logger()
 
 
 class EnqueueError(RuntimeError):
     """The run cannot be enqueued as asked; nothing was inserted."""
-
-
-class ManifestError(EnqueueError):
-    """The run manifest is unreadable, malformed, or describes a different sweep."""
 
 
 @dataclass(frozen=True)
@@ -135,6 +114,9 @@ class ManifestInputs:
 
 
 # --- the manifest ---------------------------------------------------------------
+#
+# The format, its validation and its atomic writer are `harness.run_manifest`'s: the
+# report reads the same module, so the nine keys have exactly one definition.
 
 
 def code_limits() -> dict[str, object]:
@@ -166,59 +148,27 @@ def build_manifest(
     runs: int,
     inputs: ManifestInputs,
     created_at: datetime,
-) -> dict[str, object]:
-    if inputs.agent not in MANIFEST_AGENTS:
-        raise ManifestError(f"--agent must be one of {', '.join(MANIFEST_AGENTS)}, got {inputs.agent!r}")
+) -> RunManifest:
+    if inputs.agent not in AGENTS:
+        raise ManifestError(f"--agent must be one of {', '.join(AGENTS)}, got {inputs.agent!r}")
     model = (inputs.model or "").strip()
     if inputs.agent == "llm" and not model:
         raise ManifestError("--model is required for the llm agent: the manifest must name the model that ran")
-    if not _GIT_SHA.fullmatch(git_sha):
-        raise ManifestError(f"git_sha {git_sha!r} is not a full commit sha")
-    manifest = {
-        "eval_run_id": eval_run_id,
-        "created_at": created_at.astimezone(timezone.utc).replace(microsecond=0).isoformat(),
-        "git_sha": git_sha,
-        "model": model if inputs.agent == "llm" else NO_MODEL,
+    return RunManifest(
+        eval_run_id=eval_run_id,
+        created_at=created_at.astimezone(timezone.utc).replace(microsecond=0).isoformat(),
+        git_sha=git_sha,
+        model=model if inputs.agent == "llm" else NO_MODEL,
         # Exactly what the runner puts in GATEWAY_STAGE_MODELS for `--model`.
-        "stage_models": {"agent": model} if inputs.agent == "llm" else {},
-        "limits": {**code_limits(), "runner_wall_clock_seconds": float(inputs.timeout_seconds)},
-        "runs_per_instance": runs,
-        "instance_ids": sorted(set(instance_ids)),
-        "agent": inputs.agent,
-    }
-    if set(manifest) != set(MANIFEST_KEYS):  # a bug here, not a user error
-        raise ManifestError(f"build_manifest produced {sorted(manifest)}, expected {sorted(MANIFEST_KEYS)}")
-    return manifest
+        stage_models={"agent": model} if inputs.agent == "llm" else {},
+        limits={**code_limits(), "runner_wall_clock_seconds": float(inputs.timeout_seconds)},
+        runs_per_instance=runs,
+        instance_ids=tuple(sorted(set(instance_ids))),
+        agent=inputs.agent,
+    )
 
 
-def manifest_path(runs_dir: Path, eval_run_id: str) -> Path:
-    runs_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        return resolve_within(runs_dir, eval_run_id) / MANIFEST_FILENAME
-    except PathEscapesRoot as exc:
-        raise ManifestError(str(exc)) from None
-
-
-def read_manifest(path: Path) -> dict[str, object]:
-    """The manifest at `path`, validated to carry exactly `MANIFEST_KEYS`."""
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, ValueError) as exc:
-        raise ManifestError(f"{path}: cannot read the run manifest: {type(exc).__name__}: {exc}") from None
-    if not isinstance(data, dict) or set(data) != set(MANIFEST_KEYS):
-        raise ManifestError(
-            f"{path}: the manifest must have exactly the keys {', '.join(MANIFEST_KEYS)}; "
-            f"found {', '.join(sorted(data)) if isinstance(data, dict) else type(data).__name__}"
-        )
-    return data
-
-
-def _comparable(manifest: Mapping[str, object]) -> dict[str, object]:
-    """Everything that makes two manifests the same sweep: all of it but the creation time."""
-    return {key: manifest[key] for key in MANIFEST_KEYS if key != "created_at"}
-
-
-def ensure_manifest(path: Path, manifest: Mapping[str, object]) -> bool:
+def ensure_manifest(runs_dir: Path, manifest: RunManifest) -> bool:
     """Write the manifest if there is none; accept an existing identical one; refuse any other.
 
     Returns True when it wrote the file. "Identical" ignores `created_at`, so a
@@ -226,17 +176,20 @@ def ensure_manifest(path: Path, manifest: Mapping[str, object]) -> bool:
     another instance set, another run count, another commit -- is a different
     sweep, and the rows already enqueued belong to the first.
     """
-    document = json.loads(json.dumps(manifest))  # the form it would have on disk
+    path = manifest_path(runs_dir, manifest.eval_run_id)
     if path.exists():
-        new, old = _comparable(document), _comparable(read_manifest(path))
-        differing = sorted(key for key in new if new[key] != old[key])
+        existing = load_manifest(path)
+        differing = sorted(
+            f.name for f in dataclasses.fields(RunManifest)
+            if f.name != "created_at" and getattr(existing, f.name) != getattr(manifest, f.name)
+        )
         if differing:
             raise ManifestError(
-                f"{path} already describes a different sweep for run {document['eval_run_id']!r} "
+                f"{path} already describes a different sweep for run {manifest.eval_run_id!r} "
                 f"(differs in: {', '.join(differing)}). Use a new --eval-run-id, or delete the run's rows and manifest"
             )
         return False
-    atomic_write_text(path, json.dumps(document, indent=2, sort_keys=True) + "\n")
+    dump_manifest(manifest, runs_dir)
     return True
 
 
@@ -252,6 +205,8 @@ async def repo_git_sha(repo_root: Path, *, allow_dirty_tree: bool) -> str:
             "tracked files in the repolace checkout are modified, so the commit sha would not describe the code "
             "that runs; commit them, or pass --allow-dirty-tree to record the sha anyway"
         )
+    if not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise ManifestError(f"git rev-parse HEAD in {repo_root} returned {sha!r}, not a full commit sha")
     if modified:
         log.warning("enqueue.dirty_tree", repo_root=str(repo_root), git_sha=sha)
     return sha
@@ -278,6 +233,11 @@ def _resolve_instances(
             )
         elif not instances[instance_id].issue_title:
             problems.append(f"{instance_id}: the problem statement has no non-blank line to use as a title")
+        elif _CONTROL_CHARS.search(instances[instance_id].problem_statement):
+            problems.append(
+                f"{instance_id}: the problem statement contains a NUL or other control character, which the "
+                f"database cannot store; fix the instance file"
+            )
     if not chosen:
         problems.append("no instances selected")
     return chosen, problems
@@ -334,7 +294,7 @@ async def enqueue_tasks(
         inputs=manifest,
         created_at=manifest.clock(),
     )
-    manifest_created = ensure_manifest(manifest_path(manifest.runs_dir, eval_run_id), document)
+    manifest_created = ensure_manifest(manifest.runs_dir, document)
 
     values = [
         {
@@ -356,18 +316,28 @@ async def enqueue_tasks(
         for run_index in range(runs)
         for instance_id in chosen
     ]
-    async with factory() as session:
-        inserted = await session.execute(
-            insert(Task)
-            .values(values)
-            .on_conflict_do_nothing(
-                index_elements=["eval_run_id", "instance_id", "run_index"],
-                index_where=text("eval_run_id IS NOT NULL"),
+    try:
+        async with factory() as session:
+            inserted = await session.execute(
+                insert(Task)
+                .values(values)
+                .on_conflict_do_nothing(
+                    index_elements=["eval_run_id", "instance_id", "run_index"],
+                    index_where=text("eval_run_id IS NOT NULL"),
+                )
+                .returning(Task.id)
             )
-            .returning(Task.id)
-        )
-        created = len(inserted.all())
-        await session.commit()
+            created = len(inserted.all())
+            await session.commit()
+    except SQLAlchemyError as exc:
+        # `from None`, and only the driver's first line: a SQLAlchemy error carries the
+        # whole statement and its parameters, which here is every problem statement.
+        driver = getattr(exc, "orig", exc)
+        detail = (str(driver).splitlines() or [""])[0][:200]
+        raise EnqueueError(
+            f"the database rejected the insert ({type(driver).__name__}: {detail}); no row was inserted. "
+            f"The run manifest was already written and is safe to keep: fix the cause and re-run the same command"
+        ) from None
     return EnqueueResult(created=created, already_present=len(values) - created, manifest_created=manifest_created)
 
 
@@ -379,7 +349,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--instances", default="all", help="comma-separated instance ids, or 'all'")
     parser.add_argument("--runs", type=int, default=3, help="runs per instance (run_index 0..N-1)")
     parser.add_argument("--open-pr-on-failure", action="store_true")
-    parser.add_argument("--agent", choices=MANIFEST_AGENTS, default="llm", help="recorded in the run manifest; `run` must match")
+    parser.add_argument("--agent", choices=AGENTS, default="llm", help="recorded in the run manifest; `run` must match")
     parser.add_argument("--model", help="headline model id, required for --agent llm; recorded in the manifest, `run` must match")
     parser.add_argument(
         "--timeout-seconds", type=float, default=DEFAULT_WALL_CLOCK_SECONDS,
@@ -438,7 +408,7 @@ def main(
 
     try:
         result = asyncio.run(run())
-    except EnqueueError as exc:
+    except (EnqueueError, ManifestError) as exc:
         print(f"repolace-eval enqueue: {exc}", file=sys.stderr)
         return 2
     print(

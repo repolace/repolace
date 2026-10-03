@@ -37,7 +37,7 @@ import asyncio
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from sqlalchemy import select

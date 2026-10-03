@@ -7,6 +7,7 @@ silently went missing is absent from the headline without anything having failed
 
 from __future__ import annotations
 
+import asyncio
 import json
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -19,20 +20,23 @@ from eval_exec_support import add_repo, make_instance, run_git_sync, write_insta
 from harness.bench_repos import load_bench_repos
 from harness.enqueue import (
     DEFAULT_WALL_CLOCK_SECONDS,
-    MANIFEST_KEYS,
     EnqueueError,
-    ManifestError,
     ManifestInputs,
     build_parser,
     code_limits,
     enqueue_tasks,
     main,
-    manifest_path,
-    read_manifest,
 )
+from harness.run_manifest import ManifestError, load_manifest, manifest_path
 from repolace_shared.db.models import Task, TaskStatus
+from sqlalchemy.exc import DBAPIError
 
 FIXED_NOW = datetime(2026, 10, 3, 12, 0, 0, tzinfo=timezone.utc)
+
+
+def read_manifest(path: Path) -> dict:
+    """The manifest as it is on disk, for asserting on the keys the report will read."""
+    return json.loads(path.read_text())
 
 
 @pytest.fixture
@@ -220,7 +224,7 @@ class TestRows:
                 manifest=self.inputs,
             )
 
-    @pytest.mark.parametrize("run_id", ["", "../x", "a/b", "a b", "-x", ".x", "x" * 65, "a\n"])
+    @pytest.mark.parametrize("run_id", ["", "../x", "a/b", "a b", "-x", ".x", "x" * 65, "a\n", "a..b"])
     async def test_a_hostile_run_id_is_refused_before_anything_is_inserted(self, db_session, db_session_factory, run_id):
         await self.seed_repos(db_session, "a")
 
@@ -264,7 +268,7 @@ class TestManifest:
         await self.run(db_session_factory)
 
         document = json.loads(self.path().read_text())
-        assert set(document) == set(MANIFEST_KEYS) == {
+        assert set(document) == {
             "eval_run_id", "created_at", "git_sha", "model", "stage_models", "limits",
             "runs_per_instance", "instance_ids", "agent",
         }
@@ -417,7 +421,7 @@ class TestManifest:
         self.path().parent.mkdir(parents=True)
         self.path().write_text("{not json")
 
-        with pytest.raises(ManifestError, match="cannot read"):
+        with pytest.raises(ManifestError, match="not valid JSON"):
             await self.run(db_session_factory)
 
         assert self.path().read_text() == "{not json"
@@ -428,7 +432,7 @@ class TestManifest:
         self.path().parent.mkdir(parents=True)
         self.path().write_text(json.dumps({"eval_run_id": "run-1"}))
 
-        with pytest.raises(ManifestError, match="exactly the keys"):
+        with pytest.raises(ManifestError, match="missing key"):
             await self.run(db_session_factory)
 
     async def test_a_resolution_failure_writes_no_manifest(self, db_session, db_session_factory):
@@ -501,6 +505,121 @@ class TestManifest:
             await self.run(db_session_factory, run_id="../escape")
 
         assert not (self.inputs.runs_dir.parent / "escape").exists()
+
+
+@pytest.mark.anyio
+@pytest.mark.db
+class TestReportLoaderAndInputChecks:
+    """Stream D's `run_manifest` is the one definition; enqueue writes through it, and checks input the database cannot take."""
+
+    @pytest.fixture(autouse=True)
+    def _wire(self, inputs):
+        self.inputs = inputs
+
+    async def run(self, factory, instances=None, **kwargs):
+        kwargs.setdefault("eval_run_id", "run-1")
+        kwargs.setdefault("runs", 2)
+        instances = instances if instances is not None else instances_for("a", "b")
+        return await enqueue_tasks(
+            factory, instances, bench("a", "b"), manifest=self.inputs, instances_requested="all", **kwargs
+        )
+
+    async def seed(self, session):
+        for instance_id in ("a", "b"):
+            await add_repo(session, f"repolace/bench-{instance_id}")
+
+    async def test_a_manifest_enqueue_wrote_loads_through_the_report_loader(self, db_session, db_session_factory, repo_root):
+        await self.seed(db_session)
+
+        await self.run(db_session_factory)
+
+        loaded = load_manifest(manifest_path(self.inputs.runs_dir, "run-1"))
+        assert loaded.eval_run_id == "run-1" and loaded.agent == "llm" and loaded.model == "claude-test"
+        assert loaded.instance_ids == ("a", "b") and loaded.runs_per_instance == 2
+        assert loaded.git_sha == run_git_sync("rev-parse", "HEAD", cwd=repo_root)
+        assert loaded.stage_models == {"agent": "claude-test"}
+        assert loaded.limits["runner_wall_clock_seconds"] == DEFAULT_WALL_CLOCK_SECONDS
+        assert loaded.planned_pairs() == {(i, r) for i in ("a", "b") for r in (0, 1)}
+
+    async def test_a_nul_in_a_problem_statement_is_refused_before_anything_is_written(self, db_session, db_session_factory):
+        await self.seed(db_session)
+        poisoned = {**instances_for("a", "b"), "b": make_instance("b", problem_statement="Title\n\nbad \x00 byte")}
+
+        with pytest.raises(EnqueueError, match=r"b: the problem statement contains a NUL"):
+            await self.run(db_session_factory, poisoned)
+
+        assert not manifest_path(self.inputs.runs_dir, "run-1").exists(), "nothing may be written for a refused sweep"
+        assert await db_session.scalar(select(func.count()).select_from(Task)) == 0
+
+    @pytest.mark.parametrize("char", ["\x00", "\x01", "\x07", "\x0b", "\x0c", "\x1b", "\x7f"])
+    async def test_every_control_character_is_refused(self, db_session, db_session_factory, char):
+        await self.seed(db_session)
+        poisoned = {"a": make_instance("a", problem_statement=f"Title\nbody {char} body"), "b": instances_for("b")["b"]}
+
+        with pytest.raises(EnqueueError, match="control character"):
+            await self.run(db_session_factory, poisoned)
+
+    async def test_tabs_newlines_and_carriage_returns_are_fine(self, db_session, db_session_factory):
+        await self.seed(db_session)
+        fine = {i: make_instance(i, problem_statement="Title\r\n\tindented\nline") for i in ("a", "b")}
+
+        result = await self.run(db_session_factory, fine)
+
+        assert result.created == 4
+
+    async def test_a_database_error_becomes_an_enqueue_error_that_leaks_nothing_and_keeps_the_manifest(
+        self, db_session, db_session_factory
+    ):
+        await self.seed(db_session)
+
+        class FailingInsert:
+            def __call__(self):
+                session = db_session_factory()
+                execute = session.execute
+
+                async def guarded(statement, *args, **kwargs):
+                    if "INSERT INTO tasks" in str(statement):
+                        raise DBAPIError(
+                            "INSERT INTO tasks ... VALUES (SECRET-PROBLEM-TEXT)", {"issue_body": "SECRET-PROBLEM-TEXT"},
+                            Exception("integrity constraint boom\nsecond line"),
+                        )
+                    return await execute(statement, *args, **kwargs)
+
+                session.execute = guarded
+                return session
+
+        with pytest.raises(EnqueueError) as raised:
+            await self.run(FailingInsert())
+
+        message = str(raised.value)
+        assert "integrity constraint boom" in message and "second line" not in message
+        assert "SECRET-PROBLEM-TEXT" not in message and "INSERT INTO" not in message
+        assert "manifest was already written" in message
+        assert raised.value.__cause__ is None and raised.value.__suppress_context__
+        assert manifest_path(self.inputs.runs_dir, "run-1").exists()
+        assert await db_session.scalar(select(func.count()).select_from(Task)) == 0
+
+    async def test_main_exits_two_with_the_resync_message_when_the_repository_is_not_registered(
+        self, db_session, db_session_factory, tmp_path, capsys
+    ):
+        """A refusal found while resolving the sweep is a usage error with the reason, never a traceback."""
+        directory = tmp_path / "instances"
+        directory.mkdir()
+        write_instances(directory, make_instance("a"))
+        (directory / "bench_repos.toml").write_text('"a" = "repolace/bench-a"\n')
+
+        @asynccontextmanager
+        async def seam():
+            yield db_session_factory
+
+        code = await asyncio.to_thread(
+            main,
+            ["--eval-run-id", "run-9", "--model", "m", "--instances-dir", str(directory), "--runs-dir", str(tmp_path / "runs")],
+            session_factory=seam, repo_root=self.inputs.repo_root,
+        )
+
+        assert code == 2, "no registered repo for the instance"
+        assert "Re-sync" in capsys.readouterr().err
 
 
 class TestCommandLine:
