@@ -79,7 +79,7 @@ async def run(factory, origin_url, task, agent, backend, *, github=None, **kwarg
         backend,
         agent=agent,
         workspace_factory=local_workspace_factory(origin_url),
-        embedder_warmup=lambda: None,
+        embedder_warmup=kwargs.pop("embedder_warmup", lambda: None),
         **kwargs,
     )
     return result, github
@@ -197,6 +197,73 @@ class TestACompletedTaskWithNoPr:
         await run(db_session_factory, origin_url, task, ScriptedAgent(script), FakeBackend(results=[BASELINE]), budget=budget)
 
         assert seen == [(task.id, budget)]
+
+    async def test_a_slow_stage_before_the_agent_does_not_use_up_its_wall_budget(
+        self, db_session, db_session_factory, origin_url
+    ):
+        """The wall cap bounds the agent. A slow image build, a twenty-minute wait for another task's index lock or
+        a long baseline run must not eat it before the first model call and charge an instrument limit to the agent."""
+        task = await seed_task(db_session)
+        now = [0.0]
+        budget = TaskBudget(max_wall_seconds=100, clock=lambda: now[0])
+        seen = {}
+
+        def slow_before_the_agent():
+            now[0] += 500.0  # five times the cap, spent before the agent exists
+
+        async def script(deps):
+            scope = current_scope()
+            seen["elapsed"] = scope.budget.elapsed_seconds
+            scope.budget.raise_if_reached()  # BudgetExceeded(wall) here if the clock started with the task
+            return agent_result(StopReason.NO_CHANGE)
+
+        result, _ = await run(
+            db_session_factory, origin_url, task, ScriptedAgent(script), FakeBackend(results=[BASELINE]),
+            budget=budget, embedder_warmup=slow_before_the_agent,
+        )
+
+        assert seen["elapsed"] == 0.0
+        assert result.status is TaskStatus.COMPLETED and result.stop_reason == "no_change"
+
+    async def test_the_agent_still_gets_the_cap_and_the_budget_it_was_given(self, db_session, db_session_factory, origin_url):
+        task = await seed_task(db_session)
+        now = [0.0]
+        budget = TaskBudget(max_usd=3, max_calls=7, max_wall_seconds=100, clock=lambda: now[0])
+        seen = {}
+
+        async def script(deps):
+            seen["budget"] = current_scope().budget
+            now[0] += 101.0  # the agent itself runs past the cap
+            try:
+                current_scope().budget.raise_if_reached()
+            except BudgetExceeded as exc:
+                seen["limit"] = exc.limit
+            return agent_result(StopReason.BUDGET_WALL)
+
+        await run(db_session_factory, origin_url, task, ScriptedAgent(script), FakeBackend(results=[BASELINE]), budget=budget)
+
+        assert seen["budget"] is budget and (budget.max_usd, budget.max_calls) == (3, 7)
+        assert seen["limit"] is BudgetLimit.WALL_TIME, "the cap still bounds the agent, from its own start"
+
+    async def test_the_default_budget_is_created_for_the_agent_not_for_the_task(self, db_session, db_session_factory, origin_url):
+        import time
+
+        task = await seed_task(db_session)
+        marks = {}
+
+        def before_the_agent():
+            marks["before"] = time.monotonic()
+
+        async def script(deps):
+            marks["agent_clock_started"] = current_scope().budget.started_at
+            return agent_result(StopReason.NO_CHANGE)
+
+        await run(
+            db_session_factory, origin_url, task, ScriptedAgent(script), FakeBackend(results=[BASELINE]),
+            embedder_warmup=before_the_agent,
+        )
+
+        assert marks["agent_clock_started"] > marks["before"], "the clock started after the clone, index and baseline"
 
     async def test_a_second_run_of_a_finished_task_is_not_claimable(self, db_session, db_session_factory, origin_url):
         task = await seed_task(db_session)

@@ -162,7 +162,7 @@ class _Progress:
     """What a task knows so far, for a failure to record.
 
     A task that dies at the push stage has an agent result, a diff and a sha worth keeping,
-    and `_fail` has only a stage name and a message. `_execute` updates this as each fact
+    and `_fail` has only a stage name and a message. `_run_stages` updates this as each fact
     becomes known; `_fail` writes whatever is there. It carries plain data only -- it is read
     after a rollback, when an ORM attribute would raise `MissingGreenlet`.
     """
@@ -448,21 +448,23 @@ async def _run_agent(runner: AgentRunner, deps: AgentDeps, scorer: AttemptScorer
     return result
 
 
-async def _execute(
-    state: AsyncSession,
-    session_factory,
-    github: GithubClient,
-    task: Task,
-    repo: RegisteredRepo,
-    backend: SandboxBackend,
-    specs: Mapping[str, RepoSpec],
-    seams: _Seams,
-    progress: _Progress,
-) -> RunResult:
-    # The whole task runs inside the gateway's scope, so every model call is attributable to
-    # it and charged to its budget. A contextvar, not a parameter: the agent cannot forget it.
-    with task_scope(task.id, seams.budget):
-        return await _run_stages(state, session_factory, github, task, repo, backend, specs, seams, progress)
+def _agent_budget(supplied: TaskBudget | None) -> TaskBudget:
+    """The gateway budget for the agent stage, with its wall clock started *now*.
+
+    `TaskBudget` stamps `started_at` when it is built, and its wall cap (an hour by default) is
+    meant to bound the agent. If the scope opened at the top of the task, the clone, the index (which
+    can wait twenty minutes for another task's lock) and the baseline suite would eat the cap before
+    the first model call, the agent would stop `budget_wall` having done nothing, and an instrument
+    limit would be charged to it as a FAILED score. Only the agent makes gateway calls, so only its
+    stage is inside the scope.
+
+    A budget the caller supplied is honoured -- its cap, its calls and its spend -- and its clock is
+    restarted here, because a caller builds it before the task runs and cannot know how long the
+    stages before the agent will take.
+    """
+    budget = supplied if supplied is not None else TaskBudget()
+    budget.started_at = budget.clock()
+    return budget
 
 
 async def _run_stages(
@@ -582,10 +584,13 @@ async def _run_stages(
         )
 
         async with _stage("agent"):
-            deps = await _build_deps(
-                session_factory, task, repo, workspace, verifier, scorer, seams, baseline, baseline_files, retrieved
-            )
-            result = await _run_agent(runner, deps, scorer)
+            # The gateway scope: every model call is attributable to this task and charged to its
+            # budget. A contextvar, not a parameter, so the agent cannot forget it.
+            with task_scope(task.id, _agent_budget(seams.budget)):
+                deps = await _build_deps(
+                    session_factory, task, repo, workspace, verifier, scorer, seams, baseline, baseline_files, retrieved
+                )
+                result = await _run_agent(runner, deps, scorer)
         progress.result = result
         log.info(
             "pipeline.agent.done",
@@ -926,7 +931,8 @@ async def run_task(
     * `workspace_factory` -- how the checkout is made; a test passes one that clones a local remote.
     * `embedder_warmup` -- called once before the clone, so a model download is its own stage.
     * `instances_dir` -- where benchmark instances live; required only for a task with an `instance_id`.
-    * `budget` -- the gateway cap for this task; None is the default cap.
+    * `budget` -- the gateway cap for the agent; None is the default cap. Its wall clock starts when
+      the agent stage does, not when the task does (see `_agent_budget`).
     * `open_pr` -- False never opens one, whatever the gate would say.
     * `embedding_strategy` -- how the index is built and queried.
     """
@@ -950,7 +956,7 @@ async def run_task(
             task_id=str(task_id), repo=repo.full_name, issue_number=task.issue_number
         ):
             try:
-                return await _execute(
+                return await _run_stages(
                     state, session_factory, github, task, repo, backend, specs or {}, seams, progress
                 )
             except StageFailed as exc:
