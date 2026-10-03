@@ -516,6 +516,77 @@ class TestBenchmarkMode:
         assert result.error_message.startswith("instance: InstanceError")
 
 
+def tool_call(name: str, **arguments) -> FakeToolCall:
+    return FakeToolCall(name=name, arguments=arguments)
+
+
+class TestTheToolsAreWiredToTheBenchmarkOverlay:
+    """The two controls that keep the answer key from the agent through its own tools, pinned at the wiring.
+
+    `build_tool_context` filters a probe by the overlay's paths and builds the write guard from the baseline
+    *minus* them. Both depend on `run_task` handing it `verifier.hidden_paths` and the baseline, and both fail
+    OPEN if it does not (nothing is hidden, so nothing is filtered; the guard then knows the hidden file and
+    refuses it, which says it exists). The unit tests cover the functions; only this covers the call.
+    """
+
+    HIDDEN_ID = "checks/check_hidden.py::test_x"
+    COLLECTED = ("tests/test_app.py", "checks/check_visible.py", "checks/check_hidden.py")
+
+    @pytest.fixture
+    def instances(self, tmp_path, source_repo):
+        directory = tmp_path / "instances"
+        directory.mkdir()
+        instance = make_instance(
+            base_commit=sha_of(source_repo, "HEAD"),
+            test_files={"checks/check_hidden.py": "def test_x():\n    assert True\n"},
+            fail_to_pass=(self.HIDDEN_ID,),
+        )
+        dump_instance(instance, directory / f"{instance.instance_id}.json")
+        return directory
+
+    @pytest.fixture
+    async def toolbox_run(self, db_session, db_session_factory, origin_url, instances):
+        task = await seed_task(db_session, instance_id="acme__sample-7", eval_run_id="run-1", run_index=0)
+        baseline = SuiteResult(passed=(VISIBLE_TEST,), failed=(self.HIDDEN_ID,), collected_files=self.COLLECTED)
+        probe = SuiteResult(
+            passed=(VISIBLE_TEST,), failed=(self.HIDDEN_ID,), collected_files=self.COLLECTED, exit_code=1
+        )
+        seen = {}
+
+        async def script(deps):
+            seen["probe"] = await deps.tools.dispatch(tool_call("run_tests", targets=["tests/test_app.py"]))
+            seen["visible"] = await deps.tools.dispatch(
+                tool_call("create_file", path="checks/check_visible.py", content="X = 1\n")
+            )
+            seen["hidden"] = await deps.tools.dispatch(
+                tool_call("create_file", path="checks/check_hidden.py", content="X = 1\n")
+            )
+            return agent_result(StopReason.NO_CHANGE, None)
+
+        await run(
+            db_session_factory, origin_url, task, ScriptedAgent(script),
+            FakeBackend(results=[baseline, probe]), instances_dir=instances, llm=NeverCalledLLM(),
+        )
+        return seen
+
+    async def test_a_probe_that_reports_a_hidden_test_comes_back_without_it(self, toolbox_run):
+        probe = toolbox_run["probe"]
+
+        assert not probe.is_error, probe.content
+        assert "1 passed, 0 failed" in probe.content, "the hidden failure is not counted either"
+        assert "check_hidden" not in probe.content and "test_x" not in probe.content
+
+    async def test_a_baseline_collected_visible_test_file_is_protected(self, toolbox_run):
+        refused = toolbox_run["visible"]
+
+        assert refused.is_error and "read-only" in refused.content
+
+    async def test_a_hidden_collected_file_is_not_refused_so_a_refusal_cannot_say_it_exists(self, toolbox_run):
+        written = toolbox_run["hidden"]
+
+        assert not written.is_error, written.content
+
+
 class TestAnUnusableBaseline:
     async def test_the_agent_is_not_run_and_the_task_completes_with_no_outcome(
         self, db_session, db_session_factory, origin_url
