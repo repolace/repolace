@@ -759,6 +759,41 @@ class TestRealGitPush:
         assert code == 0
         assert run_git_sync("rev-parse", "refs/heads/main", cwd=bare) == sha
 
+    def test_only_the_base_commit_reaches_the_remote_whatever_else_the_upstream_has(self, workdir):
+        """A tag, another branch and later commits upstream must not follow the base commit.
+
+        The later commits include the fix. Pushed, they would put the answer into the
+        benchmark repository the agent works in.
+        """
+        base = make_cached_upstream(workdir["cache"])
+        cache = workdir["cache"] / "psf__requests"
+        run_git_sync("tag", "v1", cwd=cache)
+        run_git_sync("checkout", "-q", "-b", "other", cwd=cache)
+        (cache / "other.txt").write_text("a branch the benchmark must not see\n")
+        run_git_sync("add", "other.txt", cwd=cache)
+        run_git_sync("commit", "-q", "-m", "on another branch", cwd=cache)
+        other = run_git_sync("rev-parse", "HEAD", cwd=cache)
+        run_git_sync("checkout", "-q", "main", cwd=cache)
+        (cache / "README").write_text("the fix\n")
+        run_git_sync("commit", "-q", "-am", "the fix", cwd=cache)
+        fix = run_git_sync("rev-parse", "HEAD", cwd=cache)
+        write_instances(workdir["instances"], make_instance("a", base_commit=base))
+        remote_root = workdir["root"] / "remote"
+        bare = remote_root / "repolace" / "bench-a.git"
+        bare.mkdir(parents=True)
+        run_git_sync("init", "-q", "--bare", "-b", "main", cwd=bare)
+
+        code = main(
+            ["--instances-dir", str(workdir["instances"]), "--cache-dir", str(workdir["cache"])],
+            transport=FakeGithub().transport(), token_reader=lambda: TOKEN, api_url=API, git_url=f"file://{remote_root}",
+        )
+
+        assert code == 0
+        assert run_git_sync("for-each-ref", "--format=%(refname) %(objectname)", cwd=bare) == f"refs/heads/main {base}"
+        assert run_git_sync("rev-list", "--all", cwd=bare) == base, "only the base commit's history, nothing newer"
+        for later in (fix, other):
+            assert subprocess.run(["git", "cat-file", "-e", later], cwd=bare).returncode != 0, "a later commit was pushed"
+
     def test_a_second_push_of_the_same_commit_succeeds(self, workdir):
         sha = make_cached_upstream(workdir["cache"])
         write_instances(workdir["instances"], make_instance("a", base_commit=sha))
