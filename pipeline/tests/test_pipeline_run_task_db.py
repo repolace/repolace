@@ -48,6 +48,7 @@ from pipeline_support import (
     NeverCalledLLM,
     ScriptedAgent,
     agent_result,
+    attempt_record,
     edit,
     git,
     local_workspace_factory,
@@ -754,9 +755,10 @@ class TestNoAgentCausedStopFailsTheTask:
 
         async def script(deps):
             edit(deps, "src/app.py", EDITED_APP)
-            await deps.verify_attempt(1)
-            edit(deps, "src/app.py", APP_SOURCE)  # back to the base content
-            return agent_result(StopReason.SUBMITTED, None, attempts=0)
+            edit(deps, "src/app.py", APP_SOURCE)  # back to the base content before anything is scored
+            record = await deps.verify_attempt(1)
+            assert record is None, "no net change, so nothing to score"
+            return agent_result(StopReason.SUBMITTED, record)
 
         result, github = await run(
             db_session_factory, origin_url, task, ScriptedAgent(script), FakeBackend(results=[BASELINE, AFTER])
@@ -1011,6 +1013,76 @@ class TestATerminalWriteCannotStrandARow:
         assert result.attempts == 2 and row.retry_count == 1
         assert [r.attempt for r in runs] == [0, 1, 2]
         assert row.agent_stop_reason is None, "the agent never returned a reason"
+
+
+class TestTheScorerIsTheTruthAboutWhatWasScored:
+    """The agent's `last_attempt` and `attempts` are claims. The scorer ran the suites and wrote the rows."""
+
+    async def run_liar(self, db_session, db_session_factory, origin_url, report):
+        task = await seed_task(db_session)
+
+        async def script(deps):
+            edit(deps, "src/app.py", EDITED_APP)
+            record = await deps.verify_attempt(1)
+            return report(record)
+
+        result, github = await run(
+            db_session_factory, origin_url, task, ScriptedAgent(script), FakeBackend(results=[BASELINE, AFTER])
+        )
+        row, runs = await reload(db_session_factory, task.id)
+        return result, row, runs, github
+
+    async def test_an_agent_that_drops_the_attempt_it_scored_is_a_harness_error_not_a_silent_failure(
+        self, db_session, db_session_factory, origin_url
+    ):
+        result, row, runs, github = await self.run_liar(
+            db_session, db_session_factory, origin_url, lambda record: agent_result(StopReason.SUBMITTED, None, attempts=1)
+        )
+
+        assert result.status is row.status is TaskStatus.FAILED
+        assert row.error_message.startswith("agent: ") and "scorer recorded 1" in row.error_message
+        assert "last_attempt none" in row.error_message and "attempt 1 at" in row.error_message
+        assert [r.attempt for r in runs] == [0, 1], "the scored attempt is in the database, which is why this is a bug"
+        assert github.pull_requests == [] and row.outcome is None
+
+    async def test_an_agent_that_miscounts_its_attempts_is_a_harness_error(
+        self, db_session, db_session_factory, origin_url
+    ):
+        result, row, _, _ = await self.run_liar(
+            db_session, db_session_factory, origin_url,
+            lambda record: agent_result(StopReason.SUBMITTED, record, attempts=2),
+        )
+
+        assert result.status is row.status is TaskStatus.FAILED
+        assert "reported 2 scored attempt(s)" in row.error_message and "scorer recorded 1" in row.error_message
+
+    async def test_an_agent_that_returns_a_record_the_scorer_never_made_is_a_harness_error(
+        self, db_session, db_session_factory, origin_url
+    ):
+        forged = lambda record: agent_result(StopReason.SUBMITTED, attempt_record(1, "f" * 40))
+        result, row, _, _ = await self.run_liar(db_session, db_session_factory, origin_url, forged)
+
+        assert result.status is row.status is TaskStatus.FAILED
+        assert "last_attempt attempt 1 at ffffffffffff" in row.error_message
+
+    async def test_an_agent_that_returns_a_scored_attempt_with_nothing_scored_is_a_harness_error(
+        self, db_session, db_session_factory, origin_url
+    ):
+        task = await seed_task(db_session)
+
+        async def script(deps):
+            return agent_result(StopReason.SUBMITTED, attempt_record(1, "a" * 40))
+
+        result, _ = await run(db_session_factory, origin_url, task, ScriptedAgent(script), FakeBackend(results=[BASELINE]))
+
+        assert result.status is TaskStatus.FAILED and "scorer recorded 0" in result.error_message
+
+    async def test_an_honest_account_passes(self, db_session, db_session_factory, origin_url):
+        result, row, _, _ = await self.run_liar(
+            db_session, db_session_factory, origin_url, lambda record: agent_result(StopReason.STEP_CAP, record)
+        )
+
+        assert result.status is row.status is TaskStatus.COMPLETED and row.error_message is None
 
 
 class TestRewindToTheLastScoredCommit:

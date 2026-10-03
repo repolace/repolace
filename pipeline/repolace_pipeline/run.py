@@ -467,7 +467,38 @@ async def _run_agent(runner: AgentRunner, deps: AgentDeps, scorer: AttemptScorer
         )
     if not isinstance(result, AgentResult):
         raise TypeError(f"an agent must return an AgentResult, got {type(result).__name__}")
+    _check_against_scorer(result, scorer)
     return result
+
+
+def _check_against_scorer(result: AgentResult, scorer: AttemptScorer) -> None:
+    """Refuse a result that does not say what the scorer recorded.
+
+    `last_attempt` is the only scored state, and the pipeline reads everything from it: it rewinds
+    to its commit, scores its result, opens the PR for it. But the scorer is what actually ran the
+    suites and wrote `task_test_runs`, so it is the truth, and an agent's account of it is a claim.
+    A graph bug that dropped `last_attempt` would otherwise complete as FAILED "no scored attempt"
+    with attempt rows sitting in the database -- a harness error counted as the agent's failure,
+    inside the denominator, with nothing to say it was a bug. So a disagreement is a `StageFailed`,
+    which is what "repolace broke" means, and the message names both sides.
+    """
+    reported, recorded = result.last_attempt, scorer.last_record
+    if reported is None or recorded is None:
+        same_last = reported is None and recorded is None
+    else:
+        same_last = (reported.attempt, reported.commit_sha) == (recorded.attempt, recorded.commit_sha)
+    if result.attempts == scorer.attempts and same_last:
+        return
+
+    def describe(record) -> str:
+        return "none" if record is None else f"attempt {record.attempt} at {record.commit_sha[:12]}"
+
+    raise StageFailed(
+        "agent",
+        f"the agent reported {result.attempts} scored attempt(s) with last_attempt {describe(reported)}, "
+        f"but the scorer recorded {scorer.attempts} with last_attempt {describe(recorded)}; "
+        f"what the agent returned is not what was scored",
+    )
 
 
 def _agent_budget(supplied: TaskBudget | None) -> TaskBudget:
