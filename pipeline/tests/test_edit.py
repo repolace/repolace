@@ -78,6 +78,14 @@ class TestRenderMarker:
 
         assert "Loader.load" in marker
 
+    def test_the_marker_does_not_claim_the_suite_was_skipped(self):
+        """The marker said so truthfully until Verify was wired in, and then went on saying it. The marker is the one
+        part of a stub run a human reads inside the diff, so a stale claim there is the expensive kind."""
+        marker = render_marker(request())
+
+        assert "skipped" not in marker.lower()
+        assert "nothing was scored" not in marker.lower()
+
     def test_no_retrieval_is_a_programming_error_not_a_blank_marker(self):
         """The editor cannot invent a target. run_task guards this earlier too."""
         with pytest.raises(ValueError, match="at least one retrieved chunk"):

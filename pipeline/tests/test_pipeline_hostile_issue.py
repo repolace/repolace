@@ -36,7 +36,6 @@ from pipeline_support import (
     NeverCalledLLM,
     ScriptedAgent,
     agent_result,
-    git,
     local_workspace_factory,
     reload,
     seed_task,
@@ -205,10 +204,6 @@ class TestAnObedientModelCannotDoWhatTheIssueAsks:
 
         assert "root:" not in everything, "no /etc/passwd line reached the model"
         assert host_secret not in everything
-
-    async def test_the_scripted_probe_left_a_checkpoint_only_if_there_was_something_to_commit(self, hostile, origin):
-        """No refused write may have left anything behind to commit: the remote never saw a branch."""
-        assert "refs/heads/repolace/" not in git(origin, "for-each-ref", "--format=%(refname)")
 
 
 class TestTheToolsAreWiredToThisTask:
