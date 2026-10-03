@@ -10,51 +10,79 @@ this script to touch the product repo; here the only thing that does is the name
 check below. So that check is small, central and obviously correct, and a test
 tries to defeat it with every shape of hostile name.
 
-* **Only `bench-[A-Za-z0-9_.-]+` is ever touched** -- create, push, settings,
-  installation changes and delete alike. `check_bench_name` is the one decision;
-  `BenchRepo` cannot be built without passing it; and `_request` refuses any
-  endpoint outside a short allow-list whose repository segment is the same
-  pattern, so a future method that builds a path from a raw string still cannot
-  reach `repolace/repolace`. `fullmatch`, not `$`: `$` also matches before a
-  trailing newline.
+* **Only `bench-<letter or digit>...` names are ever touched** (no `..`, no
+  trailing `.` or `.git`, at most 97 characters: as strict as the instance-id
+  rule) -- create, push, settings, installation changes and delete alike.
+  `check_bench_name` is the one decision; `BenchRepo` cannot be built without
+  passing it; and `_request` refuses any endpoint outside a short allow-list
+  whose repository segment is the same pattern, so a future method that builds a
+  path from a raw string still cannot reach `repolace/repolace`. `fullmatch`, not
+  `$`: `$` also matches before a trailing newline. The push is checked once more
+  where it leaves the process (`check_push_target`): a `repolace/bench-*` URL with
+  no credentials, and exactly one refspec, `<base commit>:refs/heads/main`.
+* **A repository this tool did not create is never adopted and never deleted.**
+  Every repository it creates carries a marker description (`BENCH_MARKER`). A
+  422 "already exists" is followed only if the existing repository is private and
+  carries the marker; otherwise the instance is NOT READY ("exists but was not
+  created by this tool") and nothing is changed on that repository. `--delete`
+  looks each repository up again immediately before its DELETE and refuses one
+  without the marker, because a listing in `bench_repos.toml` is a claim made
+  earlier.
 * **Each repository is created private, with issues and wiki off, and Actions
   are disabled before anything is pushed.** An agent-authored workflow on a PR
   (or a workflow already in the upstream tree, run by the push of the base
   commit) would otherwise run with that repository's own token. If disabling
-  Actions fails the repository is **not ready**: it is not recorded in
-  `bench_repos.toml` and the failure is reported.
+  Actions (or any later step) fails the repository is **not ready**: it is
+  recorded in `bench_repos.toml` as `status = "incomplete"`, which `--delete` can
+  list and remove and nothing else may use.
 * **The token is read from `REPOLACE_BENCH_GITHUB_TOKEN`, here and nowhere
   else.** It is never logged, never in argv, never in an exception message
-  (`_scrub` removes the literal value and anything shaped like a credential), and
-  never given to the pipeline: `runner` strips the variable from the children it
-  starts. Git authenticates through the per-command credential helper that
-  `repolace_shared.git.repo` already defines -- the token travels in an
-  environment variable the helper reads, and only for `https` + the expected host.
-  The base URLs are keyword arguments of `main`, not flags, so nothing on the
-  command line can redirect the token to another host.
+  (`_scrub` removes the literal value, before any truncation, and anything shaped
+  like a credential), and never given to the pipeline: `runner` builds its
+  children's environment from an allowlist that excludes it. Git authenticates
+  through the per-command credential helper that `repolace_shared.git.repo`
+  already defines -- the token travels in an environment variable the helper
+  reads, and only for `https` + the expected host. The upstream clone carries no
+  credential at all and is made with `--no-checkout`. The base URLs are keyword
+  arguments of `main`, not flags, so nothing on the command line can redirect the
+  token to another host. No parser here accepts an abbreviated option
+  (`allow_abbrev=False`): `fork --de --y` must not mean `--delete --yes`.
 * **`--delete` removes only repositories listed in `bench_repos.toml`**, and the
   file is validated on read: an entry that is not exactly
   `repolace/bench-<instance_id>` is an error, so a hand-edited file cannot point
-  `--delete` (or `enqueue`) at another repository.
+  `--delete` (or `enqueue`) at another repository. Without `--yes` it only lists.
 
-**Token scopes (minimal; check GitHub's current documentation).** A classic
-personal access token with `repo` covers creating private repositories in the
-organisation (you must be a member who may create repositories), pushing, and
-`PUT .../actions/permissions`. `--delete` additionally needs `delete_repo`.
-`--add-to-installation` calls `PUT /user/installations/{id}/repositories/{id}`,
-which needs the authenticated user to have admin access to the repository (an
-organisation owner has). The token can reach every repository its user can,
-including `repolace/repolace` -- that is exactly why the guards above exist and
-why you should **set the shortest expiry that covers the run and revoke the token
-as soon as it is done.**
+**Operating it safely** (scope details below are marked "confirm against GitHub's
+current documentation"; they are as understood when this was written).
 
-`--add-to-installation` is off by default. Whether the App is installed on "all
-repositories" or on "selected repositories" is the maintainer's choice at a later
-checkpoint; with "selected" this flag is what makes each `bench-*` repository
-visible to the App without widening its access to the product repo.
+* **Never put `REPOLACE_BENCH_GITHUB_TOKEN` in `.env`.** `infra/docker-compose.yml`
+  gives the `api` service `env_file: ../.env`, so a token there would land in the
+  environment of an internet-facing container. Set it inline for the one command:
+  `REPOLACE_BENCH_GITHUB_TOKEN=... uv run repolace-eval fork`.
+* **Use a dedicated bot account**, a plain member of the organisation (organisation
+  base permission "None", in no team that reaches `repolace/repolace`), and a
+  *classic* personal access token from it with `repo`, a 7-day expiry, and
+  `delete_repo` only for the cleanup run; revoke it afterwards. Confirm against
+  GitHub's current documentation: a fine-grained token cannot be restricted to
+  repositories that do not exist yet, so creating repositories with one needs "All
+  repositories" access, which includes the product repository. Even a bot token
+  reaches whatever its account can reach, which is why the guards above exist.
+* **`--add-to-installation` is off by default and needs more than the bot has**:
+  `PUT /user/installations/{id}/repositories/{id}` needs the authenticated user to
+  have admin access to the repository and to be allowed to manage the installation
+  (an organisation owner or installation manager), and may accept classic tokens
+  only (confirm against GitHub's current documentation). Do that one step in the
+  GitHub UI or with an owner's token for that single call. Install the App on
+  "selected repositories" so `repolace/repolace` is not widened.
+* **Pushing commits that add or change `.github/workflows/*` probably needs the
+  `workflow` scope** on the token (confirm against GitHub's current
+  documentation). Run `fork --instances <one id>` first for an instance whose base
+  commit has workflows, see whether the push is refused, and only then decide to
+  add the scope.
 
 Exit codes: 0 every repository ready; 1 at least one is not ready or a call
-failed; 2 bad invocation (no token, unreadable instances, unlisted delete).
+failed; 2 bad invocation (no token, unreadable instances, unlisted delete,
+`--delete` without `--yes`).
 """
 
 from __future__ import annotations

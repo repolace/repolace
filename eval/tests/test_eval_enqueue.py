@@ -17,7 +17,7 @@ import pytest
 from sqlalchemy import func, select
 
 from eval_exec_support import add_repo, make_instance, run_git_sync, write_instances
-from harness.bench_repos import load_bench_repos
+from harness.bench_repos import load_bench_entries, load_bench_repos
 from harness.enqueue import (
     DEFAULT_WALL_CLOCK_SECONDS,
     EnqueueError,
@@ -665,7 +665,9 @@ class TestCommandLine:
 
     def test_the_example_mapping_shipped_with_the_tool_loads(self):
         example = Path(__file__).resolve().parents[1] / "instances" / "bench_repos.example.toml"
-        assert load_bench_repos(example)
+        entries = load_bench_entries(example)
+        assert {e.status for e in entries.values()} == {"ready", "incomplete"}
+        assert set(load_bench_repos(example)) == {i for i, e in entries.items() if e.status == "ready"}
 
     def test_the_defaults_are_three_runs_and_no_pr_on_failure(self):
         args = build_parser().parse_args(["--eval-run-id", "r"])
