@@ -24,9 +24,11 @@ from eval_support import (
     write_instance,
 )
 from harness import retrieval_eval as re_
-from harness.metrics import Span
+from harness.metrics import QueryMetrics, Span
 from harness.retrieval_eval import (
+    BASELINE_CELL,
     DEFAULT_MAX_INDEX_EQUIVALENTS,
+    DEFAULT_MIN_GAIN_PP,
     EVAL_INSTALLATION_ID,
     STRATEGIES,
     EvalRun,
@@ -44,6 +46,7 @@ from harness.retrieval_eval import (
     gold_targets,
     load_eval_instances,
     open_git_source,
+    paired_deltas,
     plan_repo,
     run_eval,
     summarize,
@@ -708,8 +711,8 @@ class TestReporting:
     def test_markdown_states_the_plan_the_skip_and_the_unscored_queries(self):
         text = to_markdown(self.run_with_results())
         assert "| pallets/flask | 1 | 900 | too big |" in text
-        assert "| truncate / truncate | 2/3 | 50.0% |" in text
-        assert "| head_tail / truncate | 2/3 | 100.0% |" in text
+        assert "| truncate / truncate | 2 / 2 of 3 | 50.0% |" in text
+        assert "| head_tail / truncate | 2 / 2 of 3 | 100.0% |" in text
         assert "never scored as misses" not in text  # no skipped instances in this run
 
     def test_json_carries_the_same_numbers(self):
@@ -718,13 +721,121 @@ class TestReporting:
         assert document["plans"][1]["skip_reason"] == "too big"
 
 
+def metrics_with(chunk_rr, file_rr=0.5) -> QueryMetrics:
+    return QueryMetrics(
+        file_recall={5: None if file_rr is None else 1.0, 10: None if file_rr is None else 1.0, 20: None if file_rr is None else 1.0},
+        chunk_recall={5: None if chunk_rr is None else 1.0, 10: None if chunk_rr is None else 1.0, 20: None if chunk_rr is None else 1.0},
+        file_rr=file_rr, chunk_rr=chunk_rr,
+    )
+
+
+def grid_run(cells: dict[tuple[str, str], list[float | None]], *, file_rr: float | None = 0.5) -> EvalRun:
+    """A run whose per-instance chunk MRR in each cell is given (instance i gets the i-th value)."""
+    from harness.retrieval_eval import InstanceResult
+
+    run = EvalRun(("truncate", "head_tail"), ("truncate", "head_tail"), plans=[RepoPlan("psf/requests", 10, 40)])
+    for (strategy, query_strategy), values in cells.items():
+        for i, value in enumerate(values):
+            run.results.append(InstanceResult("psf/requests", strategy, query_strategy, f"inst-{i}", metrics_with(value, file_rr), 7))
+    return run
+
+
+class TestStrategyGrid:
+    """Eight cells on a handful of queries invite a winner's curse; every comparison is paired and has an interval."""
+
+    BASE = [0.5, 0.25, 1.0, 0.5, 0.25, 1.0, 0.5, 0.25, 1.0, 0.5]
+
+    def run(self, other):
+        return grid_run({BASELINE_CELL: self.BASE, ("head_tail", "truncate"): other})
+
+    def test_a_consistent_large_gain_meets_the_rule(self):
+        better = [min(1.0, v + 0.3) for v in self.BASE]
+        better[2] = 0.9  # not every instance gains equally
+        deltas = {d.metric: d for d in paired_deltas(self.run(better))}
+        primary = deltas["chunk MRR"]
+        assert primary.paired == 10 and primary.mean_pp > 20 and primary.low_pp > 0
+        assert primary.meets_rule(DEFAULT_MIN_GAIN_PP)
+
+    def test_a_noisy_gain_whose_interval_includes_zero_does_not_meet_the_rule(self):
+        # Mean +10 pp, but two big wins and two big losses among ten near-ties.
+        other = [v for v in self.BASE]
+        other[0], other[1], other[2], other[3] = other[0] + 0.5, other[1] + 0.75, other[2] - 0.5, other[3] - 0.0
+        other = [min(1.0, max(0.0, v)) for v in other]
+        primary = {d.metric: d for d in paired_deltas(self.run(other))}["chunk MRR"]
+        assert primary.low_pp is not None and primary.low_pp <= 0
+        assert not primary.meets_rule(0.0)
+
+    def test_a_gain_below_the_threshold_does_not_meet_it_even_when_every_instance_gains(self):
+        other = [v + 0.02 if v < 0.98 else v for v in self.BASE]
+        primary = {d.metric: d for d in paired_deltas(self.run(other))}["chunk MRR"]
+        assert primary.low_pp > 0 and primary.mean_pp < DEFAULT_MIN_GAIN_PP
+        assert not primary.meets_rule(DEFAULT_MIN_GAIN_PP) and primary.meets_rule(1.0)
+
+    def test_the_threshold_is_a_flag_with_a_documented_default(self):
+        assert DEFAULT_MIN_GAIN_PP == 10.0
+        assert re_._parser().parse_args(["--min-gain-pp", "5"]).min_gain_pp == 5.0
+
+    def test_only_instances_scored_in_both_cells_are_paired(self):
+        base = list(self.BASE)
+        other = list(self.BASE)
+        other[0], base[1] = None, None  # one cell could not score each of two instances
+        run = grid_run({BASELINE_CELL: base, ("head_tail", "truncate"): other})
+        primary = {d.metric: d for d in paired_deltas(run)}["chunk MRR"]
+        assert primary.paired == 8
+
+    def test_the_baseline_itself_is_not_compared_and_each_other_cell_has_each_metric(self):
+        run = grid_run({BASELINE_CELL: self.BASE, ("head_tail", "truncate"): self.BASE, ("windows", "head_tail"): self.BASE})
+        deltas = paired_deltas(run)
+        assert {(d.strategy, d.query_strategy) for d in deltas} == {("head_tail", "truncate"), ("windows", "head_tail")}
+        assert {d.metric for d in deltas} == {"chunk MRR", "file MRR"}
+
+    def test_an_identical_cell_has_a_zero_delta_and_does_not_meet_the_rule(self):
+        primary = {d.metric: d for d in paired_deltas(self.run(list(self.BASE)))}["chunk MRR"]
+        assert primary.mean_pp == 0.0 and not primary.meets_rule(0.0)
+
+    def test_one_paired_instance_has_a_delta_and_no_interval(self):
+        run = grid_run({BASELINE_CELL: [0.5], ("head_tail", "truncate"): [1.0]})
+        primary = {d.metric: d for d in paired_deltas(run)}["chunk MRR"]
+        assert primary.mean_pp == 50.0 and primary.low_pp is None and not primary.meets_rule(10.0)
+
+    def test_without_a_baseline_cell_there_is_nothing_to_pair(self):
+        assert paired_deltas(grid_run({("head_tail", "truncate"): self.BASE})) == []
+
+    def test_the_markdown_states_the_primary_metric_the_rule_and_the_number_of_comparisons(self):
+        run = grid_run({BASELINE_CELL: self.BASE, ("head_tail", "truncate"): self.BASE, ("windows", "truncate"): self.BASE})
+        text = to_markdown(run, min_gain_pp=12.5)
+        assert "## Reading the grid" in text and "Primary metric: chunk MRR." in text
+        assert "only if its paired chunk MRR gain is at least 12.5 percentage points with the 95% interval over instances excluding 0" in text
+        assert "This is one of 2 comparisons, on the same instances the agent is benchmarked on" in text
+        assert "| head_tail / truncate | 10 | +0.0 pp [+0.0, +0.0] (n = 10) | no |" in text
+
+    def test_the_markdown_without_a_baseline_says_so(self):
+        text = to_markdown(grid_run({("head_tail", "truncate"): self.BASE}))
+        assert "No truncate / truncate cell in this run" in text
+
+    def test_scored_counts_are_per_metric_kind(self):
+        # File metrics scored 10 of 10 queries; chunk metrics scored only 7 (3 had no reachable hunk).
+        run = grid_run({BASELINE_CELL: [0.5] * 7 + [None] * 3})
+        text = to_markdown(run)
+        assert "| truncate / truncate | 10 / 7 of 10 |" in text
+
+    def test_the_tie_order_caveat_is_stated(self):
+        text = to_markdown(grid_run({BASELINE_CELL: self.BASE}))
+        assert "breaks score ties by chunk id (a UUID)" in text and "not stable between runs" in text
+
+
 class TestCommandLine:
     def test_help_exits_zero(self, capsys):
         assert re_.main(["--help"]) == 0
-        assert "--max-index-equivalents" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "--max-index-equivalents" in out and "--min-gain-pp" in out
 
     def test_a_bad_flag_is_a_usage_error(self):
         assert re_.main(["--nope"]) == 2
+
+    def test_a_negative_switch_threshold_is_a_usage_error(self, capsys):
+        assert re_.main(["--min-gain-pp", "-1"]) == 2
+        assert "must not be negative" in capsys.readouterr().err
 
     def test_a_missing_cache_is_a_clean_failure(self, tmp_path, capsys, monkeypatch):
         monkeypatch.setattr(re_, "load_retrieval_api", lambda: FakeApi().api())
