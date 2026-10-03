@@ -1,16 +1,22 @@
 """`harness.metrics`: recall@k, MRR and hunk-to-chunk overlap, pure arithmetic."""
 
+import random
+
 import pytest
 
 from harness.metrics import (
+    BOOTSTRAP_RESAMPLES,
+    BOOTSTRAP_SEED,
     Span,
     aggregate_metrics,
     chunk_recall_at_k,
     chunk_reciprocal_rank,
+    cluster_bootstrap_interval,
     distinct_in_order,
     file_recall_at_k,
     file_reciprocal_rank,
     mean_of,
+    percentile,
     score_query,
     spans_overlap,
 )
@@ -158,3 +164,83 @@ class TestAggregation:
     def test_aggregating_nothing(self):
         report = aggregate_metrics([], ks=(5,))
         assert report.queries == 0 and report.file_recall[5].mean is None and report.file_mrr.mean is None
+
+
+class TestClusterBootstrap:
+    """The interval is over INSTANCES: the runs of one instance are not independent trials."""
+
+    #: 20 instances, 3 runs each: 7 always pass, 5 sometimes, 8 never. 28 of 60.
+    PASSES = [3] * 7 + [1, 1, 2, 2, 1] + [0] * 8
+    RUNS = [3] * 20
+
+    def test_the_documented_defaults(self):
+        assert (BOOTSTRAP_SEED, BOOTSTRAP_RESAMPLES) == (0, 10_000)
+
+    def test_it_is_deterministic_for_a_seed_and_varies_with_it(self):
+        first = cluster_bootstrap_interval(self.PASSES, self.RUNS, resamples=500)
+        assert first == cluster_bootstrap_interval(self.PASSES, self.RUNS, resamples=500)
+        assert first != cluster_bootstrap_interval(self.PASSES, self.RUNS, resamples=500, seed=1)
+
+    def test_it_contains_the_point_estimate_and_is_about_thirty_to_forty_points_wide_at_n_20(self):
+        low, high = cluster_bootstrap_interval(self.PASSES, self.RUNS)
+        assert low < 28 / 60 < high
+        assert 0.30 < high - low < 0.46
+
+    def test_it_is_wider_than_an_interval_that_treats_sixty_runs_as_independent(self):
+        # Wilson on 28/60 is about 24.5 points wide; the instance-level interval is not.
+        low, high = cluster_bootstrap_interval(self.PASSES, self.RUNS)
+        assert (high - low) > 0.30
+
+    def test_unanimous_data_has_no_width(self):
+        assert cluster_bootstrap_interval([3, 3, 3], [3, 3, 3]) == (1.0, 1.0)
+        assert cluster_bootstrap_interval([0, 0, 0], [3, 3, 3]) == (0.0, 0.0)
+
+    def test_with_unequal_denominators_the_statistic_is_the_pooled_ratio(self):
+        # Two clusters: (1 of 1) and (0 of 9). A resample is both, or either twice:
+        # 1/10, 2/2 = 1.0, or 0/18 = 0.0.
+        low, high = cluster_bootstrap_interval([1, 0], [1, 9], resamples=2000)
+        assert (low, high) == (0.0, 1.0)
+
+    def test_one_instance_has_no_interval(self):
+        assert cluster_bootstrap_interval([2], [3]) is None
+        assert cluster_bootstrap_interval([], []) is None
+
+    def test_a_narrower_confidence_gives_a_narrower_interval(self):
+        wide = cluster_bootstrap_interval(self.PASSES, self.RUNS, resamples=2000)
+        narrow = cluster_bootstrap_interval(self.PASSES, self.RUNS, resamples=2000, confidence=0.5)
+        assert narrow[1] - narrow[0] < wide[1] - wide[0]
+
+    def test_refusals(self):
+        with pytest.raises(ValueError, match="2 numerators but 1 denominators"):
+            cluster_bootstrap_interval([1, 2], [3])
+        with pytest.raises(ValueError, match="positive denominator"):
+            cluster_bootstrap_interval([1, 2], [3, 0])
+        with pytest.raises(ValueError, match="confidence"):
+            cluster_bootstrap_interval([1, 2], [3, 3], confidence=1.0)
+        with pytest.raises(ValueError, match="resamples"):
+            cluster_bootstrap_interval([1, 2], [3, 3], resamples=0)
+
+    def test_it_covers_the_truth_in_a_seeded_monte_carlo(self):
+        # Latent per-instance pass probabilities with strong within-instance correlation
+        # (Beta(0.15, 0.15): most instances nearly always pass or nearly always fail),
+        # true mean 0.5, 20 instances x 3 runs. The instance-level interval should cover
+        # the truth close to its nominal rate; the audit measured ~84% or worse for an
+        # interval over the 60 pooled rows. Loose band: this is a smoke test of the
+        # clustering, not a calibration study.
+        rng = random.Random(11)
+        covered = 0
+        reps = 200
+        for _ in range(reps):
+            probabilities = [rng.betavariate(0.15, 0.15) for _ in range(20)]
+            passes = [sum(rng.random() < p for _ in range(3)) for p in probabilities]
+            interval = cluster_bootstrap_interval(passes, [3] * 20, resamples=400, seed=rng.randrange(10**6))
+            covered += interval[0] <= 0.5 <= interval[1]
+        assert 0.80 <= covered / reps <= 1.0
+
+
+class TestPercentileLivesHere:
+    def test_the_report_still_exports_it(self):
+        from harness.report import percentile as reexported
+
+        assert reexported is percentile
+        assert percentile([1.0, 2.0], 95) == pytest.approx(1.95)

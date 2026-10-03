@@ -23,6 +23,8 @@ which overlap by construction, each count as a separate find.
 
 from __future__ import annotations
 
+import math
+import random
 from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 
@@ -174,3 +176,76 @@ def aggregate_metrics(results: Sequence[QueryMetrics], ks: Sequence[int] = DEFAU
         file_mrr=mean_of(r.file_rr for r in results),
         chunk_mrr=mean_of(r.chunk_rr for r in results),
     )
+
+
+# --- uncertainty -------------------------------------------------------------
+
+#: Fixed and documented so a report can be regenerated to the digit. A seed is a
+#: degree of freedom only if it is chosen after seeing the data; this one is not.
+BOOTSTRAP_SEED = 0
+BOOTSTRAP_RESAMPLES = 10_000
+CONFIDENCE = 0.95
+
+
+def percentile(values: Sequence[float], q: float) -> float | None:
+    """The `q`th percentile by linear interpolation between closest ranks.
+
+    Rank `q/100 * (n - 1)` over the sorted values (the numpy default), so one
+    value is its own percentile at any `q`, and p95 of two values sits 95% of the
+    way from the smaller to the larger.
+    """
+    if not 0 <= q <= 100:
+        raise ValueError(f"q must be between 0 and 100, got {q}")
+    if not values:
+        return None
+    ordered = sorted(values)
+    position = q / 100 * (len(ordered) - 1)
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return ordered[lower]
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
+
+
+def cluster_bootstrap_interval(
+    numerators: Sequence[float],
+    denominators: Sequence[float],
+    *,
+    seed: int = BOOTSTRAP_SEED,
+    resamples: int = BOOTSTRAP_RESAMPLES,
+    confidence: float = CONFIDENCE,
+) -> tuple[float, float] | None:
+    """A percentile bootstrap interval for `sum(numerators) / sum(denominators)`, resampling CLUSTERS.
+
+    A cluster is one instance: its `numerator` is its passes and its `denominator`
+    its runs. Resampling instances, not pooled rows, is the point: the runs of one
+    instance are not independent (an instance a model can fix, it mostly fixes every
+    time), so an interval over the pooled rows treats three runs of twenty
+    instances as sixty independent trials and is far too narrow. With equal
+    denominators the statistic is the mean of the per-instance rates; with unequal
+    ones it is the pooled ratio, which is what the headline reports.
+
+    `None` below two clusters, where a resample can only reproduce the data.
+    Deterministic for a given seed. The statistic of a resample whose denominators
+    sum to zero is undefined, so denominators must be positive.
+    """
+    if len(numerators) != len(denominators):
+        raise ValueError(f"{len(numerators)} numerators but {len(denominators)} denominators")
+    if any(d <= 0 for d in denominators):
+        raise ValueError("every cluster needs a positive denominator")
+    if not 0 < confidence < 1:
+        raise ValueError(f"confidence must be between 0 and 1, got {confidence}")
+    if resamples < 1:
+        raise ValueError(f"resamples must be at least 1, got {resamples}")
+    n = len(numerators)
+    if n < 2:
+        return None
+    rng = random.Random(seed)
+    statistics_: list[float] = []
+    for _ in range(resamples):
+        picks = rng.choices(range(n), k=n)
+        statistics_.append(sum(numerators[i] for i in picks) / sum(denominators[i] for i in picks))
+    tail = (1 - confidence) / 2 * 100
+    low, high = percentile(statistics_, tail), percentile(statistics_, 100 - tail)
+    assert low is not None and high is not None
+    return low, high
