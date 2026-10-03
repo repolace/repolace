@@ -25,7 +25,7 @@ from repolace_gateway.budget import BudgetExceeded, BudgetLimit, TaskBudget, cur
 from repolace_gateway.errors import LLMCallError, UnpricedModelError
 from repolace_gateway.recorder import CallRecord, Recorder
 from repolace_gateway.redaction import Redactor
-from repolace_shared.db.models import TaskOutcome, TaskStatus
+from repolace_shared.db.models import RegisteredRepo, TaskOutcome, TaskStatus
 from repolace_shared.git import agent_branch_name, task_workspace
 from repolace_shared.instances import dump_instance
 from retrieval.index import _repo_lock_key
@@ -301,6 +301,33 @@ class TestAPrIsOpened:
         assert "Refs #7" in pull["body"]
         assert not re.search(r"(?i)(fixes|closes|resolves)\s+#", pull["body"])
 
+    async def test_the_pr_reports_the_counts_after_the_change_not_the_baseline_twice(
+        self, db_session, db_session_factory, origin_url
+    ):
+        task = await seed_task(db_session)
+        after = SuiteResult(passed=(VISIBLE_TEST, "tests/test_app.py::test_new"), collected_files=("tests/test_app.py",))
+
+        _, github = await run(
+            db_session_factory, origin_url, task, agent_that(StopReason.SUBMITTED), FakeBackend(results=[BASELINE, after])
+        )
+
+        body = github.pull_requests[0]["body"]
+        assert "Before the change: 1 passed, 0 failed" in body
+        assert "After the change: 2 passed, 0 failed" in body
+
+    async def test_the_installation_token_is_asked_for_at_the_clone_and_again_at_the_push(
+        self, db_session, db_session_factory, origin_url
+    ):
+        """A local remote never asks for credentials, so only the provider being called proves it was wired: once to
+        clone and once more to push, because a token minted at the start may be dead by then."""
+        task = await seed_task(db_session)
+
+        _, github = await run(
+            db_session_factory, origin_url, task, agent_that(StopReason.SUBMITTED), FakeBackend(results=[BASELINE, AFTER])
+        )
+
+        assert github.token_requests >= 2
+
     async def test_the_squashed_commit_message_carries_no_summary_and_no_outcome(
         self, db_session, db_session_factory, origin_url, origin
     ):
@@ -410,6 +437,7 @@ class TestBenchmarkMode:
             assert not re.search(r"#\d", text_), text_
             assert "Refs" not in text_ and "http" not in text_, text_
         assert pull["title"] == "[repolace] SWE-bench instance acme__sample-7"
+        assert "Curated fail-to-pass tests passing: 1 of 1." in pull["body"], "the instance's list reached the PR text"
 
     async def test_a_curated_list_changes_the_reason_text(self, db_session, db_session_factory, origin_url, instances):
         """With the instance's fail-to-pass list the PASSED reason says how many expected tests pass; without it the
@@ -798,6 +826,24 @@ class TestNoAgentCausedStopFailsTheTask:
         assert "no net change" in result.pr_gate_reason
         assert row.changed_files == ["src/app.py"], "the change the agent made is still recorded"
 
+    @pytest.mark.parametrize(
+        ("limit", "reason"),
+        [(BudgetLimit.USD, "budget_usd"), (BudgetLimit.CALLS, "budget_calls"), (BudgetLimit.WALL_TIME, "budget_wall")],
+    )
+    async def test_each_budget_limit_maps_to_its_own_stop_reason(
+        self, db_session, db_session_factory, origin_url, limit, reason
+    ):
+        task = await seed_task(db_session)
+
+        async def script(deps):
+            raise BudgetExceeded(limit, spent_usd=Decimal("2.5"), calls=9, elapsed_seconds=3.0)
+
+        result, _ = await run(db_session_factory, origin_url, task, ScriptedAgent(script), FakeBackend(results=[BASELINE]))
+
+        row, _ = await reload(db_session_factory, task.id)
+        assert result.status is TaskStatus.COMPLETED and row.error_message is None
+        assert row.agent_stop_reason == reason and result.stop_reason == reason
+
     async def test_an_agent_that_lets_a_budget_exception_escape_still_completes(
         self, db_session, db_session_factory, origin_url
     ):
@@ -1083,6 +1129,49 @@ class TestTheScorerIsTheTruthAboutWhatWasScored:
         )
 
         assert result.status is row.status is TaskStatus.COMPLETED and row.error_message is None
+
+
+class TestWhatTheAgentIsHandedWorks:
+    """Wiring a spy cannot reach through a type check: each of these fails if the pipeline hands the agent
+    a function that does nothing, or one configured for the wrong strategy."""
+
+    async def test_changed_files_is_the_live_diff_against_the_base(self, db_session, db_session_factory, origin_url):
+        task = await seed_task(db_session)
+        seen = {}
+
+        async def script(deps):
+            seen["before"] = await deps.changed_files()
+            edit(deps, "src/app.py", EDITED_APP)
+            record = await deps.verify_attempt(1)
+            seen["after"] = await deps.changed_files()
+            return agent_result(StopReason.STEP_CAP, record)
+
+        await run(db_session_factory, origin_url, task, ScriptedAgent(script), FakeBackend(results=[BASELINE, AFTER]))
+
+        assert seen == {"before": [], "after": ["src/app.py"]}
+
+    async def test_the_configured_strategy_is_used_to_index_to_retrieve_and_to_search(
+        self, db_session, db_session_factory, origin_url, embedder
+    ):
+        """A non-default strategy, so a hard-coded `truncate` anywhere shows as a second strategy in the embedder."""
+        task = await seed_task(db_session)
+
+        async def script(deps):
+            await deps.tools.dispatch(tool_call("search_code", query="parse_config"))
+            return agent_result(StopReason.NO_CHANGE, None)
+
+        result, _ = await run(
+            db_session_factory, origin_url, task, ScriptedAgent(script), FakeBackend(results=[BASELINE]),
+            llm=NeverCalledLLM(), embedding_strategy="head_tail",
+        )
+
+        assert result.error_message is None
+        assert embedder.query_calls, "the retrieve stage and the search tool both embedded a query"
+        assert embedder.strategies_used == {"head_tail"}, embedder.strategies_used
+        assert len(embedder.query_calls) >= 2, "one from retrieval and one from the agent's search tool"
+        async with db_session_factory() as session:
+            repo = await session.get(RegisteredRepo, task.repo_id)
+        assert repo.index_strategy == "head_tail"
 
 
 class TestRewindToTheLastScoredCommit:
