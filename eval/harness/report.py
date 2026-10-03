@@ -1,44 +1,49 @@
-"""The benchmark report: DB rows in, the headline number and everything it excludes out.
+"""The benchmark report: DB rows and run manifests in, the headline number and everything around it out.
 
-Reads the database only, so a finished sweep can be rescored or re-sliced without
-running anything. `aggregate` is pure; `load_rows` is the one place that touches
-SQL. **The accounting below is the claim**, so it is written down once, here, and
-the Markdown repeats it next to the number.
+Reads the database (and the run manifests) only, so a finished sweep can be rescored
+or re-sliced without running anything. `aggregate` is pure; `load_rows` is the one
+place that touches SQL. **The accounting below is the claim**, so it is written down
+once, here, and the Markdown repeats it next to the number.
+
+**The headline is `passed / planned`, per run.** The denominator is the grid the run
+planned -- its manifest's `instance_ids x range(runs_per_instance)` -- and every
+planned row that is not a pass is a non-pass, whatever the reason: a failure, a
+`passed_with_test_edit` (never a pass, approved or not), a harness error, an
+inadmissible row. Excluding rows after seeing the results is what a skeptical reviewer
+calls cherry-picking, so the headline does not. The figure that does exclude them,
+`passed / admissible`, is printed as a labelled SECONDARY, with the exclusions listed.
+
+**The grid is checked against the database, not the other way round.** A planned row
+that does not exist, or is still queued or running, WITHHOLDS the headline ("headline
+withheld: N of M planned rows missing/unfinished", with the list) unless
+`--allow-partial`, in which case the figure itself carries `PARTIAL (n of m)`. A run
+with no manifest has no grid to check; its headline is computed over the rows that
+exist and carries `UNANCHORED`.
 
 **Every finished agent row lands in exactly one bucket**, decided by `classify` in
 this order (first match wins):
 
-1. `unfinished` -- status `queued`/`running`. In no rate, and flagged: a half-done
-   sweep must not read as a row of failures, nor as nothing at all.
-2. `harness_error` -- status `failed` (repolace itself broke), and only that. A
-   stop reason of `llm_error` is **not** a harness error: the agent loop reports it
-   for non-transient model errors too (a context-window overflow, an unparseable
+1. `unfinished` -- status `queued`/`running`.
+2. `harness_error` -- status `failed` (repolace itself broke), and only that. A stop
+   reason of `llm_error` is **not** a harness error: the agent loop reports it for
+   non-transient model errors too (a context-window overflow, an unparseable
    replayed tool call), which depend on how hard the instance is and how large the
    model's context is, and the scorer already gives such a task an outcome ("no
    scored attempt" is FAILED). Such a row is counted by that outcome, and shown in
    its own `llm_error` column so the reader can see how many there were.
 3. `inadmissible` -- finished, no harness error, `outcome` NULL: the instrument
-   could not score it (`score()` returned inadmissible). Excluded, listed with the
-   reason, never a failure.
+   could not score it (`score()` returned inadmissible). Listed with the reason.
 4. `passed_with_test_edit` -- scored, but the diff touched tests. **Never counted
-   as passed.** It stays in the *denominator* of the headline, as a non-pass: it is
-   an agent result, and dropping it from the denominator would remove exactly the
-   instances where the agent leaned on the loophole, flattering the rate.
+   as passed**, and a non-pass in every denominator.
 5. `passed` / `failed`.
 
-**Two rates, both stated, each the mean over runs with the min-max spread over
-`run_index`:**
-
-* `passed / admissible`, `admissible = passed + failed + passed_with_test_edit`:
-  the headline. Excludes harness errors and inadmissible rows.
-* `passed / total`, `total = admissible + inadmissible + harness_error` (every
-  finished row): the pessimistic bound, in which nothing is excluded. If the two
-  differ a lot, the exclusions are doing the work, and that is visible.
-
-Per-run rates are computed first (one per `run_index`, over that run's rows) and
-then averaged, so the spread is run-to-run noise at the instance set's size. It is
-**not** a confidence interval: with N instances one instance moves the rate by 1/N,
-and that sampling uncertainty is not in the spread.
+**The interval is over instances.** Per-instance pass rate is passes over that
+instance's planned runs; a percentile bootstrap (seed and resample count are fixed
+constants in `harness.metrics`) resamples INSTANCES, because the runs of one instance
+are not independent -- an instance a model can fix it mostly fixes every time, so an
+interval over the pooled rows is far too narrow. The per-run table and its min-max
+range are the run-to-run spread with the instances held fixed, and are labelled as
+not an interval.
 
 Gold-validation rows (`eval_run_id` starting `gold-`) are reported separately and
 are in none of the above.
@@ -62,7 +67,14 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from harness.metrics import percentile
+from harness.metrics import (
+    BOOTSTRAP_RESAMPLES,
+    BOOTSTRAP_SEED,
+    CONFIDENCE,
+    cluster_bootstrap_interval,
+    percentile,
+)
+from harness.run_manifest import ManifestError, RunManifest, load_manifest, manifest_path
 from repolace_shared.db.models import LLMCall, Task, TaskOutcome, TaskStatus, TaskTestRun
 from repolace_shared.instances import InstanceError, InstanceSpec, load_instances
 
@@ -95,8 +107,10 @@ SUBSET_CAVEAT = (
     "the predictions export."
 )
 SMALL_N_CAVEAT = (
-    "With N instances one instance moves a rate by 1/N. The min-max spread is run-to-run variation "
-    "only; it does not capture the uncertainty from having sampled N instances."
+    "At N = 15 to 20 instances the 95% interval is about 30 to 40 percentage points wide (a Wilson interval at "
+    "p = 0.5 is 30-75% for N = 15 and 30-70% for N = 20), and one instance moves the rate by 1/N. The "
+    "run-to-run range is the spread of the run rates with the instances held fixed. It is not an interval and "
+    "does not capture the uncertainty from having sampled N instances."
 )
 
 
@@ -185,92 +199,202 @@ def describe(values: Sequence[float]) -> Stats:
     )
 
 
-# --- rates -------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class RunRate:
-    run_index: int
-    numerator: int
-    denominator: int
-    #: None when the run had no rows in the denominator.
-    rate: float | None
-
-
-@dataclass(frozen=True)
-class RateSummary:
-    #: Pooled over runs, for the reader checking the arithmetic; the headline is `mean`.
-    numerator: int
-    denominator: int
-    #: Mean of the per-run rates (runs with an empty denominator are left out).
-    mean: float | None
-    minimum: float | None
-    maximum: float | None
-    runs: tuple[RunRate, ...]
+# --- groups and the headline -------------------------------------------------
 
 
 @dataclass(frozen=True)
 class GroupSummary:
+    """Descriptive counts for one set of rows. Never the headline."""
+
     rows: int
     instances: int
-    run_indexes: tuple[int, ...]
-    #: "1 run" / "3 runs": a single run has no spread and must say so.
-    runs_label: str
     counts: dict[str, int]
     #: Finished rows whose stop reason is `llm_error`. Already in `counts` under
     #: whatever bucket their outcome puts them in; shown apart so nobody has to
     #: wonder how many of the failures were the provider's.
     llm_errors: int
-    passed_over_admissible: RateSummary
-    passed_over_total: RateSummary
-
-
-def _runs_label(n: int) -> str:
-    return f"{n} run" if n == 1 else f"{n} runs"
-
-
-def _rate_summary(per_run: Mapping[int, Counter[str]], numerator: Iterable[str], denominator: Iterable[str]) -> RateSummary:
-    numerator = tuple(numerator)
-    denominator = tuple(denominator)
-    runs = []
-    for run_index in sorted(per_run):
-        counts = per_run[run_index]
-        top = sum(counts[b] for b in numerator)
-        bottom = sum(counts[b] for b in denominator)
-        runs.append(RunRate(run_index, top, bottom, top / bottom if bottom else None))
-    rates = [r.rate for r in runs if r.rate is not None]
-    return RateSummary(
-        numerator=sum(r.numerator for r in runs),
-        denominator=sum(r.denominator for r in runs),
-        mean=sum(rates) / len(rates) if rates else None,
-        minimum=min(rates) if rates else None,
-        maximum=max(rates) if rates else None,
-        runs=tuple(runs),
-    )
+    passed: int
+    finished: int
 
 
 def summarize(rows: Sequence[TaskRow]) -> GroupSummary:
-    """Counts and both rates for one set of agent rows."""
-    per_run: dict[int, Counter[str]] = {}
-    totals: Counter[str] = Counter()
-    for row in rows:
-        bucket = classify(row)
-        per_run.setdefault(row.run_index, Counter())[bucket] += 1
-        totals[bucket] += 1
-    finished = (PASSED, FAILED, PASSED_WITH_TEST_EDIT, INADMISSIBLE, HARNESS_ERROR)
-    admissible = (PASSED, FAILED, PASSED_WITH_TEST_EDIT)
-    # Only runs that have a finished row: a run index holding nothing but
-    # unfinished rows would otherwise appear as a run with an undefined rate.
-    per_run = {i: c for i, c in per_run.items() if any(c[b] for b in finished)}
+    """Counts for one set of agent rows."""
+    totals: Counter[str] = Counter(classify(row) for row in rows)
+    finished = sum(n for bucket, n in totals.items() if bucket != UNFINISHED)
     return GroupSummary(
         rows=len(rows),
         instances=len({row.instance_id for row in rows}),
-        run_indexes=tuple(sorted(per_run)),
-        runs_label=_runs_label(len(per_run)),
         counts={bucket: totals[bucket] for bucket in _BUCKETS},
         llm_errors=sum(1 for row in rows if row.agent_stop_reason == LLM_ERROR and classify(row) != UNFINISHED),
-        passed_over_admissible=_rate_summary(per_run, (PASSED,), admissible),
-        passed_over_total=_rate_summary(per_run, (PASSED,), finished),
+        passed=totals[PASSED],
+        finished=finished,
+    )
+
+
+@dataclass(frozen=True)
+class Interval:
+    low: float
+    high: float
+    #: Instances resampled; the runs of one instance are not independent.
+    instances: int
+    resamples: int
+    seed: int
+    confidence: float
+
+
+@dataclass(frozen=True)
+class PerRun:
+    run_index: int
+    passed: int
+    planned: int
+    rate: float | None
+
+
+@dataclass(frozen=True)
+class SecondaryRate:
+    """`passed / admissible`: the figure with the instrument failures taken out. Never the headline."""
+
+    passed: int
+    admissible: int
+    excluded_harness_errors: int
+    excluded_inadmissible: int
+    rate: float | None
+
+
+@dataclass(frozen=True)
+class Headline:
+    """The pass rate of one run over its PLANNED grid, every non-pass counted as one.
+
+    `passed / planned`. The denominator is the grid the run planned (the manifest's
+    `instance_ids x range(runs_per_instance)`), not the rows that happen to exist and
+    not the rows left after the results were looked at: a harness error, an
+    inadmissible row, a `passed_with_test_edit` and a failure are all non-passes here.
+    Taking rows out after seeing them is cherry-picking; the figure that does so
+    (`secondary`) is labelled as that and listed.
+    """
+
+    run_id: str
+    #: The manifest's model, else the one model seen in the rows.
+    model: str | None
+    git_sha: str | None
+    anchored: bool
+    instances: int
+    #: Distinct repositories among the planned instances whose repository is known.
+    repos: int
+    runs_per_instance: int
+    planned: int
+    passed: int
+    #: None when withheld.
+    rate: float | None
+    interval: Interval | None
+    #: Why the figure is not printed, or None.
+    withheld: str | None
+    #: Planned `instance#run` pairs with no row at all.
+    missing: tuple[str, ...]
+    #: Planned pairs whose row is still queued or running.
+    unfinished: tuple[str, ...]
+    #: Rows in the database that the manifest does not plan; ignored, and listed.
+    unplanned: tuple[str, ...]
+    #: Loud labels printed on the figure itself: UNANCHORED, PARTIAL (n of m), ...
+    flags: tuple[str, ...]
+    per_run: tuple[PerRun, ...]
+    #: Min and max of the per-run rates. A spread with the instances held fixed, not an interval.
+    run_range: tuple[float, float] | None
+    secondary: SecondaryRate | None
+
+
+def _pair_label(instance_id: str, run_index: int) -> str:
+    return f"{instance_id}#{run_index}"
+
+
+def _headline(
+    run_id: str,
+    rows: Sequence[TaskRow],
+    manifest: RunManifest | None,
+    *,
+    allow_partial: bool,
+    instance_repos: Mapping[str, str],
+) -> Headline:
+    by_pair = {(r.instance_id, r.run_index): r for r in rows}
+    if manifest is not None:
+        planned = sorted(manifest.planned_pairs())
+        planned_set = set(planned)
+        unplanned = tuple(sorted(_pair_label(*pair) for pair in by_pair if pair not in planned_set))
+    else:
+        planned = sorted(by_pair)
+        unplanned = ()
+
+    instance_ids = sorted({i for i, _ in planned})
+    per_instance_runs = Counter(i for i, _ in planned)
+    flags: list[str] = []
+    if manifest is None:
+        flags.append("UNANCHORED")
+    if len(set(per_instance_runs.values())) > 1:
+        flags.append("UNEQUAL RUNS PER INSTANCE")
+
+    buckets: dict[tuple[str, int], str] = {}
+    missing: list[str] = []
+    unfinished: list[str] = []
+    for pair in planned:
+        row = by_pair.get(pair)
+        if row is None:
+            missing.append(_pair_label(*pair))
+            continue
+        buckets[pair] = classify(row)
+        if buckets[pair] == UNFINISHED:
+            unfinished.append(_pair_label(*pair))
+
+    models = sorted({r.model for r in rows if r.model})
+    model = manifest.model if manifest is not None else (models[0] if len(models) == 1 else None)
+    repos = {instance_repos.get(i) or next((r.repo for r in rows if r.instance_id == i and r.repo), None) for i in instance_ids}
+    repos.discard(None)
+    runs_per_instance = manifest.runs_per_instance if manifest is not None else max(per_instance_runs.values(), default=0)
+
+    common = dict(
+        run_id=run_id, model=model, git_sha=manifest.git_sha if manifest is not None else None,
+        anchored=manifest is not None, instances=len(instance_ids), repos=len(repos),
+        runs_per_instance=runs_per_instance, planned=len(planned),
+        missing=tuple(missing), unfinished=tuple(unfinished), unplanned=unplanned,
+    )
+
+    not_finished = len(missing) + len(unfinished)
+    if not_finished and not allow_partial:
+        return Headline(
+            **common, passed=sum(1 for b in buckets.values() if b == PASSED), rate=None, interval=None,
+            withheld=f"headline withheld: {not_finished} of {len(planned)} planned rows missing/unfinished "
+                     f"({len(missing)} missing, {len(unfinished)} unfinished); pass --allow-partial to print it marked PARTIAL",
+            flags=tuple(flags), per_run=(), run_range=None, secondary=None,
+        )
+    if not_finished:
+        flags.append(f"PARTIAL ({len(planned) - not_finished} of {len(planned)})")
+
+    passed = sum(1 for b in buckets.values() if b == PASSED)
+    pass_counts = [sum(1 for pair in planned if pair[0] == i and buckets.get(pair) == PASSED) for i in instance_ids]
+    run_counts = [per_instance_runs[i] for i in instance_ids]
+    interval = None
+    bounds = cluster_bootstrap_interval(pass_counts, run_counts)
+    if bounds is not None:
+        interval = Interval(bounds[0], bounds[1], len(instance_ids), BOOTSTRAP_RESAMPLES, BOOTSTRAP_SEED, CONFIDENCE)
+
+    per_run = []
+    for index in sorted({r for _, r in planned}):
+        pairs = [pair for pair in planned if pair[1] == index]
+        wins = sum(1 for pair in pairs if buckets.get(pair) == PASSED)
+        per_run.append(PerRun(index, wins, len(pairs), wins / len(pairs)))
+    rates = [r.rate for r in per_run if r.rate is not None]
+
+    present = [b for b in buckets.values() if b != UNFINISHED]
+    admissible = sum(1 for b in present if b in (PASSED, FAILED, PASSED_WITH_TEST_EDIT))
+    secondary = SecondaryRate(
+        passed=passed, admissible=admissible,
+        excluded_harness_errors=sum(1 for b in present if b == HARNESS_ERROR),
+        excluded_inadmissible=sum(1 for b in present if b == INADMISSIBLE),
+        rate=passed / admissible if admissible else None,
+    )
+    return Headline(
+        **common, passed=passed, rate=passed / len(planned) if planned else None, interval=interval,
+        withheld=None, flags=tuple(flags), per_run=tuple(per_run),
+        run_range=(min(rates), max(rates)) if len(rates) >= 2 else None, secondary=secondary,
     )
 
 
@@ -336,9 +460,13 @@ class GoldSummary:
 class Report:
     agent_runs: tuple[str, ...]
     gold_runs: tuple[str, ...]
+    #: One per agent run, each over that run's own planned grid. There is no pooled
+    #: figure across runs: a run is one model (see `Headline`), and pooling two
+    #: models is not a statement about either.
+    headlines: tuple[Headline, ...]
+    #: Counts only, over every agent row. Not a rate anyone should read as a headline.
     overall: GroupSummary
-    #: More than one model among the rows: `overall` pools them and is not a
-    #: statement about any one of them.
+    #: More than one model among the rows.
     mixed_models: bool
     by_model: dict[str, GroupSummary]
     by_repo: dict[str, GroupSummary]
@@ -346,6 +474,8 @@ class Report:
     inadmissible: tuple[RowRef, ...]
     passed_with_test_edit: PassedWithTestEditBucket
     unfinished: tuple[RowRef, ...]
+    #: Planned rows that have no row in the database at all.
+    missing: tuple[RowRef, ...]
     unfinished_cost_usd: float | None
     #: Instances with finished rows and not one admissible row.
     instances_never_admissible: tuple[str, ...]
@@ -428,14 +558,37 @@ def _gold_summary(gold_rows: Sequence[TaskRow], agent_instances: Iterable[str]) 
     )
 
 
-def aggregate(rows: Sequence[TaskRow]) -> Report:
-    """Everything the report says, from rows alone. Pure and deterministic."""
+def aggregate(
+    rows: Sequence[TaskRow],
+    *,
+    manifests: Mapping[str, RunManifest] | None = None,
+    allow_partial: bool = False,
+    instance_repos: Mapping[str, str] | None = None,
+) -> Report:
+    """Everything the report says, from rows (and run manifests) alone. Pure and deterministic.
+
+    `manifests` maps an eval run id to its plan. A run with a manifest is anchored
+    to that grid; a run without one is headlined over the rows that exist and
+    marked UNANCHORED. An incomplete grid withholds the headline unless
+    `allow_partial`, in which case the figure carries PARTIAL (n of m).
+    """
+    manifests = manifests or {}
+    instance_repos = instance_repos or {}
     gold_rows = [r for r in rows if is_gold(r)]
     agent_rows = [r for r in rows if not is_gold(r)]
     by_bucket: dict[str, list[TaskRow]] = {b: [] for b in _BUCKETS}
     for row in agent_rows:
         by_bucket[classify(row)].append(row)
     finished = [row for bucket, members in by_bucket.items() if bucket != UNFINISHED for row in members]
+
+    agent_runs = sorted({r.eval_run_id for r in agent_rows} | {run for run in manifests})
+    headlines = tuple(
+        _headline(
+            run_id, [r for r in agent_rows if r.eval_run_id == run_id], manifests.get(run_id),
+            allow_partial=allow_partial, instance_repos=instance_repos,
+        )
+        for run_id in agent_runs
+    )
 
     real_models = sorted({r.model for r in agent_rows if r.model})
     by_model = {
@@ -477,18 +630,32 @@ def aggregate(rows: Sequence[TaskRow]) -> Report:
 
     gold = _gold_summary(gold_rows, {r.instance_id for r in agent_rows})
 
-    overall = summarize(agent_rows)
     warnings: list[str] = []
+    for headline in headlines:
+        if not headline.anchored:
+            warnings.append(
+                f"No run manifest for {headline.run_id}: the expected grid is unknown, so its headline is "
+                f"computed over the rows that exist and is marked UNANCHORED."
+            )
+        if headline.withheld:
+            warnings.append(f"{headline.run_id}: {headline.withheld}.")
+        if headline.unplanned:
+            warnings.append(
+                f"{headline.run_id}: {len(headline.unplanned)} row(s) are not in the manifest's grid and are "
+                f"ignored by the headline: {', '.join(headline.unplanned[:5])}."
+            )
+        if "UNEQUAL RUNS PER INSTANCE" in headline.flags:
+            warnings.append(
+                f"{headline.run_id}: instances have different numbers of runs; the headline is the pooled "
+                f"count, not an average of instance rates."
+            )
     if by_bucket[UNFINISHED]:
-        warnings.append(
-            f"PARTIAL: {len(by_bucket[UNFINISHED])} row(s) are still queued or running; the rates cover "
-            f"finished rows only."
-        )
+        warnings.append(f"{len(by_bucket[UNFINISHED])} row(s) are still queued or running.")
     if by_bucket[HARNESS_ERROR]:
         warnings.append(
-            f"{len(by_bucket[HARNESS_ERROR])} harness error row(s) are excluded from passed/admissible "
-            f"(an instrument failure is not an agent failure). Re-run them: the headline is inflated "
-            f"if they would have failed. passed/total keeps them in the denominator."
+            f"{len(by_bucket[HARNESS_ERROR])} harness error row(s) (status failed) are counted as non-passes "
+            f"in the headline and excluded from the secondary passed/admissible figure. Re-run them: an "
+            f"instrument failure is not an agent failure, but it is not a pass either."
         )
     llm_error_rows = [r for r in finished if r.agent_stop_reason == LLM_ERROR]
     if llm_error_rows:
@@ -500,25 +667,23 @@ def aggregate(rows: Sequence[TaskRow]) -> Report:
         )
     if by_bucket[INADMISSIBLE]:
         warnings.append(
-            f"{len(by_bucket[INADMISSIBLE])} inadmissible row(s) (the instrument could not score them) "
-            f"are excluded from passed/admissible."
+            f"{len(by_bucket[INADMISSIBLE])} inadmissible row(s) (the instrument could not score them) are "
+            f"counted as non-passes in the headline and excluded from the secondary passed/admissible figure."
         )
     if never_admissible:
         warnings.append(
-            f"{len(never_admissible)} instance(s) have no admissible row at all and contribute nothing "
-            f"to passed/admissible: {', '.join(never_admissible)}."
+            f"{len(never_admissible)} instance(s) have no admissible row at all: {', '.join(never_admissible)}."
         )
     if len(real_models) > 1:
         warnings.append(
-            f"MIXED MODELS ({', '.join(real_models)}): the overall figure pools them. Read the per-model "
-            f"table; the pooled number is not a statement about any one model."
+            f"MIXED MODELS ({', '.join(real_models)}): each run has its own headline; nothing here pools them."
         )
     seen: Counter[tuple[str | None, str, int]] = Counter((r.model, r.instance_id, r.run_index) for r in agent_rows)
     duplicates = sorted(f"{i}#{n}" for (_, i, n), count in seen.items() if count > 1)
     if duplicates:
         warnings.append(
             f"{len(duplicates)} (instance, run_index) pair(s) appear more than once for one model, across "
-            f"eval runs: {', '.join(duplicates[:5])}. Per-run rates merge them."
+            f"eval runs: {', '.join(duplicates[:5])}. The cost and count tables below include both."
         )
     if tokens.unpriced_calls:
         warnings.append(
@@ -546,9 +711,10 @@ def aggregate(rows: Sequence[TaskRow]) -> Report:
         )
 
     return Report(
-        agent_runs=tuple(sorted({r.eval_run_id for r in agent_rows})),
+        agent_runs=tuple(agent_runs),
         gold_runs=tuple(sorted({r.eval_run_id for r in gold_rows})),
-        overall=overall,
+        headlines=headlines,
+        overall=summarize(agent_rows),
         mixed_models=len(real_models) > 1,
         by_model=by_model,
         by_repo=by_repo,
@@ -561,6 +727,10 @@ def aggregate(rows: Sequence[TaskRow]) -> Report:
             rows=_sorted_refs(by_bucket[PASSED_WITH_TEST_EDIT], PASSED_WITH_TEST_EDIT),
         ),
         unfinished=_sorted_refs(by_bucket[UNFINISHED], UNFINISHED),
+        missing=tuple(
+            RowRef(h.run_id, label.rsplit("#", 1)[0], int(label.rsplit("#", 1)[1]), "planned, but no row in the database")
+            for h in headlines for label in h.missing
+        ),
         unfinished_cost_usd=sum(unfinished_costs) if unfinished_costs else None,
         instances_never_admissible=tuple(never_admissible),
         cost_usd=describe(costs),
@@ -600,32 +770,78 @@ def _cell(text: object) -> str:
     return str(text).replace("|", "\\|").replace("\n", " ")
 
 
-def _rate_cell(rate: RateSummary) -> str:
-    defined = [r for r in rate.runs if r.rate is not None]
-    if rate.mean is None:
-        return "n/a (no run has a denominator)"
-    label = _runs_label(len(defined))
-    if len(defined) == 1:
-        return f"{_pct(rate.mean)} ({label}, no spread)"
-    return f"{_pct(rate.mean)} (min {_pct(rate.minimum)}, max {_pct(rate.maximum)}; {label})"
+def _whole(value: float) -> str:
+    return f"{value * 100:.0f}%"
+
+
+def _frac(passed: int, total: int) -> str:
+    """Counts first, then the whole-number percentage."""
+    return f"{passed} of {total} ({_whole(passed / total)})" if total else f"{passed} of {total}"
 
 
 def _group_row(name: str, group: GroupSummary) -> str:
-    admissible = group.passed_over_admissible
-    total = group.passed_over_total
+    c = group.counts
     return (
-        f"| {_cell(name)} | {group.instances} | {group.runs_label} | {group.counts[PASSED]} | "
-        f"{group.counts[FAILED]} | {group.counts[PASSED_WITH_TEST_EDIT]} | {group.counts[INADMISSIBLE]} | "
-        f"{group.counts[HARNESS_ERROR]} | {group.llm_errors} | {_pct(admissible.mean)} ({admissible.numerator}/{admissible.denominator}) | "
-        f"{_pct(total.mean)} ({total.numerator}/{total.denominator}) |"
+        f"| {_cell(name)} | {group.instances} | {group.rows} | {c[PASSED]} | {c[FAILED]} | "
+        f"{c[PASSED_WITH_TEST_EDIT]} | {c[INADMISSIBLE]} | {c[HARNESS_ERROR]} | {group.llm_errors} | "
+        f"{c[UNFINISHED]} | {_frac(group.passed, group.finished)} |"
     )
 
 
 _GROUP_HEADER = (
-    "| group | instances | runs | passed | failed | passed_with_test_edit | inadmissible | harness error "
-    "| of which llm_error (counted by outcome) | passed / admissible | passed / total |\n"
+    "| group | instances | rows | passed | failed | passed_with_test_edit | inadmissible | harness error "
+    "| of which llm_error (counted by outcome) | unfinished | passed of finished |\n"
     "|---|---|---|---|---|---|---|---|---|---|---|"
 )
+
+
+def _headline_lines(h: Headline) -> list[str]:
+    title = f"### Run {h.run_id}" + (f", model {h.model}" if h.model else "")
+    out = [title, ""]
+    if h.withheld:
+        out += [f"**{h.withheld[0].upper()}{h.withheld[1:]}.**", ""]
+        for label, items in (("Missing", h.missing), ("Unfinished", h.unfinished)):
+            if items:
+                shown = ", ".join(items[:20]) + (f", ... ({len(items) - 20} more)" if len(items) > 20 else "")
+                out += [f"{label} ({len(items)}): {shown}", ""]
+        return out
+
+    figure = f"Pass rate: {h.passed} of {h.planned} instance-runs ({_whole(h.rate)})" if h.rate is not None else "Pass rate: n/a"
+    if h.interval is not None:
+        figure += (
+            f" [{h.interval.confidence * 100:.0f}% interval over {h.interval.instances} instances: "
+            f"{_whole(h.interval.low)}-{_whole(h.interval.high)}]"
+        )
+    elif h.instances < 2:
+        figure += " [no interval: fewer than 2 instances]"
+    flags = "".join(f" **{flag}**" for flag in h.flags)
+    out += [f"**{figure}**{flags}", ""]
+    sha = h.git_sha or "unknown (no manifest)"
+    out.append(
+        f"N = {h.instances} instances from {h.repos} Python repositor{'y' if h.repos == 1 else 'ies'}, "
+        f"{h.runs_per_instance} run{'' if h.runs_per_instance == 1 else 's'} each, model {h.model or 'unknown'}, "
+        f"pipeline commit {sha}."
+    )
+    sec = h.secondary
+    if sec is not None:
+        out += [
+            "",
+            f"Every planned (instance, run) row is counted: {sec.excluded_harness_errors} harness-error and "
+            f"{sec.excluded_inadmissible} inadmissible row(s) (listed below) are counted as non-passes, and so is "
+            f"every `passed_with_test_edit`.",
+            "",
+            f"Secondary, not the headline: passed / admissible = {_frac(sec.passed, sec.admissible)}, excluding "
+            f"{sec.excluded_harness_errors} harness-error and {sec.excluded_inadmissible} inadmissible row(s) (listed).",
+        ]
+    out += ["", "| run_index | passed of planned | rate |", "|---|---|---|"]
+    out += [f"| {r.run_index} | {_frac(r.passed, r.planned)} | {_whole(r.rate) if r.rate is not None else 'n/a'} |" for r in h.per_run]
+    if h.run_range is not None:
+        out += [
+            "",
+            f"Run-to-run range of the {len(h.per_run)} run rates: {_whole(h.run_range[0])}-{_whole(h.run_range[1])}. "
+            f"This holds the instances fixed; it is not an interval.",
+        ]
+    return out + [""]
 
 
 def _refs_table(refs: Sequence[RowRef]) -> list[str]:
@@ -644,7 +860,6 @@ def _stats_line(name: str, stats: Stats, fmt) -> str:
 
 
 def to_markdown(report: Report) -> str:
-    overall = report.overall
     out: list[str] = ["# Benchmark report", ""]
     out.append(f"Agent runs: {', '.join(report.agent_runs) or '(none)'}. Gold runs: {', '.join(report.gold_runs) or '(none)'}.")
     out.append("")
@@ -652,36 +867,26 @@ def to_markdown(report: Report) -> str:
         out += ["## Read this first", ""] + [f"- {w}" for w in report.warnings] + [""]
 
     out += ["## Headline", ""]
-    out.append(
-        f"**N = {overall.instances} instances**, {overall.runs_label}, {overall.rows} rows"
-        + (" (pooled across models)." if report.mixed_models else ".")
-    )
-    out += ["", "| rate | value | pooled counts |", "|---|---|---|"]
-    admissible, total = overall.passed_over_admissible, overall.passed_over_total
-    out.append(f"| passed / admissible | {_rate_cell(admissible)} | {admissible.numerator}/{admissible.denominator} |")
-    out.append(f"| passed / total | {_rate_cell(total)} | {total.numerator}/{total.denominator} |")
-    out += ["", "Per run:", "", "| run_index | passed | admissible | passed / admissible | total | passed / total |", "|---|---|---|---|---|---|"]
-    totals_by_run = {r.run_index: r for r in total.runs}
-    for run in admissible.runs:
-        t = totals_by_run[run.run_index]
-        out.append(f"| {run.run_index} | {run.numerator} | {run.denominator} | {_pct(run.rate)} | {t.denominator} | {_pct(t.rate)} |")
+    if not report.headlines:
+        out += ["No agent runs.", ""]
+    for headline in report.headlines:
+        out += _headline_lines(headline)
     out += [
+        "How rows are counted. The headline is passed / planned: the denominator is the run's planned grid "
+        "(its manifest's instances x runs), and every planned row that did not pass is a non-pass, whatever the reason: "
+        "failed, `passed_with_test_edit` (never a pass, approved or not), a harness error (status `failed`), an "
+        "inadmissible row (finished, no outcome) or a row that is missing or unfinished (which withholds the headline "
+        "unless `--allow-partial`). A stop reason of `llm_error` is not an exclusion: such a row is counted by its "
+        "outcome. The interval is a percentile bootstrap over instances, because the runs of one instance are not "
+        "independent.",
         "",
-        "How rows are counted. `admissible = passed + failed + passed_with_test_edit`; "
-        "`total = admissible + inadmissible + harness error` (every finished row). "
-        "A harness error is status `failed` only: an instrument failure, excluded "
-        "from passed/admissible, kept in passed/total. A stop reason of `llm_error` is not one: such a row "
-        "is counted by its outcome (see the llm_error column). An inadmissible row is finished with no outcome "
-        "(the instrument could not score it): the same. `passed_with_test_edit` is never a pass and "
-        "stays in both denominators as a non-pass. Rates are the mean of per-run rates; the bracket is "
-        "the min-max over `run_index`, not a confidence interval.",
+        "## Rows counted as non-passes, by reason",
         "",
-        "## Excluded from the headline",
-        "",
-        f"### Harness errors ({len(report.harness_errors)})",
+        f"### Missing ({len(report.missing)})",
         "",
     ]
-    out += _refs_table(report.harness_errors)
+    out += _refs_table(report.missing)
+    out += [f"### Harness errors ({len(report.harness_errors)})", ""] + _refs_table(report.harness_errors)
     out += [f"### Inadmissible ({len(report.inadmissible)})", ""] + _refs_table(report.inadmissible)
     edit = report.passed_with_test_edit
     out += [
@@ -696,9 +901,9 @@ def to_markdown(report: Report) -> str:
     if report.instances_never_admissible:
         out += [f"Instances with no admissible row: {', '.join(report.instances_never_admissible)}.", ""]
 
-    out += ["## By model", "", "First model of each task's first LLM call; a task that fell back is labelled by its first.", "", _GROUP_HEADER]
+    out += ["## By model", "", "Counts. The model is that of each task's first LLM call; a task that fell back is labelled by its first.", "", _GROUP_HEADER]
     out += [_group_row(name, group) for name, group in report.by_model.items()] + [""]
-    out += ["## By repository", "", _GROUP_HEADER]
+    out += ["## By repository", "", "Counts, not rates: a repository holds a handful of instances.", "", _GROUP_HEADER]
     out += [_group_row(name, group) for name, group in report.by_repo.items()] + [""]
 
     out += [
@@ -900,11 +1105,39 @@ def attach_instance_data(rows: Sequence[TaskRow], instances: Mapping[str, Instan
     return out
 
 
+def load_manifests(runs_dir: Path, run_ids: Sequence[str], expect: bool | None) -> dict[str, RunManifest]:
+    """The manifests of `run_ids` that exist under `runs_dir`.
+
+    `expect` is tri-state: `None` (the default) anchors a run to its manifest when
+    one exists and says so when it does not; `True` makes a missing manifest an
+    error (the planned grid is required); `False` ignores manifests, so every run
+    is UNANCHORED. A manifest that exists but is malformed is always an error --
+    skipping it would fall back to the observed grid without a word.
+    """
+    if expect is False:
+        return {}
+    manifests: dict[str, RunManifest] = {}
+    for run_id in dict.fromkeys(run_ids):
+        try:
+            path = manifest_path(runs_dir, run_id)
+            if not path.is_file():
+                if expect:
+                    raise ReportError(f"no manifest for {run_id} at {path}: the planned grid is unknown")
+                continue
+            manifests[run_id] = load_manifest(path)
+        except ManifestError as exc:
+            raise ReportError(str(exc)) from exc
+    return manifests
+
+
 async def build_report(
     session: AsyncSession,
     agent_runs: Sequence[str],
     gold_runs: Sequence[str] = (),
     instances: Mapping[str, InstanceSpec] | None = None,
+    *,
+    manifests: Mapping[str, RunManifest] | None = None,
+    allow_partial: bool = False,
 ) -> tuple[Report, list[TaskRow]]:
     """Load, join with instance data, aggregate. Returns the rows too, for the predictions export."""
     rows = await load_rows(session, [*agent_runs, *gold_runs])
@@ -917,9 +1150,11 @@ async def build_report(
             f"--gold-run id(s) {', '.join(sorted(set(misfiled)))} do not start with {GOLD_RUN_PREFIX!r}, "
             f"so they would be counted as agent runs"
         )
+    instance_repos: dict[str, str] = {}
     if instances is not None:
         rows = attach_instance_data(rows, instances)
-    return aggregate(rows), rows
+        instance_repos = {instance_id: spec.repo for instance_id, spec in instances.items()}
+    return aggregate(rows, manifests=manifests, allow_partial=allow_partial, instance_repos=instance_repos), rows
 
 
 # --- command line ------------------------------------------------------------
@@ -929,11 +1164,22 @@ def _default_instances_dir() -> Path:
     return Path(__file__).resolve().parents[1] / "instances"
 
 
+def _default_runs_dir() -> Path:
+    return Path(__file__).resolve().parents[1] / "runs"
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="repolace-eval report", description=__doc__.split("\n\n")[0])
     parser.add_argument("--run", action="append", default=[], metavar="EVAL_RUN_ID", help="an agent eval run (repeatable)")
     parser.add_argument("--gold-run", action="append", default=[], metavar="EVAL_RUN_ID", help="a gold-validation run (repeatable; id starts 'gold-')")
     parser.add_argument("--instances-dir", type=Path, default=None, help="instance files, for repo and targeted-P2P data")
+    parser.add_argument("--runs-dir", type=Path, default=None, help="where eval/runs/<id>/manifest.json live")
+    parser.add_argument(
+        "--expect", action=argparse.BooleanOptionalAction, default=None,
+        help="anchor each run to its manifest's planned grid (default: when a manifest exists); "
+             "--expect requires one, --no-expect ignores them",
+    )
+    parser.add_argument("--allow-partial", action="store_true", help="print a headline for an incomplete grid, marked PARTIAL")
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
     parser.add_argument("--output", type=Path, default=None, help="write here instead of stdout")
     parser.add_argument("--predictions", type=Path, default=None, help="also write the SWE-bench predictions JSONL here")
@@ -953,6 +1199,9 @@ async def _amain(args: argparse.Namespace) -> int:
         print(f"repolace-eval report: {directory} is not a directory", file=sys.stderr)
         return 2
 
+    runs_dir = args.runs_dir or _default_runs_dir()
+    manifests = load_manifests(runs_dir, args.run, args.expect)
+
     try:
         database_url = SharedSettings().database_url
     except Exception:  # noqa: BLE001 -- a settings error can echo the environment; say only what is missing
@@ -961,7 +1210,9 @@ async def _amain(args: argparse.Namespace) -> int:
     engine = create_engine(database_url)
     try:
         async with create_session_factory(engine)() as session:
-            report, rows = await build_report(session, args.run, args.gold_run, instances)
+            report, rows = await build_report(
+                session, args.run, args.gold_run, instances, manifests=manifests, allow_partial=args.allow_partial,
+            )
     finally:
         await engine.dispose()
 

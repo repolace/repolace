@@ -10,7 +10,7 @@ from decimal import Decimal
 
 import pytest
 
-from eval_support import T0, add_call, add_eval_task, add_test_run, seed_bench_repo
+from eval_support import T0, add_call, add_eval_task, add_test_run, run_manifest, seed_bench_repo
 from harness.report import ReportError, build_report, load_rows
 from repolace_shared.db.models import Task, TaskOutcome, TaskStatus
 
@@ -139,9 +139,25 @@ class TestBuildReport:
         overall = report.overall
         assert (overall.counts["passed"], overall.counts["failed"]) == (2, 1)
         assert (overall.counts["harness_error"], overall.counts["inadmissible"]) == (1, 1)
-        assert overall.passed_over_admissible.mean == pytest.approx(2 / 3)
-        assert overall.passed_over_total.mean == pytest.approx(2 / 5)
+        # No manifest: the headline is over the five rows that exist, and says so.
+        (headline,) = report.headlines
+        assert (headline.passed, headline.planned) == (2, 5) and "UNANCHORED" in headline.flags
+        assert (headline.secondary.passed, headline.secondary.admissible) == (2, 3)
         assert report.cost_usd.total == pytest.approx(0.75)
+
+    async def test_a_manifest_anchors_the_headline_to_the_planned_grid_not_to_the_rows(self, db_session):
+        repo = await seed_bench_repo(db_session)
+        for index in range(3):
+            await add_eval_task(db_session, repo, instance_id=f"inst-{index}", outcome=TaskOutcome.PASSED)
+        await db_session.commit()
+        manifest = run_manifest(5, runs=1)  # inst-3 and inst-4 were planned and never enqueued
+
+        report, _ = await build_report(db_session, ["run-a"], manifests={"run-a": manifest})
+        assert report.headlines[0].withheld.startswith("headline withheld: 2 of 5 planned rows missing/unfinished")
+
+        partial, _ = await build_report(db_session, ["run-a"], manifests={"run-a": manifest}, allow_partial=True)
+        assert (partial.headlines[0].passed, partial.headlines[0].planned) == (3, 5)
+        assert "PARTIAL (3 of 5)" in partial.headlines[0].flags
 
     async def test_gold_runs_are_reported_apart_from_the_agent_runs(self, db_session):
         repo = await seed_bench_repo(db_session)

@@ -37,6 +37,7 @@ from repolace_shared.db.models import (
 
 if TYPE_CHECKING:
     from harness.report import TaskRow
+    from harness.run_manifest import RunManifest
 
 _GIT_ENV = {
     "PATH": os.environ.get("PATH", ""),
@@ -356,3 +357,24 @@ def add_call(session, task: Task, *, model: str = "anthropic/test-main", cost: s
 
 def add_test_run(session, task: Task, attempt: int, *, error: str | None = None) -> None:
     session.add(TaskTestRun(task_id=task.id, attempt=attempt, commit_sha="c" * 40, error=error))
+
+
+def run_manifest(
+    instance_ids: Sequence[str] | int = 10,
+    *,
+    runs: int = 3,
+    run_id: str = "run-a",
+    model: str = "anthropic/test-main",
+    agent: str = "llm",
+    git_sha: str = "c0ffee" + "0" * 34,
+    prefix: str = "inst",
+) -> "RunManifest":
+    """A manifest for `prefix-0 .. prefix-(n-1)` (or the given ids), `runs` runs each."""
+    from harness.run_manifest import RunManifest
+
+    ids = tuple(f"{prefix}-{i}" for i in range(instance_ids)) if isinstance(instance_ids, int) else tuple(instance_ids)
+    return RunManifest(
+        eval_run_id=run_id, created_at="2026-10-03T12:00:00+00:00", git_sha=git_sha, model=model,
+        stage_models={"agent": model}, limits={"max_usd": 2.0}, runs_per_instance=runs,
+        instance_ids=ids, agent=agent,
+    )
