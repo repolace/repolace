@@ -67,7 +67,7 @@ class TestClassification:
         "kind,bucket",
         [
             ("passed", PASSED), ("failed", FAILED), ("pwte", PASSED_WITH_TEST_EDIT),
-            ("inadmissible", INADMISSIBLE), ("harness", HARNESS_ERROR), ("llm_error", HARNESS_ERROR),
+            ("inadmissible", INADMISSIBLE), ("harness", HARNESS_ERROR), ("llm_error", FAILED),
             ("unfinished", UNFINISHED),
         ],
     )
@@ -78,9 +78,13 @@ class TestClassification:
     def test_a_task_still_in_flight_is_unfinished_whatever_it_says_so_far(self, status):
         assert classify(task_row(status=status, outcome=O.PASSED, agent_stop_reason="llm_error")) == UNFINISHED
 
-    def test_an_llm_error_stop_is_a_harness_error_even_when_the_row_scored(self):
-        assert classify(task_row(outcome=O.PASSED, agent_stop_reason="llm_error")) == HARNESS_ERROR
-        assert classify(task_row(outcome=O.FAILED, agent_stop_reason="llm_error")) == HARNESS_ERROR
+    def test_an_llm_error_stop_is_counted_by_its_outcome_never_excluded(self):
+        # The agent loop reports llm_error for non-transient model errors too (a context
+        # overflow, an unparseable tool call), which depend on the instance. The scorer
+        # already scored the row; dropping it for its stop reason would raise the rate.
+        assert classify(task_row(outcome=O.PASSED, agent_stop_reason="llm_error")) == PASSED
+        assert classify(task_row(outcome=O.FAILED, agent_stop_reason="llm_error")) == FAILED
+        assert classify(task_row(outcome=None, agent_stop_reason="llm_error")) == INADMISSIBLE
 
     def test_status_failed_is_a_harness_error_even_with_an_outcome(self):
         assert classify(task_row(status=S.FAILED, outcome=O.PASSED)) == HARNESS_ERROR
@@ -92,6 +96,41 @@ class TestClassification:
     def test_a_finished_row_with_no_outcome_is_inadmissible_not_failed(self):
         for status in (S.COMPLETED, S.PR_OPENED, S.CONFLICTING):
             assert classify(task_row(status=status, outcome=None)) == INADMISSIBLE
+
+
+class TestLlmErrorRows:
+    def test_scored_llm_error_rows_stay_in_the_denominator(self):
+        # The audit's repro: 8 passed, 6 failed, 6 llm_error scored FAILED. Dropping the
+        # llm_error rows printed 8/14 = 57.1%; counting them is 8/20 = 40%.
+        rows = sweep(0, ["passed"] * 8 + ["failed"] * 6 + ["llm_error"] * 6)
+        overall = aggregate(rows).overall
+        assert overall.passed_over_admissible.mean == pytest.approx(8 / 20)
+        assert (overall.passed_over_admissible.numerator, overall.passed_over_admissible.denominator) == (8, 20)
+        assert overall.counts[HARNESS_ERROR] == 0 and overall.counts[FAILED] == 12
+
+    def test_a_passed_llm_error_row_counts_as_a_pass(self):
+        rows = [task_row(instance_id="a", outcome=O.PASSED, agent_stop_reason="llm_error"), task_row(instance_id="b", outcome=O.FAILED)]
+        assert aggregate(rows).overall.passed_over_admissible.mean == 0.5
+
+    def test_llm_error_rows_are_shown_in_their_own_column_and_a_warning(self):
+        rows = sweep(0, ["passed", "failed", "llm_error", "llm_error"])
+        report = aggregate(rows)
+        assert report.overall.llm_errors == 2
+        assert any("2 row(s) stopped on llm_error (2 scored by their outcome, 0 with no outcome)" in w for w in report.warnings)
+        assert "of which llm_error" in to_markdown(report)
+
+    def test_an_unfinished_llm_error_row_is_not_counted_as_one(self):
+        rows = [task_row(status=S.RUNNING, outcome=None, agent_stop_reason="llm_error")]
+        assert aggregate(rows).overall.llm_errors == 0
+
+    def test_the_harness_error_table_shows_the_outcome_and_the_reason(self):
+        row = task_row(status=S.FAILED, outcome=O.PASSED, score_reason="1 fail-to-pass", error_message="push failed")
+        (ref,) = aggregate([row]).harness_errors
+        assert "outcome=passed" in ref.detail and "score: 1 fail-to-pass" in ref.detail and "push failed" in ref.detail
+
+    def test_a_harness_error_with_no_outcome_says_so(self):
+        (ref,) = aggregate([task_row(**KINDS["harness"])]).harness_errors
+        assert "outcome=-" in ref.detail
 
 
 class TestHeadlineArithmetic:

@@ -10,11 +10,13 @@ this order (first match wins):
 
 1. `unfinished` -- status `queued`/`running`. In no rate, and flagged: a half-done
    sweep must not read as a row of failures, nor as nothing at all.
-2. `harness_error` -- status `failed` (repolace itself broke) **or**
-   `agent_stop_reason == "llm_error"`. An instrument failure, never an agent
-   failure, so it is out of the first rate; it is checked *before* the outcome, so
-   a row that scored but also hit a provider error is still shown here, not hidden
-   in either direction.
+2. `harness_error` -- status `failed` (repolace itself broke), and only that. A
+   stop reason of `llm_error` is **not** a harness error: the agent loop reports it
+   for non-transient model errors too (a context-window overflow, an unparseable
+   replayed tool call), which depend on how hard the instance is and how large the
+   model's context is, and the scorer already gives such a task an outcome ("no
+   scored attempt" is FAILED). Such a row is counted by that outcome, and shown in
+   its own `llm_error` column so the reader can see how many there were.
 3. `inadmissible` -- finished, no harness error, `outcome` NULL: the instrument
    could not score it (`score()` returned inadmissible). Excluded, listed with the
    reason, never a failure.
@@ -77,6 +79,7 @@ HARNESS_ERROR = "harness_error"
 UNFINISHED = "unfinished"
 _BUCKETS = (PASSED, FAILED, PASSED_WITH_TEST_EDIT, INADMISSIBLE, HARNESS_ERROR, UNFINISHED)
 
+#: `agent_stop_reason` of a run the model provider failed. Counted, never excluded.
 LLM_ERROR = "llm_error"
 
 CONTAMINATION_CAVEAT = (
@@ -143,7 +146,7 @@ def classify(row: TaskRow) -> str:
     """The one bucket a row belongs to. The order is the accounting; see the module docstring."""
     if row.status in (TaskStatus.QUEUED, TaskStatus.RUNNING):
         return UNFINISHED
-    if row.status is TaskStatus.FAILED or row.agent_stop_reason == LLM_ERROR:
+    if row.status is TaskStatus.FAILED:
         return HARNESS_ERROR
     if row.outcome is None:
         return INADMISSIBLE
@@ -236,6 +239,10 @@ class GroupSummary:
     #: "1 run" / "3 runs": a single run has no spread and must say so.
     runs_label: str
     counts: dict[str, int]
+    #: Finished rows whose stop reason is `llm_error`. Already in `counts` under
+    #: whatever bucket their outcome puts them in; shown apart so nobody has to
+    #: wonder how many of the failures were the provider's.
+    llm_errors: int
     passed_over_admissible: RateSummary
     passed_over_total: RateSummary
 
@@ -283,6 +290,7 @@ def summarize(rows: Sequence[TaskRow]) -> GroupSummary:
         run_indexes=tuple(sorted(per_run)),
         runs_label=_runs_label(len(per_run)),
         counts={bucket: totals[bucket] for bucket in _BUCKETS},
+        llm_errors=sum(1 for row in rows if row.agent_stop_reason == LLM_ERROR and classify(row) != UNFINISHED),
         passed_over_admissible=_rate_summary(per_run, (PASSED,), admissible),
         passed_over_total=_rate_summary(per_run, (PASSED,), finished),
     )
@@ -378,7 +386,13 @@ class Report:
 
 def _detail(row: TaskRow, bucket: str) -> str:
     if bucket == HARNESS_ERROR:
-        parts = [f"status={row.status.value}", f"stop={row.agent_stop_reason or '-'}"]
+        parts = [
+            f"status={row.status.value}",
+            f"stop={row.agent_stop_reason or '-'}",
+            f"outcome={row.outcome.value if row.outcome is not None else '-'}",
+        ]
+        if row.score_reason:
+            parts.append(f"score: {row.score_reason.strip()[:200]}")
         if row.error_message:
             parts.append(row.error_message.strip()[:200])
         return "; ".join(parts)
@@ -498,6 +512,14 @@ def aggregate(rows: Sequence[TaskRow]) -> Report:
             f"(an instrument failure is not an agent failure). Re-run them: the headline is inflated "
             f"if they would have failed. passed/total keeps them in the denominator."
         )
+    llm_error_rows = [r for r in finished if r.agent_stop_reason == LLM_ERROR]
+    if llm_error_rows:
+        scored = sum(1 for r in llm_error_rows if r.outcome is not None)
+        warnings.append(
+            f"{len(llm_error_rows)} row(s) stopped on llm_error ({scored} scored by their outcome, "
+            f"{len(llm_error_rows) - scored} with no outcome). They are counted by outcome, never excluded "
+            f"for the stop reason: a context overflow or an unparseable tool call depends on the instance."
+        )
     if by_bucket[INADMISSIBLE]:
         warnings.append(
             f"{len(by_bucket[INADMISSIBLE])} inadmissible row(s) (the instrument could not score them) "
@@ -616,15 +638,15 @@ def _group_row(name: str, group: GroupSummary) -> str:
     return (
         f"| {_cell(name)} | {group.instances} | {group.runs_label} | {group.counts[PASSED]} | "
         f"{group.counts[FAILED]} | {group.counts[PASSED_WITH_TEST_EDIT]} | {group.counts[INADMISSIBLE]} | "
-        f"{group.counts[HARNESS_ERROR]} | {_pct(admissible.mean)} ({admissible.numerator}/{admissible.denominator}) | "
+        f"{group.counts[HARNESS_ERROR]} | {group.llm_errors} | {_pct(admissible.mean)} ({admissible.numerator}/{admissible.denominator}) | "
         f"{_pct(total.mean)} ({total.numerator}/{total.denominator}) |"
     )
 
 
 _GROUP_HEADER = (
     "| group | instances | runs | passed | failed | passed_with_test_edit | inadmissible | harness error "
-    "| passed / admissible | passed / total |\n"
-    "|---|---|---|---|---|---|---|---|---|---|"
+    "| of which llm_error (counted by outcome) | passed / admissible | passed / total |\n"
+    "|---|---|---|---|---|---|---|---|---|---|---|"
 )
 
 
@@ -669,8 +691,9 @@ def to_markdown(report: Report) -> str:
         "",
         "How rows are counted. `admissible = passed + failed + passed_with_test_edit`; "
         "`total = admissible + inadmissible + harness error` (every finished row). "
-        "A harness error is status `failed` or stop reason `llm_error`: an instrument failure, excluded "
-        "from passed/admissible, kept in passed/total. An inadmissible row is finished with no outcome "
+        "A harness error is status `failed` only: an instrument failure, excluded "
+        "from passed/admissible, kept in passed/total. A stop reason of `llm_error` is not one: such a row "
+        "is counted by its outcome (see the llm_error column). An inadmissible row is finished with no outcome "
         "(the instrument could not score it): the same. `passed_with_test_edit` is never a pass and "
         "stays in both denominators as a non-pass. Rates are the mean of per-run rates; the bracket is "
         "the min-max over `run_index`, not a confidence interval.",
