@@ -17,6 +17,7 @@ from typing import Any
 
 from repolace_shared.db.models import GithubInstallation, RegisteredRepo, Task, TaskStatus
 from repolace_shared.git import task_workspace
+from repolace_shared.instances import InstanceSpec
 from repolace_shared.github.schemas import PullRequest
 from verify.protocol import SuiteResult
 from verify.scoring import Score, Verdict
@@ -315,3 +316,61 @@ class FakeToolCall:
     arguments: dict = field(default_factory=dict)
     id: str = "call_1"
     parse_error: str | None = None
+
+
+BASE_COMMIT = "0123456789abcdef0123456789abcdef01234567"
+
+
+def make_instance(**overrides) -> InstanceSpec:
+    """A valid benchmark instance. Built directly, so a test can also build an *invalid* one.
+
+    `InstanceSpec` validates on load and dump, not on construction, which is what lets a test
+    hand the gold runner a hostile key without writing a file the loader would refuse.
+    """
+    fields = dict(
+        instance_id="acme__sample-7",
+        repo="acme/sample",
+        base_commit=BASE_COMMIT,
+        version="1.0",
+        problem_statement="parse_config crashes on an empty config file\n\nIt raises ValueError.",
+        issue_number=7,
+        fail_to_pass=("tests/test_hidden.py::test_empty_config",),
+        pass_to_pass=(),
+        test_files={"tests/test_hidden.py": "def test_empty_config():\n    assert True\n"},
+        gold_files={"src/app.py": "def parse_config(path):\n    return {}\n"},
+        spec={},
+    )
+    return InstanceSpec(**{**fields, **overrides})
+
+
+def make_deps(checkout: Path, **overrides) -> AgentDeps:
+    """An `AgentDeps` with nothing real behind it, for runners that only touch the checkout."""
+    from repolace_agents.contracts import IssueContext
+
+    async def verify_attempt(attempt: int):
+        return None
+
+    async def changed_files():
+        return []
+
+    fields = {
+        "llm": None,
+        "tools": None,
+        "checkout": checkout,
+        "issue": IssueContext(7, "title", None, "https://example.test/7", None),
+        "retrieved": (),
+        "repo_overview": "",
+        "baseline": SuiteResult(),
+        "baseline_files": (),
+        "hidden_paths": frozenset(),
+        "verify_attempt": verify_attempt,
+        "changed_files": changed_files,
+    }
+    return AgentDeps(**{**fields, **overrides})
+
+
+def attempt_record(attempt: int = 1, sha: str = "a" * 40, result: SuiteResult | None = None) -> AttemptRecord:
+    return AttemptRecord(
+        attempt=attempt, commit_sha=sha, result=result if result is not None else SuiteResult(passed=("t::a",)),
+        infrastructure_error=False,
+    )
