@@ -1,0 +1,34 @@
+# Example of eval/instances/bench_repos.toml, which `repolace-eval fork` writes.
+#
+# One line per benchmark instance whose repository this tool created. The value is
+# always exactly `repolace/bench-<instance_id>`; the loader refuses anything else, so
+# editing a line to point at another repository is an error, not a redirect.
+#
+#   "<id>" = "repolace/bench-<id>"                        ready: private, Actions
+#                                                         disabled, base commit pushed
+#   "<id>" = { repo = "...", status = "incomplete" }      created by this tool, but a later
+#                                                         step failed; listed only so
+#                                                         `fork --delete` can remove it
+#
+# `repolace-eval enqueue` reads the ready entries to find each instance's registered
+# repository. `repolace-eval fork --delete` deletes only what this file lists, and
+# only a repository that still carries the marker description the tool gave it at
+# creation: a repository somebody else made under a bench- name is never adopted or
+# deleted.
+#
+# Operating notes (confirm the GitHub details against GitHub's current documentation):
+#   * NEVER put REPOLACE_BENCH_GITHUB_TOKEN in .env: infra/docker-compose.yml gives the
+#     `api` service `env_file: ../.env`, so it would reach an internet-facing container.
+#     Set it inline: REPOLACE_BENCH_GITHUB_TOKEN=... uv run repolace-eval fork
+#   * Use a dedicated bot account that is a plain organisation member (base permission
+#     "None", in no team that reaches repolace/repolace). A classic `repo` token from it,
+#     7-day expiry, `delete_repo` only for cleanup, revoked afterwards. A fine-grained
+#     token cannot be limited to repositories that do not exist yet.
+#   * `--add-to-installation` needs an organisation owner or installation manager and may
+#     be classic-token only: do that step in the GitHub UI or with an owner's token, and
+#     install the App on "selected repositories".
+#   * Pushing commits that change .github/workflows/* probably needs the `workflow` scope:
+#     run `fork --instances <one id>` for an instance with workflows first.
+"psf__requests-2317" = "repolace/bench-psf__requests-2317"
+"pytest-dev__pytest-5227" = "repolace/bench-pytest-dev__pytest-5227"
+"sphinx-doc__sphinx-8721" = { repo = "repolace/bench-sphinx-doc__sphinx-8721", status = "incomplete" }
