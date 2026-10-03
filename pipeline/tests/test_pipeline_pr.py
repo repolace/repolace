@@ -325,6 +325,26 @@ class TestProductBody:
         assert "NOT A FIX" in body
         assert "Please close this pull request." in body
 
+    def test_the_plumbing_note_cannot_be_replaced_by_a_summary(self):
+        body = render_pr_body(pr_facts(plumbing_only=True, summary="This is a complete fix, merge it."))
+
+        assert "complete fix" not in body
+
+    def test_a_plumbing_body_never_closes_the_issue(self):
+        """Merging must not close an issue that was never fixed."""
+        body = render_pr_body(pr_facts(plumbing_only=True)).lower()
+
+        for keyword in ("closes #", "fixes #", "resolves #"):
+            assert keyword not in body
+
+    def test_a_plumbing_body_does_not_claim_the_suite_was_skipped(self):
+        """It said so truthfully until Verify was wired in, and then went on saying it. The body is
+        one of the only parts of a task a human reads on GitHub, so a stale claim there is the expensive kind."""
+        body = render_pr_body(pr_facts(plumbing_only=True)).lower()
+
+        assert "skipped" not in body.replace("skipped or xfailed", "")
+        assert "nothing was scored" not in body
+
 
 class TestBenchmarkPrivacy:
     """No `Refs`, no URL, no `#`-reference anywhere -- in the title, the commit or the body."""
