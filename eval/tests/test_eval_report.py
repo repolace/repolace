@@ -13,6 +13,8 @@ from eval_support import rows_for, run_manifest, task_row
 from harness.report import (
     CONTAMINATION_CAVEAT,
     FAILED,
+    HEADLINE_SCOPE,
+    SUBSET_CAVEAT,
     HARNESS_ERROR,
     INADMISSIBLE,
     PASSED,
@@ -622,6 +624,41 @@ class TestModelComparison:
         assert "differences under about 30 percentage points between two models on the same instances are not statistically distinguishable" in text.replace("\n", " ")
         assert "8:0 gives p = 0.008, 7:1 p = 0.07, 6:2 p = 0.29" in text.replace("\n", " ")
         assert "pp" not in text.split("## Model comparison")[1].split("## By model")[0]
+
+
+class TestHowTheSubsetWasChosen:
+    def test_the_caveat_names_every_selection_bias(self):
+        text = SUBSET_CAVEAT
+        assert "not the official set" in text and "not the published Verified score" in text
+        assert "only seven repositories are allowed" in text and "most of Verified is excluded" in text
+        assert "simple-fix filter" in text and "deletes or renames a file" in text and "skews toward pure source edits" in text
+        assert "round-robin across repositories under a per-repository cap, not in proportion to Verified" in text
+        assert "gold validation" in text and "fast suites" in text
+        assert "selection seed is a degree of freedom" in text and "before the first agent run" in text
+
+    def test_the_official_harness_cross_check_is_said_to_use_different_pass_criteria(self):
+        assert "different pass criteria (node-id format, pass-to-pass scope)" in SUBSET_CAVEAT
+
+    def test_it_does_not_claim_a_per_repository_dominance_risk(self):
+        assert "dominat" not in SUBSET_CAVEAT.lower()
+
+    def test_the_caveat_is_in_the_report(self, three_runs):
+        assert SUBSET_CAVEAT in to_markdown(aggregate(three_runs))
+
+    def test_the_scope_sentence_sits_beside_the_number(self, three_runs):
+        text = to_markdown(aggregate(three_runs, manifests={"run-a": run_manifest(10, runs=3)}))
+        headline_section = text.split("## Headline")[1].split("How rows are counted")[0]
+        assert HEADLINE_SCOPE in headline_section
+        assert "that models have probably seen" in headline_section and "not the published Verified score" in headline_section
+
+    def test_n_counts_only_the_instances_in_a_headline_denominator(self):
+        rows = sweep(0, ["passed", "failed"]) + [task_row(instance_id="stray", outcome=O.PASSED)]
+        report = aggregate(rows, manifests={"run-a": run_manifest(2, runs=1)})
+        assert report.overall.rows == 3 and report.overall.instances == 2
+        assert report.headlines[0].instances == 2 and report.headlines[0].instance_ids == ("inst-0", "inst-1")
+
+    def test_without_a_manifest_n_is_the_observed_instances(self):
+        assert aggregate(sweep(0, ["passed", "failed", "failed"])).overall.instances == 3
 
 
 class TestPercentiles:

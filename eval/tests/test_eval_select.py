@@ -718,6 +718,7 @@ class TestRunSelect:
         assert "django/django (1)" in manifest
         table_rows = [line for line in manifest.split("## Every rejection")[1].split("## Not evaluated")[0].splitlines() if line.strip()]
         assert len(table_rows) == 2 + 7 and all(line.startswith("|") for line in table_rows)
+        assert "The seed is a degree of freedom in the result: fix and record it before the first agent run." in manifest
         assert "- selected: 2; rejected: 7; not evaluated (target or per-repo cap reached): 0" in manifest
         assert OFF_ALLOWLIST not in manifest
 

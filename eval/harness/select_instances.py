@@ -649,7 +649,8 @@ def render_manifest(
         "and every instance that was rejected with the first reason it failed.",
         "",
         f"- dataset: `{dataset}` ({total_rows} rows)",
-        f"- seed: {seed}; target: {count} candidates; at most {max_per_repo} per repository",
+        f"- seed: {seed}; target: {count} candidates; at most {max_per_repo} per repository. The seed is a degree "
+        f"of freedom in the result: fix and record it before the first agent run.",
         f"- selected: {len(result.selected)}; rejected: {len(rejections)}; "
         f"not evaluated (target or per-repo cap reached): {len(result.not_evaluated)}",
         "",
