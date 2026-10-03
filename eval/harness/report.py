@@ -49,7 +49,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import math
 import statistics
 import sys
 from collections import Counter
@@ -63,6 +62,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from harness.metrics import percentile
 from repolace_shared.db.models import LLMCall, Task, TaskOutcome, TaskStatus, TaskTestRun
 from repolace_shared.instances import InstanceError, InstanceSpec, load_instances
 
@@ -158,28 +158,6 @@ def classify(row: TaskRow) -> str:
 
 
 # --- statistics --------------------------------------------------------------
-
-
-def percentile(values: Sequence[float], q: float) -> float | None:
-    """The `q`th percentile by linear interpolation between closest ranks.
-
-    Rank `q/100 * (n - 1)` over the sorted values (the numpy default), so one
-    value is its own percentile at any `q`, and p95 of two values sits 95% of the
-    way from the smaller to the larger. On the sample sizes here (tens of tasks) a
-    p95 is within a rank or two of the maximum; `Stats.n` is reported beside it so
-    nobody reads it as a tail estimate.
-    """
-    if not 0 <= q <= 100:
-        raise ValueError(f"q must be between 0 and 100, got {q}")
-    if not values:
-        return None
-    ordered = sorted(values)
-    position = q / 100 * (len(ordered) - 1)
-    lower = math.floor(position)
-    upper = math.ceil(position)
-    if lower == upper:
-        return ordered[lower]
-    return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
 
 
 @dataclass(frozen=True)
