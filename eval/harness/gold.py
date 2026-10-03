@@ -34,9 +34,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import sys
-import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
@@ -45,7 +43,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from harness.bench_repos import DEFAULT_INSTANCES_DIR
+from harness.bench_repos import DEFAULT_INSTANCES_DIR, atomic_write_text
 from harness.db import SessionFactory, check_eval_run_id, open_session_factory
 from repolace_shared.db.models import Task, TaskOutcome, TaskStatus, TaskTestRun
 from repolace_shared.instances import InstanceError, InstanceSpec, load_instances
@@ -332,19 +330,6 @@ def render_validation(verdicts: Sequence[InstanceVerdict], run_ids: Sequence[str
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
-def _write_text(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(text)
-        os.chmod(temporary, 0o644)
-        os.replace(temporary, path)
-    except BaseException:
-        Path(temporary).unlink(missing_ok=True)
-        raise
-
-
 # --- command line ---------------------------------------------------------------
 
 
@@ -380,7 +365,7 @@ def main(
 
     verdicts = asyncio.run(run())
     output = args.output or args.instances_dir / VALIDATION_FILENAME
-    _write_text(output, render_validation(verdicts, run_ids))
+    atomic_write_text(output, render_validation(verdicts, run_ids))
     rejected = [v.instance_id for v in verdicts if not v.accepted]
     print(f"{len(verdicts) - len(rejected)} accepted, {len(rejected)} rejected; wrote {output}")
     for instance_id in rejected:

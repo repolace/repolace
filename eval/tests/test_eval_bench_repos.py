@@ -8,6 +8,7 @@ reaches GitHub in exactly one header and nowhere a person could read it.
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
 import logging
@@ -604,6 +605,12 @@ class TestTokenHygiene:
         assert "other-sentinel-must-not-reach-git" not in env.values()
 
     def test_only_this_module_reads_the_token_variable(self):
+        """No other source file holds the variable's name as a string in code.
+
+        Docstrings and comments may talk about it; an `os.environ[...]` or
+        `os.getenv(...)` elsewhere would be a second reader, which is what this
+        forbids. The runner strips it from the children by importing the constant.
+        """
         root = Path(__file__).resolve().parents[2]
         offenders = []
         for path in root.rglob("*.py"):
@@ -612,8 +619,19 @@ class TestTokenHygiene:
                 continue
             if path.name == "bench_repos.py":
                 continue
-            if TOKEN_ENV_VAR in path.read_text(encoding="utf-8", errors="replace"):
-                offenders.append(str(path.relative_to(root)))
+            tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+            docstrings = {
+                id(node.body[0].value)
+                for node in ast.walk(tree)
+                if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.body and isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, ast.Constant)
+            }
+            for node in ast.walk(tree):
+                if (
+                    isinstance(node, ast.Constant) and isinstance(node.value, str)
+                    and TOKEN_ENV_VAR in node.value and id(node) not in docstrings
+                ):
+                    offenders.append(f"{path.relative_to(root)}:{node.lineno}")
         assert offenders == []
 
 

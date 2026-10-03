@@ -27,6 +27,14 @@ repolace itself broke (the row is FAILED); 2 not found / not wired; 3 not
 claimable. A child that exits 2 or 3 never owned the row, so its row is not
 touched: 3 can mean another runner is running it right now.
 
+**The run manifest.** `enqueue` writes `eval/runs/<run>/manifest.json` naming the
+agent, the model and the wall-clock cap the sweep is meant to use. The runner
+refuses to start (exit 2) when its own `--agent`, `--model` or `--timeout-seconds`
+disagree with it, because the report describes the sweep from that file and a
+mismatch would make it describe something that did not run. A run with no manifest
+is allowed through with a warning. Transient provider errors are retried only by
+the gateway inside each task; the runner never retries or re-runs a task.
+
 **Cost cap.** `--max-total-usd` is checked before each dispatch against
 `SUM(llm_calls.cost_usd)` for the run, which includes tasks from earlier
 invocations. Tasks already in flight finish, so the total can exceed the cap by
@@ -74,13 +82,17 @@ from harness.db import (
     run_cost_usd,
     running_older_than,
 )
+from harness.enqueue import (
+    DEFAULT_RUNS_DIR,
+    DEFAULT_WALL_CLOCK_SECONDS,
+    ManifestError,
+    manifest_path,
+    read_manifest,
+)
 from repolace_shared.paths import PathEscapesRoot, resolve_within
 from repolace_shared.process import REAP_TIMEOUT_SECONDS, ProcessResult, kill_process_tree, run_process
 
 log = structlog.get_logger()
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_RUNS_DIR = _REPO_ROOT / "eval" / "runs"
 
 #: Mirrors `repolace_pipeline.cli`; a test reads that file and holds the two equal.
 EXIT_OK = 0
@@ -123,7 +135,7 @@ def classify(returncode: int) -> Outcome:
 class RunnerConfig:
     eval_run_id: str
     concurrency: int = 3
-    timeout_seconds: float = 5400.0
+    timeout_seconds: float = DEFAULT_WALL_CLOCK_SECONDS
     agent: str = "llm"
     open_pr: bool = True
     model: str | None = None
@@ -146,6 +158,9 @@ class ChildResult:
 @dataclass
 class RunSummary:
     results: list[ChildResult] = field(default_factory=list)
+    #: A run manifest exists and agrees with this invocation. False means there is
+    #: none (the run was enqueued without one); a manifest that *disagrees* raises.
+    manifest_found: bool = False
     #: Why dispatching stopped early (cost cap, limit, a child that cannot start), or None.
     stopped: str | None = None
     not_dispatched: int = 0
@@ -309,6 +324,40 @@ async def _run_child(
     return ChildResult(task, outcome, returncode, seconds, peak_kb, marked, removed)
 
 
+# --- the run manifest -----------------------------------------------------------
+
+
+def check_manifest(runs_dir: Path, config: RunnerConfig) -> bool:
+    """Whether the run's manifest exists and agrees with this invocation.
+
+    `enqueue` recorded the agent, the model and the wall-clock cap the sweep was
+    meant to run under; the report describes the sweep from that file. So a runner
+    started with different values would make the manifest describe something that
+    did not happen, and refuses instead (`ManifestError`). A run enqueued without a
+    manifest is allowed through and reported, so the caller can say so.
+    """
+    path = manifest_path(runs_dir, config.eval_run_id)
+    if not path.exists():
+        return False
+    manifest = read_manifest(path)
+    problems = []
+    if manifest["agent"] != config.agent:
+        problems.append(f"agent: the manifest says {manifest['agent']!r}, this run was given {config.agent!r}")
+    if config.agent == "llm" and manifest["model"] != config.model:
+        problems.append(f"model: the manifest says {manifest['model']!r}, this run was given {config.model!r}")
+    recorded = manifest["limits"].get("runner_wall_clock_seconds") if isinstance(manifest["limits"], dict) else None
+    if recorded != config.timeout_seconds:
+        problems.append(
+            f"timeout: the manifest says {recorded!r} seconds, this run was given {config.timeout_seconds!r}"
+        )
+    if problems:
+        raise ManifestError(
+            f"{path} does not match this invocation of `run`:\n  " + "\n  ".join(problems)
+            + "\nRun with the values enqueue recorded, or enqueue a new run id."
+        )
+    return True
+
+
 # --- the dispatcher --------------------------------------------------------------
 
 
@@ -331,6 +380,7 @@ async def run_queue(
     except PathEscapesRoot as exc:
         raise ValueError(str(exc)) from None
     run_dir.mkdir(exist_ok=True)
+    manifest_found = check_manifest(runs_dir, config)
 
     command = tuple(child_command) if child_command is not None else default_child_command()
     env = child_env(os.environ if base_env is None else base_env, config.model)
@@ -339,7 +389,7 @@ async def run_queue(
     if config.limit is not None:
         queue = queue[: config.limit]
 
-    summary = RunSummary()
+    summary = RunSummary(manifest_found=manifest_found)
     semaphore = asyncio.Semaphore(config.concurrency)
     workers: list[asyncio.Task[None]] = []
     cannot_start: str | None = None
@@ -466,7 +516,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--eval-run-id", required=True)
     parser.add_argument("-k", "--concurrency", type=_positive_int, default=3, help="subprocesses at a time (RAM: ~4 GB each)")
-    parser.add_argument("--timeout-seconds", type=_positive_float, default=5400.0, help="wall clock per task")
+    parser.add_argument(
+        "--timeout-seconds", type=_positive_float, default=DEFAULT_WALL_CLOCK_SECONDS, help="wall clock per task"
+    )
     parser.add_argument("--agent", choices=("llm", "gold"), default="llm")
     parser.add_argument("--no-pr", action="store_true", help="never open a pull request (always on for --agent gold)")
     parser.add_argument("--model", help="gateway model key for the agent stage (sets GATEWAY_STAGE_MODELS)")
@@ -486,6 +538,12 @@ def _print_summary(summary: RunSummary) -> None:
         counts[result.outcome.value] = counts.get(result.outcome.value, 0) + 1
     print(f"dispatched {len(summary.results)}: " + (", ".join(f"{n} {name}" for name, n in sorted(counts.items())) or "nothing"))
     print(f"run cost so far: ${summary.total_cost_usd}")
+    if not summary.manifest_found:
+        print(
+            "warning: this run has no manifest.json (it was enqueued without one), so nothing checks that "
+            "--agent, --model and --timeout-seconds match what the sweep was meant to use",
+            file=sys.stderr,
+        )
     if summary.stopped:
         print(f"stopped dispatching: {summary.stopped}; {summary.not_dispatched} task(s) left QUEUED", file=sys.stderr)
     for result in summary.results:
@@ -543,7 +601,11 @@ def main(
             _print_summary(summary)
             return 0 if summary.healthy else 1
 
-    return asyncio.run(run())
+    try:
+        return asyncio.run(run())
+    except ManifestError as exc:
+        print(f"repolace-eval run: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
