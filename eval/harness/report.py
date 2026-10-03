@@ -59,7 +59,7 @@ import sys
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -149,6 +149,8 @@ class TaskRow:
     output_tokens: int = 0
     started_at: datetime | None = None
     completed_at: datetime | None = None
+    #: When the task row was created; what `--supersede latest` orders by.
+    created_at: datetime | None = None
     test_edit_approved: bool = False
     patch_diff: str | None = None
     #: From the instance files, not the database (the task's repo is the bench repo).
@@ -425,6 +427,85 @@ def _headline(
     )
 
 
+# --- duplicate rows ----------------------------------------------------------
+
+
+def _conflict(a: TaskRow, b: TaskRow) -> bool:
+    """The same `(instance, run_index)` for what could be the same model.
+
+    A row whose model is unknown (it died before its first LLM call) is a
+    wildcard: it could be the failed first attempt at a pair a real-model row
+    re-ran. Keying on the model alone gave that case no warning at all.
+    """
+    return (
+        a.instance_id == b.instance_id
+        and a.run_index == b.run_index
+        and (a.model is None or b.model is None or a.model == b.model)
+    )
+
+
+def find_duplicates(rows: Sequence[TaskRow]) -> list[tuple[TaskRow, TaskRow]]:
+    """Every pair of agent rows that would count one `(instance, run_index)` twice."""
+    by_pair: dict[tuple[str, int], list[TaskRow]] = {}
+    for row in rows:
+        if not is_gold(row):
+            by_pair.setdefault((row.instance_id, row.run_index), []).append(row)
+    return [
+        (a, b)
+        for group in by_pair.values()
+        for index, a in enumerate(group)
+        for b in group[index + 1:]
+        if _conflict(a, b)
+    ]
+
+
+SUPERSEDE_MODES = ("none", "latest")
+
+
+def resolve_duplicates(rows: Sequence[TaskRow], mode: str = "none") -> tuple[list[TaskRow], tuple[RowRef, ...]]:
+    """Refuse duplicate rows, or keep the newest of each and say what was dropped.
+
+    A re-run needs a new `eval_run_id`, so re-running failed tasks creates a second
+    row for the same `(instance, run_index)`, and counting both double counts it.
+    `none` (the default) refuses and lists them; `latest` keeps the row with the
+    newest `created_at` (a missing one is the oldest) and returns what it dropped,
+    for the report to print. Gold rows are never touched: gold validation repeats
+    each pair on purpose.
+    """
+    if mode not in SUPERSEDE_MODES:
+        raise ReportError(f"unknown --supersede mode {mode!r}; use one of {', '.join(SUPERSEDE_MODES)}")
+    duplicates = find_duplicates(rows)
+    if not duplicates:
+        return list(rows), ()
+    if mode == "none":
+        labels = sorted({f"{a.instance_id}#{a.run_index} ({a.eval_run_id}, {b.eval_run_id})" for a, b in duplicates})
+        shown = "; ".join(labels[:10]) + (f"; ... ({len(labels) - 10} more)" if len(labels) > 10 else "")
+        raise ReportError(
+            f"{len(labels)} (instance, run_index) pair(s) have more than one row, which would count them twice: "
+            f"{shown}. A re-run needs a new eval run id; pass --supersede latest to keep the newest row of each "
+            f"(what is dropped is printed)"
+        )
+
+    floor = datetime.min.replace(tzinfo=timezone.utc)
+    kept: list[TaskRow] = []
+    dropped: list[RowRef] = []
+    gold = [r for r in rows if is_gold(r)]
+    newest_first = sorted(
+        (r for r in rows if not is_gold(r)),
+        key=lambda r: (r.created_at or floor, r.eval_run_id), reverse=True,
+    )
+    for row in newest_first:
+        winner = next((k for k in kept if _conflict(k, row)), None)
+        if winner is None:
+            kept.append(row)
+        else:
+            dropped.append(RowRef(row.eval_run_id, row.instance_id, row.run_index, f"superseded by the newer row in {winner.eval_run_id}"))
+    kept_ids = {id(r) for r in kept}
+    ordered = [r for r in rows if is_gold(r) or id(r) in kept_ids]
+    assert len(ordered) == len(kept) + len(gold)
+    return ordered, tuple(sorted(dropped, key=lambda d: (d.instance_id, d.run_index, d.eval_run_id)))
+
+
 # --- the report --------------------------------------------------------------
 
 
@@ -503,6 +584,8 @@ class Report:
     unfinished: tuple[RowRef, ...]
     #: Planned rows that have no row in the database at all.
     missing: tuple[RowRef, ...]
+    #: Older rows dropped by `--supersede latest`, kept here so the drop is visible.
+    superseded: tuple[RowRef, ...]
     unfinished_cost_usd: float | None
     #: Instances with finished rows and not one admissible row.
     instances_never_admissible: tuple[str, ...]
@@ -591,6 +674,7 @@ def aggregate(
     manifests: Mapping[str, RunManifest] | None = None,
     allow_partial: bool = False,
     instance_repos: Mapping[str, str] | None = None,
+    superseded: Sequence[RowRef] = (),
 ) -> Report:
     """Everything the report says, from rows (and run manifests) alone. Pure and deterministic.
 
@@ -717,12 +801,18 @@ def aggregate(
         warnings.append(
             f"MIXED MODELS ({', '.join(real_models)}): each run has its own headline; nothing here pools them."
         )
-    seen: Counter[tuple[str | None, str, int]] = Counter((r.model, r.instance_id, r.run_index) for r in agent_rows)
-    duplicates = sorted(f"{i}#{n}" for (_, i, n), count in seen.items() if count > 1)
+    duplicates = sorted({f"{a.instance_id}#{a.run_index}" for a, _ in find_duplicates(agent_rows)})
     if duplicates:
         warnings.append(
-            f"{len(duplicates)} (instance, run_index) pair(s) appear more than once for one model, across "
-            f"eval runs: {', '.join(duplicates[:5])}. The cost and count tables below include both."
+            f"{len(duplicates)} (instance, run_index) pair(s) appear more than once (a row with no model counts "
+            f"as the same model), across eval runs: {', '.join(duplicates[:5])}. The count and cost tables below "
+            f"include both; build_report refuses this unless --supersede latest."
+        )
+    if superseded:
+        warnings.append(
+            f"--supersede latest dropped {len(superseded)} older row(s) for the same (instance, run_index): "
+            f"{', '.join(f'{d.instance_id}#{d.run_index} ({d.eval_run_id})' for d in superseded[:5])}"
+            f"{' ...' if len(superseded) > 5 else ''}."
         )
     if tokens.unpriced_calls:
         warnings.append(
@@ -770,6 +860,7 @@ def aggregate(
             RowRef(h.run_id, label.rsplit("#", 1)[0], int(label.rsplit("#", 1)[1]), "planned, but no row in the database")
             for h in headlines for label in h.missing
         ),
+        superseded=tuple(superseded),
         unfinished_cost_usd=sum(unfinished_costs) if unfinished_costs else None,
         instances_never_admissible=tuple(never_admissible),
         cost_usd=describe(costs),
@@ -935,6 +1026,8 @@ def to_markdown(report: Report) -> str:
         "",
     ] + _refs_table(edit.rows)
     out += [f"### Unfinished ({len(report.unfinished)})", ""] + _refs_table(report.unfinished)
+    if report.superseded:
+        out += [f"### Superseded by --supersede latest ({len(report.superseded)}), not counted anywhere", ""] + _refs_table(report.superseded)
     if report.unfinished_cost_usd is not None:
         out += [f"Spend on unfinished rows (not in the cost figures below): {_usd(report.unfinished_cost_usd)}.", ""]
     if report.instances_never_admissible:
@@ -1128,6 +1221,7 @@ async def load_rows(session: AsyncSession, eval_run_ids: Sequence[str]) -> list[
                 output_tokens=int(sums.output_tokens or 0) if sums else 0,
                 started_at=task.started_at,
                 completed_at=task.completed_at,
+                created_at=task.created_at,
                 test_edit_approved=task.test_edit_approved_at is not None,
                 patch_diff=task.patch_diff,
             )
@@ -1177,6 +1271,7 @@ async def build_report(
     *,
     manifests: Mapping[str, RunManifest] | None = None,
     allow_partial: bool = False,
+    supersede: str = "none",
 ) -> tuple[Report, list[TaskRow]]:
     """Load, join with instance data, aggregate. Returns the rows too, for the predictions export."""
     rows = await load_rows(session, [*agent_runs, *gold_runs])
@@ -1189,11 +1284,15 @@ async def build_report(
             f"--gold-run id(s) {', '.join(sorted(set(misfiled)))} do not start with {GOLD_RUN_PREFIX!r}, "
             f"so they would be counted as agent runs"
         )
+    rows, superseded = resolve_duplicates(rows, supersede)
     instance_repos: dict[str, str] = {}
     if instances is not None:
         rows = attach_instance_data(rows, instances)
         instance_repos = {instance_id: spec.repo for instance_id, spec in instances.items()}
-    return aggregate(rows, manifests=manifests, allow_partial=allow_partial, instance_repos=instance_repos), rows
+    report = aggregate(
+        rows, manifests=manifests, allow_partial=allow_partial, instance_repos=instance_repos, superseded=superseded,
+    )
+    return report, rows
 
 
 # --- command line ------------------------------------------------------------
@@ -1219,6 +1318,10 @@ def _parser() -> argparse.ArgumentParser:
              "--expect requires one, --no-expect ignores them",
     )
     parser.add_argument("--allow-partial", action="store_true", help="print a headline for an incomplete grid, marked PARTIAL")
+    parser.add_argument(
+        "--supersede", choices=SUPERSEDE_MODES, default="none",
+        help="duplicate (instance, run_index) rows: refuse (none, the default) or keep the newest and print what is dropped (latest)",
+    )
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
     parser.add_argument("--output", type=Path, default=None, help="write here instead of stdout")
     parser.add_argument("--predictions", type=Path, default=None, help="also write the SWE-bench predictions JSONL here")
@@ -1251,6 +1354,7 @@ async def _amain(args: argparse.Namespace) -> int:
         async with create_session_factory(engine)() as session:
             report, rows = await build_report(
                 session, args.run, args.gold_run, instances, manifests=manifests, allow_partial=args.allow_partial,
+                supersede=args.supersede,
             )
     finally:
         await engine.dispose()

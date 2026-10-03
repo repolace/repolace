@@ -51,6 +51,7 @@ class TestLoadRows:
         assert row.patch_diff == "diff --git a/x b/x\n"
         assert (row.completed_at - row.started_at).total_seconds() == 90
         assert row.test_edit_approved is False
+        assert row.created_at is not None
 
     async def test_a_task_with_no_calls_or_runs_has_no_cost_and_no_model(self, db_session):
         repo = await seed_bench_repo(db_session)
@@ -158,6 +159,18 @@ class TestBuildReport:
         partial, _ = await build_report(db_session, ["run-a"], manifests={"run-a": manifest}, allow_partial=True)
         assert (partial.headlines[0].passed, partial.headlines[0].planned) == (3, 5)
         assert "PARTIAL (3 of 5)" in partial.headlines[0].flags
+
+    async def test_a_rerun_under_a_new_run_id_is_refused_unless_superseded(self, db_session):
+        repo = await seed_bench_repo(db_session)
+        await add_eval_task(db_session, repo, eval_run_id="run-a", outcome=TaskOutcome.FAILED)
+        await add_eval_task(db_session, repo, eval_run_id="run-b", outcome=TaskOutcome.PASSED)
+
+        with pytest.raises(ReportError, match="more than one row, which would count them twice"):
+            await build_report(db_session, ["run-a", "run-b"])
+
+        report, rows = await build_report(db_session, ["run-a", "run-b"], supersede="latest")
+        assert [r.eval_run_id for r in rows] == ["run-b"]
+        assert [(d.eval_run_id, d.instance_id) for d in report.superseded] == [("run-a", "psf__requests-1001")]
 
     async def test_gold_runs_are_reported_apart_from_the_agent_runs(self, db_session):
         repo = await seed_bench_repo(db_session)
