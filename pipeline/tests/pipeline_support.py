@@ -15,7 +15,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from repolace_shared.db.models import GithubInstallation, RegisteredRepo, Task, TaskStatus
+from sqlalchemy import select
+
+from repolace_shared.db.models import GithubInstallation, RegisteredRepo, Task, TaskStatus, TaskTestRun
 from repolace_shared.git import task_workspace
 from repolace_shared.instances import InstanceSpec
 from repolace_shared.github.schemas import PullRequest
@@ -390,3 +392,23 @@ class NeverCalledLLM:
 
     async def complete(self, *args: Any, **kwargs: Any):
         raise AssertionError("the scripted agent must not call a model")
+
+
+# --- suite results and reading a task back -----------------------------------
+
+VISIBLE_TEST = "tests/test_app.py::test_parse_config_reads_pairs"
+
+#: A suite that passes before and after: the normal case for a live issue, where the bug is
+#: simply not covered, so `score()` is inadmissible and only the verdict can gate.
+BASELINE = SuiteResult(passed=(VISIBLE_TEST,), collected_files=("tests/test_app.py",))
+AFTER = SuiteResult(passed=(VISIBLE_TEST,), collected_files=("tests/test_app.py",))
+
+
+async def reload(factory, task_id) -> tuple[Task, list[TaskTestRun]]:
+    """The task row and its test runs, read back on a session of their own."""
+    async with factory() as session:
+        task = await session.get(Task, task_id)
+        runs = (
+            await session.execute(select(TaskTestRun).where(TaskTestRun.task_id == task_id).order_by(TaskTestRun.attempt))
+        ).scalars().all()
+    return task, list(runs)
