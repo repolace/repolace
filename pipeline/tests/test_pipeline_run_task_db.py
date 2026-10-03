@@ -565,6 +565,26 @@ class TestBenchmarkMode:
         assert row.cost_usd is None, "the gold runner calls no model"
         assert agent_branch_name(7, task.id) not in git(origin, "for-each-ref", "--format=%(refname)")
 
+    async def test_a_gold_run_that_would_open_a_pull_request_is_refused_before_the_task_is_claimed(
+        self, db_session, db_session_factory, origin_url, instances
+    ):
+        """The CLI forces `open_pr=False` for gold, and this is the same rule in the API: a caller that forgets
+        the flag must not write the reference fix into the bench repository."""
+        directory, instance = instances
+        task = await self.seed(db_session)
+        github = FakeGithubClient()
+
+        with pytest.raises(ValueError, match="must not open pull requests"):
+            await run_task(
+                task.id, db_session_factory, github, FakeBackend(), agent=GoldAgent(instance),
+                workspace_factory=local_workspace_factory(origin_url), embedder_warmup=lambda: None,
+                instances_dir=directory,  # open_pr defaults to True
+            )
+
+        row, _ = await reload(db_session_factory, task.id)
+        assert row.status is TaskStatus.QUEUED, "refused before the claim, so it can still be run correctly"
+        assert github.token_requests == 0 and github.pull_requests == []
+
     async def test_the_remote_refs_of_earlier_runs_are_pruned_before_the_agent_runs(
         self, db_session, db_session_factory, origin_url, origin, instances
     ):

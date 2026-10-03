@@ -79,7 +79,7 @@ from repolace_pipeline.errors import PipelineError, StageFailed, TaskNotClaimabl
 from repolace_pipeline.finalize import first_model, task_cost, write_failure_minimal, write_terminal
 from repolace_pipeline.gate import PrDecision, pr_decision
 from repolace_pipeline.pr import PrFacts, commit_message, pr_title, render_pr_body
-from repolace_pipeline.runners import StubAgent
+from repolace_pipeline.runners import GoldAgent, StubAgent
 from repolace_pipeline.testruns import record_test_run
 
 log = structlog.get_logger()
@@ -990,9 +990,14 @@ async def run_task(
     * `instances_dir` -- where benchmark instances live; required only for a task with an `instance_id`.
     * `budget` -- the gateway cap for the agent; None is the default cap. Its wall clock starts when
       the agent stage does, not when the task does (see `_agent_budget`).
-    * `open_pr` -- False never opens one, whatever the gate would say.
+    * `open_pr` -- False never opens one, whatever the gate would say. A gold run refuses True.
     * `embedding_strategy` -- how the index is built and queried.
     """
+    if isinstance(agent, GoldAgent) and open_pr:
+        # In the API, not only in the CLI: a gold run validates an instance by pushing the reference
+        # fix through the real pipeline, and one that opened a PR would write the answer into the
+        # bench repository. Refused before the task is claimed, so the row is still `queued`.
+        raise ValueError("a gold run validates an instance and must not open pull requests; pass open_pr=False")
     seams = _Seams(
         agent=agent,
         llm=llm,
