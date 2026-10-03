@@ -20,6 +20,7 @@ from pathlib import Path
 
 import httpx
 
+from harness.bench_repos import BENCH_MARKER
 from repolace_shared.instances import InstanceSpec, dump_instance
 
 #: Deliberately shaped like nothing `redact` knows (`ghp_...`, `github_pat_...`, a
@@ -68,6 +69,7 @@ class FakeGithub:
         self,
         *,
         existing: Iterable[str] = (),
+        foreign: Iterable[str] = (),
         public: Iterable[str] = (),
         fail_actions: Iterable[str] = (),
         reject_create: Iterable[str] = (),
@@ -76,10 +78,14 @@ class FakeGithub:
     ) -> None:
         self._ids = itertools.count(1000)
         self.repos: dict[str, dict] = {}
+        # `existing`: created by this tool (marker, private). `foreign`: private but made
+        # by someone else (no marker). `public`: carries the marker but is public.
         for name in existing:
-            self.repos[name] = {"id": next(self._ids), "private": True, "actions_disabled": False}
+            self.repos[name] = {"id": next(self._ids), "private": True, "actions_disabled": False, "description": BENCH_MARKER}
+        for name in foreign:
+            self.repos[name] = {"id": next(self._ids), "private": True, "actions_disabled": False, "description": "somebody else's"}
         for name in public:
-            self.repos[name] = {"id": next(self._ids), "private": False, "actions_disabled": False}
+            self.repos[name] = {"id": next(self._ids), "private": False, "actions_disabled": False, "description": BENCH_MARKER}
         self.fail_actions = set(fail_actions)
         self.reject_create = set(reject_create)
         self.fail_delete = set(fail_delete)
@@ -95,7 +101,10 @@ class FakeGithub:
 
     def _repo_json(self, name: str) -> dict:
         repo = self.repos[name]
-        return {"id": repo["id"], "full_name": f"repolace/{name}", "private": repo["private"]}
+        return {
+            "id": repo["id"], "full_name": f"repolace/{name}", "private": repo["private"],
+            "description": repo["description"],
+        }
 
     def _error(self, request: httpx.Request, status: int, message: str) -> httpx.Response:
         if self.echo_credentials:
@@ -122,7 +131,10 @@ class FakeGithub:
                         "errors": [{"resource": "Repository", "field": "name", "message": "name already exists on this account"}],
                     },
                 )
-            self.repos[name] = {"id": next(self._ids), "private": body["private"], "actions_disabled": False}
+            self.repos[name] = {
+                "id": next(self._ids), "private": body["private"], "actions_disabled": False,
+                "description": body.get("description"),
+            }
             return httpx.Response(201, json=self._repo_json(name))
 
         match = re.fullmatch(r"/repos/repolace/([^/]+)", path)
