@@ -2496,7 +2496,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "langgraph", specifier = ">=0.2" },
+    { name = "langgraph", specifier = ">=0.6,<2" },
     { name = "repolace-gateway", editable = "gateway" },
     { name = "repolace-shared", editable = "shared" },
     { name = "repolace-verify", editable = "verify" },
@@ -2589,7 +2589,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
-    { name = "langgraph", specifier = ">=0.2" },
+    { name = "langgraph", specifier = ">=0.6,<2" },
     { name = "pydantic-settings", specifier = ">=2.5" },
     { name = "repolace-agents", editable = "agents" },
     { name = "repolace-gateway", editable = "gateway" },

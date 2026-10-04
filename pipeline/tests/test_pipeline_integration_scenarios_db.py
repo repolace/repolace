@@ -449,7 +449,11 @@ class TestAgentFailureModesAreNotHarnessErrors:
         assert result.status is TaskStatus.COMPLETED and row.error_message is None
         assert row.agent_stop_reason == "llm_error" and row.outcome is TaskOutcome.FAILED
 
-    async def test_a_runaway_graph_is_a_step_cap_not_a_harness_error(self, db_session, db_session_factory, origin_url):
+    async def test_a_runaway_graph_is_a_harness_error_because_only_a_repolace_bug_can_cause_it(
+        self, db_session, db_session_factory, origin_url
+    ):
+        """The graph cannot reach its own recursion limit by itself and nothing in an issue can
+        make it; counting it as a step cap would hide the bug inside the headline denominator."""
         task = await seed_task(db_session)
 
         async def script(deps):
@@ -462,14 +466,15 @@ class TestAgentFailureModesAreNotHarnessErrors:
         )
 
         row, _ = await reload(db_session_factory, task.id)
-        assert result.status is row.status is TaskStatus.COMPLETED and row.error_message is None
-        assert row.agent_stop_reason == "step_cap"
-        assert row.outcome is TaskOutcome.FAILED and row.score_reason == "no scored attempt: step_cap"
+        assert result.status is row.status is TaskStatus.FAILED
+        assert row.error_message.startswith("agent: ") and "GraphRecursionError" in row.error_message
 
-    async def test_a_runaway_graph_after_a_scored_attempt_keeps_that_attempt(
+    async def test_a_runaway_graph_after_a_scored_attempt_opens_no_pr(
         self, db_session, db_session_factory, origin_url
     ):
+        """A scored passing attempt followed by a graph bug must not become a PASSED row with a PR."""
         task = await seed_task(db_session)
+        github = FakeGithubClient()
 
         async def script(deps):
             (deps.checkout / "src" / "app.py").write_text("def parse_config(path):\n    return {}\n")
@@ -477,15 +482,34 @@ class TestAgentFailureModesAreNotHarnessErrors:
             raise GraphRecursionError("Recursion limit of 20 reached")
 
         result = await run_task(
-            task.id, db_session_factory, FakeGithubClient(), FakeBackend(results=[RED_BASELINE, GREEN_AFTER]),
+            task.id, db_session_factory, github, FakeBackend(results=[RED_BASELINE, GREEN_AFTER]),
             agent=ScriptedAgent(script), workspace_factory=local_workspace_factory(origin_url),
             embedder_warmup=lambda: None,
         )
 
         row, _ = await reload(db_session_factory, task.id)
-        assert result.status is row.status is TaskStatus.COMPLETED and row.error_message is None
-        assert row.outcome is TaskOutcome.PASSED and row.changed_files == ["src/app.py"]
-        assert result.attempts == 1
+        assert result.status is row.status is TaskStatus.FAILED
+        assert row.pr_number is None and not github.pull_requests
+
+    @pytest.mark.parametrize("title", ["\x01", "\x7f\x02"])
+    async def test_an_issue_title_of_only_control_characters_does_not_fail_retrieval(
+        self, db_session, db_session_factory, origin_url, title
+    ):
+        """`build_query` blanks control characters, `hybrid_search` rejects an empty query, and that used
+        to fail the task at retrieve (a harness error) for an issue that is merely oddly titled."""
+        task = await seed_task(db_session, issue_title=title)
+
+        async def script(deps):
+            return agent_result(StopReason.STEP_CAP)
+
+        result = await run_task(
+            task.id, db_session_factory, FakeGithubClient(), FakeBackend(results=[RED_BASELINE]),
+            agent=ScriptedAgent(script), workspace_factory=local_workspace_factory(origin_url),
+            embedder_warmup=lambda: None,
+        )
+
+        row, _ = await reload(db_session_factory, task.id)
+        assert row.status is not TaskStatus.FAILED or not (row.error_message or "").startswith("retrieve")
 
     async def test_a_real_harness_failure_is_still_a_failed_task(self, db_session, db_session_factory, tmp_path):
         """The converse: a clone that cannot clone is repolace's, and must be counted as such."""
