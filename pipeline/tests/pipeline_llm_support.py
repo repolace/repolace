@@ -18,11 +18,20 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import litellm
+from sqlalchemy import select
 
 from repolace_gateway.client import LLMClient
 from repolace_gateway.config import GatewayConfig, GatewaySettings, parse_config
 from repolace_gateway.recorder import Recorder
 from repolace_gateway.redaction import Redactor
+from repolace_shared.db.models import LLMCall
+from verify.protocol import SuiteResult
+
+from repolace_agents.contracts import AgentResult
+from repolace_pipeline.agent_runner import LLMAgent
+from repolace_pipeline.run import RunResult, run_task
+
+from pipeline_support import FakeGithubClient, local_workspace_factory
 
 #: Provider-shaped fake credential; the gateway redacts exact matches of it from what it stores.
 FAKE_ANTHROPIC_KEY = "sk-ant-api03-" + "Zq9Xk2" * 6
@@ -143,8 +152,12 @@ class ScriptedProvider:
     def everything_sent(self) -> str:
         return "\n".join(self.request_text(i) for i in range(len(self.calls)))
 
-    def tool_results(self) -> list[str]:
-        """Every tool message the model was ever shown, from the longest transcript (earlier ones are elided)."""
+    def results_by_id(self) -> dict[str, str]:
+        """Every tool message the model was ever shown, by the id of the call it answers.
+
+        Read across all requests, because a later attempt elides the earlier attempt's tool output;
+        the first sighting of each id is the real result.
+        """
         seen: dict[str, str] = {}
         for request in self.calls:
             for message in request.get("messages") or []:
@@ -153,7 +166,14 @@ class ScriptedProvider:
                     if isinstance(content, list):  # cache markers turn the content into blocks
                         content = "".join(block.get("text", "") for block in content)
                     seen.setdefault(message["tool_call_id"], content)
-        return list(seen.values())
+        return seen
+
+    def tool_results(self) -> list[str]:
+        return list(self.results_by_id().values())
+
+    def result_of(self, tool_call: tuple[str, str, str]) -> str:
+        """What the model was told when it made `tool_call` (a tuple from `call()`)."""
+        return self.results_by_id()[tool_call[0]]
 
 
 def make_client(
@@ -175,4 +195,80 @@ def make_client(
     )
 
 
-Responder = Callable[[dict[str, Any]], Any]
+VISIBLE = "tests/test_app.py::test_parse_config_reads_pairs"
+OTHER = "tests/test_app.py::test_other"
+HIDDEN = "tests/test_hidden.py::test_empty_config"
+COLLECTED = ("tests/test_app.py",)
+BENCH_COLLECTED = ("tests/test_app.py", "tests/test_hidden.py")
+
+DOCSTRING = '"""Parse the key=value config file at path into a dict."""'
+FIXED = '"""Parse the key=value config file at path into a dict. An empty file gives an empty dict."""'
+BROKEN = '"""BROKEN"""'
+
+#: A live-issue baseline with one red test, which the attempt turns green: scored PASSED (uncurated).
+RED_BASELINE = SuiteResult(passed=(OTHER,), failed=(VISIBLE,), collected_files=COLLECTED)
+GREEN_AFTER = SuiteResult(passed=(OTHER, VISIBLE), collected_files=COLLECTED)
+
+#: The benchmark versions: the curated test is red at the base commit because the overlay is on disk.
+BENCH_BASELINE = SuiteResult(passed=(VISIBLE,), failed=(HIDDEN,), collected_files=BENCH_COLLECTED)
+BENCH_AFTER = SuiteResult(passed=(VISIBLE, HIDDEN), collected_files=BENCH_COLLECTED)
+
+
+def edit_docstring(old: str, new: str):
+    return call("edit_file", path="src/app.py", old_string=old, new_string=new)
+
+
+async def run_real(
+    factory, origin_url, task, provider, backend, *, github=None, config=None, **kwargs
+) -> tuple[RunResult, FakeGithubClient]:
+    """`run_task` with the real runner and a real client over `provider`: what `--agent llm` builds."""
+    github = github if github is not None else FakeGithubClient()
+    result = await run_task(
+        task.id,
+        factory,
+        github,
+        backend,
+        agent=LLMAgent(),
+        llm=make_client(factory, provider, config=config),
+        workspace_factory=local_workspace_factory(origin_url),
+        embedder_warmup=lambda: None,
+        **kwargs,
+    )
+    return result, github
+
+
+async def llm_rows(factory, task_id) -> list[LLMCall]:
+    async with factory() as session:
+        rows = await session.execute(select(LLMCall).where(LLMCall.task_id == task_id).order_by(LLMCall.created_at))
+        return list(rows.scalars())
+
+
+def happy_script():
+    """search, read, edit, run the tests, submit: the loop the prompt asks for."""
+    return [
+        reply(call("search_code", query="parse_config empty file")),
+        reply(call("read_file", path="src/app.py")),
+        reply(edit_docstring(DOCSTRING, FIXED)),
+        reply(call("run_tests", targets=["tests/test_app.py"])),
+        reply(call("submit", summary="Document that an empty file gives an empty dict.")),
+    ]
+
+
+def assert_record_complete(row) -> None:
+    """Every column a benchmark row needs, set: a column nothing writes is the failure that has happened."""
+    assert row.patch_diff and row.changed_files, "patch_diff and changed_files"
+    assert row.score_reason, "score_reason"
+    assert row.agent_stop_reason, "agent_stop_reason"
+    assert row.retry_count is not None, "retry_count"
+    assert row.cost_usd is not None and row.cost_usd > 0, "cost_usd"
+    assert row.patch_sha and row.completed_at is not None
+
+
+def first_call_to(provider: ScriptedProvider, tool: str) -> tuple[str, str, str]:
+    """The `(id, name, args)` tuple of the first call to `tool` the model made, read back from its transcript."""
+    for request in provider.calls:
+        for message in request.get("messages") or []:
+            for raw in message.get("tool_calls") or []:
+                if raw["function"]["name"] == tool:
+                    return (raw["id"], tool, raw["function"]["arguments"])
+    raise AssertionError(f"the model never called {tool}")
