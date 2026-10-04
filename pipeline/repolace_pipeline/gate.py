@@ -23,8 +23,11 @@ Both modes share three rules, stated first because they are easy to get wrong:
   a gold validation run that opened real PRs would be a bench-repo write the
   operator did not ask for.
 * **In benchmark mode the reasons never name a test.** They end up in logs and
-  in `RunResult.pr_gate_reason`, and there a test id is the oracle. Product mode
-  has no oracle, so the verdict's own sentence (which names the regressions) is
+  in `RunResult.pr_gate_reason`. The agent reads neither, so a test id there is
+  not an oracle by itself; the rule keeps the curated and hidden ids out of
+  operator-side text that is easy to paste or publish beside a number, the same
+  rule `run._score_log_fields` applies to the score's log lines. Product mode has
+  no hidden tests, so the verdict's own sentence (which names the regressions) is
   quoted: it is exactly what the person reading the result needs.
 """
 

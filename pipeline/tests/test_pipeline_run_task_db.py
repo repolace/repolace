@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager
 from decimal import Decimal
 
 import pytest
+import structlog.testing
 from sqlalchemy import text
 
 import repolace_pipeline.run as run_module
@@ -460,6 +461,44 @@ class TestBenchmarkMode:
         assert row.outcome is None, "never scored: the instrument, not the agent, is what failed"
         assert backend.runs == [] and agent.calls == [] and github.pull_requests == []
 
+    @staticmethod
+    def logged_text(events) -> str:
+        return "\n".join(repr(sorted(event.items())) for event in events)
+
+    @pytest.mark.parametrize("not_red", [False, True], ids=["scored", "inadmissible"])
+    async def test_a_benchmark_tasks_logs_carry_counts_and_name_no_test(
+        self, db_session, db_session_factory, origin_url, instances, not_red
+    ):
+        directory, _ = instances
+        task = await self.seed(db_session)
+        results = (
+            [SuiteResult(passed=(VISIBLE_TEST, HIDDEN_TEST), collected_files=("tests/test_app.py", "tests/test_hidden.py"))]
+            if not_red
+            else [BENCH_BASELINE, BENCH_AFTER]
+        )
+
+        with structlog.testing.capture_logs() as events:
+            await run(
+                db_session_factory, origin_url, task, agent_that(StopReason.SUBMITTED),
+                FakeBackend(results=results), instances_dir=directory,
+            )
+
+        (scored,) = [event for event in events if event["event"] == "pipeline.score"]
+        assert isinstance(scored["fail_to_pass"], int) and "reason" not in scored
+        assert "test_hidden" not in self.logged_text(events)
+
+    async def test_a_product_tasks_score_log_keeps_its_ids(self, db_session, db_session_factory, origin_url):
+        task = await seed_task(db_session)
+
+        with structlog.testing.capture_logs() as events:
+            await run(
+                db_session_factory, origin_url, task, agent_that(StopReason.SUBMITTED),
+                FakeBackend(results=[BENCH_BASELINE, BENCH_AFTER]),
+            )
+
+        (scored,) = [event for event in events if event["event"] == "pipeline.score"]
+        assert scored["fail_to_pass"] == [HIDDEN_TEST] and "reason" in scored
+
     async def test_a_product_task_on_any_commit_is_unaffected(self, db_session, db_session_factory, origin_url):
         task = await seed_task(db_session)
 
@@ -572,7 +611,8 @@ class TestBenchmarkMode:
         assert agent.calls == [], "an inadmissible instance must not spend an agent's budget"
         assert result.status is row.status is TaskStatus.COMPLETED
         assert row.outcome is None and result.outcome is None
-        assert row.score_reason == f"expected fail-to-pass not red at baseline: {HIDDEN_TEST}"
+        assert row.score_reason == "expected fail-to-pass not red at baseline: 1 of 1 curated test(s)"
+        assert "test_hidden" not in row.score_reason, "a benchmark task's stored reason names no test"
         assert github.pull_requests == []
         assert (row.agent_stop_reason, row.patch_diff, row.changed_files, row.patch_sha) == (None, None, None, None)
         assert [r.attempt for r in runs] == [0]

@@ -447,17 +447,40 @@ async def _retrieve(
         return tuple(RetrievedChunk.from_result(result) for result in results)
 
 
-def _log_score(scored: Score) -> None:
-    log.info(
-        "pipeline.score",
-        outcome=scored.outcome.value if scored.outcome else None,
-        inadmissible=scored.inadmissible,
-        reason=scored.reason,
-        fail_to_pass=list(scored.fail_to_pass[:10]),
-        regressions=list(scored.regressions[:10]),
-        neutralized=list(scored.neutralized[:10]),
-        disqualified=list(scored.disqualified[:10]),
-    )
+def _score_log_fields(scored: Score, *, benchmark: bool) -> dict[str, object]:
+    """What a log line may say about a score.
+
+    **A benchmark task's logs carry counts, never test ids or the scorer's sentence** (which names
+    up to three of them). The agent cannot read a log, so this is not an oracle in itself; it keeps
+    the curated and hidden ids out of operator-side text that is easy to paste, attach or publish
+    beside a number, where nothing else in the run needs them: the raw sets are in
+    `task_test_runs`, by design. Product mode has no hidden tests, so the ids are what a person
+    debugging the run wants, and they stay.
+    """
+    fields: dict[str, object] = {
+        "outcome": scored.outcome.value if scored.outcome else None,
+        "inadmissible": scored.inadmissible,
+    }
+    if benchmark:
+        return {
+            **fields,
+            "fail_to_pass": len(scored.fail_to_pass),
+            "regressions": len(scored.regressions),
+            "neutralized": len(scored.neutralized),
+            "disqualified": len(scored.disqualified),
+        }
+    return {
+        **fields,
+        "reason": scored.reason,
+        "fail_to_pass": list(scored.fail_to_pass[:10]),
+        "regressions": list(scored.regressions[:10]),
+        "neutralized": list(scored.neutralized[:10]),
+        "disqualified": list(scored.disqualified[:10]),
+    }
+
+
+def _log_score(scored: Score, *, benchmark: bool) -> None:
+    log.info("pipeline.score", **_score_log_fields(scored, benchmark=benchmark))
 
 
 def _load_instance(task: Task, instances_dir: Path | None) -> _InstanceMode | None:
@@ -680,7 +703,7 @@ async def _run_stages(
         # one would burn its whole budget for a result that is thrown away.
         skip = _inadmissible_instance(baseline, instance)
         if skip is not None:
-            return await _complete_without_agent(state, task, *skip)
+            return await _complete_without_agent(state, task, *skip, benchmark=instance is not None)
 
         async with _stage("branch"):
             branch = await workspace.start_agent_branch(task.issue_number, task.id)
@@ -746,7 +769,7 @@ async def _run_stages(
         log.info("pipeline.review.done", changed_files=changed, diff_bytes=len(diff))
 
         scored, verdict = _judge(baseline, baseline_files, instance, result, changed)
-        _log_score(scored)
+        _log_score(scored, benchmark=instance is not None)
 
         decision = pr_decision(
             benchmark=instance is not None,
@@ -835,9 +858,7 @@ async def _run_stages(
         await state.commit()
     log.info(
         "pipeline.task.pr_opened" if pull_request is not None else "pipeline.task.completed",
-        outcome=scored.outcome.value if scored.outcome else None,
-        inadmissible=scored.inadmissible,
-        reason=scored.reason,
+        **_score_log_fields(scored, benchmark=instance is not None),
         stop_reason=result.stop_reason.value,
         pr_number=pull_request.number if pull_request is not None else None,
         pr_url=pull_request.html_url if pull_request is not None else None,
@@ -865,6 +886,10 @@ def _inadmissible_instance(baseline: SuiteResult, instance: InstanceSpec | None)
     and the score says so in the scorer's own words. And a curated fail-to-pass test that **was
     not red at the base commit** makes it inadmissible too: every other condition of `score` is
     then met by a patch that changes nothing, so a no-op edit would score PASSED.
+
+    That second reason is stored in `tasks.score_reason` and says **how many** curated tests were
+    not red, never which: it exists only for a benchmark task, and a benchmark task's text names
+    no test (see `_score_log_fields`). Which ones is a query on the stored baseline.
     """
     if baseline.error:
         # The scorer's own sentence for it, so the two cannot drift: with no changed files and
@@ -876,7 +901,10 @@ def _inadmissible_instance(baseline: SuiteResult, instance: InstanceSpec | None)
             return (
                 Score(
                     outcome=None,
-                    reason=f"expected fail-to-pass not red at baseline: {', '.join(not_red[:5])}",
+                    reason=(
+                        f"expected fail-to-pass not red at baseline: {len(not_red)} of "
+                        f"{len(instance.fail_to_pass)} curated test(s)"
+                    ),
                     inadmissible=True,
                 ),
                 "instance inadmissible: a curated fail-to-pass test was not failing at the base commit",
@@ -884,13 +912,15 @@ def _inadmissible_instance(baseline: SuiteResult, instance: InstanceSpec | None)
     return None
 
 
-async def _complete_without_agent(state: AsyncSession, task: Task, scored: Score, gate_reason: str) -> RunResult:
+async def _complete_without_agent(
+    state: AsyncSession, task: Task, scored: Score, gate_reason: str, *, benchmark: bool
+) -> RunResult:
     """Finish a task whose instance cannot be scored, without having run an agent.
 
     `completed` with no outcome: nothing broke, nothing was measured. The agent columns stay
     `None` ("never reached the agent"), which is not the same as an agent that did nothing.
     """
-    _log_score(scored)
+    _log_score(scored, benchmark=benchmark)
     await write_terminal(
         state,
         task.id,
@@ -908,7 +938,7 @@ async def _complete_without_agent(state: AsyncSession, task: Task, scored: Score
         pr_url=None,
     )
     await state.commit()
-    log.info("pipeline.task.completed", outcome=None, inadmissible=True, reason=scored.reason, gate=gate_reason)
+    log.info("pipeline.task.completed", **_score_log_fields(scored, benchmark=benchmark), gate=gate_reason)
     return RunResult(
         task.id, TaskStatus.COMPLETED, outcome=None, score_reason=scored.reason, pr_gate_reason=gate_reason
     )
