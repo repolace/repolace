@@ -58,9 +58,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from harness.bench_repos import DEFAULT_INSTANCES_DIR, MAPPING_FILENAME, BenchRepoError, load_bench_repos
 from harness.db import SessionFactory, check_eval_run_id, open_session_factory
 from harness.run_manifest import AGENTS, ManifestError, RunManifest, dump_manifest, load_manifest, manifest_path
+# Light: `budget` imports neither LiteLLM nor torch (`code_limits` below reads the same module).
+from repolace_gateway.budget import DEFAULT_MAX_WALL_SECONDS
 from repolace_shared.db.models import RegisteredRepo, Task, TaskStatus
 from repolace_shared.git.repo import GitError, run_git
 from repolace_shared.instances import InstanceError, InstanceSpec, load_instances
+from verify.config import DockerConfig
 
 #: Benchmark tasks target `main` of the benchmark repository: `fork` pushes the
 #: base commit there.
@@ -69,9 +72,68 @@ TARGET_BRANCH = "main"
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_RUNS_DIR = _REPO_ROOT / "eval" / "runs"
 
-#: The runner's hard wall clock per task, and its default. Defined here, next to the
-#: manifest that records it, and imported by `runner`, so the two cannot drift.
-DEFAULT_WALL_CLOCK_SECONDS = 5400.0
+# --- the runner's wall clock per task -------------------------------------------
+#
+# The runner kills a task that runs longer than this and records it FAILED ("runner:
+# timeout"), which the report counts as a harness error: a non-pass in the headline, and
+# *removed* from the secondary `passed / admissible` denominator. So the limit must be at
+# least the longest a task can legitimately take, or slow suites -- which probably go with
+# hard instances -- silently leave that figure. The stages, in order, and what bounds each:
+#
+# 1. waiting for another task's indexing lock: `INDEX_LOCK_WAIT_SECONDS`;
+# 2. building the environment (inside the baseline run): `ENVIRONMENT_BUILD_SECONDS`;
+# 3. the baseline suite: the suite timeout;
+# 4. the agent stage: the gateway's wall-clock budget, which already contains every
+#    scored suite, probe and script that *started* before it ran out;
+# 5. the one operation that may start just before that budget runs out and finish after
+#    it: a scored suite (the suite timeout again). The alternatives are smaller: a probe
+#    (300 s), a script (120 s), or a model call (5 tries of 180 s plus at most 30 s of
+#    backoff with no fallback configured, about 930 s). After it the budget check stops
+#    the loop and verify is skipped, so nothing else can start;
+# 6. everything with no constant bounding it -- clone, loading the embedding model, the
+#    task's own index pass, retrieval, review, squash, push, the PR, container teardown:
+#    `UNBOUNDED_STAGES_SLACK_SECONDS`, an allowance rather than a bound.
+#
+# The first two are literals because their sources cannot be imported here (the
+# pipeline's module pulls torch), and the suite default and the agent budget are read
+# from theirs; `test_eval_enqueue` holds every one equal to where it is defined.
+
+#: `repolace_pipeline.run.INDEX_WAIT_CAP_SECONDS`.
+INDEX_LOCK_WAIT_SECONDS = 1200.0
+#: `verify.config.DockerConfig.build_timeout_seconds`.
+ENVIRONMENT_BUILD_SECONDS = DockerConfig().build_timeout_seconds
+#: `verify.config.DockerConfig.run_timeout_seconds`: a suite's timeout unless its spec sets one.
+DEFAULT_SUITE_TIMEOUT_SECONDS = DockerConfig().run_timeout_seconds
+#: `repolace_gateway.budget.DEFAULT_MAX_WALL_SECONDS`, the agent stage's wall clock.
+AGENT_WALL_SECONDS = float(DEFAULT_MAX_WALL_SECONDS)
+#: Stage 6 above. Fifteen minutes; no stage there has a constant, so this is a judgement.
+UNBOUNDED_STAGES_SLACK_SECONDS = 900.0
+
+
+def task_wall_clock_bound(suite_seconds: float = DEFAULT_SUITE_TIMEOUT_SECONDS) -> float:
+    """The longest one task can legitimately run when each suite run takes `suite_seconds`.
+
+    `suite_seconds` is a suite *timeout* when bounding the worst case, or a measured (or
+    padded) suite duration when projecting one instance -- `gold` does the latter. The suite
+    appears twice: the baseline (stage 3) and the scored run that overruns the agent's
+    budget (stage 5).
+    """
+    return (
+        INDEX_LOCK_WAIT_SECONDS
+        + ENVIRONMENT_BUILD_SECONDS
+        + suite_seconds
+        + AGENT_WALL_SECONDS
+        + suite_seconds
+        + UNBOUNDED_STAGES_SLACK_SECONDS
+    )
+
+
+#: The runner's hard wall clock per task, and its default: 1200 + 2400 + 1800 + 3600 + 1800
+#: + 900 = 11,700 s (3 h 15 min) with today's constants. Defined here, next to the manifest
+#: that records it, and imported by `runner`, so the two cannot drift. An instance whose
+#: spec sets a longer suite timeout needs a longer `--timeout-seconds`; `gold` flags one
+#: whose measured suite would not fit.
+DEFAULT_WALL_CLOCK_SECONDS = task_wall_clock_bound()
 
 #: What `model` holds for an agent that calls no model.
 NO_MODEL = "none"

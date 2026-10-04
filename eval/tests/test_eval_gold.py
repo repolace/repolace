@@ -19,10 +19,15 @@ from eval_exec_support import add_repo, add_task, make_instance, write_instances
 from harness.gold import (
     TARGETED_P2P_FRACTION,
     main,
+    GoldRun,
+    build_parser,
     render_validation,
     suite_timeout_seconds,
     validate_gold,
+    validate_instance,
 )
+from harness.enqueue import DEFAULT_WALL_CLOCK_SECONDS, task_wall_clock_bound
+from verify.protocol import SuiteResult
 from repolace_shared.db.models import TaskOutcome, TaskStatus, TaskTestRun
 
 F2P = "t.py::test_new"
@@ -272,6 +277,63 @@ class TestTimingAndProposal:
 
     def test_the_threshold_is_half_the_timeout(self):
         assert TARGETED_P2P_FRACTION == 0.5
+
+
+class TestRunnerWallClockProposal:
+    """The proposal also weighs the runner's per-task wall clock, not only the suite timeout.
+
+    A task the runner kills is a harness error and leaves `passed / admissible`; a suite that
+    is comfortably inside its own timeout can still make the whole task outlast the runner.
+    Pure: built from `GoldRun`s directly, no database.
+    """
+
+    @staticmethod
+    def runs(seconds: float) -> dict[str, GoldRun]:
+        baseline = SuiteResult(failed=(F2P,), passed=(P2P, "other.py::test_x"), collected_files=("t.py", "other.py"), duration_seconds=seconds)
+        attempt = SuiteResult(passed=(F2P, P2P, "other.py::test_x"), collected_files=("t.py", "other.py"), duration_seconds=seconds)
+        return {run: GoldRun(run, TaskStatus.COMPLETED, TaskOutcome.PASSED, None, None, baseline, (attempt,)) for run in RUNS}
+
+    def test_a_suite_inside_its_own_timeout_that_would_outlast_the_runner_is_proposed(self):
+        # 600s is a third of a 1800s timeout, so the timeout rule alone says nothing; padded to
+        # 1200s per run, the task needs task_wall_clock_bound(1200) seconds.
+        runner = task_wall_clock_bound(1200.0) - 1.0
+
+        verdict = validate_instance(instance(), self.runs(600.0), timeout_seconds=1800.0, runner_timeout_seconds=runner)
+
+        assert verdict.proposal is not None
+        assert "runner" in verdict.proposal.reason
+        assert "of the 1800s timeout" not in verdict.proposal.reason, "the suite-timeout rule must not be what fired"
+        assert verdict.accepted, "a proposal is advice; it does not reject the instance"
+
+    def test_the_same_suite_under_a_runner_limit_that_covers_it_gets_none(self):
+        runner = task_wall_clock_bound(1200.0)
+
+        verdict = validate_instance(instance(), self.runs(600.0), timeout_seconds=1800.0, runner_timeout_seconds=runner)
+
+        assert verdict.proposal is None
+
+    def test_the_padding_stops_at_the_suites_own_timeout(self):
+        # A long timeout padded past itself would overstate the task; the sandbox stops the run there.
+        runner = task_wall_clock_bound(1000.0)
+
+        verdict = validate_instance(instance(), self.runs(990.0), timeout_seconds=1000.0, runner_timeout_seconds=runner)
+
+        assert verdict.proposal is not None and "runner" not in verdict.proposal.reason
+
+    def test_an_instance_with_a_longer_suite_timeout_is_flagged_under_the_default_runner_limit(self):
+        spec = instance(spec={"base_image": "python:3.9-slim", "timeout_seconds": 4000})
+
+        verdict = validate_instance(spec, self.runs(1900.0), timeout_seconds=suite_timeout_seconds(spec))
+
+        assert verdict.proposal is not None and "runner" in verdict.proposal.reason
+
+    def test_the_default_runner_limit_is_the_runners(self):
+        assert build_parser().parse_args([]).runner_timeout_seconds == DEFAULT_WALL_CLOCK_SECONDS
+
+    @pytest.mark.parametrize("seconds", ["0", "-1", "inf", "nan"])
+    def test_a_nonsense_runner_limit_is_a_usage_error(self, seconds, capsys):
+        assert main(["--runner-timeout-seconds", seconds]) == 2
+        assert "--runner-timeout-seconds" in capsys.readouterr().err
 
 
 class TestRendering:

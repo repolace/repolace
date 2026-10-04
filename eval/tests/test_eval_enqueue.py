@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -20,12 +21,14 @@ from eval_exec_support import add_repo, make_instance, run_git_sync, write_insta
 from harness.bench_repos import load_bench_entries, load_bench_repos
 from harness.enqueue import (
     DEFAULT_WALL_CLOCK_SECONDS,
+    UNBOUNDED_STAGES_SLACK_SECONDS,
     EnqueueError,
     ManifestInputs,
     build_parser,
     code_limits,
     enqueue_tasks,
     main,
+    task_wall_clock_bound,
 )
 from harness.run_manifest import ManifestError, load_manifest, manifest_path
 from repolace_shared.db.models import Task, TaskStatus
@@ -676,7 +679,7 @@ class TestCommandLine:
         assert args.open_pr_on_failure is False
         assert args.instances == "all"
         assert args.agent == "llm" and args.model is None and args.allow_dirty_tree is False
-        assert args.timeout_seconds == DEFAULT_WALL_CLOCK_SECONDS == 5400.0
+        assert args.timeout_seconds == DEFAULT_WALL_CLOCK_SECONDS == 11700.0
 
     def test_the_llm_agent_without_a_model_is_a_usage_error(self, tmp_path, capsys):
         directory = self.directory(tmp_path, "a")
@@ -696,3 +699,52 @@ class TestCommandLine:
         )
 
         assert code == 2
+
+
+class TestRunnerWallClock:
+    """The runner's default wall clock covers the longest a task can legitimately take.
+
+    A task the runner kills is FAILED, a harness error, and leaves the secondary
+    `passed / admissible` denominator; so the default must be at least the worst-case sum of
+    the stages, each read from where it is defined, not from a mirror of it.
+    """
+
+    @staticmethod
+    def index_wait_cap() -> float:
+        # Read from the source: importing the pipeline's module would pull torch into this test.
+        source = (Path(__file__).resolve().parents[2] / "pipeline" / "repolace_pipeline" / "run.py").read_text()
+        found = re.findall(r"^INDEX_WAIT_CAP_SECONDS = ([0-9.]+)$", source, re.M)
+        assert len(found) == 1, "INDEX_WAIT_CAP_SECONDS moved; teach this test where"
+        return float(found[0])
+
+    def worst_case(self) -> float:
+        from repolace_gateway.budget import DEFAULT_MAX_WALL_SECONDS
+        from verify.config import DockerConfig
+
+        docker = DockerConfig()
+        return (
+            self.index_wait_cap()  # waiting for another task's index
+            + docker.build_timeout_seconds  # the environment build, inside the baseline
+            + docker.run_timeout_seconds  # the baseline suite
+            + DEFAULT_MAX_WALL_SECONDS  # the agent stage, scored suites included
+            + docker.run_timeout_seconds  # a scored suite started just before the budget ran out
+        )
+
+    def test_the_default_covers_the_worst_case_sum_of_the_stages(self):
+        assert DEFAULT_WALL_CLOCK_SECONDS >= self.worst_case() + UNBOUNDED_STAGES_SLACK_SECONDS
+
+    def test_the_overrun_is_bounded_by_the_suite_not_by_a_probe_or_a_script(self):
+        """Stage 5 counts a scored suite because it is the longest thing that can start late."""
+        from repolace_agents.tools.base import ToolLimits
+        from verify.config import DockerConfig
+
+        limits = ToolLimits()
+        assert max(limits.max_probe_seconds, limits.max_script_timeout) <= DockerConfig().run_timeout_seconds
+
+    def test_the_bound_is_monotone_in_the_suite_time_and_counts_it_twice(self):
+        assert task_wall_clock_bound(100.0) - task_wall_clock_bound(0.0) == 200.0
+
+    def test_the_mirrored_index_wait_is_the_pipelines(self):
+        from harness import enqueue
+
+        assert enqueue.INDEX_LOCK_WAIT_SECONDS == self.index_wait_cap()

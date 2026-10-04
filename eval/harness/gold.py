@@ -26,8 +26,12 @@ It also reports each suite's wall time and, when the longest run takes at least
 `TARGETED_P2P_FRACTION` of the suite timeout, a `targeted_p2p` **proposal**: the
 fix's own test files, offered because every task runs the suite once at baseline
 and again after each attempt, so a suite near its timeout will turn into
-unscoreable runs. Whether to apply it is the maintainer's call; the proposal says
-how much of the pass-to-pass list it would still cover.
+unscoreable runs. The same proposal is made when a task whose suite runs that
+long (padded the same way) could outlast the **runner's** wall clock
+(`--runner-timeout-seconds`, default the runner's own): the runner would kill it and
+record a harness error, which leaves the secondary `passed / admissible` figure.
+Whether to apply it is the maintainer's call; the proposal says how much of the
+pass-to-pass list it would still cover.
 """
 
 from __future__ import annotations
@@ -45,6 +49,7 @@ from sqlalchemy.orm import selectinload
 
 from harness.bench_repos import DEFAULT_INSTANCES_DIR, atomic_write_text
 from harness.db import SessionFactory, check_eval_run_id, open_session_factory
+from harness.enqueue import DEFAULT_WALL_CLOCK_SECONDS, task_wall_clock_bound
 from repolace_shared.db.models import Task, TaskOutcome, TaskStatus, TaskTestRun
 from repolace_shared.instances import InstanceError, InstanceSpec, load_instances
 from verify.config import DockerConfig
@@ -175,8 +180,22 @@ def _uncollected(baseline: SuiteResult, expected: Sequence[str]) -> list[str]:
     return sorted(item for item in expected if item not in seen and not item.startswith(prefixes))
 
 
-def _proposal(spec: InstanceSpec, longest: float, timeout: float) -> Proposal | None:
-    if spec.targeted_p2p or longest < TARGETED_P2P_FRACTION * timeout:
+def _proposal(spec: InstanceSpec, longest: float, timeout: float, runner_timeout: float) -> Proposal | None:
+    if spec.targeted_p2p:
+        return None
+    reasons = []
+    if longest >= TARGETED_P2P_FRACTION * timeout:
+        reasons.append(f"longest suite run {longest:.0f}s is at least {TARGETED_P2P_FRACTION:.0%} of the {timeout:.0f}s timeout")
+    # The suite padded as above (an attempt's run is often slower), but never past its own
+    # timeout, which is where the sandbox stops it whatever the runner allows.
+    padded = min(timeout, longest / TARGETED_P2P_FRACTION)
+    projected = task_wall_clock_bound(padded)
+    if projected > runner_timeout:
+        reasons.append(
+            f"with suite runs of up to {padded:.0f}s a task can take {projected:.0f}s, longer than the "
+            f"runner's {runner_timeout:.0f}s wall clock, which would kill it as a harness error"
+        )
+    if not reasons:
         return None
     files = {item.split("::", 1)[0] for item in spec.fail_to_pass} | set(spec.test_files)
     covered = sum(1 for item in spec.pass_to_pass if item.split("::", 1)[0] in files)
@@ -184,11 +203,17 @@ def _proposal(spec: InstanceSpec, longest: float, timeout: float) -> Proposal | 
         test_targets=tuple(sorted(files)),
         covered_pass_to_pass=covered,
         total_pass_to_pass=len(spec.pass_to_pass),
-        reason=f"longest suite run {longest:.0f}s is at least {TARGETED_P2P_FRACTION:.0%} of the {timeout:.0f}s timeout",
+        reason="; ".join(reasons),
     )
 
 
-def validate_instance(spec: InstanceSpec, runs: Mapping[str, GoldRun | None], *, timeout_seconds: float) -> InstanceVerdict:
+def validate_instance(
+    spec: InstanceSpec,
+    runs: Mapping[str, GoldRun | None],
+    *,
+    timeout_seconds: float,
+    runner_timeout_seconds: float = DEFAULT_WALL_CLOCK_SECONDS,
+) -> InstanceVerdict:
     """Apply the four checks and the timing report to one instance. Pure."""
     reasons: list[str] = []
     present: list[GoldRun] = []
@@ -240,7 +265,7 @@ def validate_instance(spec: InstanceSpec, runs: Mapping[str, GoldRun | None], *,
         attempt.duration_seconds for run in present for attempt in run.attempts if attempt.duration_seconds is not None
     )
     every = (*baseline_seconds, *gold_seconds)
-    proposal = _proposal(spec, max(every), timeout_seconds) if every else None
+    proposal = _proposal(spec, max(every), timeout_seconds, runner_timeout_seconds) if every else None
     return InstanceVerdict(spec.instance_id, tuple(reasons), baseline_seconds, gold_seconds, proposal)
 
 
@@ -253,7 +278,11 @@ def suite_timeout_seconds(spec: InstanceSpec) -> float:
 
 
 async def validate_gold(
-    factory: SessionFactory, instances: Mapping[str, InstanceSpec], run_ids: Sequence[str] = DEFAULT_RUNS
+    factory: SessionFactory,
+    instances: Mapping[str, InstanceSpec],
+    run_ids: Sequence[str] = DEFAULT_RUNS,
+    *,
+    runner_timeout_seconds: float = DEFAULT_WALL_CLOCK_SECONDS,
 ) -> list[InstanceVerdict]:
     rows = await load_gold_runs(factory, run_ids)
     return [
@@ -261,6 +290,7 @@ async def validate_gold(
             spec,
             {run_id: rows.get((run_id, instance_id)) for run_id in run_ids},
             timeout_seconds=suite_timeout_seconds(spec),
+            runner_timeout_seconds=runner_timeout_seconds,
         )
         for instance_id, spec in sorted(instances.items())
     ]
@@ -340,6 +370,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--runs", default=",".join(DEFAULT_RUNS), help="the two gold run ids, comma-separated")
     parser.add_argument("--instances-dir", type=Path, default=DEFAULT_INSTANCES_DIR)
     parser.add_argument("--output", type=Path, default=None, help=f"default: <instances-dir>/{VALIDATION_FILENAME}")
+    parser.add_argument(
+        "--runner-timeout-seconds",
+        type=float,
+        default=DEFAULT_WALL_CLOCK_SECONDS,
+        help="the per-task wall clock the sweep will run under (default: the runner's own)",
+    )
     return parser
 
 
@@ -353,6 +389,8 @@ def main(
 
     run_ids = [item for item in args.runs.split(",") if item]
     try:
+        if not args.runner_timeout_seconds > 0 or args.runner_timeout_seconds == float("inf"):
+            raise ValueError("--runner-timeout-seconds must be a positive, finite number")
         if len(run_ids) != 2 or run_ids[0] == run_ids[1]:
             raise ValueError("--runs needs exactly two different run ids")
         for run_id in run_ids:
@@ -367,7 +405,7 @@ def main(
 
     async def run() -> list[InstanceVerdict]:
         async with (session_factory or open_session_factory)() as factory:
-            return await validate_gold(factory, instances, run_ids)
+            return await validate_gold(factory, instances, run_ids, runner_timeout_seconds=args.runner_timeout_seconds)
 
     verdicts = asyncio.run(run())
     output = args.output or args.instances_dir / VALIDATION_FILENAME
