@@ -172,7 +172,7 @@ class TestPureHelpers:
     def test_the_defaults(self):
         args = build_parser().parse_args(["--eval-run-id", "r"])
 
-        assert (args.concurrency, args.timeout_seconds, args.agent) == (3, 5400.0, "llm")
+        assert (args.concurrency, args.timeout_seconds, args.agent) == (3, 11700.0, "llm")
         assert args.no_pr is False and args.mark_abandoned is False
         assert args.max_total_usd is None and args.limit is None and args.model is None
 
@@ -855,7 +855,9 @@ class TestMain:
         repo = await add_repo(db_session, "repolace/bench-x")
         queued = await add_task(db_session, repo, instance_id="q", run_index=0)
         stale = await add_task(
-            db_session, repo, instance_id="s", run_index=0, status=TaskStatus.RUNNING, started_at=ago(hours=3)
+            db_session, repo, instance_id="s", run_index=0, status=TaskStatus.RUNNING,
+            # Older than the default timeout plus the grace, whatever the default is.
+            started_at=ago(seconds=DEFAULT_WALL_CLOCK_SECONDS + ABANDONED_GRACE_SECONDS + 600),
         )
 
         code = await asyncio.to_thread(

@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager
 from decimal import Decimal
 
 import pytest
+import structlog.testing
 from sqlalchemy import text
 
 import repolace_pipeline.run as run_module
@@ -439,6 +440,75 @@ class TestBenchmarkMode:
         assert pull["title"] == "[repolace] SWE-bench instance acme__sample-7"
         assert "Curated fail-to-pass tests passing: 1 of 1." in pull["body"], "the instance's list reached the PR text"
 
+    async def test_a_bench_branch_that_moved_off_the_base_commit_fails_before_anything_is_measured(
+        self, db_session, db_session_factory, origin_url, tmp_path
+    ):
+        """Someone pushed to the bench repository's branch since `fork`: the task would measure a
+        different tree from the curated one. A harness error, raised at the clone, never a warning."""
+        directory = tmp_path / "moved-instances"
+        directory.mkdir()
+        instance = make_instance(base_commit="f" * 40)
+        dump_instance(instance, directory / f"{instance.instance_id}.json")
+        task = await self.seed(db_session)
+        agent = agent_that(StopReason.SUBMITTED)
+        backend = FakeBackend(results=[BENCH_BASELINE, BENCH_AFTER])
+
+        result, github = await run(db_session_factory, origin_url, task, agent, backend, instances_dir=directory)
+
+        row, _ = await reload(db_session_factory, task.id)
+        assert result.status is row.status is TaskStatus.FAILED
+        assert row.error_message.startswith("clone: ") and "f" * 40 in row.error_message
+        assert row.outcome is None, "never scored: the instrument, not the agent, is what failed"
+        assert backend.runs == [] and agent.calls == [] and github.pull_requests == []
+
+    @staticmethod
+    def logged_text(events) -> str:
+        return "\n".join(repr(sorted(event.items())) for event in events)
+
+    @pytest.mark.parametrize("not_red", [False, True], ids=["scored", "inadmissible"])
+    async def test_a_benchmark_tasks_logs_carry_counts_and_name_no_test(
+        self, db_session, db_session_factory, origin_url, instances, not_red
+    ):
+        directory, _ = instances
+        task = await self.seed(db_session)
+        results = (
+            [SuiteResult(passed=(VISIBLE_TEST, HIDDEN_TEST), collected_files=("tests/test_app.py", "tests/test_hidden.py"))]
+            if not_red
+            else [BENCH_BASELINE, BENCH_AFTER]
+        )
+
+        with structlog.testing.capture_logs() as events:
+            await run(
+                db_session_factory, origin_url, task, agent_that(StopReason.SUBMITTED),
+                FakeBackend(results=results), instances_dir=directory,
+            )
+
+        (scored,) = [event for event in events if event["event"] == "pipeline.score"]
+        assert isinstance(scored["fail_to_pass"], int) and "reason" not in scored
+        assert "test_hidden" not in self.logged_text(events)
+
+    async def test_a_product_tasks_score_log_keeps_its_ids(self, db_session, db_session_factory, origin_url):
+        task = await seed_task(db_session)
+
+        with structlog.testing.capture_logs() as events:
+            await run(
+                db_session_factory, origin_url, task, agent_that(StopReason.SUBMITTED),
+                FakeBackend(results=[BENCH_BASELINE, BENCH_AFTER]),
+            )
+
+        (scored,) = [event for event in events if event["event"] == "pipeline.score"]
+        assert scored["fail_to_pass"] == [HIDDEN_TEST] and "reason" in scored
+
+    async def test_a_product_task_on_any_commit_is_unaffected(self, db_session, db_session_factory, origin_url):
+        task = await seed_task(db_session)
+
+        result, _ = await run(
+            db_session_factory, origin_url, task, agent_that(StopReason.SUBMITTED),
+            FakeBackend(results=[BENCH_BASELINE, BENCH_AFTER]),
+        )
+
+        assert result.status is not TaskStatus.FAILED
+
     async def test_a_curated_list_changes_the_reason_text(self, db_session, db_session_factory, origin_url, instances):
         """With the instance's fail-to-pass list the PASSED reason says how many expected tests pass; without it the
         same results read 'uncurated'. The two sentences are what the report flags the headline by."""
@@ -541,7 +611,8 @@ class TestBenchmarkMode:
         assert agent.calls == [], "an inadmissible instance must not spend an agent's budget"
         assert result.status is row.status is TaskStatus.COMPLETED
         assert row.outcome is None and result.outcome is None
-        assert row.score_reason == f"expected fail-to-pass not red at baseline: {HIDDEN_TEST}"
+        assert row.score_reason == "expected fail-to-pass not red at baseline: 1 of 1 curated test(s)"
+        assert "test_hidden" not in row.score_reason, "a benchmark task's stored reason names no test"
         assert github.pull_requests == []
         assert (row.agent_stop_reason, row.patch_diff, row.changed_files, row.patch_sha) == (None, None, None, None)
         assert [r.attempt for r in runs] == [0]
