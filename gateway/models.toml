@@ -28,20 +28,20 @@ cache = false               # single-shot calls: a cache write costs more than i
 max_tokens = 1024
 
 # --- headline model --------------------------------------------------------
-# NOT PRICED: LiteLLM 1.98.0's price map has `claude-sonnet-5` but no
-# `claude-sonnet-5-5`, so the gateway will refuse this model with
-# UnpricedModelError until a price is given. Fill in the [price] table below
-# from Anthropic's pricing page (or bump LiteLLM to a version that has it).
-# Rates were deliberately not guessed: a wrong price here is a wrong benchmark.
+# LiteLLM 1.98.0's price map has `claude-sonnet-5` but no `claude-sonnet-5-5`,
+# so the price is set explicitly below. Rates were deliberately not guessed:
+# a wrong price here is a wrong benchmark.
 [models.claude-sonnet-5-5]
 provider = "anthropic"
 litellm_model = "anthropic/claude-sonnet-5-5"
 supports_prompt_caching = true
-# [models.claude-sonnet-5-5.price]
-# input = 0.0
-# output = 0.0
-# cache_read = 0.0
-# cache_write = 0.0
+[models.claude-sonnet-5-5.price]
+# From Anthropic's pricing page, supplied by the maintainer 2026-10-05.
+# cache_write is the 5-minute rate: the gateway sends cache_control without a ttl.
+input = 2.00
+output = 10.00
+cache_read = 0.20
+cache_write = 2.50
 
 # --- cheap model -----------------------------------------------------------
 [models.claude-haiku-4-5-20251001]
