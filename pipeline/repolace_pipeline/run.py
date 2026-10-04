@@ -43,7 +43,6 @@ from pathlib import Path
 
 import httpx
 import structlog
-from langgraph.errors import GraphRecursionError
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -431,6 +430,11 @@ async def _retrieve(
     """
     title = task.issue_title.strip() or f"issue {task.issue_number}"
     query = build_query(title, task.issue_body)
+    if not query.semantic.strip():
+        # A title made only of control characters passes the `.strip()` above and is blanked by
+        # `build_query`; `hybrid_search` rejects an empty query, which would fail the task at
+        # retrieve (a harness error) for an issue that is merely oddly titled.
+        query = build_query(f"issue {task.issue_number}", task.issue_body)
     async with session_factory() as search_db:
         results = await hybrid_search(
             search_db,
@@ -485,21 +489,20 @@ def _agent_stop_from(exc: BaseException) -> StopReason | None:
     task, and a runner that lets one escape would otherwise turn a budget stop into a harness
     error that leaves the benchmark's denominator.
 
-    `GraphRecursionError` is the graph's own guard firing: the agent loop took more super-steps
-    than `4 * max_attempts + 8`, which the graph's shape cannot do by itself -- so it is the
-    agent's routing, not the harness, that ran away. It is read as a step cap (the closest of the
-    eight reasons: the agent was stopped for taking too many steps, with no submit). The graph
-    module calls it "repolace broke"; the integration brief overrules that, because charging a
-    runaway loop to the harness would remove the instance from the headline's denominator and
-    improve the number. `UnpricedModelError`, `MissingProviderKey` and `NoTaskScope` stay
+    `GraphRecursionError` is deliberately NOT mapped: it is the graph's own guard firing, and the
+    graph's shape (at most 7 steps against a limit of `4 * max_attempts + 8`, each pass either
+    ending or using up an attempt) cannot reach it by itself, so nothing in an issue or a
+    repository can cause it -- only a routing bug in repolace can. Counting it as a step cap
+    would hide that bug inside the headline's denominator, indistinguishable from a real step
+    cap, and a run that had already scored a passing attempt could even open a PR. It stays
+    a harness error (FAILED, `agent: GraphRecursionError`), as the graph module says.
+    `UnpricedModelError`, `MissingProviderKey` and `NoTaskScope` stay
     harness errors: they mean the measurement itself is broken.
     """
     if isinstance(exc, BudgetExceeded):
         return _BUDGET_STOPS[exc.limit]
     if isinstance(exc, LLMCallError):
         return StopReason.LLM_ERROR
-    if isinstance(exc, GraphRecursionError):
-        return StopReason.STEP_CAP
     return None
 
 

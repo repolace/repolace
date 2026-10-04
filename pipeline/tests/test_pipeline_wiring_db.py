@@ -226,7 +226,6 @@ class TestWhichExceptionsAreTheAgentsFault:
     @pytest.mark.parametrize(
         ("exc", "stop"),
         [
-            (GraphRecursionError("limit"), StopReason.STEP_CAP),
             (LLMCallError("down", stage="agent", model="m", retries=1), StopReason.LLM_ERROR),
             (BudgetExceeded(BudgetLimit.USD, spent_usd=1, calls=1, elapsed_seconds=1.0), StopReason.BUDGET_USD),
             (BudgetExceeded(BudgetLimit.CALLS, spent_usd=1, calls=1, elapsed_seconds=1.0), StopReason.BUDGET_CALLS),
@@ -243,6 +242,8 @@ class TestWhichExceptionsAreTheAgentsFault:
             MissingProviderKey("no key"),
             NoTaskScope("outside a scope"),
             RuntimeError("a bug"),
+            # Only a routing bug in repolace can reach the graph's recursion limit; see `_agent_stop_from`.
+            GraphRecursionError("limit"),
             ValueError("LLMAgent needs a model client"),
         ],
     )

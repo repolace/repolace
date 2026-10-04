@@ -4,7 +4,7 @@ version = "0.0.1"
 description = "LangGraph graph definitions and prompts for repolace"
 requires-python = ">=3.12"
 dependencies = [
-    "langgraph>=0.2",
+    "langgraph>=0.6,<2",
     "repolace-shared",
     "repolace-gateway",
     "repolace-verify",
