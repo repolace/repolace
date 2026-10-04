@@ -13,98 +13,36 @@ what the *model was shown* and what ended up in the *database and on the remote*
 script did.
 """
 
-import json
 import re
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select
 
-import repolace_pipeline.agent_runner as agent_runner_module
-import repolace_pipeline.run as run_module
-from harness.report import build_report
-from repolace_gateway.budget import TaskBudget
-from repolace_shared.db.models import LLMCall, RegisteredRepo, Task, TaskOutcome, TaskStatus
+from repolace_shared.db.models import TaskOutcome, TaskStatus
 from repolace_shared.git import agent_branch_name
-from repolace_shared.instances import dump_instance
-from retrieval.query import build_query
-from verify.protocol import ScriptResult, SuiteResult
+from verify.protocol import SuiteResult
 from verify.testing import FakeBackend
 
-from repolace_agents.contracts import StopReason
-from repolace_pipeline.agent_runner import LLMAgent
-from repolace_pipeline.run import RunResult, run_task
-
-from pipeline_llm_support import MODEL_NAME, REPLY_COST, ScriptedProvider, call, make_client, reply
-from pipeline_support import (
-    FakeGithubClient,
-    git,
-    local_workspace_factory,
-    make_instance,
-    reload,
-    seed_task,
+from pipeline_llm_support import (
+    DOCSTRING,
+    FIXED,
+    GREEN_AFTER,
+    MODEL_NAME,
+    OTHER,
+    RED_BASELINE,
+    REPLY_COST,
+    VISIBLE,
+    COLLECTED,
+    ScriptedProvider,
+    call,
+    happy_script,
+    llm_rows,
+    reply,
+    run_real,
 )
+from pipeline_support import git, reload, seed_task
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db, pytest.mark.usefixtures("embedder")]
-
-VISIBLE = "tests/test_app.py::test_parse_config_reads_pairs"
-OTHER = "tests/test_app.py::test_other"
-HIDDEN = "tests/test_hidden.py::test_empty_config"
-COLLECTED = ("tests/test_app.py",)
-BENCH_COLLECTED = ("tests/test_app.py", "tests/test_hidden.py")
-
-DOCSTRING = '"""Parse the key=value config file at path into a dict."""'
-FIXED = '"""Parse the key=value config file at path into a dict. An empty file gives an empty dict."""'
-BROKEN = '"""BROKEN"""'
-
-#: A live-issue baseline with one red test, which the attempt turns green: scored PASSED (uncurated).
-RED_BASELINE = SuiteResult(passed=(OTHER,), failed=(VISIBLE,), collected_files=COLLECTED)
-GREEN_AFTER = SuiteResult(passed=(OTHER, VISIBLE), collected_files=COLLECTED)
-
-#: The benchmark versions: the curated test is red at the base commit because the overlay is on disk.
-BENCH_BASELINE = SuiteResult(passed=(VISIBLE,), failed=(HIDDEN,), collected_files=BENCH_COLLECTED)
-BENCH_AFTER = SuiteResult(passed=(VISIBLE, HIDDEN), collected_files=BENCH_COLLECTED)
-
-
-def edit_docstring(old: str, new: str):
-    return call("edit_file", path="src/app.py", old_string=old, new_string=new)
-
-
-async def run_real(
-    factory, origin_url, task, provider, backend, *, github=None, config=None, **kwargs
-) -> tuple[RunResult, FakeGithubClient]:
-    """`run_task` with the real runner and a real client over `provider`: what `--agent llm` builds."""
-    github = github if github is not None else FakeGithubClient()
-    result = await run_task(
-        task.id,
-        factory,
-        github,
-        backend,
-        agent=LLMAgent(),
-        llm=make_client(factory, provider, config=config),
-        workspace_factory=local_workspace_factory(origin_url),
-        embedder_warmup=lambda: None,
-        **kwargs,
-    )
-    return result, github
-
-
-async def llm_rows(factory, task_id) -> list[LLMCall]:
-    async with factory() as session:
-        rows = await session.execute(select(LLMCall).where(LLMCall.task_id == task_id).order_by(LLMCall.created_at))
-        return list(rows.scalars())
-
-
-def happy_script():
-    """search, read, edit, run the tests, submit: the loop the prompt asks for."""
-    return [
-        reply(call("search_code", query="parse_config empty file")),
-        reply(call("read_file", path="src/app.py")),
-        reply(edit_docstring(DOCSTRING, FIXED)),
-        reply(call("run_tests", targets=["tests/test_app.py"])),
-        reply(call("submit", summary="Document that an empty file gives an empty dict.")),
-    ]
-
 
 class TestTheHappyPathThroughTheRealGraph:
     @pytest.fixture
