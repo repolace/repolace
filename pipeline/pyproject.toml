@@ -9,6 +9,8 @@ dependencies = [
     "repolace-verify",
     "repolace-agents",
     "repolace-gateway",
+    # `GraphRecursionError` is classified in `run._agent_stop_from`; the same floor as `agents`.
+    "langgraph>=0.2",
     "sqlalchemy[asyncio]>=2.0",
     "httpx>=0.27",
     "pydantic-settings>=2.5",
