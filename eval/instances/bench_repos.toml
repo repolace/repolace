@@ -1,0 +1,22 @@
+# Written by `repolace-eval fork`. instance_id -> benchmark repository.
+# A plain string is a ready repository: private, Actions disabled, base commit pushed.
+# An inline table with status = "incomplete" is one this tool created that a later step
+# failed on; it is listed so `fork --delete` can remove it, and nothing else may use it.
+"mwaskom__seaborn-3069" = "repolace/bench-mwaskom__seaborn-3069"
+"mwaskom__seaborn-3187" = "repolace/bench-mwaskom__seaborn-3187"
+"pallets__flask-5014" = "repolace/bench-pallets__flask-5014"
+"pylint-dev__pylint-4551" = "repolace/bench-pylint-dev__pylint-4551"
+"pylint-dev__pylint-4604" = "repolace/bench-pylint-dev__pylint-4604"
+"pylint-dev__pylint-4970" = "repolace/bench-pylint-dev__pylint-4970"
+"pytest-dev__pytest-5631" = "repolace/bench-pytest-dev__pytest-5631"
+"pytest-dev__pytest-6202" = "repolace/bench-pytest-dev__pytest-6202"
+"pytest-dev__pytest-7236" = "repolace/bench-pytest-dev__pytest-7236"
+"pytest-dev__pytest-7432" = "repolace/bench-pytest-dev__pytest-7432"
+"pytest-dev__pytest-7571" = "repolace/bench-pytest-dev__pytest-7571"
+"pytest-dev__pytest-7982" = "repolace/bench-pytest-dev__pytest-7982"
+"sphinx-doc__sphinx-7462" = "repolace/bench-sphinx-doc__sphinx-7462"
+"sphinx-doc__sphinx-7590" = "repolace/bench-sphinx-doc__sphinx-7590"
+"sphinx-doc__sphinx-9230" = "repolace/bench-sphinx-doc__sphinx-9230"
+"sphinx-doc__sphinx-9320" = "repolace/bench-sphinx-doc__sphinx-9320"
+"sphinx-doc__sphinx-9367" = "repolace/bench-sphinx-doc__sphinx-9367"
+"sphinx-doc__sphinx-9602" = "repolace/bench-sphinx-doc__sphinx-9602"
