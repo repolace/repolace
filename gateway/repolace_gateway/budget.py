@@ -43,8 +43,10 @@ DEFAULT_MAX_USD = Decimal("2.00")
 #: 3 attempts x the agent's 40-step cap = 120 calls, plus slack for retrieval-time
 #: calls and the occasional failed call, which counts (see `charge`).
 DEFAULT_MAX_CALLS = 150
-#: A whole task, test suites included -- the eval runner has its own, harder
-#: per-process timeout, so this is the gateway's view of "this is taking too long".
+#: The agent stage, with the scored suites run inside it -- `run_task` restarts the clock
+#: when that stage starts, so the clone, index and baseline are not counted. The eval runner
+#: has its own, harder per-process timeout over the whole task, so this is the gateway's view
+#: of "this is taking too long".
 DEFAULT_MAX_WALL_SECONDS = 3600.0
 
 

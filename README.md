@@ -15,12 +15,12 @@ The design, with the reasoning behind each decision, is in [CLAUDE.md](CLAUDE.md
 | GitHub App integration | Done — installation events, repo auto-registration, issue fetching |
 | Database schema | Done — Alembic migrations 0001–0013: installations, repos, tasks, test runs, code chunks, `llm_calls`, agent outputs and the benchmark columns |
 | RAG layer | Done — Python AST chunking via tree-sitter, 4 embedding strategies threaded through indexing and search (recorded per repo in `registered_repos.index_strategy`), pgvector HNSW + full-text hybrid retrieval |
-| Task pipeline | Done — `repolace-run-task` runs `run_task` end to end (checkout lifecycle, index, baseline, agent stage, score, PR gate, squash, push, PR, terminal write). Driven by the stub or gold runner today |
+| Task pipeline | Done — `repolace-run-task` runs `run_task` end to end (checkout lifecycle, index, baseline, agent stage, score, PR gate, squash, push, PR, terminal write). `--agent llm` (the real agent) is the default; `stub` and `gold` remain |
 | Verify sandbox | Done — rootless locked-down Docker container from a prepared per-repo image, byte-identical tree export (no `.git`), pytest report parsing, scored runs plus unscored probes and scratch scripts, hidden-test overlay for benchmark instances |
 | Git hardening | Done — credential helper scoped to host, hooks and fsmonitor disabled, global/system git config pinned to `/dev/null`, path traversal guards, symlink refusal |
 | LiteLLM gateway | Done — stage routing, per-task budget (default $2, 150 calls, one hour), refuses an unpriced model rather than record it as free, every call recorded in `llm_calls`. **The headline model's price still has to be added to `gateway/models.toml`** |
-| Agent | Built, not yet wired in — a LangGraph graph (`localize → agent → verify`, retry edge), nine tools, and a no-oracle feedback filter, in `agents/` |
-| Retry loop | Built, not yet wired in — up to 3 scored attempts inside the graph |
+| Agent | Built and wired into `repolace-run-task`, never run against a real provider — a LangGraph graph (`localize → agent → verify`, retry edge), nine tools, and a no-oracle feedback filter, in `agents/` |
+| Retry loop | Built and wired in, not yet exercised by a real run — up to 3 scored attempts inside the graph |
 | Benchmark harness | Built, not yet run — `eval/harness/` (`repolace-eval`): instance selection, private benchmark repos, gold validation, sweep runner, report, retrieval eval |
 | Celery worker dispatch | Scaffolded — `worker/` service stands up but is unused; tasks run through the `repolace-run-task` CLI until Phase 2 |
 | Observability (OTel + Grafana) | Not started — structured JSON logging with task IDs only |

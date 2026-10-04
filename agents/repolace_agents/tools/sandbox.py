@@ -32,6 +32,7 @@ from typing import Any
 
 from repolace_shared.git import GitError
 import structlog
+from verify.config import SCRIPT_PATH
 from verify.stage import VerifierNotReady
 
 from repolace_agents.tools.base import ToolContext, ToolError, ToolOutcome, ToolSpec
@@ -125,7 +126,7 @@ class RunPython:
             name="run_python",
             description=(
                 "Run a throwaway Python script to see how the code behaves. It runs in a sandbox with "
-                "NO network. The script is /scratch/main.py; the repository is mounted read-only at "
+                f"NO network. The script is {SCRIPT_PATH}; the repository is mounted read-only at "
                 "/repo and is on sys.path, so `import your_package` works. Nothing the script writes "
                 "persists, and nothing it does changes the repository: to change code use edit_file. "
                 "Returns the exit code and the end of stdout and stderr. Use it to reproduce the bug "

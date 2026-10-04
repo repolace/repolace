@@ -732,6 +732,11 @@ class GitRepo:
             await asyncio.wait_for(
                 _write_blobs(process, entries, destination, dir_mode), EXPORT_TIMEOUT_SECONDS
             )
+            # Reaped here, so `returncode` is set and the `finally` below does not SIGKILL a group
+            # that already exited -- which logged `process.kill.group_failed` on every export and
+            # buried the one warning that means an orphan really did leak. stdin is closed, so
+            # git exits at once.
+            await asyncio.wait_for(process.wait(), EXPORT_TIMEOUT_SECONDS)
         except TimeoutError:
             kill_process_tree(pgid, ("cat-file", "--batch"))
             raise GitTimeoutError(("cat-file", "--batch"), EXPORT_TIMEOUT_SECONDS) from None
