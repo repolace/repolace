@@ -6,6 +6,10 @@ requires-python = ">=3.12"
 dependencies = [
     "repolace-shared",
     "repolace-verify",
+    # Imported lazily by `enqueue.code_limits()` to read the agent's and the gateway's
+    # default limits into the run manifest; declared so that is not an accident of the workspace.
+    "repolace-agents",
+    "repolace-gateway",
     # Imported lazily, and by exactly one module (the retrieval eval): it pulls
     # torch, which nothing else in the harness should pay for.
     "repolace-rag",
@@ -20,6 +24,8 @@ repolace-eval = "harness.cli:main"
 [tool.uv.sources]
 repolace-shared = { workspace = true }
 repolace-verify = { workspace = true }
+repolace-agents = { workspace = true }
+repolace-gateway = { workspace = true }
 repolace-rag = { workspace = true }
 
 [build-system]

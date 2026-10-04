@@ -43,7 +43,7 @@ from pathlib import Path
 
 import httpx
 import structlog
-from sqlalchemy import func, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -61,6 +61,7 @@ from repolace_shared.github.client import GithubClient
 from repolace_shared.instances import InstanceSpec, load_instance_by_id
 from retrieval.embed import get_embedder
 from retrieval.index import RepoIndexInProgress, get_current_chunk_count, reindex_if_stale
+from retrieval.query import build_query
 from retrieval.retrieve import hybrid_search
 from retrieval.strategies import DEFAULT_STRATEGY
 from verify.errors import SandboxError
@@ -393,15 +394,56 @@ async def _index(
     return present
 
 
-async def _retrieve(session_factory, repo_id: uuid.UUID, query: str, strategy: str) -> tuple[RetrievedChunk, ...]:
+#: What a NULL `registered_repos.index_strategy` means: an index built before the column existed.
+#: A literal, not `DEFAULT_STRATEGY`, for the reason `retrieval.index` gives -- the default is free
+#: to change, and a legacy index is `truncate` forever.
+LEGACY_INDEX_STRATEGY = "truncate"
+
+
+async def _stored_strategy(session_factory, repo_id: uuid.UUID) -> str:
+    """The strategy the repo's index was *actually built with*, read after indexing.
+
+    A query must be embedded the way the chunks were, and `reindex_if_stale` has just made the
+    stored value equal to the one it was asked for -- so this normally echoes the seam. Reading it
+    back rather than reusing the seam is what keeps retrieval honest if that ever stops being true
+    (an index another task left in a different strategy), instead of querying one embedding space
+    with a vector from another.
+    """
+    async with session_factory() as db:
+        stored = await db.scalar(select(RegisteredRepo.index_strategy).where(RegisteredRepo.id == repo_id))
+    return stored or LEGACY_INDEX_STRATEGY
+
+
+async def _retrieve(
+    session_factory, repo_id: uuid.UUID, task: Task, strategy: str
+) -> tuple[RetrievedChunk, ...]:
     """Retrieval on a short-lived session of its own, projected to plain data inside it.
 
     Not the pipeline's `state` session: a read on it would leave a transaction open for the
     whole of a minutes-long agent loop. The projection happens before the session closes --
     touching a deferred column afterwards is the `MissingGreenlet` this codebase has met once.
+
+    **The issue is untrusted text and goes through `build_query`**, which bounds it, strips control
+    characters and builds the keyword arm only from identifier-shaped tokens. The two arms get two
+    different strings on purpose: the encoder reads ~128 tokens and wants a short description, while
+    the keyword arm wants the identifiers buried deep in a traceback.
     """
+    title = task.issue_title.strip() or f"issue {task.issue_number}"
+    query = build_query(title, task.issue_body)
+    if not query.semantic.strip():
+        # A title made only of control characters passes the `.strip()` above and is blanked by
+        # `build_query`; `hybrid_search` rejects an empty query, which would fail the task at
+        # retrieve (a harness error) for an issue that is merely oddly titled.
+        query = build_query(f"issue {task.issue_number}", task.issue_body)
     async with session_factory() as search_db:
-        results = await hybrid_search(search_db, repo_id, query, limit=RETRIEVE_LIMIT, query_strategy=strategy)
+        results = await hybrid_search(
+            search_db,
+            repo_id,
+            query.semantic,
+            limit=RETRIEVE_LIMIT,
+            keyword_query=query.keyword,
+            query_strategy=strategy,
+        )
         return tuple(RetrievedChunk.from_result(result) for result in results)
 
 
@@ -442,10 +484,20 @@ def _load_instance(task: Task, instances_dir: Path | None) -> _InstanceMode | No
 def _agent_stop_from(exc: BaseException) -> StopReason | None:
     """The stop an agent-caused exception stands for, or None for one that is repolace's.
 
-    The graph catches these two itself and returns a stop reason, so they should not reach
+    The graph catches the first two itself and returns a stop reason, so they should not reach
     here. They are mapped anyway because the rule is that no agent-caused stop may fail the
     task, and a runner that lets one escape would otherwise turn a budget stop into a harness
     error that leaves the benchmark's denominator.
+
+    `GraphRecursionError` is deliberately NOT mapped: it is the graph's own guard firing, and the
+    graph's shape (at most 7 steps against a limit of `4 * max_attempts + 8`, each pass either
+    ending or using up an attempt) cannot reach it by itself, so nothing in an issue or a
+    repository can cause it -- only a routing bug in repolace can. Counting it as a step cap
+    would hide that bug inside the headline's denominator, indistinguishable from a real step
+    cap, and a run that had already scored a passing attempt could even open a PR. It stays
+    a harness error (FAILED, `agent: GraphRecursionError`), as the graph module says.
+    `UnpricedModelError`, `MissingProviderKey` and `NoTaskScope` stay
+    harness errors: they mean the measurement itself is broken.
     """
     if isinstance(exc, BudgetExceeded):
         return _BUDGET_STOPS[exc.limit]
@@ -580,12 +632,12 @@ async def _run_stages(
             )
 
         async with _stage("retrieve"):
-            query = task.issue_title.strip() or f"issue {task.issue_number}"
-            retrieved = await _retrieve(session_factory, repo.id, query, seams.embedding_strategy)
+            index_strategy = await _stored_strategy(session_factory, repo.id)
+            retrieved = await _retrieve(session_factory, repo.id, task, index_strategy)
         if not retrieved:
             raise StageFailed(
                 "retrieve",
-                f"no chunks matched {query!r} across {chunk_count} indexed chunks",
+                f"no chunks matched issue #{task.issue_number} across {chunk_count} indexed chunks",
             )
         log.info(
             "pipeline.retrieve.done",
@@ -642,7 +694,17 @@ async def _run_stages(
             # budget. A contextvar, not a parameter, so the agent cannot forget it.
             with task_scope(task.id, _agent_budget(seams.budget)):
                 deps = await _build_deps(
-                    session_factory, task, repo, workspace, verifier, scorer, seams, baseline, baseline_files, retrieved
+                    session_factory,
+                    task,
+                    repo,
+                    workspace,
+                    verifier,
+                    scorer,
+                    seams,
+                    baseline,
+                    baseline_files,
+                    retrieved,
+                    index_strategy,
                 )
                 result = await _run_agent(runner, deps, scorer)
         progress.result = result
@@ -907,6 +969,7 @@ async def _build_deps(
     baseline: SuiteResult,
     baseline_files: tuple[str, ...],
     retrieved: tuple[RetrievedChunk, ...],
+    index_strategy: str,
 ) -> AgentDeps:
     """Everything the agent is given. The model client is the caller's; the rest is built here."""
     limits = AgentLimits()
@@ -926,7 +989,7 @@ async def _build_deps(
                     session_factory,
                     repo.id,
                     workspace.path,
-                    strategy=seams.embedding_strategy,
+                    strategy=index_strategy,
                     max_lines=limits.max_context_snippet_lines,
                 ),
                 hidden_paths=verifier.hidden_paths,
