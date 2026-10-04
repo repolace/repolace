@@ -40,15 +40,16 @@ the gateway inside each task; the runner never retries or re-runs a task.
 invocations. Tasks already in flight finish, so the total can exceed the cap by
 up to K times the gateway's per-task cap.
 
-**The child's environment** is this process's environment minus
-`REPOLACE_BENCH_GITHUB_TOKEN` (the repository tool's credential must never reach
-the pipeline), plus `GATEWAY_STAGE_MODELS` when `--model` is given. It is not an
-allowlist: the child needs the HF-cache variables, `LITELLM_LOCAL_MODEL_COST_MAP`,
-the database URL and the provider keys, and its own backends re-sanitise what they
-hand to git and docker.
+**The child's environment** is an allowlist of this process's environment (see
+`allowlisted_env`), never the whole shell: `REPOLACE_BENCH_GITHUB_TOKEN`, `GH_TOKEN`
+and provider keys exported in the shell do not reach the child. Provider keys and the
+GitHub App key reach the pipeline through `.env` and pydantic-settings, not the process
+environment. `GATEWAY_STAGE_MODELS` is added when `--model` is given. The child's own
+backends re-sanitise what they hand to git and docker.
 
-After an interrupt (Ctrl-C) the children are killed and their rows are left
-RUNNING; `--mark-abandoned` settles them once no process matches their task id.
+On SIGTERM or SIGHUP (and Ctrl-C) the children's process groups are killed, their rows
+are settled RUNNING to FAILED (`runner: interrupted`), and their containers are removed;
+`--mark-abandoned` settles rows left by a crash.
 """
 
 from __future__ import annotations

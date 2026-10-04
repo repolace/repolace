@@ -633,7 +633,7 @@ class TestHowTheSubsetWasChosen:
         assert "only seven repositories are allowed" in text and "most of Verified is excluded" in text
         assert "simple-fix filter" in text and "deletes or renames a file" in text and "skews toward pure source edits" in text
         assert "round-robin across repositories under a per-repository cap, not in proportion to Verified" in text
-        assert "gold validation" in text and "fast suites" in text
+        assert "gold validation" in text and "records suite wall time" in text and "fast suites" not in text
         assert "selection seed is a degree of freedom" in text and "before the first agent run" in text
 
     def test_the_official_harness_cross_check_is_said_to_use_different_pass_criteria(self):
