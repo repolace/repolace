@@ -109,6 +109,7 @@ import re
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 
+from verify.config import WORKDIR
 from verify.protocol import SuiteResult
 from verify.scoring import Verdict, agent_verdict, fingerprint_changed
 
@@ -294,6 +295,17 @@ def _id_is_hidden(nodeid: str, hidden: frozenset[str]) -> bool:
     return _path_is_hidden(nodeid.split("::", 1)[0], hidden)
 
 
+def _in_repo(path: str) -> str:
+    """A path the sandbox reported, relative to the repository root.
+
+    pytest reports a conftest by its absolute container path (`/repo/tests/conftest.py`)
+    and a test by a root-relative one; without this a hidden conftest would be compared
+    as `repo/tests/conftest.py` and never match. The same rule as the probe filter in
+    `repolace_pipeline.agent_context`, which a test there holds equal to this one.
+    """
+    return path.removeprefix(f"{WORKDIR}/")
+
+
 def _filter_result(result: SuiteResult, hidden: frozenset[str]) -> SuiteResult:
     """A fresh `SuiteResult` holding only the visible part, built field by field.
 
@@ -315,7 +327,7 @@ def _filter_result(result: SuiteResult, hidden: frozenset[str]) -> SuiteResult:
         did_not_run=keep(result.did_not_run),
         collect_failures=keep(result.collect_failures),
         collected_files=tuple(p for p in result.collected_files if not _path_is_hidden(p, hidden)),
-        conftests=tuple(p for p in result.conftests if not _path_is_hidden(p, hidden)),
+        conftests=tuple(p for p in result.conftests if not _path_is_hidden(_in_repo(p), hidden)),
         fingerprint=fingerprint,
         error=RUN_DID_NOT_COMPLETE if result.error else None,
     )

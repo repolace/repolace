@@ -71,6 +71,16 @@ def everything_shown(fb: VisibleFeedback, nonce: str = "n0nce") -> str:
 
 
 class TestFiltering:
+    def test_a_hidden_conftest_reported_by_its_absolute_container_path_is_dropped(self):
+        """pytest reports conftests as `/repo/...`; the hidden paths are repo-relative."""
+        from repolace_agents import feedback as feedback_module
+
+        raw = SuiteResult(conftests=("/repo/conftest.py", "/repo/tests/hidden/conftest.py"))
+
+        kept = feedback_module._filter_result(raw, feedback_module._hidden_set({"tests/hidden"}))
+
+        assert kept.conftests == ("/repo/conftest.py",)
+
     def test_hidden_tests_are_dropped_from_every_list_and_count(self):
         baseline = suite(passed=[A, hid("p2p")], failed=[hid()])
         attempt = suite(passed=[A, hid()], failed=[hid("p2p")])

@@ -164,6 +164,20 @@ class TestAgreesWithTheFeedbackFilter:
         assert ours.passed == theirs.passed
         assert ours.collect_failures == theirs.collect_failures
 
+    CONFTESTS = [
+        "/repo/conftest.py", "/repo/tests/conftest.py", "/repo/hidden_dir/conftest.py",
+        "/repo/hidden_dir/deep/conftest.py", "/repo/hidden_dirs/conftest.py", "hidden_dir/conftest.py",
+    ]
+
+    @pytest.mark.parametrize("hidden", [{"hidden_dir"}, {"tests/conftest.py"}, {"hidden_dir/", "tests/test_hidden.py"}, set()])
+    def test_the_same_conftests_survive_including_absolute_container_paths(self, hidden):
+        raw = SuiteResult(conftests=tuple(self.CONFTESTS))
+
+        ours = visible_probe(raw, hidden)
+        theirs = feedback._filter_result(raw, feedback._hidden_set(hidden))
+
+        assert ours.conftests == theirs.conftests
+
 
 class TestProtectedCheck:
     """A write refusal must not be an existence oracle for a hidden test file."""
