@@ -6,7 +6,7 @@ The design, with the reasoning behind each decision, is in [CLAUDE.md](CLAUDE.md
 
 ## Status
 
-**Phase 0–1 (active development).** Every piece of the pipeline exists on `main`: clone, index, baseline test run, an LLM agent (graph, tools, feedback filter), verify, score, gate, open PR, and a benchmark harness. **One step is still open: the real agent is not yet wired into `repolace-run-task`.** Today the task runner only runs the deterministic stub editor or the gold (reference-fix) runner; see [Integration pending](#integration-pending). **No benchmark number has been measured yet.**
+**Phase 0–1 (active development).** Every piece of the pipeline exists on `main`: clone, index, baseline test run, an LLM agent (graph, tools, feedback filter), verify, score, gate, open PR, and a benchmark harness. The real agent is wired into `repolace-run-task` (`--agent llm` is the default; `stub` and `gold` remain), but **no real run has happened yet**. **No benchmark number has been measured yet.**
 
 | Layer | State |
 |---|---|
@@ -155,14 +155,9 @@ uv run --all-packages repolace-run-task <task_id> [--agent llm|stub|gold] [--no-
 
 The task runs the repo's suite at the base commit, lets the agent edit and verifies each attempt, and scores the attempts against that baseline. A PR is opened only when the agent submitted and no regression, silenced failure or new collection error was found, unless the task was queued with `"open_pr_on_failure": true`. (A benchmark task opens one only when it scored `passed`.) A task that leaves no change never opens a PR. A task is `completed` when it ran to the end without opening one; read its `outcome` and `agent_stop_reason` to see why.
 
-#### Integration pending
+#### The agent runner
 
-> **Stream H (integration) was not merged when this section was written. What follows is what its brief says it will do and has not been checked against merged code.** When it lands, update the status-table rows for the agent and retry loop, and delete this box.
->
-> - `--agent llm` runs the real agent: the CLI builds the gateway client once per process, the real graph and tools run inside the task's budget, and a model with no price is a hard error (exit code 2, naming `gateway/models.toml`) before any task is claimed.
-> - The CLI default changes from `stub` to `llm`. Until then, `--agent llm` prints "not wired yet" and exits 2, and a bare `repolace-run-task <task_id>` runs the stub, so expect to pass `"open_pr_on_failure": true` when queueing a stub task if you want to see a PR.
-> - Retrieval queries with the issue title and the identifiers in its body (today it uses the title alone).
-> - `eval/pyproject.toml` declares the gateway and agents packages it imports.
+`repolace-run-task <task_id>` runs the real agent by default (`--agent llm`). It builds one gateway client per process and checks the model's price **before claiming the task**: an unpriced model exits 2 and names `gateway/models.toml`, so add the `[models.claude-sonnet-5-5.price]` entry first. Provider keys must be in `.env`. Use `--agent stub` or `--agent gold` for the deterministic runners, and `--no-pr` for a dry run. For a first smoke test use a toy repository with GitHub Actions disabled: the agent may edit build files such as a `Makefile`, which a push-triggered workflow would run.
 
 ### Run tests
 
@@ -215,7 +210,7 @@ uv run --all-packages repolace-eval run --eval-run-id sweep-1 --agent llm --mode
 uv run --all-packages repolace-eval report --run sweep-1 --gold-run gold-1 --gold-run gold-2
 ```
 
-The sweep step needs the agent wired in (see [Integration pending](#integration-pending)). `repolace-eval retrieval` is separate: it measures whether retrieval finds the code a fix changed, per embedding strategy, with no LLM calls (`--plan` prints what it would cost first).
+`repolace-eval retrieval` is separate: it measures whether retrieval finds the code a fix changed, per embedding strategy, with no LLM calls (`--plan` prints what it would cost first).
 
 **How the number is computed:** passes over *planned* tasks, counting every task that is not a pass as a non-pass whatever the reason (a harness error, an unscoreable instance, a pass that edited tests). The rate over only the scoreable tasks is printed as a labelled secondary figure. The interval is over instances, because repeated runs of one instance are not independent.
 
@@ -248,7 +243,7 @@ When a task starts, repolace checks the repo's `indexed_commit_sha` against the 
 
 ## What comes next
 
-**Phase 1 completion:** wire the agent into the task runner (see [Integration pending](#integration-pending)), price the headline model, then gold validation, a dry run and the sweep. Benchmark repos must contain no tracked symlinks or submodules — the export refuses both.
+**Phase 1 completion:** price the headline model, then gold validation, a dry run and the sweep. Benchmark repos must contain no tracked symlinks or submodules — the export refuses both.
 
 **Phase 2:** Split into specialized agents (planner/editor/reviewer/debugger), async queue dispatch, merge-conflict resolution sub-loop, basic UI.
 
