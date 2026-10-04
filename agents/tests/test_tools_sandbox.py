@@ -8,6 +8,7 @@ forgot to checkpoint raises inside the fake instead of passing.
 import dataclasses
 
 import pytest
+from verify.config import SCRIPT_PATH
 from verify.protocol import EnvironmentRef, RepoSpec, ScriptResult, SuiteResult
 from verify.stage import VerifierNotReady
 from verify.testing import FakeBackend
@@ -193,7 +194,7 @@ class TestRunPython:
     async def test_the_description_states_the_sandbox_contract(self, tmp_path):
         description = make_harness(tmp_path).box.schemas()[6]["function"]["description"]
 
-        for fact in ("NO network", "/scratch/main.py", "/repo", "read-only", "Nothing the script writes persists"):
+        for fact in ("NO network", SCRIPT_PATH, "/repo", "read-only", "Nothing the script writes persists"):
             assert fact in description
 
 

@@ -26,9 +26,9 @@ pipeline be tested end to end before a model is involved.
 broke": a clone that would not clone, a GitHub 403, a bug. An agent that ran out of
 budget, hit its step cap, made no change, or gave up did not break repolace; the task
 **completes**, with the outcome the scorer gives it (no scored attempt scores `failed`).
-The report counts a `FAILED` task as a harness error and removes it from the headline's
-denominator, so an agent-caused stop that raised `StageFailed` would quietly *improve* the
-benchmark number. Nothing after the agent returns may raise for a reason the agent caused.
+The report counts a `FAILED` task as a harness error: a non-pass in the headline
+(`passed / planned`), but removed from the secondary `passed / admissible` denominator, so an
+agent-caused stop that raised `StageFailed` would quietly *improve* that figure. Nothing after the agent returns may raise for a reason the agent caused.
 """
 
 import asyncio
@@ -656,9 +656,15 @@ async def _run_stages(
         # failures scores as a failure whatever the agent did, and "the suite
         # passes" is an unfalsifiable claim.
         async with _stage("verify_baseline"):
-            baseline, _ = await run_scored_suite(verifier, workspace, BASELINE_ATTEMPT)
+            baseline, baseline_infrastructure_error = await run_scored_suite(verifier, workspace, BASELINE_ATTEMPT)
         async with _stage("record_baseline"):
             await record_test_run(session_factory, task.id, BASELINE_ATTEMPT, workspace.base_sha, baseline)
+        if baseline_infrastructure_error:
+            # The daemon never answered, so nothing about the instance was learnt. Completing the task
+            # as inadmissible would say "this instance cannot be scored" about a host problem -- and gold
+            # validation drops an instance on exactly that. It is repolace's failure, recorded after the
+            # row above so the evidence is kept.
+            raise StageFailed("verify_baseline", baseline.error or "container runtime unavailable")
         async with _stage("baseline_files"):
             baseline_files = await workspace.baseline_files()
 
