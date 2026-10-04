@@ -111,7 +111,7 @@ SUBSET_CAVEAT = (
     "(pure-Python pytest projects), so most of Verified is excluded; (2) a simple-fix filter rejects instances whose "
     "gold patch touches test or configuration paths, deletes or renames a file, or is binary, so the set skews "
     "toward pure source edits; (3) instances were taken round-robin across repositories under a per-repository "
-    "cap, not in proportion to Verified; (4) gold validation and the preference for fast suites pruned the set "
+    "cap, not in proportion to Verified; (4) gold validation (which drops unscoreable and flaky instances, and records suite wall time) pruned the set "
     "further; (5) the selection seed is a degree of freedom, so it must be fixed and recorded before the first "
     "agent run. The predictions export allows a cross-check with the official SWE-bench harness, but that check "
     "uses different pass criteria (node-id format, pass-to-pass scope), so exact agreement is not expected."
