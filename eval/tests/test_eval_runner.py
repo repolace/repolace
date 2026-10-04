@@ -124,12 +124,23 @@ class TestPureHelpers:
     def test_the_exit_codes_are_the_pipelines(self):
         source = (Path(__file__).resolve().parents[2] / "pipeline" / "repolace_pipeline" / "cli.py").read_text()
         declared = {name: int(value) for name, value in re.findall(r"^(EXIT_[A-Z_]+) = (\d+)$", source, re.M)}
-        assert declared == {
+        known = {
             "EXIT_OK": runner.EXIT_OK,
             "EXIT_TASK_FAILED": runner.EXIT_TASK_FAILED,
             "EXIT_NOT_FOUND": runner.EXIT_NOT_FOUND,
             "EXIT_NOT_CLAIMABLE": runner.EXIT_NOT_CLAIMABLE,
         }
+        assert {name: declared.get(name) for name in known} == known
+
+    def test_a_further_pipeline_exit_name_may_only_alias_a_code_the_runner_already_classifies(self):
+        """The pipeline CLI has `EXIT_USAGE = 2`, an alias of "not found" (argparse's own usage code is
+        2 too, so all three mean "this command cannot run as asked"). A new name is fine; a new NUMBER
+        would be an exit status the runner cannot classify and would count as a harness failure."""
+        source = (Path(__file__).resolve().parents[2] / "pipeline" / "repolace_pipeline" / "cli.py").read_text()
+        declared = {name: int(value) for name, value in re.findall(r"^(EXIT_[A-Z_]+) = (\d+)$", source, re.M)}
+        classified = {runner.EXIT_OK, runner.EXIT_TASK_FAILED, runner.EXIT_NOT_FOUND, runner.EXIT_NOT_CLAIMABLE}
+
+        assert set(declared.values()) <= classified, sorted(set(declared.values()) - classified)
 
     def test_the_child_command_line(self):
         task_id = uuid.uuid4()
