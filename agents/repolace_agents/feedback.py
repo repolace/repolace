@@ -48,7 +48,7 @@ which is what `IssueContext` documents as meaning benchmark mode; keying on
 **Residual risk -- what this does NOT close, as the docs must state it.** Filtered
 feedback derived from the scored run is a decision, not an oversight: the
 alternative (feedback from a separate overlay-free run, the scored run once at the
-end) removes every channel below by construction but doubles suite executions and
+end) removes every channel below by construction, the timing one included, but doubles suite executions and
 changes the `AttemptRecord` / `task_test_runs` contract. What is closed is every
 *accidental* channel. What remains needs either a deliberately adversarial agent
 or a rare repository:
@@ -81,6 +81,21 @@ or a rare repository:
   message is one neutral sentence with no plugin or ini names, so what remains is a
   single bit ("did a hidden file react to this change"). Rare, and accepted.
 * **Protected paths.** `disqualified` echoes paths the agent itself changed.
+* **Timing: many bits per attempt, through the clock, around this filter entirely.**
+  During a scored run the agent's own code runs with the hidden tests readable in
+  `/repo`, so it can sleep for a duration that encodes their contents. The agent
+  brackets the run with two `run_python` calls that print the time (one before
+  `submit`, one in the next attempt); containers read the host's realtime clock, so
+  the difference recovers the delay, give or take model latency. At a granularity of
+  seconds against a suite timeout of 1,800 s that is on the order of 10 bits per
+  attempt, far more than the one bit above, and nothing in this module sees it,
+  because no field of the result carries it. Needs a deliberately adversarial agent,
+  like the first bullet. Not mitigated. The cheap ideas are weaker than they look: a
+  Linux time namespace offsets only the monotonic and boot-time clocks, not the
+  realtime one, and a faked clock in the container (an `LD_PRELOAD` shim) is
+  bypassed by any direct syscall. What does close it is the deferred design above
+  (feedback from a run without the hidden tests, the scored run once at the end):
+  the hidden tests are then never present while the agent can still act on anything.
 
 "Clean" is `agent_verdict`'s verdict on the **filtered** pair, so it means what
 the PR gate means. `VisibleFeedback.clean` is derived from the fields and
