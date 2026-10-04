@@ -614,10 +614,17 @@ async def _run_stages(
                 # refuses `.git`, and the export carries none).
                 await workspace.prune_remote_refs(keep=[task.target_branch])
                 if workspace.base_sha != instance.base_commit:
-                    log.warning(
-                        "pipeline.instance.base_mismatch",
-                        branch_tip=workspace.base_sha,
-                        instance_base_commit=instance.base_commit,
+                    # A failure, not a warning: anything pushed to the bench repository's branch
+                    # since `fork` means the task would measure a different tree from the one the
+                    # instance was curated and gold-validated against. A merged benchmark PR is
+                    # caught later by `expected_not_red`; an unrelated push is not caught at all.
+                    # It is the bench repository's state, not the agent's doing, so a harness error.
+                    raise StageFailed(
+                        "clone",
+                        f"benchmark instance {instance.instance_id!r} expects base commit "
+                        f"{instance.base_commit}, but {task.target_branch!r} is at {workspace.base_sha}; "
+                        f"the bench repository has moved since it was forked, so this task would "
+                        f"measure a different tree",
                     )
 
         async with _stage("index"):

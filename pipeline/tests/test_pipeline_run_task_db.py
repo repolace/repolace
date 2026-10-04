@@ -439,6 +439,37 @@ class TestBenchmarkMode:
         assert pull["title"] == "[repolace] SWE-bench instance acme__sample-7"
         assert "Curated fail-to-pass tests passing: 1 of 1." in pull["body"], "the instance's list reached the PR text"
 
+    async def test_a_bench_branch_that_moved_off_the_base_commit_fails_before_anything_is_measured(
+        self, db_session, db_session_factory, origin_url, tmp_path
+    ):
+        """Someone pushed to the bench repository's branch since `fork`: the task would measure a
+        different tree from the curated one. A harness error, raised at the clone, never a warning."""
+        directory = tmp_path / "moved-instances"
+        directory.mkdir()
+        instance = make_instance(base_commit="f" * 40)
+        dump_instance(instance, directory / f"{instance.instance_id}.json")
+        task = await self.seed(db_session)
+        agent = agent_that(StopReason.SUBMITTED)
+        backend = FakeBackend(results=[BENCH_BASELINE, BENCH_AFTER])
+
+        result, github = await run(db_session_factory, origin_url, task, agent, backend, instances_dir=directory)
+
+        row, _ = await reload(db_session_factory, task.id)
+        assert result.status is row.status is TaskStatus.FAILED
+        assert row.error_message.startswith("clone: ") and "f" * 40 in row.error_message
+        assert row.outcome is None, "never scored: the instrument, not the agent, is what failed"
+        assert backend.runs == [] and agent.calls == [] and github.pull_requests == []
+
+    async def test_a_product_task_on_any_commit_is_unaffected(self, db_session, db_session_factory, origin_url):
+        task = await seed_task(db_session)
+
+        result, _ = await run(
+            db_session_factory, origin_url, task, agent_that(StopReason.SUBMITTED),
+            FakeBackend(results=[BENCH_BASELINE, BENCH_AFTER]),
+        )
+
+        assert result.status is not TaskStatus.FAILED
+
     async def test_a_curated_list_changes_the_reason_text(self, db_session, db_session_factory, origin_url, instances):
         """With the instance's fail-to-pass list the PASSED reason says how many expected tests pass; without it the
         same results read 'uncurated'. The two sentences are what the report flags the headline by."""
