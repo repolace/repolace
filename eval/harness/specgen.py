@@ -25,11 +25,12 @@ through would make "ported" mean "partly, silently". The generator below keeps
 only the keys above; a fixture that adds another fails loudly at load.
 
 Generating it (maintainer, once; needs network; `uvx` so `uv.lock` never changes).
-**This snippet was written without network access and has NOT been run**: the
-constant names are from memory of the `swebench` package, so adjust it on a
-`KeyError`. The loader validates whatever it writes::
+Pin `swebench==4.1.0`: 5.x no longer ships `MAP_REPO_VERSION_TO_SPECS`. Write to a
+scratch file and move it into place, because a redirect straight onto the target
+truncates it before Python runs, and a failed run would leave it empty. The loader
+validates whatever it writes::
 
-    uvx --from swebench python - <<'PY' > eval/harness/swebench_specs.json
+    uvx --from swebench==4.1.0 python - <<'PY' > /tmp/swebench_specs.json
     import json
     from swebench.harness.constants import MAP_REPO_VERSION_TO_SPECS
     REPOS = ["pytest-dev/pytest", "pylint-dev/pylint", "psf/requests", "pydata/xarray",

@@ -18,7 +18,7 @@ The design, with the reasoning behind each decision, is in [CLAUDE.md](CLAUDE.md
 | Task pipeline | Done — `repolace-run-task` runs `run_task` end to end (checkout lifecycle, index, baseline, agent stage, score, PR gate, squash, push, PR, terminal write). `--agent llm` (the real agent) is the default; `stub` and `gold` remain |
 | Verify sandbox | Done — rootless locked-down Docker container from a prepared per-repo image, byte-identical tree export (no `.git`), pytest report parsing, scored runs plus unscored probes and scratch scripts, hidden-test overlay for benchmark instances |
 | Git hardening | Done — credential helper scoped to host, hooks and fsmonitor disabled, global/system git config pinned to `/dev/null`, path traversal guards, symlink refusal |
-| LiteLLM gateway | Done — stage routing, per-task budget (default $2, 150 calls, one hour), refuses an unpriced model rather than record it as free, every call recorded in `llm_calls`. **The headline model's price still has to be added to `gateway/models.toml`** |
+| LiteLLM gateway | Done — stage routing, per-task budget (default $2, 150 calls, one hour), refuses an unpriced model rather than record it as free, every call recorded in `llm_calls`. The headline model is priced in `gateway/models.toml` |
 | Agent | Built and wired into `repolace-run-task`, never run against a real provider — a LangGraph graph (`localize → agent → verify`, retry edge), nine tools, and a no-oracle feedback filter, in `agents/` |
 | Retry loop | Built and wired in, not yet exercised by a real run — up to 3 scored attempts inside the graph |
 | Benchmark harness | Built, not yet run — `eval/harness/` (`repolace-eval`): instance selection, private benchmark repos, gold validation, sweep runner, report, retrieval eval |
@@ -97,7 +97,7 @@ Each workspace package has a distinct top-level import (`repolace_api`, `repolac
 - Docker and Docker Compose, plus **rootless** Docker for the Verify sandbox (`docker-rootless-extras`, `systemctl --user enable --now docker`) with cgroup v2 delegation of `cpu`, `memory` and `pids` — without delegation the sandbox's resource caps are silently ignored
 - `prlimit` (util-linux) on the host. The agent's `grep` tool runs `git grep` under a memory and CPU limit, and the toolbox refuses to build without it
 - A GitHub App (for repo registration, issue fetching, and opening PRs)
-- To run the real agent: a provider key in `.env` (`ANTHROPIC_API_KEY`, plus `OPENAI_API_KEY` or `GEMINI_API_KEY` for comparison models), and **a price for the headline model**. `gateway/models.toml` routes the `agent` stage to `claude-sonnet-5-5`, whose `[models.claude-sonnet-5-5.price]` table is commented out; the gateway refuses an unpriced model before its first call, so fill in the rates (USD per million tokens) from the provider's price list
+- To run the real agent: a provider key in `.env` (`ANTHROPIC_API_KEY`, plus `OPENAI_API_KEY` or `GEMINI_API_KEY` for comparison models), and a price for every model a stage routes to. `gateway/models.toml` routes the `agent` stage to `claude-sonnet-5-5` and prices it explicitly (LiteLLM's map does not have it); the gateway refuses an unpriced model before its first call, so a new model needs its rates (USD per million tokens) added there first
 - To create the benchmark repositories: a **separate** GitHub token for the `repolace-eval fork` command only (see [Benchmark](#benchmark)). Never put it in `.env`
 
 ### Install dependencies
