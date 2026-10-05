@@ -101,7 +101,10 @@ _REQUIREMENT_FILES = {
 #: resolved when the dependency was still bundled: sphinx 3.x imports `roman`, which
 #: docutils stopped vendoring, so a fresh resolve fails at startup with
 #: "No module named 'roman'". Added to the pins installed before the project.
-_EXTRA_PIP_PACKAGES = {"sphinx-doc/sphinx": ("roman",)}
+#: Keyed by repository, then by the release prefix it applies to: the 4.x instances
+#: that already pass gold validation do not need it, and changing a validated
+#: environment would leave it unvalidated.
+_EXTRA_PIP_PACKAGES = {"sphinx-doc/sphinx": (("3.", "roman"),)}
 
 #: Distributions that derive their version from git (`setuptools_scm`). The export
 #: has no `.git`, so their editable install fails with "unable to detect version"
@@ -241,7 +244,11 @@ def spec_for(repo: str, version: str, table: Mapping[str, Mapping[str, Mapping[s
             raise SpecgenError(f"{where}: pip_packages entry {requirement!r} is an option, not a requirement")
     pytest_pins = [r for r in pip_packages if _requirement_name(r) == "pytest"]
     others = [r for r in pip_packages if _requirement_name(r) != "pytest"]
-    others += [r for r in _EXTRA_PIP_PACKAGES.get(repo, ()) if r not in others]
+    others += [
+        package
+        for prefix, package in _EXTRA_PIP_PACKAGES.get(repo, ())
+        if version.startswith(prefix) and package not in others
+    ]
 
     commands: list[str] = []
     if packages == "requirements.txt":

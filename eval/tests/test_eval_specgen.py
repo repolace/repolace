@@ -103,6 +103,13 @@ class TestSpecFor:
         assert install[0] == "pip install Jinja2==3.0.3 roman"
         assert install.index("python -m pip install -e .[test]") > 0
 
+    def test_a_later_sphinx_release_does_not_get_roman(self):
+        entry = {"python": "3.9", "pip_packages": ["Jinja2==3.0.3"]}
+
+        install = spec_for("sphinx-doc/sphinx", "4.1", {"sphinx-doc/sphinx": {"4.1": entry}})["install"]
+
+        assert install[0] == "pip install Jinja2==3.0.3"
+
     def test_other_repositories_get_no_pretend_version(self):
         install = spec_for("o/r", "1.0", one({"python": "3.9", "install": "pip install -e ."}))["install"]
 
