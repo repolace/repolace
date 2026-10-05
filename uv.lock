@@ -2553,6 +2553,7 @@ name = "repolace-gateway"
 version = "0.0.1"
 source = { editable = "gateway" }
 dependencies = [
+    { name = "boto3" },
     { name = "litellm" },
     { name = "pydantic-settings" },
     { name = "repolace-shared" },
@@ -2562,6 +2563,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "boto3", specifier = ">=1.43" },
     { name = "litellm", specifier = ">=1.50" },
     { name = "pydantic-settings", specifier = ">=2.5" },
     { name = "repolace-shared", editable = "shared" },

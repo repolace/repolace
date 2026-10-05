@@ -259,6 +259,65 @@ class TestCredentials:
 
 
 @pytest.mark.anyio
+class TestBedrock:
+    """The `bedrock` provider authenticates through the AWS credential chain, not a key."""
+
+    @staticmethod
+    def bedrock_harness(response=None, **settings):
+        raw = raw_config()
+        raw["models"]["main"].update(provider="bedrock", litellm_model="bedrock/global.anthropic.claude-sonnet-5-5")
+        return make_harness(
+            response or make_response(),
+            config=parse_config(raw),
+            settings=make_settings(
+                aws_profile_name=settings.get("profile", "repolace-bedrock"),
+                aws_region_name=settings.get("region", "ap-south-1"),
+            ),
+        )
+
+    async def test_the_profile_and_region_are_passed_per_call_and_no_key_is(self):
+        h = self.bedrock_harness()
+        with task_scope(TASK_ID, TaskBudget()):
+            await h.client.complete("agent", MESSAGES)
+
+        sent = h.acompletion.calls[0]
+        assert sent["model"] == "bedrock/global.anthropic.claude-sonnet-5-5"
+        assert (sent["aws_profile_name"], sent["aws_region_name"]) == ("repolace-bedrock", "ap-south-1")
+        assert "api_key" not in sent
+
+    async def test_the_profile_is_not_stored_with_the_request_but_the_region_is(self):
+        h = self.bedrock_harness()
+        with task_scope(TASK_ID, TaskBudget()):
+            await h.client.complete("agent", MESSAGES, TOOLS)
+
+        params = h.recorder.records[0].request["params"]
+        assert "aws_profile_name" not in params
+        assert params["aws_region_name"] == "ap-south-1"
+        assert "repolace-bedrock" not in stored_json(h.recorder.records[0])
+
+    async def test_without_aws_settings_it_refuses_before_any_call(self):
+        raw = raw_config()
+        raw["models"]["main"].update(provider="bedrock", litellm_model="bedrock/x")
+        h = make_harness(make_response(), config=parse_config(raw), settings=make_settings())
+
+        with task_scope(TASK_ID, TaskBudget()):
+            with pytest.raises(MissingProviderKey, match="GATEWAY_AWS_PROFILE"):
+                await h.client.complete("agent", MESSAGES)
+
+        assert h.acompletion.calls == []
+
+    @pytest.mark.parametrize(
+        "kwarg",
+        ["aws_profile_name", "aws_region_name", "aws_access_key_id", "aws_secret_access_key", "aws_session_token", "aws_role_name"],
+    )
+    async def test_a_caller_cannot_override_the_aws_credentials(self, kwarg):
+        h = self.bedrock_harness()
+        with task_scope(TASK_ID, TaskBudget()):
+            with pytest.raises(TypeError, match=kwarg):
+                await h.client.complete("agent", MESSAGES, **{kwarg: "elsewhere"})
+
+
+@pytest.mark.anyio
 class TestCaching:
     @staticmethod
     def sent_json(h, index=0) -> str:
