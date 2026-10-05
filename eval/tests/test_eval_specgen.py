@@ -118,6 +118,15 @@ class TestSpecFor:
         assert mapping["extra_pytest_args"] == ["-p", "pytester"]
         assert "extra_pytest_args" not in spec_for("o/r", "1.0", one(entry))
 
+    def test_pytest_runs_without_entry_point_autoload_so_a_vendored_plugin_cannot_crash_its_inner_sessions(self):
+        entry = {"python": "3.9", "install": "python -m pip install -e ."}
+
+        mapping = spec_for("pytest-dev/pytest", "5.2", {"pytest-dev/pytest": {"5.2": entry}})
+
+        assert mapping["disable_plugin_autoload"] is True
+        assert spec_from_mapping("pytest-dev/pytest", mapping).disable_plugin_autoload is True
+        assert "disable_plugin_autoload" not in spec_for("o/r", "1.0", one(entry))
+
     def test_other_repositories_get_no_pretend_version(self):
         install = spec_for("o/r", "1.0", one({"python": "3.9", "install": "pip install -e ."}))["install"]
 

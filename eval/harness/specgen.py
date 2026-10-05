@@ -113,6 +113,14 @@ _EXTRA_PIP_PACKAGES = {"sphinx-doc/sphinx": (("3.", "roman"),)}
 #: curated fail-to-pass ones. The plugin is asked for by name instead.
 _EXTRA_PYTEST_ARGS = {"pytest-dev/pytest": ["-p", "pytester"]}
 
+#: A plugin installed into the environment can be loaded into pytest's own *inner*
+#: sessions, which its suite starts in process. The `typeguard` plugin that setuptools
+#: vendors registers an ini option of type "string", which pytest before 6.0 asserts
+#: against, so every inner session crashed in `pytest_addoption` and over a thousand
+#: tests failed (the curated fail-to-pass ones among them). pytest's suite loads what
+#: it needs by name, so entry-point autoload is switched off for it.
+_DISABLE_PLUGIN_AUTOLOAD = frozenset({"pytest-dev/pytest"})
+
 #: Distributions that derive their version from git (`setuptools_scm`). The export
 #: has no `.git`, so their editable install fails with "unable to detect version"
 #: unless the version is given. The value is the SWE-bench release the instance
@@ -277,6 +285,8 @@ def spec_for(repo: str, version: str, table: Mapping[str, Mapping[str, Mapping[s
     mapping: dict[str, Any] = {"base_image": f"python:{entry['python']}-slim", "install": commands}
     if entry.get("apt_pkgs"):
         mapping["system_packages"] = list(entry["apt_pkgs"])
+    if repo in _DISABLE_PLUGIN_AUTOLOAD:
+        mapping["disable_plugin_autoload"] = True
     if repo in _EXTRA_PYTEST_ARGS:
         mapping["extra_pytest_args"] = list(_EXTRA_PYTEST_ARGS[repo])
     if scm is not None:

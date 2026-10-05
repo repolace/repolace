@@ -66,6 +66,7 @@
   "schema_version": 1,
   "spec": {
     "base_image": "python:3.9-slim",
+    "disable_plugin_autoload": true,
     "extra_pytest_args": [
       "-p",
       "pytester"
