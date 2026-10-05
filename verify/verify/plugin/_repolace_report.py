@@ -114,13 +114,44 @@ def pytest_configure(config):
             "pytest": _pytest_version(),
             # rootdir as data rather than as an argv convention: node ids are
             # relative to it, so a shift silently renames every test.
-            "rootdir": str(config.rootpath),
-            "inipath": str(config.inipath) if config.inipath else None,
+            "rootdir": str(_first_attribute(config, "rootpath", "rootdir")),
+            "inipath": _text_or_none(_first_attribute(config, "inipath", "inifile")),
             "ini": _watched_ini(config),
             "plugins": _plugin_names(config),
         }))
     except Exception:
+        # Say so on stderr, which the host keeps for a run that produced no report.
+        # Silently dropping the recorder left an empty report and nothing to
+        # diagnose it from, and the dropped handle was the only trace of it.
+        try:
+            import sys
+            import traceback
+
+            sys.stderr.write("repolace report plugin: configure failed, nothing will be recorded\n")
+            traceback.print_exc(file=sys.stderr)
+        except Exception:
+            pass
+        if _recorder is not None:
+            try:
+                _recorder.close()
+            except Exception:
+                pass
         _recorder = None
+
+
+def _first_attribute(config, *names):
+    """The first of `names` the config has. `rootpath` and `inipath` arrived in pytest 6.0
+    (as pathlib paths); before that the same facts are `rootdir` and `inifile`. The suites
+    of older repositories run on the pytest they pin, so this has to work on both."""
+    for name in names:
+        value = getattr(config, name, None)
+        if value is not None:
+            return value
+    return None
+
+
+def _text_or_none(value):
+    return str(value) if value else None
 
 
 def _watched_ini(config):

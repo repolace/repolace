@@ -225,6 +225,60 @@ class TestCollectionFailure:
         assert result.error is None, "one broken import must not make the task unscoreable"
 
 
+class TestOlderPytest:
+    """The suite of a repository runs on the pytest it pins, which can be much older than ours.
+
+    `Config.rootpath` and `Config.inipath` arrived in pytest 6.0. Reading them on 5.x raised
+    inside `pytest_configure`, whose broad `except` then dropped the recorder: the report was
+    empty and the run unscoreable, for every instance of a repository pinned below 6.0.
+    """
+
+    def load_plugin(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("_repolace_report_under_test", PLUGIN_DIR / "_repolace_report.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    class OldConfig:
+        """What pytest 5.2's Config offers: `rootdir` and `inifile`, no `rootpath` or `inipath`."""
+
+        rootdir = "/repo"
+        inifile = None
+
+        def getini(self, name):
+            raise ValueError(name)
+
+        class pluginmanager:
+            @staticmethod
+            def list_name_plugin():
+                return [("terminal", object())]
+
+    def test_a_config_without_rootpath_still_records(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("REPOLACE_REPORT_PATH", str(tmp_path / "report.jsonl"))
+        plugin = self.load_plugin()
+
+        plugin.pytest_configure(self.OldConfig())
+        plugin.pytest_unconfigure(self.OldConfig())
+
+        start = json.loads((tmp_path / "report.jsonl").read_text().splitlines()[0])
+        assert start["kind"] == "start" and start["rootdir"] == "/repo" and start["inipath"] is None
+
+    def test_a_failed_configure_says_so_on_stderr_and_leaves_no_open_file(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setenv("REPOLACE_REPORT_PATH", str(tmp_path / "report.jsonl"))
+        plugin = self.load_plugin()
+
+        class Broken:
+            def __getattr__(self, name):
+                raise RuntimeError("no " + name)
+
+        plugin.pytest_configure(Broken())
+
+        assert "configure failed" in capsys.readouterr().err
+        assert plugin._recorder is None
+
+
 class TestNestedSessions:
     """pytest's own suite runs pytest inside a test, in process, with this plugin loaded.
 
