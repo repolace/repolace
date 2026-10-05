@@ -110,6 +110,14 @@ class TestSpecFor:
 
         assert install[0] == "pip install Jinja2==3.0.3"
 
+    def test_pytest_is_asked_for_its_own_pytester_plugin_because_addopts_is_cleared(self):
+        entry = {"python": "3.9", "install": "python -m pip install -e ."}
+
+        mapping = spec_for("pytest-dev/pytest", "5.2", {"pytest-dev/pytest": {"5.2": entry}})
+
+        assert mapping["extra_pytest_args"] == ["-p", "pytester"]
+        assert "extra_pytest_args" not in spec_for("o/r", "1.0", one(entry))
+
     def test_other_repositories_get_no_pretend_version(self):
         install = spec_for("o/r", "1.0", one({"python": "3.9", "install": "pip install -e ."}))["install"]
 

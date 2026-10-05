@@ -106,6 +106,13 @@ _REQUIREMENT_FILES = {
 #: environment would leave it unvalidated.
 _EXTRA_PIP_PACKAGES = {"sphinx-doc/sphinx": (("3.", "roman"),)}
 
+#: pytest's own suite needs its `pytester` plugin (the `testdir` fixture), which its
+#: `tox.ini` loads through `addopts = ... -p pytester`. The sandbox clears addopts so
+#: a repository cannot change how the run behaves, which also drops that, and over a
+#: thousand tests then error with "fixture 'testdir' not found" -- among them the
+#: curated fail-to-pass ones. The plugin is asked for by name instead.
+_EXTRA_PYTEST_ARGS = {"pytest-dev/pytest": ["-p", "pytester"]}
+
 #: Distributions that derive their version from git (`setuptools_scm`). The export
 #: has no `.git`, so their editable install fails with "unable to detect version"
 #: unless the version is given. The value is the SWE-bench release the instance
@@ -270,6 +277,8 @@ def spec_for(repo: str, version: str, table: Mapping[str, Mapping[str, Mapping[s
     mapping: dict[str, Any] = {"base_image": f"python:{entry['python']}-slim", "install": commands}
     if entry.get("apt_pkgs"):
         mapping["system_packages"] = list(entry["apt_pkgs"])
+    if repo in _EXTRA_PYTEST_ARGS:
+        mapping["extra_pytest_args"] = list(_EXTRA_PYTEST_ARGS[repo])
     if scm is not None:
         mapping["generated_files"] = {scm[1]: f"version = {version!r}\n"}
     try:

@@ -93,6 +93,10 @@
   "schema_version": 1,
   "spec": {
     "base_image": "python:3.9-slim",
+    "extra_pytest_args": [
+      "-p",
+      "pytester"
+    ],
     "generated_files": {
       "src/_pytest/_version.py": "version = '6.2'\n"
     },
