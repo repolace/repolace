@@ -374,6 +374,41 @@ def fail_to_pass(baseline: SuiteResult, attempt: SuiteResult) -> tuple[str, ...]
     return tuple(sorted(became_passing | set(collection_fixed(baseline, attempt))))
 
 
+def _all_ids(result: SuiteResult) -> set[str]:
+    """Every node id a run recorded, whatever it did."""
+    return {
+        item
+        for bucket in (result.passed, result.failed, result.skipped, result.xfailed, result.did_not_run)
+        for item in bucket
+    }
+
+
+def expand_truncated_ids(expected: Sequence[str], universe: Collection[str]) -> tuple[str, ...]:
+    """Curated ids with the ones SWE-bench cut at a space replaced by the ids they stand for.
+
+    SWE-bench derives its FAIL_TO_PASS strings from pytest output split on
+    whitespace, so a parametrised id whose parameter contains a space is stored
+    as its first word: `test_x[a:` for `test_x[a: str = None-Optional[str]]`. Our
+    plugin reports the full id, so an exact match can never succeed, and an
+    instance whose fix is perfectly good scores FAILED -- an instrument defect
+    charged to the instance.
+
+    An id with an unclosed `[` is therefore read as a prefix: it stands for every
+    id in `universe` that continues it with a space, and each of those has to pass.
+    A truncated id with no such continuation is kept as it is, so it still reads as
+    missing; nothing is credited for an id the run never produced. Ids with balanced
+    brackets are untouched, and so is the order's determinism (sorted, de-duplicated).
+    """
+    resolved: set[str] = set()
+    for node_id in expected:
+        if node_id.count("[") > node_id.count("]"):
+            matches = {u for u in universe if u.startswith(node_id) and u[len(node_id):len(node_id) + 1] == " "}
+            resolved.update(matches or {node_id})
+        else:
+            resolved.add(node_id)
+    return tuple(sorted(resolved))
+
+
 def expected_not_red(baseline: SuiteResult, expected: Sequence[str]) -> tuple[str, ...]:
     """The curated fail-to-pass ids that were NOT red at the base commit.
 
@@ -399,6 +434,7 @@ def expected_not_red(baseline: SuiteResult, expected: Sequence[str]) -> tuple[st
     """
     red = _candidate_fail_to_pass(baseline)
     prefixes = _collect_failure_prefixes(baseline.collect_failures)
+    expected = expand_truncated_ids(expected, _all_ids(baseline))
     return tuple(sorted({e for e in expected if e not in red and not e.startswith(prefixes)}))
 
 
@@ -582,7 +618,8 @@ def score(
         )
 
     if expected_fail_to_pass is not None:
-        missing = tuple(sorted(set(expected_fail_to_pass) - set(attempt.passed)))
+        expected_ids = expand_truncated_ids(expected_fail_to_pass, _all_ids(attempt))
+        missing = tuple(sorted(set(expected_ids) - set(attempt.passed)))
         if missing:
             return Score(
                 outcome=TaskOutcome.FAILED,

@@ -54,7 +54,7 @@ from repolace_shared.db.models import Task, TaskOutcome, TaskStatus, TaskTestRun
 from repolace_shared.instances import InstanceError, InstanceSpec, load_instances
 from verify.config import DockerConfig
 from verify.protocol import SuiteResult
-from verify.scoring import expected_not_red
+from verify.scoring import expand_truncated_ids, expected_not_red
 
 DEFAULT_RUNS = ("gold-1", "gold-2")
 VALIDATION_FILENAME = "VALIDATION.md"
@@ -177,6 +177,7 @@ def _uncollected(baseline: SuiteResult, expected: Sequence[str]) -> list[str]:
         for item in bucket
     }
     prefixes = tuple(f"{path}::" for path in baseline.collect_failures if path.endswith(".py"))
+    expected = expand_truncated_ids(expected, seen)
     return sorted(item for item in expected if item not in seen and not item.startswith(prefixes))
 
 
