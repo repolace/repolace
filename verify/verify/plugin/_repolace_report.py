@@ -70,6 +70,13 @@ class _Recorder(object):
 
 _recorder = None
 
+#: How many sessions are configured at once. pytest's own suite (and any plugin's)
+#: runs pytest inside a test, in process, and the plugin is loaded into that inner
+#: session too. Only the outermost session is the run being measured: an inner one
+#: must not replace or close the outer recorder (its buffered records are then lost
+#: and the host sees an empty report), and its tests are not tests of the suite.
+_depth = 0
+
 
 def _crash_message(report):
     """`reprcrash` exists only when longrepr is an exception repr.
@@ -94,7 +101,10 @@ def _stamp(record):
 
 
 def pytest_configure(config):
-    global _recorder
+    global _recorder, _depth
+    _depth += 1
+    if _depth > 1:
+        return
     try:
         path = os.environ.get("REPOLACE_REPORT_PATH", DEFAULT_REPORT_PATH)
         _recorder = _Recorder(path)
@@ -183,7 +193,7 @@ def _pytest_version():
 
 def pytest_runtest_logreport(report):
     """Every phase of every test, unfiltered. The host decides what it means."""
-    if _recorder is None:
+    if _recorder is None or _depth != 1:
         return
     try:
         _recorder.write({
@@ -210,7 +220,7 @@ def pytest_collectreport(report):
     whose nodeid is the empty string. Writing those unfiltered would inject ""
     as a test id.
     """
-    if _recorder is None or report.outcome == "passed":
+    if _recorder is None or _depth != 1 or report.outcome == "passed":
         return
     try:
         longrepr = getattr(report, "longrepr", None)
@@ -233,7 +243,7 @@ def pytest_collection_finish(session):
     `django/test/client.py`. The host unions it with the heuristic, which is
     still needed to catch test files the baseline never saw.
     """
-    if _recorder is None:
+    if _recorder is None or _depth != 1:
         return
     try:
         files = set()
@@ -261,7 +271,7 @@ def pytest_sessionfinish(session, exitstatus):
     Its absence is how the host tells "the suite ran and everything failed" from
     "the suite never finished". Nothing else in the file can express that.
     """
-    if _recorder is None:
+    if _recorder is None or _depth != 1:
         return
     try:
         _recorder.write(_stamp({
@@ -281,7 +291,9 @@ def pytest_sessionfinish(session, exitstatus):
 
 
 def pytest_unconfigure(config):
-    if _recorder is not None:
+    global _depth
+    _depth -= 1
+    if _depth == 0 and _recorder is not None:
         try:
             _recorder.close()
         except Exception:

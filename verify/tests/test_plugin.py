@@ -225,6 +225,44 @@ class TestCollectionFailure:
         assert result.error is None, "one broken import must not make the task unscoreable"
 
 
+class TestNestedSessions:
+    """pytest's own suite runs pytest inside a test, in process, with this plugin loaded.
+
+    An inner session replaced the outer recorder and dropped it unflushed, so the
+    host found an empty report and called the run unscoreable. That made every
+    pytest-on-pytest benchmark instance unusable.
+    """
+
+    SUITE = """
+        import pytest
+
+        def test_runs_an_inner_session(tmp_path):
+            (tmp_path / "test_inner.py").write_text("def test_inner_one():\\n    assert True\\n")
+            assert pytest.main(["-p", "_repolace_report", "-p", "no:cacheprovider", "-o", "addopts=", str(tmp_path)]) == 0
+
+        def test_after_the_inner_session():
+            assert True
+    """
+
+    def test_the_outer_report_survives_and_holds_only_the_outer_tests(self, tmp_path):
+        report, process = run_suite(tmp_path, self.SUITE)
+
+        result = parse_report(report, process, elapsed=1.0)
+
+        assert result.error is None, result.error
+        assert any(n.endswith("::test_runs_an_inner_session") for n in result.passed)
+        assert any(n.endswith("::test_after_the_inner_session") for n in result.passed)
+        assert not any("test_inner_one" in n for n in result.passed + result.failed)
+
+    def test_the_session_marker_is_the_outer_ones(self, tmp_path):
+        report, _ = run_suite(tmp_path, self.SUITE)
+
+        records = [json.loads(line) for line in report.read_text().splitlines()]
+
+        assert [r["kind"] for r in records].count("session") == 1
+        assert [r["kind"] for r in records].count("start") == 1
+
+
 class TestNoReport:
     def test_a_usage_error_produces_no_report_and_is_unscoreable(self, tmp_path):
         """Exit 4 happens before any hook fires, so the file never exists."""
