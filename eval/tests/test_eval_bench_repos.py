@@ -641,6 +641,10 @@ class TestTokenHygiene:
             parts = set(path.relative_to(root).parts)
             if parts & {".venv", "tests", "node_modules", "__pycache__"} or path.name.startswith("test_"):
                 continue
+            # Data, not source: the clones `select` keeps of upstream repositories (which
+            # carry deliberately broken Python as test fixtures) and the runner's logs.
+            if path.relative_to(root).parts[:2] in {("eval", "cache"), ("eval", "runs")}:
+                continue
             if path.name == "bench_repos.py":
                 continue
             tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
