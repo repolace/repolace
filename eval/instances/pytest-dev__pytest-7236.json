@@ -66,6 +66,9 @@
   "schema_version": 1,
   "spec": {
     "base_image": "python:3.9-slim",
+    "generated_files": {
+      "src/_pytest/_version.py": "version = '5.4'\n"
+    },
     "install": [
       "pip install py==1.11.0 packaging==23.1 attrs==23.1.0 more-itertools==10.1.0 pluggy==0.13.1",
       "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_PYTEST=5.4 python -m pip install -e .",

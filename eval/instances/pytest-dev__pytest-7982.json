@@ -93,6 +93,9 @@
   "schema_version": 1,
   "spec": {
     "base_image": "python:3.9-slim",
+    "generated_files": {
+      "src/_pytest/_version.py": "version = '6.2'\n"
+    },
     "install": [
       "pip install attrs==23.1.0 iniconfig==2.0.0 packaging==23.1 pluggy==0.13.1 py==1.11.0 toml==0.10.2",
       "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_PYTEST=6.2 python -m pip install -e .",
