@@ -60,6 +60,12 @@ def _coerce(name: str, value: object, spec_key: str) -> object:
         if value <= 0:
             raise SpecError(f"{spec_key}.{name} must be positive, got {value!r}")
         return float(value)
+    if name == "generated_files":
+        if not isinstance(value, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in value.items()
+        ):
+            raise SpecError(f"{spec_key}.{name} must be a table of strings, got {value!r}")
+        return dict(value)
     if name == "extra_env":
         if not isinstance(value, dict) or not all(
             isinstance(k, str) and isinstance(v, str) for k, v in value.items()

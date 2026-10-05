@@ -231,6 +231,55 @@ class TestTheOverlay:
         assert verifier.backend.prepared == [] and verifier.backend.runs == []
 
 
+class TestGeneratedFiles:
+    """Files the install generated inside the tree, put back into every export.
+
+    The run mounts its export over the tree the image was built in, which hides
+    whatever the install wrote there; pytest, for one, imports its generated
+    `_version.py` at startup.
+    """
+
+    GENERATED = {"src/pkg/_version.py": "version = '5.2'\n"}
+    SPEC = RepoSpec(key="a/b", generated_files=GENERATED)
+
+    async def test_the_environment_is_prepared_from_a_tree_without_them(self, workspace):
+        verifier = Verifier(FakeBackend(), self.SPEC, uuid.uuid4())
+
+        await verifier.run(workspace, BASELINE_ATTEMPT)
+
+        assert "src/pkg/_version.py" not in verifier.backend.prepare_calls[0]["snapshot"]
+
+    async def test_a_scored_run_has_them(self, workspace):
+        verifier = Verifier(FakeBackend(), self.SPEC, uuid.uuid4())
+
+        await verifier.run(workspace, BASELINE_ATTEMPT)
+
+        assert verifier.backend.runs[0]["snapshot"]["src/pkg/_version.py"] == b"version = '5.2'\n"
+
+    async def test_a_probe_has_them(self, workspace):
+        verifier = await ready(workspace, spec=self.SPEC)
+
+        await verifier.run_subset(workspace, ["tests/test_a.py"])
+
+        assert verifier.backend.runs[-1]["snapshot"]["src/pkg/_version.py"] == b"version = '5.2'\n"
+
+    async def test_a_script_has_them(self, workspace):
+        verifier = await ready(workspace, spec=self.SPEC)
+
+        await verifier.run_script(workspace, "print(1)", timeout_seconds=5.0)
+
+        assert verifier.backend.scripts[0]["snapshot"]["src/pkg/_version.py"] == b"version = '5.2'\n"
+
+    async def test_they_do_not_make_a_path_hidden(self):
+        """`hidden_paths` is what the feedback filter withholds; a generated file is not a test."""
+        assert Verifier(FakeBackend(), self.SPEC, uuid.uuid4()).hidden_paths == frozenset()
+
+    @pytest.mark.parametrize("key", ["../escape.py", "/etc/x", ".git/hooks/post-commit", "a\\b", ""])
+    async def test_a_bad_path_fails_at_construction(self, key):
+        with pytest.raises(OverlayError):
+            Verifier(FakeBackend(), RepoSpec(key="a/b", generated_files={key: "x"}), uuid.uuid4())
+
+
 class TestRunSubset:
     async def test_it_needs_the_baseline_to_have_built_the_environment(self, workspace):
         verifier = Verifier(FakeBackend(), RepoSpec(key="a/b"), uuid.uuid4())

@@ -97,6 +97,12 @@ _REQUIREMENT_FILES = {
     "pylint-dev/pylint": "requirements_test_min.txt",
 }
 
+#: Requirements SWE-bench's snapshot never needed because its environments were
+#: resolved when the dependency was still bundled: sphinx 3.x imports `roman`, which
+#: docutils stopped vendoring, so a fresh resolve fails at startup with
+#: "No module named 'roman'". Added to the pins installed before the project.
+_EXTRA_PIP_PACKAGES = {"sphinx-doc/sphinx": ("roman",)}
+
 #: Distributions that derive their version from git (`setuptools_scm`). The export
 #: has no `.git`, so their editable install fails with "unable to detect version"
 #: unless the version is given. The value is the SWE-bench release the instance
@@ -104,7 +110,11 @@ _REQUIREMENT_FILES = {
 #: the fix. The variable is per distribution: the generic
 #: `SETUPTOOLS_SCM_PRETEND_VERSION` would also reach every dependency built from
 #: source during the same install.
-_SCM_DISTRIBUTIONS = {"pytest-dev/pytest": "PYTEST"}
+#: Each maps to (distribution name for the variable, the file the install writes
+#: the version into). That file is generated inside the tree, so it is also listed
+#: as a `generated_files` entry: every run mounts its export over the tree, which
+#: hides it, and pytest imports it unconditionally.
+_SCM_DISTRIBUTIONS = {"pytest-dev/pytest": ("PYTEST", "src/_pytest/_version.py")}
 
 #: Python versions whose `python:X.Y-slim` images sit on a Debian release whose apt
 #: repositories have been archived, so any `apt-get` in the build fails.
@@ -231,6 +241,7 @@ def spec_for(repo: str, version: str, table: Mapping[str, Mapping[str, Mapping[s
             raise SpecgenError(f"{where}: pip_packages entry {requirement!r} is an option, not a requirement")
     pytest_pins = [r for r in pip_packages if _requirement_name(r) == "pytest"]
     others = [r for r in pip_packages if _requirement_name(r) != "pytest"]
+    others += [r for r in _EXTRA_PIP_PACKAGES.get(repo, ()) if r not in others]
 
     commands: list[str] = []
     if packages == "requirements.txt":
@@ -240,9 +251,9 @@ def spec_for(repo: str, version: str, table: Mapping[str, Mapping[str, Mapping[s
         commands.append("pip install " + " ".join(shlex.quote(r) for r in others))
     commands.extend(entry.get("pre_install", []))
     install = entry.get("install") or _DEFAULT_INSTALL
-    scm_dist = _SCM_DISTRIBUTIONS.get(repo)
-    if scm_dist is not None:
-        install = f"SETUPTOOLS_SCM_PRETEND_VERSION_FOR_{scm_dist}={shlex.quote(version)} {install}"
+    scm = _SCM_DISTRIBUTIONS.get(repo)
+    if scm is not None:
+        install = f"SETUPTOOLS_SCM_PRETEND_VERSION_FOR_{scm[0]}={shlex.quote(version)} {install}"
     commands.append(install)
     if pytest_pins:
         commands.append("pip install " + " ".join(shlex.quote(r) for r in pytest_pins))
@@ -252,6 +263,8 @@ def spec_for(repo: str, version: str, table: Mapping[str, Mapping[str, Mapping[s
     mapping: dict[str, Any] = {"base_image": f"python:{entry['python']}-slim", "install": commands}
     if entry.get("apt_pkgs"):
         mapping["system_packages"] = list(entry["apt_pkgs"])
+    if scm is not None:
+        mapping["generated_files"] = {scm[1]: f"version = {version!r}\n"}
     try:
         spec_from_mapping(where, mapping)
     except SpecError as exc:

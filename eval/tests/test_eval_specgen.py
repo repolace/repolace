@@ -87,10 +87,27 @@ class TestSpecFor:
             "pip install pytest",
         ]
 
+    def test_a_git_versioned_distribution_also_gets_its_generated_file_laid_over_each_export(self):
+        entry = {"python": "3.9", "install": "python -m pip install -e ."}
+
+        mapping = spec_for("pytest-dev/pytest", "5.2", {"pytest-dev/pytest": {"5.2": entry}})
+
+        assert mapping["generated_files"] == {"src/_pytest/_version.py": "version = '5.2'\n"}
+        assert spec_from_mapping("pytest-dev/pytest", mapping).generated_files == mapping["generated_files"]
+
+    def test_sphinx_gets_roman_with_the_other_pins_before_the_project_install(self):
+        entry = {"python": "3.9", "pip_packages": ["Jinja2==3.0.3"], "install": "python -m pip install -e .[test]"}
+
+        install = spec_for("sphinx-doc/sphinx", "3.1", {"sphinx-doc/sphinx": {"3.1": entry}})["install"]
+
+        assert install[0] == "pip install Jinja2==3.0.3 roman"
+        assert install.index("python -m pip install -e .[test]") > 0
+
     def test_other_repositories_get_no_pretend_version(self):
         install = spec_for("o/r", "1.0", one({"python": "3.9", "install": "pip install -e ."}))["install"]
 
         assert not any("PRETEND_VERSION" in command for command in install)
+        assert "generated_files" not in spec_for("o/r", "1.0", one({"python": "3.9"}))
 
     def test_apt_packages_become_system_packages(self):
         assert spec_for("psf/requests", "0.1", swebench_table())["system_packages"] == ["libffi-dev"]

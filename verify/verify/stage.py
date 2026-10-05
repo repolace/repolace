@@ -214,6 +214,12 @@ class Verifier:
         # passed in must not be able to change what counts as hidden.
         self.overlay: Mapping[str, bytes] = MappingProxyType(dict(overlay or {}))
         validate_overlay_paths(self.overlay)
+        # Same refusals as the overlay's, at the same moment: a bad path fails
+        # before a forty-minute build rather than after it.
+        self._generated: Mapping[str, bytes] = MappingProxyType(
+            {path: text.encode("utf-8") for path, text in spec.generated_files.items()}
+        )
+        validate_overlay_paths(self._generated)
         self._env: EnvironmentRef | None = None
         # Only ever advanced, so a label is never reused -- not even after the run
         # that held it was discarded. `export-<label>` is written in place and the
@@ -274,6 +280,7 @@ class Verifier:
             # every comparison downstream of it.
             raise RuntimeError("the baseline has already run for this task")
 
+        await self._lay_generated(source_dir)
         if self.overlay:
             await asyncio.to_thread(
                 apply_overlay, source_dir, self.overlay, dir_mode=_OVERLAY_DIR_MODE
@@ -286,6 +293,11 @@ class Verifier:
             self.spec,
             container_name=container_name(self.task_id, attempt),
         )
+
+    async def _lay_generated(self, source_dir: Path) -> None:
+        """Put the files the install generated back into an export, if the spec lists any."""
+        if self._generated:
+            await asyncio.to_thread(apply_overlay, source_dir, self._generated, dir_mode=_OVERLAY_DIR_MODE)
 
     def _require_environment(self, what: str) -> EnvironmentRef:
         if self._env is None:
@@ -374,6 +386,7 @@ class Verifier:
 
         try:
             source_dir = await workspace.export_tree(label)
+            await self._lay_generated(source_dir)
             results_dir = await workspace.results_dir(label)
             return await self.backend.run_tests(
                 env, source_dir, results_dir, spec, container_name=name
@@ -432,6 +445,7 @@ class Verifier:
 
         try:
             source_dir = await workspace.export_tree(label)
+            await self._lay_generated(source_dir)
             results_dir = await workspace.results_dir(label)
             script_path = results_dir / Path(SCRIPT_PATH).name
             await asyncio.to_thread(_write_script, script_path, code)

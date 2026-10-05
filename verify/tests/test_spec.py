@@ -170,3 +170,15 @@ class TestHeuristic:
         spec = RepoSpec(key="a/b", install=("make test-deps",))
 
         assert install_commands(spec, tmp_path) == ("make test-deps",)
+
+
+def test_generated_files_are_a_table_of_strings():
+    spec = spec_from_mapping("a/b", {"generated_files": {"src/p/_version.py": "version = '1'\n"}})
+
+    assert spec.generated_files == {"src/p/_version.py": "version = '1'\n"}
+
+
+@pytest.mark.parametrize("value", [["a"], {"a": 1}, {1: "a"}, "a"])
+def test_generated_files_refuse_anything_else(value):
+    with pytest.raises(SpecError, match="generated_files must be a table of strings"):
+        spec_from_mapping("a/b", {"generated_files": value})

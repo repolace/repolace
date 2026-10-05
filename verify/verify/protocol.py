@@ -47,6 +47,13 @@ class RepoSpec:
     repo_readonly: bool = False
     timeout_seconds: float | None = None
     extra_env: Mapping[str, str] = field(default_factory=dict)
+    #: Files the install step generates *inside the tree* (a `setuptools_scm`
+    #: `_version.py`), as path -> text. Every run bind-mounts its export over the
+    #: tree the image was built in, which hides whatever the install wrote there,
+    #: so a package that imports such a file fails at startup. They are laid over
+    #: each export after the environment is built, like the hidden-test overlay but
+    #: for every run, and are not part of the image or its cache key.
+    generated_files: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
