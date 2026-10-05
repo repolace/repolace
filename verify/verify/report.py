@@ -356,7 +356,16 @@ def _parse_report(
     base = {"exit_code": exit_code, "duration_seconds": round(elapsed, 3), "stdout_tail": tail}
 
     def unscoreable(reason: str, **fields) -> SuiteResult:
-        return SuiteResult(**base, **fields, error=redact(f"verify: {reason}"))
+        # stdout and stderr are captured separately, and a run that never got as
+        # far as the plugin (an import error in pytest or a conftest, a broken
+        # install) says why on stderr. Keeping only stdout left such a run with
+        # an empty tail and no way to diagnose it. Only an unscoreable run gets
+        # it: a scored run's stderr is the code under test talking.
+        error_tail = _clean(redact(process.stderr.decode("utf-8", errors="replace"))[-_STDOUT_TAIL:])
+        fields_base = dict(base)
+        if error_tail:
+            fields_base["stdout_tail"] = f"{tail}\n--- stderr ---\n{error_tail}" if tail else f"--- stderr ---\n{error_tail}"
+        return SuiteResult(**fields_base, **fields, error=redact(f"verify: {reason}"))
 
     if process.timed_out:
         # run_process discards output on the kill path, so there is no tail.

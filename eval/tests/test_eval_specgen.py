@@ -67,6 +67,31 @@ class TestSpecFor:
         table = one({"python": "3.9", "packages": "requirements.txt", "pip_packages": ["six"]})
         assert spec_for("o/r", "1.0", table)["install"][:2] == ["pip install -r requirements.txt", "pip install six"]
 
+    def test_a_repository_without_a_tracked_requirements_file_installs_its_test_requirements_instead(self):
+        entry = {"python": "3.9", "packages": "requirements.txt"}
+
+        pylint = spec_for("pylint-dev/pylint", "2.9", {"pylint-dev/pylint": {"2.9": entry}})["install"]
+        flask = spec_for("pallets/flask", "2.3", {"pallets/flask": {"2.3": entry}})["install"]
+
+        assert pylint[0] == "pip install -r requirements_test_min.txt"
+        assert flask[0] == "pip install -r requirements/tests.txt"
+
+    def test_a_git_versioned_distribution_is_given_its_version_for_the_editable_install_only(self):
+        entry = {"python": "3.9", "install": "python -m pip install -e .", "pip_packages": ["attrs==23.1.0"]}
+
+        install = spec_for("pytest-dev/pytest", "5.2", {"pytest-dev/pytest": {"5.2": entry}})["install"]
+
+        assert install == [
+            "pip install attrs==23.1.0",
+            "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_PYTEST=5.2 python -m pip install -e .",
+            "pip install pytest",
+        ]
+
+    def test_other_repositories_get_no_pretend_version(self):
+        install = spec_for("o/r", "1.0", one({"python": "3.9", "install": "pip install -e ."}))["install"]
+
+        assert not any("PRETEND_VERSION" in command for command in install)
+
     def test_apt_packages_become_system_packages(self):
         assert spec_for("psf/requests", "0.1", swebench_table())["system_packages"] == ["libffi-dev"]
 
@@ -135,11 +160,15 @@ class TestLoader:
         with pytest.raises(SpecgenError, match="does not exist.*snippet in the docstring of harness.specgen"):
             load_swebench_specs(tmp_path / "absent.json")
 
-    def test_the_default_path_is_not_shipped(self):
-        # The snapshot is the maintainer's to generate; shipping one would be inventing constants.
+    def test_the_committed_snapshot_loads_and_covers_the_instance_repositories(self):
+        # Generated once from swebench==4.1.0 (see the docstring of harness.specgen); every
+        # entry has to survive the strict loader, and the repositories the instances come from
+        # have to be present, or `select` would report an environment problem for each.
         from harness.specgen import DEFAULT_SPECS_PATH
 
-        assert not DEFAULT_SPECS_PATH.exists()
+        table = load_swebench_specs(DEFAULT_SPECS_PATH)
+
+        assert {"pytest-dev/pytest", "sphinx-doc/sphinx", "mwaskom/seaborn"} <= set(table)
 
     def test_bad_json(self, tmp_path):
         path = tmp_path / "specs.json"

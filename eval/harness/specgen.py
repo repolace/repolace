@@ -85,6 +85,27 @@ _REQUIREMENT_NAME = re.compile(r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 _APT = re.compile(r"\bapt(?:-get)?\b")
 _DEFAULT_INSTALL = "pip install -e ."
 
+#: SWE-bench's `packages: requirements.txt` means a file its own tooling assembles
+#: from the repository's requirement files; it is not a tracked file, and for these
+#: repositories nothing named `requirements.txt` exists at the base commit
+#: (`pip install -r requirements.txt` fails with "Could not open requirements file").
+#: Each entry names the tracked file that carries the same test dependencies.
+#: This is an approximation, and gold validation is what checks it: an environment
+#: that cannot make the curated fail-to-pass tests red and then green is dropped.
+_REQUIREMENT_FILES = {
+    "pallets/flask": "requirements/tests.txt",
+    "pylint-dev/pylint": "requirements_test_min.txt",
+}
+
+#: Distributions that derive their version from git (`setuptools_scm`). The export
+#: has no `.git`, so their editable install fails with "unable to detect version"
+#: unless the version is given. The value is the SWE-bench release the instance
+#: belongs to, which is a fixed property of the instance and says nothing about
+#: the fix. The variable is per distribution: the generic
+#: `SETUPTOOLS_SCM_PRETEND_VERSION` would also reach every dependency built from
+#: source during the same install.
+_SCM_DISTRIBUTIONS = {"pytest-dev/pytest": "PYTEST"}
+
 #: Python versions whose `python:X.Y-slim` images sit on a Debian release whose apt
 #: repositories have been archived, so any `apt-get` in the build fails.
 _MIN_PYTHON_WITH_APT = (3, 8)
@@ -213,12 +234,16 @@ def spec_for(repo: str, version: str, table: Mapping[str, Mapping[str, Mapping[s
 
     commands: list[str] = []
     if packages == "requirements.txt":
-        commands.append("pip install -r requirements.txt")
+        commands.append(f"pip install -r {shlex.quote(_REQUIREMENT_FILES.get(repo, 'requirements.txt'))}")
     if others:
         # Quoted: `numpy<1.24` is a shell redirect unquoted.
         commands.append("pip install " + " ".join(shlex.quote(r) for r in others))
     commands.extend(entry.get("pre_install", []))
-    commands.append(entry.get("install") or _DEFAULT_INSTALL)
+    install = entry.get("install") or _DEFAULT_INSTALL
+    scm_dist = _SCM_DISTRIBUTIONS.get(repo)
+    if scm_dist is not None:
+        install = f"SETUPTOOLS_SCM_PRETEND_VERSION_FOR_{scm_dist}={shlex.quote(version)} {install}"
+    commands.append(install)
     if pytest_pins:
         commands.append("pip install " + " ".join(shlex.quote(r) for r in pytest_pins))
     else:

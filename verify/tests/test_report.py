@@ -191,6 +191,23 @@ class TestUnscoreable:
         assert result.error is not None
         assert "no test report" in result.error and "usage error" in result.error
 
+    def test_a_run_that_never_reached_the_plugin_keeps_its_stderr(self, tmp_path):
+        """A startup crash is reported on stderr. Dropping it left the run
+        unscoreable with an empty tail and nothing to diagnose it from."""
+        process = run(1, stdout=b"", stderr=b"ImportError: cannot import name 'x' from 'sphinx'\n")
+
+        result = parse_report(tmp_path / "absent.jsonl", process, elapsed=1.0)
+
+        assert result.error is not None
+        assert "ImportError: cannot import name 'x'" in result.stdout_tail
+        assert "--- stderr ---" in result.stdout_tail
+
+    def test_a_scored_run_does_not_carry_stderr(self, tmp_path):
+        """stderr of a run that did report is the code under test talking."""
+        result = parse(tmp_path, jsonl(start_record(), session_record(0)), stderr=b"noise from the code under test")
+
+        assert "noise" not in result.stdout_tail
+
     def test_an_empty_report_is_unscoreable(self, tmp_path):
         result = parse(tmp_path, "", returncode=4)
 
