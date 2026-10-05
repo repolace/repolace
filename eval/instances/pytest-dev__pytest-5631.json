@@ -32,7 +32,7 @@
     "base_image": "python:3.9-slim",
     "install": [
       "pip install atomicwrites==1.4.1 attrs==23.1.0 more-itertools==10.1.0 packaging==23.1 pluggy==0.13.1 py==1.11.0 wcwidth==0.2.6",
-      "python -m pip install -e .",
+      "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_PYTEST=5.0 python -m pip install -e .",
       "pip install pytest"
     ]
   },
