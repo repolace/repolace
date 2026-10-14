@@ -148,5 +148,5 @@ class TestImportWeight:
             "assert 'torch' not in sys.modules and 'sentence_transformers' not in sys.modules, "
             "[m for m in ('torch','sentence_transformers') if m in sys.modules]"
         )
-        done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+        done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
         assert done.returncode == 0, done.stderr

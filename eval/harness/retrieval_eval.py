@@ -749,7 +749,7 @@ async def _amain(args: argparse.Namespace) -> int:
 
         try:
             database_url = SharedSettings().database_url
-        except Exception:  # noqa: BLE001 -- a settings error can echo the environment; say only what is missing
+        except Exception:  # noqa: BLE001
             print("repolace-eval retrieval-eval: DATABASE_URL is not configured", file=sys.stderr)
             return 1
         engine = create_engine(database_url)

@@ -12,6 +12,7 @@ import subprocess
 import sys
 import uuid
 from decimal import Decimal
+from typing import ClassVar
 
 import pytest
 from agents_support import (
@@ -148,7 +149,7 @@ class TestOneAttempt:
         given would see the history change under it (the gateway copies, a fake might not)."""
 
         class Retaining(ScriptedLLM):
-            received: list = []
+            received: ClassVar[list] = []
 
             async def complete(self, stage, messages, *args, **kw):
                 self.received.append(messages)
@@ -409,7 +410,7 @@ def _chars(messages) -> int:
 class TestMalformedToolCallArguments:
     """A call whose arguments did not parse must not poison the next request."""
 
-    BAD_JSON = {
+    BAD_JSON: ClassVar = {
         "truncated JSON": '{"path": "a.py", "new": "x',
         "single quotes": "{'path': 'a.py'}",
         "two concatenated objects": '{"path": "a"}{"path": "b"}',
@@ -427,7 +428,7 @@ class TestMalformedToolCallArguments:
         history = [m for m in messages if m["role"] != "system"]
         try:
             anthropic_messages_pt(history, model="claude-sonnet-5-5", llm_provider="anthropic")
-        except Exception:
+        except Exception:  # noqa: BLE001
             return False
         return True
 

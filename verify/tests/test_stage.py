@@ -11,6 +11,7 @@ import asyncio
 import re
 import stat
 import uuid
+from typing import ClassVar
 
 import pytest
 from verify.errors import EnvironmentBuildFailed, SandboxUnavailable
@@ -238,7 +239,7 @@ class TestGeneratedFiles:
     `_version.py` at startup.
     """
 
-    GENERATED = {"src/pkg/_version.py": "version = '5.2'\n"}
+    GENERATED: ClassVar = {"src/pkg/_version.py": "version = '5.2'\n"}
     SPEC = RepoSpec(key="a/b", generated_files=GENERATED)
 
     async def test_the_environment_is_prepared_from_a_tree_without_them(self, workspace):

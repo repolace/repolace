@@ -111,7 +111,7 @@ class TestHelp:
             "         'harness.runner', 'harness.enqueue', 'harness.bench_repos', 'harness.gold', 'harness.db')\n"
             "print('LOADED:' + ','.join(m for m in heavy if m in sys.modules))\n"
         )
-        done = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, timeout=120)
+        done = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, timeout=120, check=False)
 
         assert done.returncode == 0, done.stderr
         assert done.stdout.strip().splitlines()[-1] == "LOADED:"

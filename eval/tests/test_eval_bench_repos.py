@@ -505,7 +505,7 @@ class TestTokenHygiene:
         caplog.set_level(logging.DEBUG)
         try:
             code = run_fork(workdir, github, push, *extra)
-        except BaseException as exc:  # an escaped exception's text is part of the surface
+        except BaseException as exc:  # an escaped exception's text is part of the surface  # noqa: BLE001
             return None, str(exc) + repr(exc), capsys.readouterr(), caplog.text
         captured = capsys.readouterr()
         return code, "", captured, caplog.text
@@ -795,7 +795,7 @@ class TestRealGitPush:
         assert run_git_sync("for-each-ref", "--format=%(refname) %(objectname)", cwd=bare) == f"refs/heads/main {base}"
         assert run_git_sync("rev-list", "--all", cwd=bare) == base, "only the base commit's history, nothing newer"
         for later in (fix, other):
-            assert subprocess.run(["git", "cat-file", "-e", later], cwd=bare).returncode != 0, "a later commit was pushed"
+            assert subprocess.run(["git", "cat-file", "-e", later], cwd=bare, check=False).returncode != 0, "a later commit was pushed"
 
     def test_a_second_push_of_the_same_commit_succeeds(self, workdir):
         sha = make_cached_upstream(workdir["cache"])
@@ -1298,4 +1298,4 @@ class TestUpstreamClone:
         assert seen_checkouts == [[".git"]], "no working-tree file may be written on the host"
         assert run_git_sync("rev-parse", "refs/heads/main", cwd=bare) == base
         assert run_git_sync("for-each-ref", "--format=%(refname)", cwd=bare) == "refs/heads/main"
-        assert subprocess.run(["git", "cat-file", "-e", fix], cwd=bare).returncode != 0, "the fix commit must not be pushed"
+        assert subprocess.run(["git", "cat-file", "-e", fix], cwd=bare, check=False).returncode != 0, "the fix commit must not be pushed"

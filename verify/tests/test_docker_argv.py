@@ -9,6 +9,7 @@ golden argv, which would go stale and get regenerated rather than read.
 
 import itertools
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from verify.backends.docker import (
@@ -861,7 +862,7 @@ class TestEnvironmentNamesAreNames:
     an exact-key reserved check: `HOME=/evil` emits `-e HOME=/evil=v`, which docker applies
     after the sandbox's own `-e HOME=/tmp` and which wins."""
 
-    PAYLOADS = ["HOME=/evil", "REPOLACE_RUN_NONCE=known#", "PYTHONPATH=/x:", "A=B", "REPOLACE_REPORT_PATH=/x"]
+    PAYLOADS: ClassVar = ["HOME=/evil", "REPOLACE_RUN_NONCE=known#", "PYTHONPATH=/x:", "A=B", "REPOLACE_REPORT_PATH=/x"]
 
     @pytest.mark.parametrize("name", PAYLOADS)
     def test_a_name_that_smuggles_an_assignment_is_refused_on_either_builder(self, build, name):

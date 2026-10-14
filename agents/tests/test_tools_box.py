@@ -6,6 +6,8 @@ lets a refused write change the tree -- by running them all through
 `ToolBox.dispatch`, the way the loop does.
 """
 
+from typing import ClassVar
+
 import pytest
 from agents_support import FakeToolCall
 from repolace_agents.tools import ToolBox, ToolLimits, ToolOutcome, build_toolbox
@@ -228,7 +230,7 @@ class TestARefusedWriteChangesNothing:
     new file and no created parent directory -- and `.git` untouched.
     """
 
-    REFUSED_EDITS = [
+    REFUSED_EDITS: ClassVar = [
         {"path": "tests/test_core.py", "old_string": "add", "new_string": "sub"},
         {"path": "conftest.py", "old_string": "x", "new_string": "y"},
         {"path": "pyproject.toml", "old_string": "pkg", "new_string": "evil"},
@@ -245,7 +247,7 @@ class TestARefusedWriteChangesNothing:
         {"path": "src/pkg", "old_string": "a", "new_string": "b"},
     ]
 
-    REFUSED_CREATES = [
+    REFUSED_CREATES: ClassVar = [
         {"path": "tests/test_new.py", "content": "x"},
         {"path": "tests/sub/deep/test_new.py", "content": "x"},
         {"path": "test_new.py", "content": "x"},

@@ -8,6 +8,7 @@ API of stream C and skips, saying so, where that is absent.
 
 import json
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from eval_support import (
@@ -747,7 +748,7 @@ def grid_run(cells: dict[tuple[str, str], list[float | None]], *, file_rr: float
 class TestStrategyGrid:
     """Eight cells on a handful of queries invite a winner's curse; every comparison is paired and has an interval."""
 
-    BASE = [0.5, 0.25, 1.0, 0.5, 0.25, 1.0, 0.5, 0.25, 1.0, 0.5]
+    BASE: ClassVar = [0.5, 0.25, 1.0, 0.5, 0.25, 1.0, 0.5, 0.25, 1.0, 0.5]
 
     def run(self, other):
         return grid_run({BASELINE_CELL: self.BASE, ("head_tail", "truncate"): other})

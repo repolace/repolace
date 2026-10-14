@@ -130,7 +130,7 @@ def expect_stub(owner: str):
         yield
     except NotImplementedError as exc:
         assert owner in str(exc), f"a stub must name the stream that owns it ({owner!r}), got: {exc}"
-    except Exception:
+    except Exception:  # noqa: BLE001
         pytest.skip("implemented")
     else:
         pytest.skip("implemented")

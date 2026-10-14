@@ -566,10 +566,14 @@ async def upstream_checkout(spec: InstanceSpec, cache_dir: Path) -> AsyncIterato
         cached = resolve_within(cache_dir, f"{owner}__{name}") if cache_dir.is_dir() else None
     except PathEscapesRoot as exc:
         raise BenchRepoError(f"{spec.instance_id}: {exc}") from None
-    if cached is not None and cached.is_dir():
-        if not await GitRepo(cached).is_shallow() and await _has_commit(cached, spec.base_commit):
-            yield cached
-            return
+    if (
+        cached is not None
+        and cached.is_dir()
+        and not await GitRepo(cached).is_shallow()
+        and await _has_commit(cached, spec.base_commit)
+    ):
+        yield cached
+        return
 
     with tempfile.TemporaryDirectory(prefix="repolace-bench-") as scratch:
         destination = Path(scratch) / "clone"
@@ -777,7 +781,7 @@ def main(
 
     try:
         report = asyncio.run(run())
-    except Exception as exc:  # noqa: BLE001 -- the last line of defence for the token's hygiene
+    except Exception as exc:  # noqa: BLE001
         print(f"repolace-eval fork: {_scrub(f'{type(exc).__name__}: {exc}', token)}", file=sys.stderr)
         return 1
     print(

@@ -216,7 +216,7 @@ def postgres_url() -> Iterator[str]:
 
     try:
         _create_database(admin_dsn, test_url.database)
-    except Exception as exc:  # asyncpg errors, DNS, refused connections
+    except Exception as exc:  # asyncpg errors, DNS, refused connections  # noqa: BLE001
         _skip_or_fail(f"postgres unavailable: {type(exc).__name__}: {exc}")
 
     rendered = test_url.render_as_string(hide_password=False)
@@ -243,7 +243,7 @@ async def db_engine(postgres_url: str):
 
 def _truncate_statement() -> str:
     """Every mapped table, derived rather than hand-listed so a new one cannot leak."""
-    from repolace_shared.db import models  # noqa: F401  registers the tables
+    from repolace_shared.db import models  # noqa: F401
     from repolace_shared.db.base import Base
 
     names = ", ".join(f'"{table.name}"' for table in Base.metadata.sorted_tables)

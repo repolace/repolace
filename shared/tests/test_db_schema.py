@@ -13,6 +13,7 @@ the success criteria.
 import itertools
 import re
 from decimal import Decimal
+from typing import ClassVar
 
 import pytest
 from db_support import make_task, seed_task
@@ -440,7 +441,7 @@ class TestEvalColumnsTogether:
     """
 
     COLUMNS = ("eval_run_id", "instance_id", "run_index")
-    VALUES = {"eval_run_id": "run-1", "instance_id": "psf__requests-2317", "run_index": 0}
+    VALUES: ClassVar = {"eval_run_id": "run-1", "instance_id": "psf__requests-2317", "run_index": 0}
 
     @classmethod
     def _fields(cls, set_columns):

@@ -6,6 +6,7 @@ repository with nothing behind it, and one that withholds a good one is only a
 missed opportunity -- so the tests are weighted toward "closed".
 """
 
+import dataclasses
 import itertools
 
 import pytest
@@ -69,7 +70,7 @@ class TestSharedRules:
         assert "switched off" in decide(open_pr_allowed=False, has_change=False).reason
 
     def test_a_decision_is_immutable(self):
-        with pytest.raises(Exception):
+        with pytest.raises(dataclasses.FrozenInstanceError):
             decide().open = False  # type: ignore[misc]
 
 

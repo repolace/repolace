@@ -8,6 +8,7 @@ with that upstream standing in for GitHub.
 
 import json
 from pathlib import Path
+from typing import ClassVar
 
 import httpx
 import pytest
@@ -536,7 +537,7 @@ async def accept_all(candidate: Candidate) -> Selected:
 
 @pytest.mark.anyio
 class TestChoose:
-    POOL = {"psf/requests": 6, "pallets/flask": 6, "mwaskom/seaborn": 6}
+    POOL: ClassVar = {"psf/requests": 6, "pallets/flask": 6, "mwaskom/seaborn": 6}
 
     async def test_it_spreads_across_repositories_before_repeating_one(self):
         result = await choose(stub_candidates(self.POOL), accept_all, count=4, max_per_repo=6, seed=0)

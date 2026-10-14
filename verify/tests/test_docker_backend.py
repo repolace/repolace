@@ -15,6 +15,7 @@ import subprocess
 import textwrap
 import uuid
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from repolace_shared.git.workspace import task_workspace
@@ -613,7 +614,7 @@ class TestProbesAndScriptsThroughTheVerifier:
             assert "test_hidden.py::test_hidden" not in probe.failed + probe.passed + probe.skipped
             assert script.stdout.strip() == "False", script.error
 
-            in_image = subprocess.run(
+            in_image = subprocess.run(  # noqa: ASYNC221
                 [DockerConfig().docker_binary, "run", "--rm", "--network=none", "--pull=never",
                  "--entrypoint", "python", image,
                  "-c", "import os; print(os.path.exists('/repo/test_hidden.py'))"],
@@ -622,7 +623,7 @@ class TestProbesAndScriptsThroughTheVerifier:
             assert in_image.stdout.strip() == "False"
         finally:
             if image is not None:
-                subprocess.run([DockerConfig().docker_binary, "rmi", "--force", image], capture_output=True)
+                subprocess.run([DockerConfig().docker_binary, "rmi", "--force", image], capture_output=True, check=False)  # noqa: ASYNC221
 
 
 
@@ -637,7 +638,7 @@ class TestAProbeCannotSubstituteAnotherRunsReport:
     error message, which is why errors carry no host paths either.
     """
 
-    SWAPS = {
+    SWAPS: ClassVar = {
         "symlink-to-the-baselines-report": "os.symlink({sibling!r}, path)",
         "symlink-to-a-host-file": "os.symlink({secret!r}, path)",
         "fifo": "os.mkfifo(path)",

@@ -69,7 +69,7 @@ def credential_fill(protocol: str, host: str, token: str, credential_host: str =
         input=f"protocol={protocol}\nhost={host}\n\n",
         env=_git_env(token, credential_host),
         capture_output=True,
-        text=True,
+        text=True, check=False,
     )
     return result.stdout
 

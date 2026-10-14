@@ -9,6 +9,7 @@ swallow the reason a task failed.
 import os
 import shutil
 import stat
+import subprocess
 import uuid
 from pathlib import Path
 
@@ -792,7 +793,7 @@ class TestPruneRemoteRefs:
             await workspace.prune_remote_refs(["main"])
 
             assert git(workspace.path, "cat-file", "-t", develop_tip) == "commit"
-            with pytest.raises(Exception):
+            with pytest.raises(subprocess.CalledProcessError):
                 git(workspace.path, "rev-parse", "--verify", "--quiet", "origin/develop")
 
 

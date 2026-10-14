@@ -5,6 +5,8 @@ only a repository can express. `record` is a list, so none of this needs a datab
 `task_test_runs` write is covered by the end-to-end tests.
 """
 
+from typing import ClassVar
+
 import pytest
 from pipeline_support import TASK_ID, git, write
 from repolace_pipeline.attempts import AttemptScorer
@@ -257,7 +259,7 @@ class TestGuards:
 
 
 class TestTheOverlay:
-    OVERLAY = {"tests/test_hidden.py": b"def test_f2p():\n    assert True\n"}
+    OVERLAY: ClassVar = {"tests/test_hidden.py": b"def test_f2p():\n    assert True\n"}
 
     async def test_the_overlay_reaches_every_scored_export_and_never_the_checkout(self, workspace):
         backend = FakeBackend(results=[BASELINE, PASSING])

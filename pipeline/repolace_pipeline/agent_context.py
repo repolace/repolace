@@ -222,7 +222,7 @@ def build_tool_context(
     search: Callable[[str, int], Awaitable[Sequence[SearchHit]]],
     hidden_paths: Collection[str],
     baseline: SuiteResult,
-    limits: ToolLimits = ToolLimits(),
+    limits: ToolLimits | None = None,
 ) -> ToolContext:
     """The agent's `ToolContext`, built from the task's own resources.
 
@@ -236,6 +236,7 @@ def build_tool_context(
     * `run_script` passes the tool's own timeout straight through.
     """
     hidden = frozenset(hidden_paths)
+    limits = limits if limits is not None else ToolLimits()
 
     async def run_subset(targets: Sequence[str]) -> SuiteResult:
         result = await verifier.run_subset(workspace, targets, timeout_seconds=limits.max_probe_seconds)

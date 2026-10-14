@@ -10,6 +10,8 @@ is that it does NOT demand a fail-to-pass, and that each way of doing harm is
 seen.
 """
 
+from typing import ClassVar
+
 import pytest
 from repolace_shared.db.models import TaskOutcome
 from verify.scoring import Verdict, agent_verdict, score
@@ -234,7 +236,7 @@ class TestPreconditions:
         assert result.ok is False
         assert result.reason == "attempt unscoreable: collection crashed"
 
-    DRIFTS = {
+    DRIFTS: ClassVar = {
         "rootdir": "/elsewhere",
         "ini": {"filterwarnings": ["ignore"]},
         "plugins": ["registered-by-a-new-conftest"],
@@ -318,9 +320,9 @@ class TestAgreesWithScore:
     of those checks would eventually cause.
     """
 
-    DRIFT = {"rootdir": "/other", "ini": {}, "plugins": []}
+    DRIFT: ClassVar = {"rootdir": "/other", "ini": {}, "plugins": []}
 
-    SCENARIOS = {
+    SCENARIOS: ClassVar = {
         "disqualified": {"baseline": suite(passed=(A,)), "attempt": suite(passed=(A,)), "changed": ["tests/test_a.py"]},
         "baseline_error": {"baseline": suite(error="no image"), "attempt": suite(passed=(A,))},
         "infrastructure": {

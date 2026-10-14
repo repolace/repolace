@@ -72,7 +72,7 @@ def run(root: Path, tag: str, *, with_flag: bool = True):
             "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
         },
         capture_output=True,
-        timeout=120,
+        timeout=120, check=False,
     )
     process = ProcessResult(
         returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr

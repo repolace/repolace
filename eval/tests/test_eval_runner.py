@@ -1140,7 +1140,7 @@ class TestInterruption:
             "DATABASE_URL": postgres_url, "DRIVER_CALLS": str(tmp_path / "calls.jsonl"), "DRIVER_CHILD": RECORDING_CHILD,
         })
         out = (tmp_path / "driver.out").open("w")
-        process = subprocess.Popen(
+        process = subprocess.Popen(  # noqa: ASYNC220
             [sys.executable, str(driver), "--eval-run-id", RUN, "--runs-dir", str(tmp_path / "runs"),
              "--max-total-usd", "100", "--timeout-seconds", "300", "-k", "1"],
             env=env, stdout=out, stderr=subprocess.STDOUT, start_new_session=True,

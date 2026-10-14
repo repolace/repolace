@@ -91,7 +91,7 @@ def run_suite(
             **({"REPOLACE_RUN_NONCE": nonce} if nonce is not None else {}),
         },
         capture_output=True,
-        timeout=120,
+        timeout=120, check=False,
     )
     return report, ProcessResult(
         returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr

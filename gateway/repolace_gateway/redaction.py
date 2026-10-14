@@ -20,6 +20,7 @@ in a tool result would otherwise fail the insert and, with it, the task.
 """
 
 import datetime as dt
+import math
 import re
 from collections.abc import Iterable, Mapping
 from decimal import Decimal
@@ -71,7 +72,7 @@ class Redactor:
             return value
         if isinstance(value, float):
             # NaN and Infinity are valid Python and invalid JSON; Postgres refuses them.
-            return value if value == value and value not in (float("inf"), float("-inf")) else str(value)
+            return value if not math.isnan(value) and value not in (float("inf"), float("-inf")) else str(value)
         if isinstance(value, str):
             return self.text(value)
         if isinstance(value, bytes):

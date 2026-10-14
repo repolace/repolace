@@ -18,6 +18,7 @@ it, and the benchmark's headline includes cost.
 """
 
 from decimal import Decimal
+from typing import ClassVar
 
 import litellm
 import pytest
@@ -151,9 +152,8 @@ class TestThroughTheClient:
             cost_fn=lambda **_: 0.0,
             model_info_fn=lambda **_: {"input_cost_per_token": 1e-6, "output_cost_per_token": 5e-6},
         )
-        with task_scope(TASK_ID, TaskBudget()) as scope:
-            with pytest.raises(UnpricedModelError, match=r"priced.*\$0"):
-                await h.client.complete("agent", MESSAGES)
+        with task_scope(TASK_ID, TaskBudget()) as scope, pytest.raises(UnpricedModelError, match=r"priced.*\$0"):
+            await h.client.complete("agent", MESSAGES)
         assert scope.budget.spent_usd == 0
 
 
@@ -163,12 +163,11 @@ class TestRefusedBeforeAnyMoneyIsSpent:
 
     async def test_a_model_litellm_does_not_know_is_refused_before_the_call(self):
         def unmapped(**_):
-            raise Exception("This model isn't mapped yet")
+            raise Exception("This model isn't mapped yet")  # noqa: TRY002
 
         h = make_harness(config=make_config(agent_model="priced_by_litellm"), model_info_fn=unmapped)
-        with task_scope(TASK_ID, TaskBudget()):
-            with pytest.raises(UnpricedModelError, match=r"\[models\.priced_by_litellm\.price\]"):
-                await h.client.complete("agent", MESSAGES)
+        with task_scope(TASK_ID, TaskBudget()), pytest.raises(UnpricedModelError, match=r"\[models\.priced_by_litellm\.price\]"):
+            await h.client.complete("agent", MESSAGES)
         assert h.acompletion.calls == []
         assert h.recorder.records == []
 
@@ -177,9 +176,8 @@ class TestRefusedBeforeAnyMoneyIsSpent:
             config=make_config(agent_model="priced_by_litellm"),
             model_info_fn=lambda **_: {"input_cost_per_token": None, "output_cost_per_token": None},
         )
-        with task_scope(TASK_ID, TaskBudget()):
-            with pytest.raises(UnpricedModelError):
-                await h.client.complete("agent", MESSAGES)
+        with task_scope(TASK_ID, TaskBudget()), pytest.raises(UnpricedModelError):
+            await h.client.complete("agent", MESSAGES)
         assert h.acompletion.calls == []
 
     async def test_the_check_runs_once_per_model_not_once_per_call(self):
@@ -224,9 +222,8 @@ class TestPricedTooLate:
             cost_fn=cannot_price,
             model_info_fn=lambda **_: {"input_cost_per_token": 1e-6, "output_cost_per_token": 5e-6},
         )
-        with task_scope(TASK_ID, TaskBudget()) as scope:
-            with pytest.raises(UnpricedModelError, match="could not price"):
-                await h.client.complete("agent", MESSAGES)
+        with task_scope(TASK_ID, TaskBudget()) as scope, pytest.raises(UnpricedModelError, match="could not price"):
+            await h.client.complete("agent", MESSAGES)
 
         (record,) = h.recorder.records  # the call happened, so it is on the record
         assert record.error.startswith("unpriced:")
@@ -237,12 +234,11 @@ class TestPricedTooLate:
     async def test_a_response_with_no_usage_is_recorded_and_refused(self):
         class Bare:
             usage = None
-            choices = []
+            choices: ClassVar = []
 
         h = make_harness(Bare())
-        with task_scope(TASK_ID, TaskBudget()):
-            with pytest.raises(UnpricedModelError, match="no usage"):
-                await h.client.complete("agent", MESSAGES)
+        with task_scope(TASK_ID, TaskBudget()), pytest.raises(UnpricedModelError, match="no usage"):
+            await h.client.complete("agent", MESSAGES)
         (record,) = h.recorder.records
         assert record.input_tokens is None and record.cost_usd is None
 
@@ -291,7 +287,6 @@ class TestAgainstRealLiteLLM:
         raw["models"]["main"].pop("price")
         raw["models"]["main"].update(litellm_model="anthropic/claude-no-such-model-xyz")
         h = make_harness(config=parse_config(raw))
-        with task_scope(TASK_ID, TaskBudget()):
-            with pytest.raises(UnpricedModelError):
-                await h.client.complete("agent", MESSAGES)
+        with task_scope(TASK_ID, TaskBudget()), pytest.raises(UnpricedModelError):
+            await h.client.complete("agent", MESSAGES)
         assert h.acompletion.calls == []

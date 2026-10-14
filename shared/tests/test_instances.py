@@ -13,6 +13,7 @@ import os
 import pickle
 import stat
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from repolace_shared.instances import (
@@ -722,7 +723,7 @@ class TestTestFilesRequired:
 
 
 class TestTargetedP2P:
-    TARGETS = {"test_targets": ["tests/unit"]}
+    TARGETS: ClassVar = {"test_targets": ["tests/unit"]}
 
     def test_flagged_with_targets_is_consistent(self, file):
         write_document(file, {**as_document(), "spec": self.TARGETS, "targeted_p2p": True})

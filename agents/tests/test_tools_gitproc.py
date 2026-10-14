@@ -74,8 +74,8 @@ class TestLimitsReachTheChild:
         git_pid = int(pidfile.read_text())
 
         try:
-            limits = open(f"/proc/{git_pid}/limits").read()
-            assert open(f"/proc/{git_pid}/comm").read().strip() == "git"  # not a surviving `prlimit` parent
+            limits = open(f"/proc/{git_pid}/limits").read()  # noqa: ASYNC230, SIM115
+            assert open(f"/proc/{git_pid}/comm").read().strip() == "git"  # not a surviving `prlimit` parent  # noqa: ASYNC230, SIM115
             assert f"{300 * MIB}" in next(line for line in limits.splitlines() if line.startswith("Max address space"))
             assert resource.getrlimit(resource.RLIMIT_AS) == before
         finally:

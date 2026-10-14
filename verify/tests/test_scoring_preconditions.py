@@ -7,6 +7,8 @@ tests in `test_agent_verdict.py` pin that they agree today; the tests here pin
 *why*: both are built on one helper, so they cannot drift by someone editing one.
 """
 
+from typing import ClassVar
+
 import pytest
 from repolace_shared.db.models import TaskOutcome
 from verify.scoring import Score, _preconditions, agent_verdict, score
@@ -153,7 +155,7 @@ class TestEveryPreconditionFailsBothCallers:
     """The equivalence test the brief names, over the helper's own scenarios: for
     each, `agent_verdict` is not ok AND `score` reports the same verdict."""
 
-    SCENARIOS = {
+    SCENARIOS: ClassVar = {
         "disqualified": {"baseline": suite(passed=(A,)), "attempt": suite(passed=(A,)), "changed": ["tests/test_a.py"]},
         "baseline_error": {"baseline": suite(error="no image"), "attempt": suite(passed=(A,))},
         "infrastructure": {"baseline": suite(passed=(A,)), "attempt": suite(error="daemon"), "infra": True},

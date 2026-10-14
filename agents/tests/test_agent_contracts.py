@@ -316,9 +316,8 @@ class TestExpectStub:
             raise NotImplementedError("run_agent lands in stream F: graph")
 
     def test_a_stub_that_names_someone_else_fails(self):
-        with pytest.raises(AssertionError, match="must name the stream"):
-            with expect_stub("stream F"):
-                raise NotImplementedError("lands in stream B")
+        with pytest.raises(AssertionError, match="must name the stream"), expect_stub("stream F"):
+            raise NotImplementedError("lands in stream B")
 
     def test_an_implementation_that_returns_skips(self):
         with pytest.raises(pytest.skip.Exception), expect_stub("stream F"):
