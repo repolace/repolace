@@ -7,10 +7,10 @@ assertions are individual and literal rather than a single comparison against a
 golden argv, which would go stale and get regenerated rather than read.
 """
 
+import itertools
 from pathlib import Path
 
 import pytest
-
 from verify.backends.docker import (
     build_argv,
     build_run_argv,
@@ -40,7 +40,7 @@ def script_argv(config: DockerConfig | None = None, spec: RepoSpec | None = None
 
 def has_pair(args: tuple[str, ...], flag: str, value: str) -> bool:
     """A `--flag value` pair, in that order and adjacent."""
-    return any(a == flag and b == value for a, b in zip(args, args[1:]))
+    return any(a == flag and b == value for a, b in itertools.pairwise(args))
 
 
 class TestContainment:
@@ -663,7 +663,7 @@ def option_tokens(args: tuple[str, ...]) -> list[str]:
 
 def values_after(args: tuple[str, ...], flag: str) -> list[str]:
     before = before_the_image(args)
-    return [b for a, b in zip(before, before[1:]) if a == flag]
+    return [b for a, b in itertools.pairwise(before) if a == flag]
 
 
 BUILDERS_WITH_ALLOWLISTS = {
@@ -790,7 +790,7 @@ class TestAHostileSpecCannotChangeTheFlags:
     @staticmethod
     def without_pair(args: tuple[str, ...], flag: str, value_prefix: str) -> tuple[str, ...]:
         """`args` with the one `flag value` pair whose value starts with `value_prefix` removed."""
-        for index, (a, b) in enumerate(zip(args, args[1:])):
+        for index, (a, b) in enumerate(itertools.pairwise(args)):
             if a == flag and b.startswith(value_prefix):
                 return args[:index] + args[index + 2 :]
         raise AssertionError(f"no {flag} {value_prefix!r} in {args}")

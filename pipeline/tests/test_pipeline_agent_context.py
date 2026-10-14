@@ -7,11 +7,7 @@ for a conftest, a directory overlay, `./`). The wiring tests use a real clone an
 """
 
 import pytest
-from repolace_shared.git import task_workspace
-from verify.protocol import RepoSpec, ScriptResult, SuiteResult
-from verify.stage import Verifier
-from verify.testing import FakeBackend
-
+from pipeline_support import TASK_ID
 from repolace_agents import feedback
 from repolace_agents.tools.base import ToolLimits
 from repolace_pipeline.agent_context import (
@@ -19,8 +15,10 @@ from repolace_pipeline.agent_context import (
     protected_check,
     visible_probe,
 )
-
-from pipeline_support import TASK_ID
+from repolace_shared.git import task_workspace
+from verify.protocol import RepoSpec, ScriptResult, SuiteResult
+from verify.stage import Verifier
+from verify.testing import FakeBackend
 
 pytestmark = pytest.mark.anyio
 

@@ -20,12 +20,7 @@ import dataclasses
 from pathlib import Path
 
 import pytest
-
 import repolace_agents
-from repolace_agents.contracts import AgentLimits, IssueContext, StopReason
-from repolace_agents.graph import run_graph
-from verify.protocol import SuiteResult
-
 from agents_support import (
     ScriptedLLM,
     ScriptedVerifier,
@@ -37,6 +32,9 @@ from agents_support import (
     suite,
     tool_call,
 )
+from repolace_agents.contracts import AgentLimits, IssueContext, StopReason
+from repolace_agents.graph import run_graph
+from verify.protocol import SuiteResult
 
 pytestmark = pytest.mark.anyio
 

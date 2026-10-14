@@ -13,11 +13,9 @@ import shlex
 import time
 
 import pytest
-
 from repolace_agents.tools import gitproc
 from repolace_agents.tools.gitproc import prlimit_path, require_prlimit, run_limited_git
 from repolace_shared.git import GitTimeoutError
-
 from tools_support import make_checkout, make_harness
 
 pytestmark = pytest.mark.anyio

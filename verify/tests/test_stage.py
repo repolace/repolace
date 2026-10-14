@@ -13,7 +13,6 @@ import stat
 import uuid
 
 import pytest
-
 from verify.errors import EnvironmentBuildFailed, SandboxUnavailable
 from verify.overlay import OverlayError
 from verify.protocol import RepoSpec, ScriptResult, SuiteResult

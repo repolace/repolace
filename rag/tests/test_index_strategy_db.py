@@ -20,13 +20,11 @@ from pathlib import Path
 from typing import NamedTuple
 
 import pytest
-from sqlalchemy import select, update
-
+from rag_support import commit_all, init_repo, seed_repo, write
 from repolace_shared.db.models import CodeChunk, RegisteredRepo
 from retrieval.index import get_current_chunk_count, index_repo, reindex_if_stale
 from retrieval.testing import FakeEmbedder, install_fake_embedder
-
-from rag_support import commit_all, init_repo, seed_repo, write
+from sqlalchemy import select, update
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db]
 

@@ -102,7 +102,6 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
-
 from repolace_shared.git.repo import (
     CLONE_TIMEOUT_SECONDS,
     DEFAULT_CREDENTIAL_HOST,

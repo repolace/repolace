@@ -10,18 +10,15 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
-import repolace_pipeline.cli as cli
+from pipeline_support import FakeGithubClient, make_instance, seed_task
 from repolace_gateway.config import GatewaySettings
-from repolace_shared.db.models import TaskStatus
-from repolace_shared.instances import dump_instance
-
+from repolace_pipeline import cli
 from repolace_pipeline.agent_runner import LLMAgent
 from repolace_pipeline.errors import TaskNotClaimable, TaskNotFound
 from repolace_pipeline.run import RunResult
 from repolace_pipeline.runners import GoldAgent
-
-from pipeline_support import FakeGithubClient, make_instance, seed_task
+from repolace_shared.db.models import TaskStatus
+from repolace_shared.instances import dump_instance
 
 TASK = "2f8a1c4e-0000-4000-8000-000000000001"
 

@@ -2,6 +2,7 @@ import uuid
 from dataclasses import dataclass
 
 from repolace_shared.db.models import CodeChunk
+
 from retrieval.config import RRF_K
 
 

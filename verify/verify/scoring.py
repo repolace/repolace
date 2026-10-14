@@ -23,10 +23,11 @@ now-trivially-passing tests. That is a source-side edit, so no path rule sees it
 """
 
 from collections.abc import Collection, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 from repolace_shared.db.models import TaskOutcome
+
 from verify.protocol import SuiteResult
 
 #: Directory names that mean "this is test infrastructure".

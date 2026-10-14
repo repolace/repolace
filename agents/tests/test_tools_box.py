@@ -7,10 +7,8 @@ lets a refused write change the tree -- by running them all through
 """
 
 import pytest
-
-from repolace_agents.tools import ToolBox, ToolLimits, ToolOutcome, build_toolbox
-
 from agents_support import FakeToolCall
+from repolace_agents.tools import ToolBox, ToolLimits, ToolOutcome, build_toolbox
 from tools_support import hit, make_harness, snapshot
 
 pytestmark = pytest.mark.anyio

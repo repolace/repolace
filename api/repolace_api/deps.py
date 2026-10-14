@@ -1,9 +1,8 @@
 from collections.abc import AsyncIterator
 
 from fastapi import Request
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from repolace_shared.github.client import GithubClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def get_db(request: Request) -> AsyncIterator[AsyncSession]:

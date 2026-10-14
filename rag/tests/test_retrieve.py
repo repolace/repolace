@@ -10,11 +10,10 @@ construction should not require a deep-learning stack to import.
 
 from dataclasses import dataclass
 
-from sqlalchemy import select
-from sqlalchemy.dialects import postgresql
-
 from retrieval.config import MAX_QUERY_TERMS
 from retrieval.retrieve import _or_tsquery
+from sqlalchemy import select
+from sqlalchemy.dialects import postgresql
 
 
 @dataclass(frozen=True)

@@ -19,9 +19,9 @@ from collections import defaultdict
 from pathlib import Path
 
 import structlog
-
 from repolace_shared.git import redact
 from repolace_shared.process import ProcessResult
+
 from verify.protocol import SuiteResult
 
 log = structlog.get_logger()

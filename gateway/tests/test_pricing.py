@@ -21,12 +21,6 @@ from decimal import Decimal
 
 import litellm
 import pytest
-
-from repolace_gateway.budget import TaskBudget, task_scope
-from repolace_gateway.client import TokenUsage, extract_usage
-from repolace_gateway.config import Price, parse_config
-from repolace_gateway.errors import UnpricedModelError
-
 from gateway_support import (
     MESSAGES,
     TASK_ID,
@@ -36,10 +30,14 @@ from gateway_support import (
     make_response,
     raw_config,
 )
+from repolace_gateway.budget import TaskBudget, task_scope
+from repolace_gateway.client import TokenUsage, extract_usage
+from repolace_gateway.config import Price, parse_config
+from repolace_gateway.errors import UnpricedModelError
 
 PRICE = Price(
-    input=Decimal("3") / 1_000_000,
-    output=Decimal("15") / 1_000_000,
+    input=Decimal(3) / 1_000_000,
+    output=Decimal(15) / 1_000_000,
     cache_read=Decimal("0.3") / 1_000_000,
     cache_write=Decimal("3.75") / 1_000_000,
 )
@@ -65,7 +63,7 @@ class TestPriceArithmetic:
         assert all_cached < PRICE.cost(**usage_kwargs(input_tokens=1000))
 
     def test_a_call_with_no_cache_activity_needs_no_cache_rates(self):
-        price = Price(input=Decimal("1") / 1_000_000, output=Decimal("5") / 1_000_000)
+        price = Price(input=Decimal(1) / 1_000_000, output=Decimal(5) / 1_000_000)
         assert price.cost(**usage_kwargs(input_tokens=1000, output_tokens=100)) == Decimal("0.0015")
 
     def test_cache_reads_with_no_rate_are_an_error_not_the_input_rate(self):

@@ -26,13 +26,19 @@ from types import MappingProxyType
 from typing import Protocol
 
 import structlog
-
 from repolace_shared.git import redact
+
 from verify.config import SCRIPT_PATH
 from verify.dockerfile import image_cache_key
 from verify.errors import SandboxError
 from verify.overlay import apply_overlay, validate_overlay_paths
-from verify.protocol import EnvironmentRef, RepoSpec, SandboxBackend, ScriptResult, SuiteResult
+from verify.protocol import (
+    EnvironmentRef,
+    RepoSpec,
+    SandboxBackend,
+    ScriptResult,
+    SuiteResult,
+)
 from verify.spec import install_commands
 
 log = structlog.get_logger()

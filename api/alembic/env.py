@@ -1,14 +1,13 @@
 import asyncio
 from logging.config import fileConfig
 
-from sqlalchemy import pool
-from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
-
 from alembic import context
 from repolace_shared.config import SharedSettings
 from repolace_shared.db import models  # noqa: F401 - registers tables on Base.metadata
 from repolace_shared.db.base import Base
+from sqlalchemy import pool
+from sqlalchemy.engine import Connection
+from sqlalchemy.ext.asyncio import async_engine_from_config
 
 config = context.config
 

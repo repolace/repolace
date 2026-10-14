@@ -13,25 +13,21 @@ out here, trimmed to what this suite needs.
 
 import copy
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 import litellm
-from sqlalchemy import select
-
+from pipeline_support import FakeGithubClient, local_workspace_factory
 from repolace_gateway.client import LLMClient
 from repolace_gateway.config import GatewayConfig, GatewaySettings, parse_config
 from repolace_gateway.recorder import Recorder
 from repolace_gateway.redaction import Redactor
-from repolace_shared.db.models import LLMCall
-from verify.protocol import SuiteResult
-
-from repolace_agents.contracts import AgentResult
 from repolace_pipeline.agent_runner import LLMAgent
 from repolace_pipeline.run import RunResult, run_task
-
-from pipeline_support import FakeGithubClient, local_workspace_factory
+from repolace_shared.db.models import LLMCall
+from sqlalchemy import select
+from verify.protocol import SuiteResult
 
 #: Provider-shaped fake credential; the gateway redacts exact matches of it from what it stores.
 FAKE_ANTHROPIC_KEY = "sk-ant-api03-" + "Zq9Xk2" * 6

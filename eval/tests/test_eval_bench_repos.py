@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import ast
 import asyncio
-import json
 import logging
 import re
 import subprocess
@@ -18,7 +17,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-
 from eval_exec_support import (
     BASE_COMMIT,
     TOKEN,
@@ -33,11 +31,11 @@ from eval_exec_support import (
 from harness import bench_repos
 from harness.bench_repos import (
     BENCH_MARKER,
+    TOKEN_ENV_VAR,
     BenchRepo,
     BenchRepoError,
     GithubBench,
     NotCreatedByThisTool,
-    TOKEN_ENV_VAR,
     check_bench_name,
     check_push_target,
     load_bench_entries,
@@ -45,7 +43,8 @@ from harness.bench_repos import (
     main,
     upstream_checkout,
 )
-from repolace_shared.git.repo import GitCommandError, run_git as shared_run_git
+from repolace_shared.git.repo import GitCommandError
+from repolace_shared.git.repo import run_git as shared_run_git
 
 API = "https://api.test"
 GIT = "https://git.test"

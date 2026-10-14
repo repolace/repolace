@@ -13,9 +13,7 @@ an image whose URL carries a secret, and a raw tag.
 import re
 
 import pytest
-from verify.protocol import SuiteResult
-from verify.scoring import Score, Verdict
-
+from pipeline_support import TASK_ID, benchmark_facts, chunk, pr_facts
 from repolace_pipeline.pr import (
     MAX_FILES_LISTED,
     ZWSP,
@@ -24,8 +22,8 @@ from repolace_pipeline.pr import (
     render_pr_body,
     sanitize_markdown,
 )
-
-from pipeline_support import TASK_ID, benchmark_facts, chunk, pr_facts
+from verify.protocol import SuiteResult
+from verify.scoring import Score, Verdict
 
 HOSTILE = (
     "line1\x00‮@org/team Fixes django/django#123 "
@@ -124,7 +122,7 @@ class TestSanitizeMarkdown:
         assert "it does not" in clean
 
     def test_control_and_bidi_characters_are_removed(self):
-        clean = sanitize_markdown("a\x00b\x1bc‮d​e")
+        clean = sanitize_markdown("a\x00b\x1bc‮d\u200be")
 
         assert clean == "abcde"
 

@@ -8,16 +8,14 @@ forgot to checkpoint raises inside the fake instead of passing.
 import dataclasses
 
 import pytest
+from agents_support import FakeToolCall
+from repolace_agents.tools import ToolLimits, build_toolbox
+from repolace_shared.git import GitCommandError
+from tools_support import make_harness, snapshot
 from verify.config import SCRIPT_PATH
 from verify.protocol import EnvironmentRef, RepoSpec, ScriptResult, SuiteResult
 from verify.stage import VerifierNotReady
 from verify.testing import FakeBackend
-
-from repolace_agents.tools import ToolLimits, build_toolbox
-from repolace_shared.git import GitCommandError
-
-from agents_support import FakeToolCall
-from tools_support import make_harness, snapshot
 
 pytestmark = pytest.mark.anyio
 

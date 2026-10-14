@@ -14,14 +14,12 @@ from pathlib import Path
 
 import pytest
 import structlog
-
 from repolace_shared.git.repo import GitExportError
 from repolace_shared.git.workspace import (
     agent_branch_name,
     github_clone_url,
     task_workspace,
 )
-
 from shared_support import git, git_bytes, git_check_ref, write
 
 pytestmark = pytest.mark.anyio

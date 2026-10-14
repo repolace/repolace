@@ -33,17 +33,16 @@ from collections.abc import Awaitable, Callable, Collection, Sequence
 from pathlib import Path
 
 import structlog
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
+from repolace_agents.contracts import SearchHit
+from repolace_agents.tools.base import ToolContext, ToolLimits
 from repolace_shared.git import TaskWorkspace
 from retrieval.retrieve import hybrid_search
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from verify.config import WORKDIR
 from verify.protocol import ScriptResult, SuiteResult
 from verify.scoring import is_protected_path
 from verify.stage import Verifier
 
-from repolace_agents.contracts import SearchHit
-from repolace_agents.tools.base import ToolContext, ToolLimits
 from repolace_pipeline.context import RetrievedChunk, search_hit
 
 log = structlog.get_logger()

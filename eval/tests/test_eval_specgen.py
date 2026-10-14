@@ -7,7 +7,6 @@ this module ports none.
 import json
 
 import pytest
-
 from eval_support import swebench_table, write_specs_file
 from harness.specgen import (
     SpecgenError,

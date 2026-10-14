@@ -45,7 +45,7 @@ _WATCHED_INI = (
 _LONGREPR_LIMIT = 2000
 
 
-class _Recorder(object):
+class _Recorder:
     def __init__(self, path):
         self._handle = open(path, "a", encoding="utf-8", newline="\n")
         self._tests = 0

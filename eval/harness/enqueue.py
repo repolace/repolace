@@ -47,23 +47,36 @@ import uuid
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import structlog
-from sqlalchemy import select, text
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.exc import SQLAlchemyError
 
-from harness.bench_repos import DEFAULT_INSTANCES_DIR, MAPPING_FILENAME, BenchRepoError, load_bench_repos
-from harness.db import SessionFactory, check_eval_run_id, open_session_factory
-from harness.run_manifest import AGENTS, ManifestError, RunManifest, dump_manifest, load_manifest, manifest_path
 # Light: `budget` imports neither LiteLLM nor torch (`code_limits` below reads the same module).
 from repolace_gateway.budget import DEFAULT_MAX_WALL_SECONDS
 from repolace_shared.db.models import RegisteredRepo, Task, TaskStatus
 from repolace_shared.git.repo import GitError, run_git
 from repolace_shared.instances import InstanceError, InstanceSpec, load_instances
+from sqlalchemy import select, text
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
 from verify.config import DockerConfig
+
+from harness.bench_repos import (
+    DEFAULT_INSTANCES_DIR,
+    MAPPING_FILENAME,
+    BenchRepoError,
+    load_bench_repos,
+)
+from harness.db import SessionFactory, check_eval_run_id, open_session_factory
+from harness.run_manifest import (
+    AGENTS,
+    ManifestError,
+    RunManifest,
+    dump_manifest,
+    load_manifest,
+    manifest_path,
+)
 
 #: Benchmark tasks target `main` of the benchmark repository: `fork` pushes the
 #: base commit there.
@@ -158,7 +171,7 @@ class EnqueueResult:
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 @dataclass(frozen=True)
@@ -190,7 +203,11 @@ def code_limits() -> dict[str, object]:
     settings, this function is the one to teach about it.
     """
     from repolace_agents.contracts import AgentLimits
-    from repolace_gateway.budget import DEFAULT_MAX_CALLS, DEFAULT_MAX_USD, DEFAULT_MAX_WALL_SECONDS
+    from repolace_gateway.budget import (
+        DEFAULT_MAX_CALLS,
+        DEFAULT_MAX_USD,
+        DEFAULT_MAX_WALL_SECONDS,
+    )
 
     agent = AgentLimits()
     return {
@@ -218,7 +235,7 @@ def build_manifest(
         raise ManifestError("--model is required for the llm agent: the manifest must name the model that ran")
     return RunManifest(
         eval_run_id=eval_run_id,
-        created_at=created_at.astimezone(timezone.utc).replace(microsecond=0).isoformat(),
+        created_at=created_at.astimezone(UTC).replace(microsecond=0).isoformat(),
         git_sha=git_sha,
         model=model if inputs.agent == "llm" else NO_MODEL,
         # Exactly what the runner puts in GATEWAY_STAGE_MODELS for `--model`.

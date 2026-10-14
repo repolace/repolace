@@ -1,14 +1,12 @@
 """A sandbox that is not there at the baseline is repolace's failure, not an inadmissible instance."""
 
 import pytest
-
+from pipeline_support import reload, seed_task
+from repolace_agents.contracts import StopReason
 from repolace_shared.db.models import TaskStatus
+from test_pipeline_run_task_db import agent_that, run
 from verify.errors import SandboxUnavailable
 from verify.testing import FakeBackend
-
-from repolace_agents.contracts import StopReason
-from pipeline_support import reload, seed_task
-from test_pipeline_run_task_db import agent_that, run
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db, pytest.mark.usefixtures("embedder")]
 

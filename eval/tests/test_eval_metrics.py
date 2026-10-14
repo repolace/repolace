@@ -3,7 +3,6 @@
 import random
 
 import pytest
-
 from harness.metrics import (
     BOOTSTRAP_RESAMPLES,
     BOOTSTRAP_SEED,
@@ -18,8 +17,8 @@ from harness.metrics import (
     innermost_overlapping,
     mean_of,
     percentile,
-    score_query,
     reachable_hunks,
+    score_query,
     spans_overlap,
     strictly_contains,
 )

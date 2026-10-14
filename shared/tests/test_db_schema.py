@@ -12,13 +12,10 @@ the success criteria.
 
 import itertools
 import re
-import uuid
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select, text
-from sqlalchemy.exc import DBAPIError, IntegrityError
-
+from db_support import make_task, seed_task
 from repolace_shared.db.models import (
     AGENT_STOP_REASONS,
     BASELINE_ATTEMPT,
@@ -28,8 +25,8 @@ from repolace_shared.db.models import (
     TaskStatus,
     TaskTestRun,
 )
-
-from db_support import make_task, seed_task
+from sqlalchemy import select, text
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db]
 
@@ -196,13 +193,13 @@ class TestOpenPrOnFailure:
         The insert omits the column entirely, so a missing server_default would
         surface here as a NOT NULL violation rather than as False.
         """
-        task = await seed_task(db_session)
+        await seed_task(db_session)
 
         stored = (await db_session.execute(select(Task))).scalar_one()
         assert stored.open_pr_on_failure is False
 
     async def test_it_can_be_set(self, db_session):
-        task = await seed_task(db_session, open_pr_on_failure=True)
+        await seed_task(db_session, open_pr_on_failure=True)
 
         stored = (await db_session.execute(select(Task))).scalar_one()
         assert stored.open_pr_on_failure is True

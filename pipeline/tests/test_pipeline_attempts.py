@@ -6,15 +6,13 @@ only a repository can express. `record` is a list, so none of this needs a datab
 """
 
 import pytest
+from pipeline_support import TASK_ID, git, write
+from repolace_pipeline.attempts import AttemptScorer
 from repolace_shared.git import task_workspace
 from verify.errors import EnvironmentBuildFailed, SandboxTimeout, SandboxUnavailable
 from verify.protocol import RepoSpec, SuiteResult
 from verify.stage import Verifier
 from verify.testing import FakeBackend
-
-from repolace_pipeline.attempts import AttemptScorer
-
-from pipeline_support import TASK_ID, git, write
 
 pytestmark = pytest.mark.anyio
 
@@ -111,7 +109,7 @@ class TestWhenThereIsNothingToScore:
     async def test_an_edit_reverted_to_the_base_is_none_even_though_commits_exist(self, workspace):
         """The question is the tree against the base, not whether anything was ever committed."""
         backend = FakeBackend(results=[BASELINE])
-        scorer, recorded, _ = await scorer_for(workspace, backend)
+        scorer, _recorded, _ = await scorer_for(workspace, backend)
         original = (workspace.path / "src" / "app.py").read_text()
         edit(workspace, "src/app.py", "X = 1\n")
         await workspace.record_attempt("an edit")
@@ -148,7 +146,7 @@ class TestWhenThereIsNothingToScore:
 
     async def test_a_none_does_not_use_up_the_attempt_number(self, workspace):
         backend = FakeBackend(results=[BASELINE, PASSING])
-        scorer, recorded, _ = await scorer_for(workspace, backend)
+        scorer, _recorded, _ = await scorer_for(workspace, backend)
         assert await scorer.verify_attempt(1) is None
         edit(workspace, "src/app.py", "X = 1\n")
 

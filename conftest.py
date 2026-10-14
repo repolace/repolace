@@ -203,9 +203,8 @@ def postgres_url() -> Iterator[str]:
     from alembic import command
     from alembic.config import Config
     from pydantic import ValidationError
-    from sqlalchemy.engine import make_url
-
     from repolace_shared.config import SharedSettings
+    from sqlalchemy.engine import make_url
 
     try:
         dev_url = make_url(SharedSettings().database_url)
@@ -244,8 +243,8 @@ async def db_engine(postgres_url: str):
 
 def _truncate_statement() -> str:
     """Every mapped table, derived rather than hand-listed so a new one cannot leak."""
-    from repolace_shared.db.base import Base
     from repolace_shared.db import models  # noqa: F401  registers the tables
+    from repolace_shared.db.base import Base
 
     names = ", ".join(f'"{table.name}"' for table in Base.metadata.sorted_tables)
     return f"TRUNCATE TABLE {names} RESTART IDENTITY CASCADE"

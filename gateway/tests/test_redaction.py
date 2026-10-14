@@ -13,10 +13,8 @@ import json
 from decimal import Decimal
 
 import pytest
-
-from repolace_gateway.redaction import REDACTED, Redactor
-
 from gateway_support import ANTHROPIC_KEY, FOREIGN_OPENAI_KEY, OPENAI_KEY
+from repolace_gateway.redaction import REDACTED, Redactor
 
 
 @pytest.fixture

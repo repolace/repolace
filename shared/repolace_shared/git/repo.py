@@ -70,11 +70,11 @@ _CREDENTIAL_HELPER = (
     '!f() { test "$1" = get || return 0; p=; h=; '
     'while IFS="=" read -r k v; do '
     'case "$k" in protocol) p=$v ;; host) h=$v ;; "") break ;; esac; done; '
-    'if test "$p" = https && test "$h" = "$%s"; then '
+    f'if test "$p" = https && test "$h" = "${GIT_HOST_ENV_VAR}"; then '
     "echo username=x-access-token; "
-    'echo "password=$%s"; '
+    f'echo "password=${GIT_TOKEN_ENV_VAR}"; '
     "fi; }; f"
-) % (GIT_HOST_ENV_VAR, GIT_TOKEN_ENV_VAR)
+)
 
 #: The config every git invocation against an untrusted tree must carry.
 #: Exported so `retrieval.index` can reuse it without also taking on the async

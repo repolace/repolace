@@ -15,9 +15,8 @@ because a set that was not stored could not be recovered.
 import uuid
 
 import structlog
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from repolace_shared.db.models import TaskTestRun
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from verify.protocol import SuiteResult
 
 log = structlog.get_logger()

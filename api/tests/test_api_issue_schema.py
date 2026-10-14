@@ -1,8 +1,7 @@
 """`Issue` carries the body GitHub sends, and tolerates the null it sends for an empty one."""
 
-from repolace_shared.github.schemas import Issue
-
 from api_support import raw_issue
+from repolace_shared.github.schemas import Issue
 
 
 class TestIssueBody:

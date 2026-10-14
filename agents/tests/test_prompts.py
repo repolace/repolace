@@ -17,8 +17,8 @@ import re
 import time
 
 import pytest
-
 import repolace_agents.render as render_module
+from agents_support import suite
 from repolace_agents.contracts import AgentLimits, IssueContext, SearchHit
 from repolace_agents.feedback import baseline_summary, render_feedback, visible_feedback
 from repolace_agents.prompts import (
@@ -31,20 +31,18 @@ from repolace_agents.prompts import (
     render_issue,
 )
 from repolace_agents.render import (
+    TESTS_NOT_SHOWN,
     bounded_list,
     check_nonce,
     clean_untrusted,
     data_block,
     escape_invisible,
-    TESTS_NOT_SHOWN,
     inline,
+    neutralize_closing_tags,
     render_hits,
     sanitize_text,
-    neutralize_closing_tags,
     truncate,
 )
-
-from agents_support import suite
 
 NONCE = "a1b2c3d4"
 #: A closing tag of any of the six families, in any spelling the package guards against.
@@ -165,7 +163,7 @@ class TestRenderIssue:
 
     @pytest.mark.parametrize(
         "hostile",
-        ["\x00", "\x1b", "\x07", "‮", "​", "⁦", "﻿", "\U000e0041", "\ud800"],
+        ["\x00", "\x1b", "\x07", "‮", "\u200b", "⁦", "﻿", "\U000e0041", "\ud800"],
     )
     def test_invisible_and_control_characters_are_removed(self, hostile):
         """Zero-width, bidi and tag-block characters are how an instruction is hidden from a human reviewer."""
@@ -203,8 +201,8 @@ class TestRenderIssue:
 
 class TestLocalizeMessage:
     def build(self, **kw):
-        args = dict(issue=issue(), repo_overview="src/\n  pkg/", retrieved=[hit(0)], baseline_summary="BASELINE-LINE",
-                    limits=LIMITS, nonce=NONCE)
+        args = {"issue": issue(), "repo_overview": "src/\n  pkg/", "retrieved": [hit(0)], "baseline_summary": "BASELINE-LINE",
+                    "limits": LIMITS, "nonce": NONCE}
         args.update(kw)
         return build_localize_message(**args)
 

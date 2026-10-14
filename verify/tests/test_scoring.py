@@ -13,7 +13,6 @@ the diff.
 """
 
 import pytest
-
 from repolace_shared.db.models import TaskOutcome
 from verify.protocol import SuiteResult
 from verify.scoring import (
@@ -124,7 +123,7 @@ class TestFixtureEscape:
     simplifying this later would reach for.
     """
 
-    BASELINE = dict(collected_files=("tests/test_x.py",), conftests=())
+    BASELINE = {"collected_files": ("tests/test_x.py",), "conftests": ()}
 
     def test_a_helper_beside_collected_tests_cannot_be_edited(self):
         """Weaken `assert_matches` in tests/helpers.py and every assertion using

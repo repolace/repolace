@@ -17,7 +17,6 @@ import uuid
 from pathlib import Path
 
 import pytest
-
 from repolace_shared.git.workspace import task_workspace
 from verify.backends.docker import DockerBackend
 from verify.config import DockerConfig

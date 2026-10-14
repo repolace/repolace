@@ -5,20 +5,19 @@ them against the module docstring's definitions by hand.
 """
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
-
 from eval_support import rows_for, run_manifest, task_row
 from harness.report import (
     CONTAMINATION_CAVEAT,
     FAILED,
-    HEADLINE_SCOPE,
-    SUBSET_CAVEAT,
     HARNESS_ERROR,
+    HEADLINE_SCOPE,
     INADMISSIBLE,
     PASSED,
     PASSED_WITH_TEST_EDIT,
+    SUBSET_CAVEAT,
     UNFINISHED,
     ReportError,
     TaskRow,
@@ -35,19 +34,19 @@ from harness.report import (
     to_json,
     to_markdown,
 )
+from harness.run_manifest import dump_manifest
 from repolace_shared.db.models import TaskOutcome as O
 from repolace_shared.db.models import TaskStatus as S
-from harness.run_manifest import dump_manifest
 from repolace_shared.instances import InstanceSpec
 
 KINDS = {
-    "passed": dict(outcome=O.PASSED),
-    "failed": dict(outcome=O.FAILED),
-    "pwte": dict(outcome=O.PASSED_WITH_TEST_EDIT, score_reason="diff touches test or config files: tests/x.py"),
-    "inadmissible": dict(outcome=None, score_reason="baseline unscoreable: container timed out"),
-    "harness": dict(outcome=None, status=S.FAILED, agent_stop_reason=None, error_message="repolace broke"),
-    "llm_error": dict(outcome=O.FAILED, agent_stop_reason="llm_error"),
-    "unfinished": dict(outcome=None, status=S.RUNNING, agent_stop_reason=None),
+    "passed": {"outcome": O.PASSED},
+    "failed": {"outcome": O.FAILED},
+    "pwte": {"outcome": O.PASSED_WITH_TEST_EDIT, "score_reason": "diff touches test or config files: tests/x.py"},
+    "inadmissible": {"outcome": None, "score_reason": "baseline unscoreable: container timed out"},
+    "harness": {"outcome": None, "status": S.FAILED, "agent_stop_reason": None, "error_message": "repolace broke"},
+    "llm_error": {"outcome": O.FAILED, "agent_stop_reason": "llm_error"},
+    "unfinished": {"outcome": None, "status": S.RUNNING, "agent_stop_reason": None},
 }
 
 
@@ -487,7 +486,7 @@ class TestModels:
         assert any("appear more than once" in w for w in aggregate(rows).warnings)
 
 
-T1 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+T1 = datetime(2026, 1, 1, tzinfo=UTC)
 
 
 class TestDuplicateRows:
@@ -1006,8 +1005,8 @@ class TestCommandLine:
 
         out = subprocess.run(
             [sys.executable, "-c",
-             "import sys, harness.report, harness.select_instances, harness.specgen, harness.metrics;"
-             "print('torch' in sys.modules, 'sentence_transformers' in sys.modules)"],
+             ("import sys, harness.report, harness.select_instances, harness.specgen, harness.metrics;"
+             "print('torch' in sys.modules, 'sentence_transformers' in sys.modules)")],
             capture_output=True, text=True, check=True,
         ).stdout.strip()
         assert out == "False False"

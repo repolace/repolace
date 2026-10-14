@@ -11,7 +11,13 @@ import copy
 from decimal import Decimal
 
 import pytest
-
+from gateway_support import (
+    ANTHROPIC_KEY,
+    OPENAI_KEY,
+    make_config,
+    make_settings,
+    raw_config,
+)
 from repolace_gateway.config import (
     DEFAULT_MODELS_PATH,
     KNOWN_PROVIDERS,
@@ -21,8 +27,6 @@ from repolace_gateway.config import (
     parse_config,
 )
 from repolace_gateway.errors import ConfigError, MissingProviderKey
-
-from gateway_support import ANTHROPIC_KEY, OPENAI_KEY, make_config, make_settings, raw_config
 
 
 class TestTheShippedFile:

@@ -8,20 +8,10 @@ a recorder and pins the arguments: change the call and the test fails, not just 
 import unicodedata
 
 import pytest
-from langgraph.errors import GraphRecursionError
-from retrieval.query import build_query
-from verify.testing import FakeBackend
-
 import repolace_pipeline.agent_context as agent_context_module
 import repolace_pipeline.agent_runner as agent_runner_module
 import repolace_pipeline.run as run_module
-from repolace_agents.contracts import AgentResult, StopReason
-from repolace_agents.tools import build_toolbox
-from repolace_agents.tools.base import ToolContext
-from repolace_gateway.budget import BudgetExceeded, BudgetLimit
-from repolace_gateway.errors import LLMCallError, MissingProviderKey, NoTaskScope, UnpricedModelError
-from repolace_pipeline.agent_runner import LLMAgent
-
+from langgraph.errors import GraphRecursionError
 from pipeline_llm_support import RED_BASELINE
 from pipeline_support import (
     FakeGithubClient,
@@ -33,6 +23,19 @@ from pipeline_support import (
     reload,
     seed_task,
 )
+from repolace_agents.contracts import AgentResult, StopReason
+from repolace_agents.tools import build_toolbox
+from repolace_agents.tools.base import ToolContext
+from repolace_gateway.budget import BudgetExceeded, BudgetLimit
+from repolace_gateway.errors import (
+    LLMCallError,
+    MissingProviderKey,
+    NoTaskScope,
+    UnpricedModelError,
+)
+from repolace_pipeline.agent_runner import LLMAgent
+from retrieval.query import build_query
+from verify.testing import FakeBackend
 
 TRACEBACK_BODY = """Calling parse_config on an empty file blows up.
 

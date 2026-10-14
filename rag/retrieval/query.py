@@ -61,16 +61,7 @@ _CAMEL_BOUNDARY_RE = re.compile(r"[a-z][A-Z]")
 #: `get`, `set`, `config` and the like, which are noise in prose but are real
 #: identifiers in code.
 _STOPWORDS = frozenset(
-    """
-    about after also and any are because been before being but can could did does each
-    for from has have here how into its just many may more most much not now one only
-    onto other our out over same should some such than that the their them then there
-    these they this those too upon used using very via was were what when where which
-    while who why will with would yet you your
-    traceback recent call last file line
-    self none true false def class return import
-    __init__ __main__
-    """.split()
+    ["about", "after", "also", "and", "any", "are", "because", "been", "before", "being", "but", "can", "could", "did", "does", "each", "for", "from", "has", "have", "here", "how", "into", "its", "just", "many", "may", "more", "most", "much", "not", "now", "one", "only", "onto", "other", "our", "out", "over", "same", "should", "some", "such", "than", "that", "the", "their", "them", "then", "there", "these", "they", "this", "those", "too", "upon", "used", "using", "very", "via", "was", "were", "what", "when", "where", "which", "while", "who", "why", "will", "with", "would", "yet", "you", "your", "traceback", "recent", "call", "last", "file", "line", "self", "none", "true", "false", "def", "class", "return", "import", "__init__", "__main__"]
 )
 
 

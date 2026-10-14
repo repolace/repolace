@@ -12,7 +12,6 @@ import subprocess
 import sys
 
 import pytest
-
 from retrieval import testing as fakes
 from retrieval.config import EMBEDDING_DIM
 

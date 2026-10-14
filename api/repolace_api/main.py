@@ -2,13 +2,13 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from repolace_shared.db.session import create_engine, create_session_factory
+from repolace_shared.github.client import GithubClient
+from repolace_shared.logging import configure_logging
 
 from repolace_api.config import get_settings
 from repolace_api.routes.github import router as github_router
 from repolace_api.routes.repos import router as repos_router
-from repolace_shared.db.session import create_engine, create_session_factory
-from repolace_shared.github.client import GithubClient
-from repolace_shared.logging import configure_logging
 
 
 @asynccontextmanager

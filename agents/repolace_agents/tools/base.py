@@ -38,8 +38,9 @@ from verify.protocol import ScriptResult, SuiteResult
 from verify.scoring import is_protected_path
 
 if TYPE_CHECKING:
-    from repolace_agents.contracts import SearchHit
     from repolace_gateway.client import ToolCall
+
+    from repolace_agents.contracts import SearchHit
 
 
 @dataclass(frozen=True)

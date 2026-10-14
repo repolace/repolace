@@ -3,11 +3,11 @@ import re
 import uuid
 from functools import reduce
 
+from repolace_shared.db.models import CodeChunk
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
-from repolace_shared.db.models import CodeChunk
 from retrieval.config import (
     CANDIDATE_MULTIPLIER,
     DEFAULT_SEARCH_LIMIT,

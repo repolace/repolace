@@ -33,16 +33,16 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 
+from repolace_agents.render import sanitize_text
 from verify.protocol import SuiteResult
 from verify.scoring import Score, Verdict
 
-from repolace_agents.render import sanitize_text
 from repolace_pipeline.context import RetrievedChunk
 
 #: Inserted after the character that would make GitHub act on a reference. It
 #: renders as nothing and stops the autolinker, while the text stays readable and
 #: greppable in the raw body.
-ZWSP = "​"
+ZWSP = "\u200b"
 
 MAX_SUMMARY_CHARS = 2000
 MAX_TITLE_CHARS = 120
@@ -345,13 +345,13 @@ def _section_verified(facts: PrFacts) -> str:
 def _section_not_verified(facts: PrFacts) -> str:
     if facts.benchmark:
         lines = [
-            "- Nothing beyond the curated tests and the repository's own suite was run; "
-            "a pass is not a judgement of the change's quality.",
+            ("- Nothing beyond the curated tests and the repository's own suite was run; "
+            "a pass is not a judgement of the change's quality."),
         ]
     else:
         lines = [
-            "- **No fail-to-pass evidence:** the repository had no failing test for this issue, so "
-            "nothing here shows the issue is fixed. A clean run means no regression was found, and nothing more.",
+            ("- **No fail-to-pass evidence:** the repository had no failing test for this issue, so "
+            "nothing here shows the issue is fixed. A clean run means no regression was found, and nothing more."),
         ]
     lines.append("- No person has reviewed this change.")
     return "## Not verified\n\n" + "\n".join(lines) + "\n"

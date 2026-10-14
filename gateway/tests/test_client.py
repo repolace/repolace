@@ -17,13 +17,6 @@ import os
 from decimal import Decimal
 
 import pytest
-from litellm import exceptions as lx
-
-from repolace_gateway.budget import BudgetExceeded, BudgetLimit, TaskBudget, task_scope
-from repolace_gateway.client import TokenUsage
-from repolace_gateway.config import parse_config
-from repolace_gateway.errors import ConfigError, LLMCallError, MissingProviderKey, NoTaskScope
-
 from gateway_support import (
     ANTHROPIC_KEY,
     MESSAGES,
@@ -39,6 +32,16 @@ from gateway_support import (
     make_settings,
     raw_config,
     stored_json,
+)
+from litellm import exceptions as lx
+from repolace_gateway.budget import BudgetExceeded, BudgetLimit, TaskBudget, task_scope
+from repolace_gateway.client import TokenUsage
+from repolace_gateway.config import parse_config
+from repolace_gateway.errors import (
+    ConfigError,
+    LLMCallError,
+    MissingProviderKey,
+    NoTaskScope,
 )
 
 
@@ -438,9 +441,8 @@ class TestRetries:
     )
     async def test_a_failure_that_repetition_cannot_fix_is_not_retried(self, make_error):
         h = make_harness(make_error())
-        with task_scope(TASK_ID, TaskBudget()):
-            with pytest.raises(LLMCallError):
-                await h.client.complete("agent", MESSAGES)
+        with task_scope(TASK_ID, TaskBudget()), pytest.raises(LLMCallError):
+            await h.client.complete("agent", MESSAGES)
         assert len(h.acompletion.calls) == 1
         assert h.sleeps == []
 
@@ -511,9 +513,8 @@ class TestFallback:
     async def test_a_non_transient_failure_does_not_fall_back(self):
         """It would fail identically on the next model, and cost a second quota to learn it."""
         h = make_harness(unauthorised(), config=make_config(fallback="backup"))
-        with task_scope(TASK_ID, TaskBudget()):
-            with pytest.raises(LLMCallError):
-                await h.client.complete("agent", MESSAGES)
+        with task_scope(TASK_ID, TaskBudget()), pytest.raises(LLMCallError):
+            await h.client.complete("agent", MESSAGES)
         assert len(h.acompletion.calls) == 1
 
     async def test_when_the_fallback_fails_too_the_error_names_the_last_model_tried(self):

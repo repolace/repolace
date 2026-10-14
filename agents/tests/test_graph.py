@@ -14,9 +14,23 @@ import uuid
 from decimal import Decimal
 
 import pytest
+from agents_support import (
+    FunctionTool,
+    ScriptedLLM,
+    ScriptedVerifier,
+    attempt_record,
+    check_messages_valid,
+    make_deps,
+    malformed_tool_call,
+    object_schema,
+    reply,
+    scripted_toolbox,
+    submit_reply,
+    suite,
+    tool_call,
+)
 from langgraph.errors import GraphRecursionError
 from langgraph.runtime import Runtime
-
 from repolace_agents import graph as graph_module
 from repolace_agents.contracts import AgentLimits, AgentRunner, IssueContext, StopReason
 from repolace_agents.graph import (
@@ -40,23 +54,18 @@ from repolace_agents.prompts import (
 from repolace_agents.run import run_agent
 from repolace_agents.state import AgentState
 from repolace_agents.tools.base import ToolBox, ToolOutcome
-from repolace_gateway.budget import BudgetExceeded, BudgetLimit, TaskBudget, current_scope, task_scope
-from repolace_gateway.errors import LLMCallError, MissingProviderKey, NoTaskScope, UnpricedModelError
-
-from agents_support import (
-    FunctionTool,
-    ScriptedLLM,
-    ScriptedVerifier,
-    attempt_record,
-    check_messages_valid,
-    make_deps,
-    malformed_tool_call,
-    object_schema,
-    reply,
-    scripted_toolbox,
-    submit_reply,
-    suite,
-    tool_call,
+from repolace_gateway.budget import (
+    BudgetExceeded,
+    BudgetLimit,
+    TaskBudget,
+    current_scope,
+    task_scope,
+)
+from repolace_gateway.errors import (
+    LLMCallError,
+    MissingProviderKey,
+    NoTaskScope,
+    UnpricedModelError,
 )
 
 pytestmark = pytest.mark.anyio
@@ -367,7 +376,7 @@ class TestReplyBounds:
             if limit is BudgetLimit.WALL_TIME:
                 now[0] = 100.0
             elif limit is BudgetLimit.USD:
-                budget.charge(Decimal("5"))
+                budget.charge(Decimal(5))
             else:
                 budget.calls = 5
             return ToolOutcome("ok")
@@ -411,7 +420,9 @@ class TestMalformedToolCallArguments:
     @staticmethod
     def converter_accepts(messages) -> bool:
         """LiteLLM's own Anthropic message converter -- the code that raised -- with no provider contact."""
-        from litellm.litellm_core_utils.prompt_templates.factory import anthropic_messages_pt
+        from litellm.litellm_core_utils.prompt_templates.factory import (
+            anthropic_messages_pt,
+        )
 
         history = [m for m in messages if m["role"] != "system"]
         try:

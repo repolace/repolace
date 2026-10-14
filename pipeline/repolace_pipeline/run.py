@@ -43,10 +43,16 @@ from pathlib import Path
 
 import httpx
 import structlog
-from sqlalchemy import func, select, update
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
+from repolace_agents.contracts import (
+    AgentDeps,
+    AgentLimits,
+    AgentResult,
+    AgentRunner,
+    IssueContext,
+    LLMClientLike,
+    StopReason,
+)
+from repolace_agents.tools import ToolBox, build_toolbox
 from repolace_gateway.budget import BudgetExceeded, BudgetLimit, TaskBudget, task_scope
 from repolace_gateway.errors import LLMCallError
 from repolace_shared.db.models import (
@@ -56,28 +62,49 @@ from repolace_shared.db.models import (
     TaskOutcome,
     TaskStatus,
 )
-from repolace_shared.git import GitError, TaskWorkspace, installation_token_provider, redact, task_workspace
+from repolace_shared.git import (
+    GitError,
+    TaskWorkspace,
+    installation_token_provider,
+    redact,
+    task_workspace,
+)
 from repolace_shared.github.client import GithubClient
 from repolace_shared.instances import InstanceSpec, load_instance_by_id
 from retrieval.embed import get_embedder
-from retrieval.index import RepoIndexInProgress, get_current_chunk_count, reindex_if_stale
+from retrieval.index import (
+    RepoIndexInProgress,
+    get_current_chunk_count,
+    reindex_if_stale,
+)
 from retrieval.query import build_query
 from retrieval.retrieve import hybrid_search
 from retrieval.strategies import DEFAULT_STRATEGY
+from sqlalchemy import func, select, update
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from verify.errors import SandboxError
 from verify.protocol import RepoSpec, SandboxBackend, SuiteResult
 from verify.scoring import Score, Verdict, agent_verdict, expected_not_red, score
 from verify.spec import resolve_spec, spec_from_mapping
 from verify.stage import Verifier
 
-from repolace_agents.contracts import AgentDeps, AgentLimits, AgentResult, AgentRunner, IssueContext, LLMClientLike, StopReason
-from repolace_agents.tools import ToolBox, build_toolbox
 from repolace_pipeline.agent_context import build_tool_context, make_search
 from repolace_pipeline.attempts import AttemptScorer, run_scored_suite
 from repolace_pipeline.context import RetrievedChunk, repo_overview, search_hit
 from repolace_pipeline.edit import StubEditRequest
-from repolace_pipeline.errors import PipelineError, StageFailed, TaskNotClaimable, TaskNotFound
-from repolace_pipeline.finalize import first_model, task_cost, write_failure_minimal, write_terminal
+from repolace_pipeline.errors import (
+    PipelineError,
+    StageFailed,
+    TaskNotClaimable,
+    TaskNotFound,
+)
+from repolace_pipeline.finalize import (
+    first_model,
+    task_cost,
+    write_failure_minimal,
+    write_terminal,
+)
 from repolace_pipeline.gate import PrDecision, pr_decision
 from repolace_pipeline.pr import PrFacts, commit_message, pr_title, render_pr_body
 from repolace_pipeline.runners import GoldAgent, StubAgent

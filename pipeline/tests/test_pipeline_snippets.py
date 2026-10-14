@@ -10,11 +10,9 @@ import os
 from pathlib import Path
 
 import pytest
-
+from pipeline_support import chunk
 from repolace_agents.contracts import SearchHit
 from repolace_pipeline.context import MAX_OVERVIEW_CHARS, repo_overview, search_hit
-
-from pipeline_support import chunk
 
 SOURCE = "".join(f"line {i}\n" for i in range(1, 101))
 
@@ -217,7 +215,7 @@ class TestRepoOverview:
         assert len(overview) <= 500
         lines = overview.splitlines()
         assert lines[-1].startswith("... and ") and lines[-1].endswith(" more entries")
-        assert all(line.endswith("/") or line.endswith(".py") or line.startswith("...") for line in lines)
+        assert all(line.endswith(("/", ".py")) or line.startswith("...") for line in lines)
 
     def test_the_default_cap_is_about_three_kilobytes(self):
         paths = [f"package_{i:04d}/sub/module.py" for i in range(2000)]

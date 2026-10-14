@@ -16,7 +16,6 @@ import textwrap
 from pathlib import Path
 
 import pytest
-
 from repolace_shared.process import ProcessResult
 from verify.report import parse_report
 

@@ -59,11 +59,19 @@ import sys
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from repolace_shared.db.models import (
+    LLMCall,
+    Task,
+    TaskOutcome,
+    TaskStatus,
+    TaskTestRun,
+)
+from repolace_shared.instances import InstanceError, InstanceSpec, load_instances
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -75,9 +83,12 @@ from harness.metrics import (
     exact_sign_test,
     percentile,
 )
-from harness.run_manifest import ManifestError, RunManifest, load_manifest, manifest_path
-from repolace_shared.db.models import LLMCall, Task, TaskOutcome, TaskStatus, TaskTestRun
-from repolace_shared.instances import InstanceError, InstanceSpec, load_instances
+from harness.run_manifest import (
+    ManifestError,
+    RunManifest,
+    load_manifest,
+    manifest_path,
+)
 
 GOLD_RUN_PREFIX = "gold-"
 #: Gold runs per instance needed to call it validated: the second run is what
@@ -394,12 +405,12 @@ def _headline(
     repos.discard(None)
     runs_per_instance = manifest.runs_per_instance if manifest is not None else max(per_instance_runs.values(), default=0)
 
-    common = dict(
-        run_id=run_id, model=model, git_sha=manifest.git_sha if manifest is not None else None,
-        anchored=manifest is not None, instances=len(instance_ids), instance_ids=tuple(instance_ids), repos=len(repos),
-        runs_per_instance=runs_per_instance, planned=len(planned),
-        missing=tuple(missing), unfinished=tuple(unfinished), unplanned=unplanned,
-    )
+    common = {
+        "run_id": run_id, "model": model, "git_sha": manifest.git_sha if manifest is not None else None,
+        "anchored": manifest is not None, "instances": len(instance_ids), "instance_ids": tuple(instance_ids), "repos": len(repos),
+        "runs_per_instance": runs_per_instance, "planned": len(planned),
+        "missing": tuple(missing), "unfinished": tuple(unfinished), "unplanned": unplanned,
+    }
 
     not_finished = len(missing) + len(unfinished)
     reasons = []
@@ -519,7 +530,7 @@ def resolve_duplicates(rows: Sequence[TaskRow], mode: str = "none") -> tuple[lis
             f"(what is dropped is printed)"
         )
 
-    floor = datetime.min.replace(tzinfo=timezone.utc)
+    floor = datetime.min.replace(tzinfo=UTC)
     kept: list[TaskRow] = []
     dropped: list[RowRef] = []
     gold = [r for r in rows if is_gold(r)]
@@ -1114,20 +1125,20 @@ def _headline_lines(h: Headline) -> list[str]:
     if sec is not None:
         out += [
             "",
-            f"Every planned (instance, run) row is counted: {sec.excluded_harness_errors} harness-error and "
+            (f"Every planned (instance, run) row is counted: {sec.excluded_harness_errors} harness-error and "
             f"{sec.excluded_inadmissible} inadmissible row(s) (listed below) are counted as non-passes, and so is "
-            f"every `passed_with_test_edit`.",
+            f"every `passed_with_test_edit`."),
             "",
-            f"Secondary, not the headline: passed / admissible = {_frac(sec.passed, sec.admissible)}, excluding "
-            f"{sec.excluded_harness_errors} harness-error and {sec.excluded_inadmissible} inadmissible row(s) (listed).",
+            (f"Secondary, not the headline: passed / admissible = {_frac(sec.passed, sec.admissible)}, excluding "
+            f"{sec.excluded_harness_errors} harness-error and {sec.excluded_inadmissible} inadmissible row(s) (listed)."),
         ]
     out += ["", "| run_index | passed of planned | rate |", "|---|---|---|"]
     out += [f"| {r.run_index} | {_frac(r.passed, r.planned)} | {_whole(r.rate) if r.rate is not None else 'n/a'} |" for r in h.per_run]
     if h.run_range is not None:
         out += [
             "",
-            f"Run-to-run range of the {len(h.per_run)} run rates: {_whole(h.run_range[0])}-{_whole(h.run_range[1])}. "
-            f"This holds the instances fixed; it is not an interval.",
+            (f"Run-to-run range of the {len(h.per_run)} run rates: {_whole(h.run_range[0])}-{_whole(h.run_range[1])}. "
+            f"This holds the instances fixed; it is not an interval."),
         ]
     return out + [""]
 
@@ -1155,12 +1166,12 @@ def _comparison_lines(comparisons: Sequence[Comparison]) -> list[str]:
     out = [
         "## Model comparison",
         "",
-        "Paired by instance on the first run of each model, over the instances BOTH models were scored on "
+        ("Paired by instance on the first run of each model, over the instances BOTH models were scored on "
         "(a harness error, an inadmissible or unfinished row, or an instance one model never ran is not "
         "compared). Discordant counts and an exact two-sided McNemar p-value; no difference of rates is "
         "printed, because at this N it reads as a result and is not one. Exact arithmetic: 8:0 gives "
         "p = 0.008, 7:1 p = 0.07, 6:2 p = 0.29. At this N, differences under about 30 percentage points "
-        "between two models on the same instances are not statistically distinguishable.",
+        "between two models on the same instances are not statistically distinguishable."),
         "",
         "| model A | model B | compared | not compared | both pass | neither | A-only passes | B-only passes | exact p |",
         "|---|---|---|---|---|---|---|---|---|",
@@ -1181,8 +1192,8 @@ def _model_block_lines(block: ModelBlock) -> list[str]:
     per_pass = _usd(block.cost_per_pass) if block.cost_per_pass is not None else "n/a (no passes)"
     out += [
         "",
-        f"Total spend {_usd(block.total_cost_usd)} over {block.rows} finished task(s) and {block.passes} pass(es): "
-        f"cost per pass {per_pass} (every finished task's cost, failures included, over the passes).",
+        (f"Total spend {_usd(block.total_cost_usd)} over {block.rows} finished task(s) and {block.passes} pass(es): "
+        f"cost per pass {per_pass} (every finished task's cost, failures included, over the passes)."),
         f"Rows without cost data: {block.cost_rows_without_data}. Rows without both timestamps: {block.latency_rows_without_data}.",
         "",
         "By outcome bucket:",
@@ -1198,8 +1209,8 @@ def _model_block_lines(block: ModelBlock) -> list[str]:
     t = block.tokens
     out += [
         "",
-        f"LLM calls: {t.calls} ({t.unpriced_calls} unpriced). Input tokens: {t.input_tokens:,} (of which cache reads "
-        f"{t.cached_input_tokens:,}, {_pct(t.cache_read_ratio)}). Output tokens: {t.output_tokens:,}.",
+        (f"LLM calls: {t.calls} ({t.unpriced_calls} unpriced). Input tokens: {t.input_tokens:,} (of which cache reads "
+        f"{t.cached_input_tokens:,}, {_pct(t.cache_read_ratio)}). Output tokens: {t.output_tokens:,}."),
         "",
         "| attempts | tasks |",
         "|---|---|",
@@ -1223,13 +1234,13 @@ def to_markdown(report: Report) -> str:
     for headline in report.headlines:
         out += _headline_lines(headline)
     out += [
-        "How rows are counted. The headline is passed / planned: the denominator is the run's planned grid "
+        ("How rows are counted. The headline is passed / planned: the denominator is the run's planned grid "
         "(its manifest's instances x runs), and every planned row that did not pass is a non-pass, whatever the reason: "
         "failed, `passed_with_test_edit` (never a pass, approved or not), a harness error (status `failed`), an "
         "inadmissible row (finished, no outcome) or a row that is missing or unfinished (which withholds the headline "
         "unless `--allow-partial`). A stop reason of `llm_error` is not an exclusion: such a row is counted by its "
         "outcome. The interval is a percentile bootstrap over instances, because the runs of one instance are not "
-        "independent.",
+        "independent."),
         "",
         "## Rows counted as non-passes, by reason",
         "",
@@ -1278,8 +1289,8 @@ def to_markdown(report: Report) -> str:
     ]
     if report.gold.instances:
         out += [
-            f"{report.gold.validated} of {len(report.gold.instances)} gold-validated instance(s) passed "
-            f"{GOLD_MIN_RUNS}+ times.",
+            (f"{report.gold.validated} of {len(report.gold.instances)} gold-validated instance(s) passed "
+            f"{GOLD_MIN_RUNS}+ times."),
             "",
             "| instance | status | runs | detail |",
             "|---|---|---|---|",

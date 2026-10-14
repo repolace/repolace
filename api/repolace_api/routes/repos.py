@@ -4,12 +4,12 @@ import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from repolace_shared.db.models import RegisteredRepo, Task, TaskStatus
+from repolace_shared.github.client import GithubClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from repolace_api.deps import get_db, get_github_client
-from repolace_shared.db.models import RegisteredRepo, Task, TaskStatus
-from repolace_shared.github.client import GithubClient
 
 router = APIRouter(prefix="/repos", tags=["repos"])
 log = structlog.get_logger()

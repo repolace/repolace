@@ -7,12 +7,10 @@ path that gets through is not an error, it is a write the host later acts on.
 import os
 
 import pytest
-
 from repolace_agents.tools.base import ToolError
 from repolace_agents.tools.paths import MAX_PATH_CHARS, confine, relative_posix
-from verify.scoring import is_protected_path
-
 from tools_support import make_checkout
+from verify.scoring import is_protected_path
 
 
 @pytest.fixture

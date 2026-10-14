@@ -18,27 +18,8 @@ from contextlib import asynccontextmanager
 from decimal import Decimal
 
 import pytest
-import structlog.testing
-from sqlalchemy import text
-
 import repolace_pipeline.run as run_module
-from repolace_gateway.budget import BudgetExceeded, BudgetLimit, TaskBudget, current_scope
-from repolace_gateway.errors import LLMCallError, UnpricedModelError
-from repolace_gateway.recorder import CallRecord, Recorder
-from repolace_gateway.redaction import Redactor
-from repolace_shared.db.models import RegisteredRepo, TaskOutcome, TaskStatus
-from repolace_shared.git import agent_branch_name, task_workspace
-from repolace_shared.instances import dump_instance
-from retrieval.index import _repo_lock_key
-from verify.errors import EnvironmentBuildFailed
-from verify.protocol import ScriptResult, SuiteResult
-from verify.testing import FakeBackend
-
-from repolace_agents.contracts import StopReason
-from repolace_pipeline.run import RunResult, run_task
-from repolace_pipeline.errors import TaskNotClaimable
-from repolace_pipeline.runners import GoldAgent
-
+import structlog.testing
 from pipeline_support import (
     AFTER,
     APP_SOURCE,
@@ -57,6 +38,27 @@ from pipeline_support import (
     reload,
     seed_task,
 )
+from repolace_agents.contracts import StopReason
+from repolace_gateway.budget import (
+    BudgetExceeded,
+    BudgetLimit,
+    TaskBudget,
+    current_scope,
+)
+from repolace_gateway.errors import LLMCallError, UnpricedModelError
+from repolace_gateway.recorder import CallRecord, Recorder
+from repolace_gateway.redaction import Redactor
+from repolace_pipeline.errors import TaskNotClaimable
+from repolace_pipeline.run import RunResult, run_task
+from repolace_pipeline.runners import GoldAgent
+from repolace_shared.db.models import RegisteredRepo, TaskOutcome, TaskStatus
+from repolace_shared.git import agent_branch_name, task_workspace
+from repolace_shared.instances import dump_instance
+from retrieval.index import _repo_lock_key
+from sqlalchemy import text
+from verify.errors import EnvironmentBuildFailed
+from verify.protocol import ScriptResult, SuiteResult
+from verify.testing import FakeBackend
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db, pytest.mark.usefixtures("embedder")]
 
@@ -421,7 +423,7 @@ class TestBenchmarkMode:
     async def test_a_curated_task_scores_passed_and_opens_a_pr_with_no_reference_in_it(
         self, db_session, db_session_factory, origin_url, origin, instances
     ):
-        directory, instance = instances
+        directory, _instance = instances
         task = await self.seed(db_session)
         agent = agent_that(StopReason.SUBMITTED, summary="Return {} for an empty file.")
 
@@ -576,7 +578,7 @@ class TestBenchmarkMode:
     async def test_the_agent_is_told_it_is_in_benchmark_mode_and_what_is_hidden(
         self, db_session, db_session_factory, origin_url, instances
     ):
-        directory, instance = instances
+        directory, _instance = instances
         task = await self.seed(db_session, issue_body="It raises ValueError.")
         agent = agent_that(StopReason.SUBMITTED)
         backend = FakeBackend(results=[BENCH_BASELINE, BENCH_AFTER])
@@ -1052,7 +1054,7 @@ class TestATerminalWriteCannotStrandARow:
             record = await deps.verify_attempt(1)
             return agent_result(StopReason.SUBMITTED, record)
 
-        result, github = await run(db_session_factory, origin_url, task, ScriptedAgent(script), FakeBackend(results=[BASELINE, AFTER]))
+        result, _github = await run(db_session_factory, origin_url, task, ScriptedAgent(script), FakeBackend(results=[BASELINE, AFTER]))
 
         row, _ = await reload(db_session_factory, task.id)
         assert result.status is row.status is TaskStatus.PR_OPENED, result.error_message
@@ -1078,7 +1080,7 @@ class TestATerminalWriteCannotStrandARow:
         monkeypatch.setattr(run_module, "write_terminal", fails_once_and_aborts_the_transaction)
         agent = agent_that(StopReason.SUBMITTED, spent=(db_session_factory, task.id, "0.3"))
 
-        result, github = await run(db_session_factory, origin_url, task, agent, FakeBackend(results=[BASELINE, AFTER]))
+        result, _github = await run(db_session_factory, origin_url, task, agent, FakeBackend(results=[BASELINE, AFTER]))
 
         row, _ = await reload(db_session_factory, task.id)
         assert statuses == [TaskStatus.PR_OPENED, TaskStatus.FAILED]
@@ -1293,7 +1295,7 @@ class TestRewindToTheLastScoredCommit:
             db_session_factory, origin_url, task, ScriptedAgent(script), backend, llm=NeverCalledLLM()
         )
 
-        row, runs = await reload(db_session_factory, task.id)
+        row, _runs = await reload(db_session_factory, task.id)
         assert result.status is TaskStatus.PR_OPENED
         assert row.changed_files == ["src/scored.py"], "the unscored edit is not part of the scored state"
         assert "UNSCORED" not in row.patch_diff and "SCORED = 1" in row.patch_diff

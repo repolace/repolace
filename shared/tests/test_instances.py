@@ -15,7 +15,6 @@ import stat
 from pathlib import Path
 
 import pytest
-
 from repolace_shared.instances import (
     SCHEMA_VERSION,
     InstanceError,

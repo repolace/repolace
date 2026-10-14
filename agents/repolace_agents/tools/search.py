@@ -27,7 +27,12 @@ from typing import TYPE_CHECKING, Any
 from repolace_shared.git import GitTimeoutError
 
 from repolace_agents.tools.base import ToolContext, ToolError, ToolOutcome, ToolSpec
-from repolace_agents.tools.files import NOTICE_RESERVE, fit_count, notice_reserve, path_property
+from repolace_agents.tools.files import (
+    NOTICE_RESERVE,
+    fit_count,
+    notice_reserve,
+    path_property,
+)
 from repolace_agents.tools.gitproc import run_limited_git
 from repolace_agents.tools.paths import (
     confine,

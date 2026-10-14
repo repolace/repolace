@@ -17,10 +17,8 @@ import os
 from pathlib import Path
 
 import pytest
-
 from repolace_shared.process import ProcessResult
 from verify.report import MAX_TEST_IDS, parse_report
-
 from verify_support import collect_record, jsonl, report, session_record, start_record
 
 

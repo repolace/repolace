@@ -16,12 +16,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from agents_support import FakeToolCall
 from repolace_agents.contracts import SearchHit
 from repolace_agents.tools import ToolBox, ToolContext, ToolOutcome, build_toolbox
 from verify.protocol import ScriptResult, SuiteResult
 from verify.testing import FakeWorkspace
-
-from agents_support import FakeToolCall
 
 #: A small Python project: source, a test, and the files the write guard protects.
 DEFAULT_FILES: Mapping[str, str | bytes] = {

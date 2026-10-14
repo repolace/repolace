@@ -54,8 +54,13 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from repolace_shared.db.models import CodeChunk, GithubInstallation, RegisteredRepo
+from repolace_shared.git.repo import run_git
+from repolace_shared.instances import InstanceError, InstanceSpec, load_instances
+from repolace_shared.paths import PathEscapesRoot, resolve_within
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from verify.scoring import is_protected_path
 
 from harness.metrics import (
     DEFAULT_KS,
@@ -66,13 +71,15 @@ from harness.metrics import (
     cluster_bootstrap_interval,
     score_query,
 )
-from harness.patches import DELETED, MODIFIED, RENAMED, PatchError, files_in_patch, old_side_hunks
+from harness.patches import (
+    DELETED,
+    MODIFIED,
+    RENAMED,
+    PatchError,
+    files_in_patch,
+    old_side_hunks,
+)
 from harness.select_instances import GOLD_PATCH_SUFFIX, SelectError, cache_path
-from repolace_shared.db.models import CodeChunk, GithubInstallation, RegisteredRepo
-from repolace_shared.git.repo import run_git
-from repolace_shared.instances import InstanceError, InstanceSpec, load_instances
-from repolace_shared.paths import PathEscapesRoot, resolve_within
-from verify.scoring import is_protected_path
 
 STRATEGIES = ("truncate", "head_tail", "windows", "signature_docstring")
 #: The query side: how an over-length query is shortened before it is embedded.
@@ -627,11 +634,11 @@ def _grid_lines(run: EvalRun, min_gain_pp: float) -> list[str]:
         "",
         "## Reading the grid",
         "",
-        f"Primary metric: {PRIMARY_METRIC}. Pick a strategy over {BASELINE_CELL[0]} / {BASELINE_CELL[1]} only if "
+        (f"Primary metric: {PRIMARY_METRIC}. Pick a strategy over {BASELINE_CELL[0]} / {BASELINE_CELL[1]} only if "
         f"its paired {PRIMARY_METRIC} gain is at least {min_gain_pp:g} percentage points with the 95% interval over "
         f"instances excluding 0. This is one of {max(len(cells), 1)} comparisons, on the same instances the agent "
         f"is benchmarked on, so a winner is exploratory: with this many cells on this few queries one always looks "
-        f"better.",
+        f"better."),
         "",
     ]
     if not deltas:
@@ -653,13 +660,13 @@ def _grid_lines(run: EvalRun, min_gain_pp: float) -> list[str]:
 def to_markdown(run: EvalRun, min_gain_pp: float = DEFAULT_MIN_GAIN_PP) -> str:
     out = ["# Retrieval eval", ""]
     out += [
-        "Gold is the fix's old-side Python files and changed lines. File R@k is the gold files among the files "
+        ("Gold is the fix's old-side Python files and changed lines. File R@k is the gold files among the files "
         "of the first k chunks (the search returns 20 chunks, not 20 files). Chunk R@k is over gold hunks, "
         "crediting only a hunk's innermost chunks. MRR is over the top 20 chunks only; a miss scores 0. A query "
         "with no gold of a kind is not scored on that kind: the `scored` column says how many queries each kind "
         "had (file and chunk metrics skip different queries). Retrieval breaks score ties by chunk id (a UUID), "
         "which can change after an incremental reindex, so the order among tied chunks is not stable between runs "
-        "and a small difference between cells can be tie noise.",
+        "and a small difference between cells can be tie noise."),
         "",
         "## Plan",
         "",
@@ -686,12 +693,12 @@ def to_markdown(run: EvalRun, min_gain_pp: float = DEFAULT_MIN_GAIN_PP) -> str:
         unreachable = sum(r.metrics.unreachable_hunks for r in first)
         out += [
             "",
-            f"Gold hunks no indexed chunk overlaps: {unreachable}. They are dropped from the chunk metrics and "
-            f"not scored as misses; the chunk metrics credit only a hunk's innermost chunks.",
+            (f"Gold hunks no indexed chunk overlaps: {unreachable}. They are dropped from the chunk metrics and "
+            f"not scored as misses; the chunk metrics credit only a hunk's innermost chunks."),
         ]
         written = [r for r in run.results if r.query_strategy == run.query_strategies[0]]
-        out += ["", f"Chunks written across the run (first instance of each repo/strategy is the full index): "
-                    f"{sum(r.chunks_written for r in written)}."]
+        out += ["", (f"Chunks written across the run (first instance of each repo/strategy is the full index): "
+                    f"{sum(r.chunks_written for r in written)}.")]
     out.append("")
     return "\n".join(out)
 

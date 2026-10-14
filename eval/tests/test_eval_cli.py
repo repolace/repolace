@@ -8,7 +8,6 @@ import sys
 from types import ModuleType
 
 import pytest
-
 from eval_exec_support import TOKEN, FakeGithub, make_instance, write_instances
 from harness import bench_repos, enqueue, gold, runner
 from harness.cli import SUBCOMMANDS, main

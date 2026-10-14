@@ -9,11 +9,10 @@ import dataclasses
 import subprocess
 import sys
 import typing
-import uuid
 from pathlib import Path
 
 import pytest
-
+from agents_support import expect_stub, make_deps
 from repolace_agents.contracts import (
     AgentDeps,
     AgentLimits,
@@ -27,8 +26,6 @@ from repolace_agents.tools.base import ToolContext, ToolLimits
 from repolace_shared.db.models import AGENT_STOP_REASONS
 from verify.protocol import SuiteResult
 from verify.scoring import is_protected_path
-
-from agents_support import expect_stub, make_deps
 
 pytestmark = pytest.mark.anyio
 
@@ -324,11 +321,9 @@ class TestExpectStub:
                 raise NotImplementedError("lands in stream B")
 
     def test_an_implementation_that_returns_skips(self):
-        with pytest.raises(pytest.skip.Exception):
-            with expect_stub("stream F"):
-                pass
+        with pytest.raises(pytest.skip.Exception), expect_stub("stream F"):
+            pass
 
     def test_an_implementation_that_raises_something_else_skips(self):
-        with pytest.raises(pytest.skip.Exception):
-            with expect_stub("stream F"):
-                raise RuntimeError("a real error from a real implementation")
+        with pytest.raises(pytest.skip.Exception), expect_stub("stream F"):
+            raise RuntimeError("a real error from a real implementation")

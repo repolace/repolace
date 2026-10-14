@@ -25,7 +25,7 @@ import typing
 from pathlib import Path
 
 import pytest
-
+from agents_support import suite
 from repolace_agents.feedback import (
     BASELINE_UNUSABLE,
     COMPLETION_UNKNOWN,
@@ -42,12 +42,11 @@ from repolace_agents.feedback import (
     visible_feedback,
 )
 from repolace_shared.process import ProcessResult
-import verify
 from verify.protocol import SuiteResult
 from verify.report import parse_report
 from verify.scoring import Verdict, agent_verdict
 
-from agents_support import suite
+import verify
 
 HIDDEN_FILE = "tests/test_hidden_issue.py"
 HIDDEN = frozenset({HIDDEN_FILE})
@@ -226,10 +225,10 @@ class TestFiltering:
             seen.extend([baseline, attempt])
             return Verdict(ok=False, reason="spy")  # the results carry an error, so not ok
 
-        everywhere = dict(
-            passed=[A, hid("a")], failed=[hid("b")], skipped=[hid("c")], xfailed=[hid("d")], did_not_run=[hid("e")],
-            collect_failures=[HIDDEN_FILE], collected_files=[HIDDEN_FILE], error=f"verify: report claims 9 failures {hid()}",
-        )
+        everywhere = {
+            "passed": [A, hid("a")], "failed": [hid("b")], "skipped": [hid("c")], "xfailed": [hid("d")], "did_not_run": [hid("e")],
+            "collect_failures": [HIDDEN_FILE], "collected_files": [HIDDEN_FILE], "error": f"verify: report claims 9 failures {hid()}",
+        }
         both = dataclasses.replace(suite(), **{k: tuple(v) if isinstance(v, list) else v for k, v in everywhere.items()})
         visible_feedback(both, both, [], None, HIDDEN, verdict_fn=spy)
 

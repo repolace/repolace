@@ -30,14 +30,20 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from repolace_shared.git import GitError
 import structlog
+from repolace_shared.git import GitError
 from verify.config import SCRIPT_PATH
 from verify.stage import VerifierNotReady
 
 from repolace_agents.tools.base import ToolContext, ToolError, ToolOutcome, ToolSpec
+from repolace_agents.tools.paths import (
+    confine,
+    printable,
+    relative_posix,
+    require_text,
+    shown,
+)
 from repolace_agents.tools.wording import TESTS_NOT_SHOWN
-from repolace_agents.tools.paths import confine, printable, relative_posix, require_text, shown
 
 #: Per-stream cap for `run_python`, and the cap for a suite's output tail. Both are
 #: ceilings: a small `max_output_chars` shrinks them so the whole result still fits.

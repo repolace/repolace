@@ -10,10 +10,8 @@ tool's own continuation hint to the end and checks nothing was skipped.
 import re
 
 import pytest
-
 from repolace_agents.tools import ToolLimits
-
-from tools_support import hit, make_harness, git
+from tools_support import git, hit, make_harness
 
 pytestmark = pytest.mark.anyio
 
@@ -124,7 +122,7 @@ class TestListDirKeepsItsTrailer:
         entries = [line for line in out.content.splitlines()[1:] if not line.startswith("[")]
         assert len(out.content) <= CAP and "[truncated" not in out.content
         assert out.content.splitlines()[-1].startswith("[") and "cut at the output limit" in out.content
-        assert all(entry.endswith(".txt") or entry.endswith("/") for entry in entries)  # no half-name
+        assert all(entry.endswith((".txt", "/")) for entry in entries)  # no half-name
         assert f"[{len([n for n in h.checkout.iterdir() if not n.name.startswith('.git')]) - len(entries)} more entries" in out.content
 
 
