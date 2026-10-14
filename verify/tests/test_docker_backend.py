@@ -22,6 +22,7 @@ from repolace_shared.git.workspace import task_workspace
 from verify.backends.docker import DockerBackend
 from verify.config import DockerConfig
 from verify.dockerfile import image_cache_key
+from verify.errors import EnvironmentBuildFailed
 from verify.protocol import RepoSpec
 from verify.scoring import score
 from verify.spec import install_commands
@@ -85,7 +86,13 @@ async def environment(backend, spec, tmp_path):
     """
     source = make_source(tmp_path, "build", PASSING_AND_FAILING)
     install = install_commands(spec, source)
-    return await backend.prepare(spec, source, image_cache_key(spec, install, source))
+    key = image_cache_key(spec, install, source)
+    try:
+        return await backend.prepare(spec, source, key)
+    except EnvironmentBuildFailed:
+        # The build runs `pip install pytest`; one slow or dropped connection should
+        # not fail a test about something else. A second failure is real.
+        return await backend.prepare(spec, source, key)
 
 
 async def run(backend, spec, environment, tmp_path, name, body):
