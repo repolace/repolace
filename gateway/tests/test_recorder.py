@@ -158,7 +158,7 @@ class TestSessionIsolation:
         await recorder.record(record(stage="cheap"))
 
         assert len(factory.sessions) == 2
-        for session, stage in zip(factory.sessions, ("agent", "cheap")):
+        for session, stage in zip(factory.sessions, ("agent", "cheap"), strict=False):
             assert [row.stage for row in session.added] == [stage]
             assert session.committed and session.closed
 

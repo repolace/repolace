@@ -1198,7 +1198,8 @@ class TestTheScorerIsTheTruthAboutWhatWasScored:
     async def test_an_agent_that_returns_a_record_the_scorer_never_made_is_a_harness_error(
         self, db_session, db_session_factory, origin_url
     ):
-        forged = lambda record: agent_result(StopReason.SUBMITTED, attempt_record(1, "f" * 40))
+        def forged(record):
+            return agent_result(StopReason.SUBMITTED, attempt_record(1, "f" * 40))
         result, row, _, _ = await self.run_liar(db_session, db_session_factory, origin_url, forged)
 
         assert result.status is row.status is TaskStatus.FAILED

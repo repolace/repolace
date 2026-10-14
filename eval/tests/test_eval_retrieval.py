@@ -763,7 +763,7 @@ class TestStrategyGrid:
 
     def test_a_noisy_gain_whose_interval_includes_zero_does_not_meet_the_rule(self):
         # Mean +10 pp, but two big wins and two big losses among ten near-ties.
-        other = [v for v in self.BASE]
+        other = list(self.BASE)
         other[0], other[1], other[2], other[3] = other[0] + 0.5, other[1] + 0.75, other[2] - 0.5, other[3] - 0.0
         other = [min(1.0, max(0.0, v)) for v in other]
         primary = {d.metric: d for d in paired_deltas(self.run(other))}["chunk MRR"]

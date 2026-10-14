@@ -81,7 +81,7 @@ class TestDispatch:
         assert err.count("\n") == 1 and "pyarrow" in err
 
     def test_a_module_without_main_is_exit_two(self, capsys):
-        assert main(["report"], importer=lambda name: ModuleType(name)) == 2
+        assert main(["report"], importer=ModuleType) == 2
         assert "no main()" in capsys.readouterr().err
 
     def test_a_broken_module_that_raises_importerror_is_exit_two(self, capsys):

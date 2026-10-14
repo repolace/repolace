@@ -614,7 +614,7 @@ class TestProbesAndScriptsThroughTheVerifier:
             assert "test_hidden.py::test_hidden" not in probe.failed + probe.passed + probe.skipped
             assert script.stdout.strip() == "False", script.error
 
-            in_image = subprocess.run(  # noqa: ASYNC221
+            in_image = subprocess.run(
                 [DockerConfig().docker_binary, "run", "--rm", "--network=none", "--pull=never",
                  "--entrypoint", "python", image,
                  "-c", "import os; print(os.path.exists('/repo/test_hidden.py'))"],
@@ -623,7 +623,7 @@ class TestProbesAndScriptsThroughTheVerifier:
             assert in_image.stdout.strip() == "False"
         finally:
             if image is not None:
-                subprocess.run([DockerConfig().docker_binary, "rmi", "--force", image], capture_output=True, check=False)  # noqa: ASYNC221
+                subprocess.run([DockerConfig().docker_binary, "rmi", "--force", image], capture_output=True, check=False)
 
 
 

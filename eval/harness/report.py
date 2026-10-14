@@ -775,7 +775,7 @@ def _gold_summary(gold_rows: Sequence[TaskRow], agent_instances: Iterable[str]) 
         rows = sorted(by_instance[instance_id], key=lambda r: (r.eval_run_id, r.run_index))
         buckets = [classify(r) for r in rows]
         passed = sum(1 for b in buckets if b == PASSED)
-        reasons = [r.score_reason or r.error_message for r, b in zip(rows, buckets) if b != PASSED]
+        reasons = [r.score_reason or r.error_message for r, b in zip(rows, buckets, strict=False) if b != PASSED]
         reason = next((text for text in reasons if text), "")
         if UNFINISHED in buckets:
             status = "pending"
@@ -872,7 +872,7 @@ def aggregate(
         by_bucket[classify(row)].append(row)
     finished = [row for bucket, members in by_bucket.items() if bucket != UNFINISHED for row in members]
 
-    agent_runs = sorted({r.eval_run_id for r in agent_rows} | {run for run in manifests})
+    agent_runs = sorted({r.eval_run_id for r in agent_rows} | set(manifests))
     headlines = tuple(
         _headline(
             run_id, [r for r in agent_rows if r.eval_run_id == run_id], manifests.get(run_id),
@@ -1395,8 +1395,8 @@ async def load_rows(session: AsyncSession, eval_run_ids: Sequence[str]) -> list[
         .distinct(LLMCall.task_id)
         .order_by(LLMCall.task_id, LLMCall.created_at, LLMCall.id)
     )
-    # Not `dict(result)`: a Result has `.keys()`, so dict() would read it as a mapping.
-    first_model = {task_id: model for task_id, model in first_models.all()}
+    # `.all()` first: a Result has `.keys()`, so `dict(result)` would read it as a mapping.
+    first_model = dict(first_models.all())
 
     attempts: dict[Any, int] = {}
     last: dict[Any, tuple[int, str | None]] = {}

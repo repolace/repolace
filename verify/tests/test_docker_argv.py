@@ -565,7 +565,7 @@ class TestReservedEnvironment:
         assert has_pair(build(spec=RepoSpec(key="a/b", extra_env={"TZ": "UTC"})), "-e", "TZ=UTC")
 
     def test_the_reserved_set_is_the_four_the_sandbox_owns(self):
-        assert RESERVED_ENV == {"PYTHONPATH", "HOME", "REPOLACE_REPORT_PATH", "REPOLACE_RUN_NONCE"}
+        assert {"PYTHONPATH", "HOME", "REPOLACE_REPORT_PATH", "REPOLACE_RUN_NONCE"} == RESERVED_ENV
 
     def test_the_reserved_names_are_still_set_by_the_sandbox_itself(self):
         args = build_run_argv(
@@ -769,7 +769,7 @@ class TestNothingDangerousIsGranted:
             ("--mount", "type=bind,src=/,dst=/host"), ("--volumes-from", "other"),
             ("--add-host", "x:1.1.1.1"), ("--env-file", "/etc/environment"), ("-p", "80:80"),
         ],
-        ids=lambda added: " ".join(added),
+        ids=" ".join,
     )
     def test_the_detector_catches_each_dangerous_addition(self, build, added):
         """The denylist is only worth having if it fires. Insert each before the image

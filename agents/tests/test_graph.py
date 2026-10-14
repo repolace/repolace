@@ -428,7 +428,7 @@ class TestMalformedToolCallArguments:
         history = [m for m in messages if m["role"] != "system"]
         try:
             anthropic_messages_pt(history, model="claude-sonnet-5-5", llm_provider="anthropic")
-        except Exception:  # noqa: BLE001
+        except Exception:
             return False
         return True
 

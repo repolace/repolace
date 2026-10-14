@@ -69,7 +69,7 @@ class TestFromResult:
 
         try:
             projected.file_path = "other.py"
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             assert type(exc).__name__ == "FrozenInstanceError"
         else:
             raise AssertionError("projection should be immutable")

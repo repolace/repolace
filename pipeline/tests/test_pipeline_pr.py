@@ -221,7 +221,7 @@ class TestWhatASecondRendererCanStillSee:
 
         body = render_pr_body(pr_facts(verdict=verdict))
 
-        (line,) = [l for l in body.splitlines() if "flagged this change" in l]
+        (line,) = [ln for ln in body.splitlines() if "flagged this change" in ln]
         assert re.search(r"flagged this change:\*\* `[^`]+`$", line), line
         html = render_html(body)
         if html is not None:

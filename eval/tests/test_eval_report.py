@@ -963,7 +963,7 @@ class TestPredictionsExport:
 
     def test_a_task_that_never_reached_the_agent_has_no_prediction_but_an_empty_patch_is_one(self):
         rows = [task_row(instance_id="a", patch_diff=None), task_row(instance_id="b", patch_diff="")]
-        assert [json.loads(l)["instance_id"] for l in export_predictions(rows).splitlines()] == ["b"]
+        assert [json.loads(row)["instance_id"] for row in export_predictions(rows).splitlines()] == ["b"]
 
     def test_two_runs_of_one_instance_are_refused_not_silently_collapsed(self):
         rows = [task_row(run_index=0, patch_diff="x"), task_row(run_index=1, patch_diff="y")]

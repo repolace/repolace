@@ -6,7 +6,7 @@ requires-python = ">=3.12"
 dependencies = []
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "ruff>=0.15"]
 
 [tool.uv]
 package = false
@@ -30,3 +30,51 @@ markers = [
     "db: needs a live PostgreSQL; skipped unless one is reachable",
     "docker: needs a live Docker daemon; skipped unless one is reachable",
 ]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+extend-exclude = ["eval/cache", "eval/runs"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # import order
+    "B",        # bugbear: likely bugs
+    "UP",       # pyupgrade
+    "SIM",      # simplifications
+    "C4",       # comprehensions
+    "PIE", "RET", "RUF",
+    "PL",       # pylint (complexity rules ignored below)
+    "TRY",      # exception handling
+    "BLE",      # blind except
+    "S110",     # silent try/except/pass
+    "ASYNC",    # blocking calls in async code
+    "PT",       # pytest style
+    "G",        # logging format
+    "ISC", "PYI", "FURB",
+]
+ignore = [
+    "E501",     # line length is a formatter concern
+    "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR2004",  # complexity and magic numbers
+    "TRY003",   # long messages in exceptions are the house style
+    "RET504",
+    "ASYNC109", "ASYNC240",  # timeout parameters and cheap path checks are fine here
+    "PT018",    # composite asserts are used deliberately for compact checks
+    "PT006", "PT011",  # parametrize/raises style: churn without a bug class
+    "PLC0415",  # lazy imports keep torch and tree-sitter out of cheap paths
+    "PLR0917",  # positional-argument count
+    "RUF043",   # raises-match patterns are plain-text on purpose
+    "RUF005", "TRY400", "TRY300", "TRY301", "UP042", "PLW0603", "RUF001", "RUF002",
+    "SIM108",   # ternaries here would swallow explanatory comments
+    "PLW2901",  # rebinding a loop variable is used for retry and normalisation
+]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends"]
+
+[tool.ruff.lint.per-file-ignores]
+"verify/verify/plugin/_repolace_report.py" = ["SIM105"]  # runs inside the sandbox; keep it plain and import-light
+"**/tests/**" = ["S110", "BLE001", "PLR0124", "PT012", "PT017", "ASYNC110", "ASYNC221", "ASYNC230"]
+"conftest.py" = ["BLE001"]

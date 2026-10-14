@@ -408,7 +408,7 @@ class TestFork:
         )
 
         assert code == 1
-        assert all("/repos/repolace/repolace" != request.url.path for request in requests)
+        assert all(request.url.path != "/repos/repolace/repolace" for request in requests)
 
     def test_a_missing_token_is_a_usage_error_naming_the_variable(self, workdir, capsys):
         seed(workdir, "a")
@@ -505,7 +505,7 @@ class TestTokenHygiene:
         caplog.set_level(logging.DEBUG)
         try:
             code = run_fork(workdir, github, push, *extra)
-        except BaseException as exc:  # an escaped exception's text is part of the surface  # noqa: BLE001
+        except BaseException as exc:  # an escaped exception's text is part of the surface
             return None, str(exc) + repr(exc), capsys.readouterr(), caplog.text
         captured = capsys.readouterr()
         return code, "", captured, caplog.text

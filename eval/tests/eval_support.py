@@ -348,7 +348,7 @@ def add_call(session, task: Task, *, model: str = "anthropic/test-main", cost: s
              input_tokens: int | None = 100, cached: int | None = 40, output: int | None = 10,
              created_at: datetime | None = None) -> None:
     session.add(LLMCall(
-        task_id=task.id, stage="agent", model=model, provider=model.split("/")[0],
+        task_id=task.id, stage="agent", model=model, provider=model.split("/", maxsplit=1)[0],
         input_tokens=input_tokens, cached_input_tokens=cached, output_tokens=output,
         cost_usd=Decimal(cost) if cost is not None else None, created_at=created_at or T0,
     ))

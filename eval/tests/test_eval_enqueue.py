@@ -734,7 +734,7 @@ class TestRunnerWallClock:
         )
 
     def test_the_default_covers_the_worst_case_sum_of_the_stages(self):
-        assert DEFAULT_WALL_CLOCK_SECONDS >= self.worst_case() + UNBOUNDED_STAGES_SLACK_SECONDS
+        assert self.worst_case() + UNBOUNDED_STAGES_SLACK_SECONDS <= DEFAULT_WALL_CLOCK_SECONDS
 
     def test_the_overrun_is_bounded_by_the_suite_not_by_a_probe_or_a_script(self):
         """Stage 5 counts a scored suite because it is the longest thing that can start late."""
@@ -750,4 +750,4 @@ class TestRunnerWallClock:
     def test_the_mirrored_index_wait_is_the_pipelines(self):
         from harness import enqueue
 
-        assert enqueue.INDEX_LOCK_WAIT_SECONDS == self.index_wait_cap()
+        assert self.index_wait_cap() == enqueue.INDEX_LOCK_WAIT_SECONDS

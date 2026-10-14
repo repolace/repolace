@@ -136,7 +136,7 @@ class TestBothCallersAreBuiltOnIt:
             # Positional and keyword spellings of the same call must compare equal, so
             # a caller switching to keyword arguments is not a spurious failure.
             names = ("baseline", "attempt", "changed_files", "baseline_files", "attempt_infrastructure_error")
-            calls.append(dict(zip(names, args)) | kwargs)
+            calls.append(dict(zip(names, args, strict=False)) | kwargs)
 
         monkeypatch.setattr(scoring, "_preconditions", spy)
         base, attempt = suite(passed=(A,)), suite(passed=(A,))

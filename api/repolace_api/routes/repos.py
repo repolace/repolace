@@ -16,7 +16,7 @@ log = structlog.get_logger()
 
 
 @router.get("")
-async def list_repos(db: AsyncSession = Depends(get_db)) -> list[dict]:  # noqa: B008
+async def list_repos(db: AsyncSession = Depends(get_db)) -> list[dict]:
     rows = (await db.execute(select(RegisteredRepo).where(RegisteredRepo.is_active.is_(True)))).scalars().all()
     return [
         {
@@ -34,8 +34,8 @@ async def list_repos(db: AsyncSession = Depends(get_db)) -> list[dict]:  # noqa:
 @router.get("/{repo_id}/issues")
 async def list_repo_issues(
     repo_id: UUID,
-    db: AsyncSession = Depends(get_db),  # noqa: B008
-    github: GithubClient = Depends(get_github_client),  # noqa: B008
+    db: AsyncSession = Depends(get_db),
+    github: GithubClient = Depends(get_github_client),
 ) -> list[dict]:
     repo = await db.get(RegisteredRepo, repo_id)
     if repo is None or not repo.is_active:
@@ -75,8 +75,8 @@ class CreateTaskRequest(BaseModel):
 async def create_task(
     repo_id: UUID,
     body: CreateTaskRequest,
-    db: AsyncSession = Depends(get_db),  # noqa: B008
-    github: GithubClient = Depends(get_github_client),  # noqa: B008
+    db: AsyncSession = Depends(get_db),
+    github: GithubClient = Depends(get_github_client),
 ) -> dict:
     """Queue a task. Does not run it.
 
@@ -142,7 +142,7 @@ async def create_task(
 
 
 @router.get("/{repo_id}/tasks")
-async def list_repo_tasks(repo_id: UUID, db: AsyncSession = Depends(get_db)) -> list[dict]:  # noqa: B008
+async def list_repo_tasks(repo_id: UUID, db: AsyncSession = Depends(get_db)) -> list[dict]:
     """Newest first. Shows status and outcome separately -- they answer different questions.
 
     A task can read `pr_opened` and still be unscored: status is how far the

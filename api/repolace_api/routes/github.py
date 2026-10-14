@@ -21,7 +21,7 @@ log = structlog.get_logger()
 
 
 @router.get("/install")
-def install(settings: ApiSettings = Depends(get_settings)) -> RedirectResponse:  # noqa: B008
+def install(settings: ApiSettings = Depends(get_settings)) -> RedirectResponse:
     return RedirectResponse(f"https://github.com/apps/{settings.github_app_slug}/installations/new")
 
 
@@ -29,8 +29,8 @@ def install(settings: ApiSettings = Depends(get_settings)) -> RedirectResponse: 
 async def callback(
     installation_id: int,
     setup_action: str,
-    db: AsyncSession = Depends(get_db),  # noqa: B008
-    github: GithubClient = Depends(get_github_client),  # noqa: B008
+    db: AsyncSession = Depends(get_db),
+    github: GithubClient = Depends(get_github_client),
 ) -> dict[str, str]:
     structlog.contextvars.bind_contextvars(installation_id=installation_id)
     log.info("github.callback", setup_action=setup_action)
@@ -42,9 +42,9 @@ async def callback(
 @router.post("/webhook")
 async def webhook(
     request: Request,
-    db: AsyncSession = Depends(get_db),  # noqa: B008
-    github: GithubClient = Depends(get_github_client),  # noqa: B008
-    settings: ApiSettings = Depends(get_settings),  # noqa: B008
+    db: AsyncSession = Depends(get_db),
+    github: GithubClient = Depends(get_github_client),
+    settings: ApiSettings = Depends(get_settings),
     x_hub_signature_256: str | None = Header(default=None),
     x_github_event: str | None = Header(default=None),
 ) -> dict[str, str]:

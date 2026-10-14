@@ -216,7 +216,7 @@ def postgres_url() -> Iterator[str]:
 
     try:
         _create_database(admin_dsn, test_url.database)
-    except Exception as exc:  # asyncpg errors, DNS, refused connections  # noqa: BLE001
+    except Exception as exc:  # asyncpg errors, DNS, refused connections
         _skip_or_fail(f"postgres unavailable: {type(exc).__name__}: {exc}")
 
     rendered = test_url.render_as_string(hide_password=False)
