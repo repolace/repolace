@@ -12,10 +12,9 @@ deferred-column safety as guarded by review of `from_result`, not by this file.
 
 import uuid
 
+from repolace_pipeline.context import RetrievedChunk
 from repolace_shared.db.models import ChunkType, CodeChunk
 from retrieval.ranking import RRFResult
-
-from repolace_pipeline.context import RetrievedChunk
 
 
 def code_chunk(**overrides) -> CodeChunk:

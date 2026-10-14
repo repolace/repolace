@@ -13,13 +13,12 @@ dropped in `to_row` is unrecoverable once the call is over.
 import uuid
 from dataclasses import fields
 from decimal import Decimal
+from typing import Self
 
 import pytest
-
+from gateway_support import ANTHROPIC_KEY, FOREIGN_OPENAI_KEY, TASK_ID
 from repolace_gateway.recorder import CallRecord, Recorder, to_row
 from repolace_gateway.redaction import REDACTED, Redactor
-
-from gateway_support import ANTHROPIC_KEY, FOREIGN_OPENAI_KEY, TASK_ID
 
 
 def record(**overrides) -> CallRecord:
@@ -129,7 +128,7 @@ class FakeSession:
     async def commit(self) -> None:
         self.committed = True
 
-    async def __aenter__(self) -> "FakeSession":
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *exc_info) -> None:
@@ -159,7 +158,7 @@ class TestSessionIsolation:
         await recorder.record(record(stage="cheap"))
 
         assert len(factory.sessions) == 2
-        for session, stage in zip(factory.sessions, ("agent", "cheap")):
+        for session, stage in zip(factory.sessions, ("agent", "cheap"), strict=False):
             assert [row.stage for row in session.added] == [stage]
             assert session.committed and session.closed
 

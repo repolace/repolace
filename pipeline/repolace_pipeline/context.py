@@ -16,7 +16,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import structlog
-
 from repolace_agents.contracts import SearchHit
 from repolace_agents.tools.base import ToolError
 from repolace_agents.tools.paths import confine

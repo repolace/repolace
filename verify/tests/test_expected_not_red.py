@@ -10,10 +10,8 @@ would notice. This is the function that notices.
 import inspect
 
 import pytest
-
 from repolace_shared.db.models import TaskOutcome
 from verify.scoring import expected_not_red, score
-
 from verify_support import suite
 
 GATED = "tests/test_api.py::test_gated"

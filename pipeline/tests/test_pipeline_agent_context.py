@@ -6,12 +6,10 @@ for a conftest, a directory overlay, `./`). The wiring tests use a real clone an
 `Verifier`; only the sandbox behind it is the shared fake.
 """
 
-import pytest
-from repolace_shared.git import task_workspace
-from verify.protocol import RepoSpec, ScriptResult, SuiteResult
-from verify.stage import Verifier
-from verify.testing import FakeBackend
+from typing import ClassVar
 
+import pytest
+from pipeline_support import TASK_ID
 from repolace_agents import feedback
 from repolace_agents.tools.base import ToolLimits
 from repolace_pipeline.agent_context import (
@@ -19,8 +17,10 @@ from repolace_pipeline.agent_context import (
     protected_check,
     visible_probe,
 )
-
-from pipeline_support import TASK_ID
+from repolace_shared.git import task_workspace
+from verify.protocol import RepoSpec, ScriptResult, SuiteResult
+from verify.stage import Verifier
+from verify.testing import FakeBackend
 
 pytestmark = pytest.mark.anyio
 
@@ -146,7 +146,7 @@ class TestAgreesWithTheFeedbackFilter:
     change to either fails here instead of drifting.
     """
 
-    PATHS = [
+    PATHS: ClassVar = [
         "tests/test_hidden.py::t", "./tests/test_hidden.py::t", "tests//test_hidden.py::t",
         "/tests/test_hidden.py::t", "tests/test_hidden.py", "tests/test_hidden.py::t[a::b]",
         "tests/sub/test_other.py::t", "other/test_hidden.py::t", "tests/test_hidden_x.py::t",
@@ -164,7 +164,7 @@ class TestAgreesWithTheFeedbackFilter:
         assert ours.passed == theirs.passed
         assert ours.collect_failures == theirs.collect_failures
 
-    CONFTESTS = [
+    CONFTESTS: ClassVar = [
         "/repo/conftest.py", "/repo/tests/conftest.py", "/repo/hidden_dir/conftest.py",
         "/repo/hidden_dir/deep/conftest.py", "/repo/hidden_dirs/conftest.py", "hidden_dir/conftest.py",
     ]

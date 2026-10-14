@@ -15,19 +15,23 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy import select
-
-from repolace_shared.db.models import GithubInstallation, RegisteredRepo, Task, TaskStatus, TaskTestRun
-from repolace_shared.git import task_workspace
-from repolace_shared.instances import InstanceSpec
-from repolace_shared.github.schemas import PullRequest
-from verify.protocol import SuiteResult
-from verify.scoring import Score, Verdict
-
 from repolace_agents.contracts import AgentDeps, AgentResult, AttemptRecord, StopReason
 from repolace_pipeline.context import RetrievedChunk
 from repolace_pipeline.edit import StubEditRequest
 from repolace_pipeline.pr import PrFacts
+from repolace_shared.db.models import (
+    GithubInstallation,
+    RegisteredRepo,
+    Task,
+    TaskStatus,
+    TaskTestRun,
+)
+from repolace_shared.git import task_workspace
+from repolace_shared.github.schemas import PullRequest
+from repolace_shared.instances import InstanceSpec
+from sqlalchemy import select
+from verify.protocol import SuiteResult
+from verify.scoring import Score, Verdict
 
 TASK_ID = uuid.UUID("2f8a1c4e-0000-4000-8000-000000000001")
 
@@ -76,41 +80,41 @@ def empty_request() -> StubEditRequest:
 
 def pr_facts(**overrides) -> PrFacts:
     """A product-mode `PrFacts` for a clean, submitted change. Override what a test is about."""
-    fields = dict(
-        task_id=TASK_ID,
-        issue_number=7,
-        issue_title="parse_config crashes on an empty file",
-        instance_id=None,
-        plumbing_only=False,
-        summary="Return an empty dict when the file is empty.",
-        changed_files=("src/app.py",),
-        baseline=SuiteResult(passed=("t::a", "t::b"), failed=(), skipped=("t::s",)),
-        final=SuiteResult(passed=("t::a", "t::b", "t::c"), failed=(), skipped=("t::s",)),
-        verdict=Verdict(ok=True, reason="no regression, silenced failure or new collection error found"),
-        scored=Score(outcome=None, reason="inadmissible", inadmissible=True),
-        expected_fail_to_pass=None,
-        attempts=2,
-        stop_reason="submitted",
-        model="claude-sonnet-5-5",
-        cost_usd=Decimal("0.4213"),
-        retrieved=(chunk(),),
-    )
+    fields = {
+        "task_id": TASK_ID,
+        "issue_number": 7,
+        "issue_title": "parse_config crashes on an empty file",
+        "instance_id": None,
+        "plumbing_only": False,
+        "summary": "Return an empty dict when the file is empty.",
+        "changed_files": ("src/app.py",),
+        "baseline": SuiteResult(passed=("t::a", "t::b"), failed=(), skipped=("t::s",)),
+        "final": SuiteResult(passed=("t::a", "t::b", "t::c"), failed=(), skipped=("t::s",)),
+        "verdict": Verdict(ok=True, reason="no regression, silenced failure or new collection error found"),
+        "scored": Score(outcome=None, reason="inadmissible", inadmissible=True),
+        "expected_fail_to_pass": None,
+        "attempts": 2,
+        "stop_reason": "submitted",
+        "model": "claude-sonnet-5-5",
+        "cost_usd": Decimal("0.4213"),
+        "retrieved": (chunk(),),
+    }
     return PrFacts(**{**fields, **overrides})
 
 
 def benchmark_facts(**overrides) -> PrFacts:
     """A benchmark-mode `PrFacts`: `instance_id` is the one switch, the rest follows from it."""
-    fields = dict(
-        instance_id="psf__requests-2317",
-        expected_fail_to_pass=("tests/test_hidden.py::test_f2p",),
-        final=SuiteResult(passed=("t::a", "tests/test_hidden.py::test_f2p")),
-        baseline=SuiteResult(passed=("t::a",), failed=("tests/test_hidden.py::test_f2p",)),
-        scored=Score(
+    fields = {
+        "instance_id": "psf__requests-2317",
+        "expected_fail_to_pass": ("tests/test_hidden.py::test_f2p",),
+        "final": SuiteResult(passed=("t::a", "tests/test_hidden.py::test_f2p")),
+        "baseline": SuiteResult(passed=("t::a",), failed=("tests/test_hidden.py::test_f2p",)),
+        "scored": Score(
             outcome=None,
             reason="1 fail-to-pass, no regressions",
             fail_to_pass=("tests/test_hidden.py::test_f2p",),
         ),
-    )
+    }
     return pr_facts(**{**fields, **overrides})
 
 
@@ -334,19 +338,19 @@ def make_instance(**overrides) -> InstanceSpec:
     `InstanceSpec` validates on load and dump, not on construction, which is what lets a test
     hand the gold runner a hostile key without writing a file the loader would refuse.
     """
-    fields = dict(
-        instance_id="acme__sample-7",
-        repo="acme/sample",
-        base_commit=BASE_COMMIT,
-        version="1.0",
-        problem_statement="parse_config crashes on an empty config file\n\nIt raises ValueError.",
-        issue_number=7,
-        fail_to_pass=("tests/test_hidden.py::test_empty_config",),
-        pass_to_pass=(),
-        test_files={"tests/test_hidden.py": "def test_empty_config():\n    assert True\n"},
-        gold_files={"src/app.py": "def parse_config(path):\n    return {}\n"},
-        spec={},
-    )
+    fields = {
+        "instance_id": "acme__sample-7",
+        "repo": "acme/sample",
+        "base_commit": BASE_COMMIT,
+        "version": "1.0",
+        "problem_statement": "parse_config crashes on an empty config file\n\nIt raises ValueError.",
+        "issue_number": 7,
+        "fail_to_pass": ("tests/test_hidden.py::test_empty_config",),
+        "pass_to_pass": (),
+        "test_files": {"tests/test_hidden.py": "def test_empty_config():\n    assert True\n"},
+        "gold_files": {"src/app.py": "def parse_config(path):\n    return {}\n"},
+        "spec": {},
+    }
     return InstanceSpec(**{**fields, **overrides})
 
 

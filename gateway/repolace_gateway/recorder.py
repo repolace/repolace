@@ -22,11 +22,11 @@ from decimal import Decimal
 from typing import Any
 
 import structlog
+from repolace_shared.db.models import LLMCall
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from repolace_gateway.redaction import Redactor
-from repolace_shared.db.models import LLMCall
 
 log = structlog.get_logger()
 

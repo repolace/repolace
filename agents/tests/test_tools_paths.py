@@ -5,14 +5,13 @@ path that gets through is not an error, it is a write the host later acts on.
 """
 
 import os
+from typing import ClassVar
 
 import pytest
-
 from repolace_agents.tools.base import ToolError
 from repolace_agents.tools.paths import MAX_PATH_CHARS, confine, relative_posix
-from verify.scoring import is_protected_path
-
 from tools_support import make_checkout
+from verify.scoring import is_protected_path
 
 
 @pytest.fixture
@@ -236,7 +235,7 @@ class TestGitAliases:
             ".g‌it/hooks/pc",  # ZERO WIDTH NON-JOINER: HFS+ ignores it, so this is `.git`
             ".‍git/config",
             "﻿.git/config",
-            ".git‮/config",
+            ".git‮/config",  # noqa: PLE2502
             ".⁪git/config",
         ],
     )
@@ -284,7 +283,7 @@ class TestSymlinkLoops:
 
 
 class TestDotfileWrites:
-    CI_AND_IDE_FILES = [
+    CI_AND_IDE_FILES: ClassVar = [
         ".circleci/config.yml",
         ".buildkite/pipeline.yml",
         ".travis.yml",

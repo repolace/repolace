@@ -12,7 +12,7 @@ installed dependencies itself would put that reasoning inside a container log.
 """
 
 import tomllib
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import fields
 from pathlib import Path
 

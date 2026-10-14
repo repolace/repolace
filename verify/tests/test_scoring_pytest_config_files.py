@@ -16,7 +16,6 @@ these names too.
 """
 
 import pytest
-
 from repolace_shared.db.models import TaskOutcome
 from verify.scoring import (
     _CONFIG_FILES,
@@ -26,7 +25,6 @@ from verify.scoring import (
     is_test_path,
     score,
 )
-
 from verify_support import suite
 
 NEW_NAMES = (".pytest.ini", "pytest.toml", ".pytest.toml")

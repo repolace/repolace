@@ -14,21 +14,20 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
-
 from eval_exec_support import add_repo, add_task, make_instance, write_instances
+from harness.enqueue import DEFAULT_WALL_CLOCK_SECONDS, task_wall_clock_bound
 from harness.gold import (
     TARGETED_P2P_FRACTION,
-    main,
     GoldRun,
     build_parser,
+    main,
     render_validation,
     suite_timeout_seconds,
     validate_gold,
     validate_instance,
 )
-from harness.enqueue import DEFAULT_WALL_CLOCK_SECONDS, task_wall_clock_bound
-from verify.protocol import SuiteResult
 from repolace_shared.db.models import TaskOutcome, TaskStatus, TaskTestRun
+from verify.protocol import SuiteResult
 
 F2P = "t.py::test_new"
 P2P = "t.py::test_old"

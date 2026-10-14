@@ -9,19 +9,18 @@ swallow the reason a task failed.
 import os
 import shutil
 import stat
+import subprocess
 import uuid
 from pathlib import Path
 
 import pytest
 import structlog
-
 from repolace_shared.git.repo import GitExportError
 from repolace_shared.git.workspace import (
     agent_branch_name,
     github_clone_url,
     task_workspace,
 )
-
 from shared_support import git, git_bytes, git_check_ref, write
 
 pytestmark = pytest.mark.anyio
@@ -794,7 +793,7 @@ class TestPruneRemoteRefs:
             await workspace.prune_remote_refs(["main"])
 
             assert git(workspace.path, "cat-file", "-t", develop_tip) == "commit"
-            with pytest.raises(Exception):
+            with pytest.raises(subprocess.CalledProcessError):
                 git(workspace.path, "rev-parse", "--verify", "--quiet", "origin/develop")
 
 

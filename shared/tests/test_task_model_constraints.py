@@ -15,9 +15,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import CheckConstraint, Index
-
 from repolace_shared.db.models import AGENT_STOP_REASONS, Task
+from sqlalchemy import CheckConstraint, Index
 
 MIGRATION_0013 = (
     Path(__file__).resolve().parents[2]

@@ -8,7 +8,6 @@ import sys
 from types import ModuleType
 
 import pytest
-
 from eval_exec_support import TOKEN, FakeGithub, make_instance, write_instances
 from harness import bench_repos, enqueue, gold, runner
 from harness.cli import SUBCOMMANDS, main
@@ -82,7 +81,7 @@ class TestDispatch:
         assert err.count("\n") == 1 and "pyarrow" in err
 
     def test_a_module_without_main_is_exit_two(self, capsys):
-        assert main(["report"], importer=lambda name: ModuleType(name)) == 2
+        assert main(["report"], importer=ModuleType) == 2
         assert "no main()" in capsys.readouterr().err
 
     def test_a_broken_module_that_raises_importerror_is_exit_two(self, capsys):
@@ -112,7 +111,7 @@ class TestHelp:
             "         'harness.runner', 'harness.enqueue', 'harness.bench_repos', 'harness.gold', 'harness.db')\n"
             "print('LOADED:' + ','.join(m for m in heavy if m in sys.modules))\n"
         )
-        done = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, timeout=120)
+        done = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, timeout=120, check=False)
 
         assert done.returncode == 0, done.stderr
         assert done.stdout.strip().splitlines()[-1] == "LOADED:"

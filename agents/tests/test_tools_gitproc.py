@@ -13,11 +13,9 @@ import shlex
 import time
 
 import pytest
-
 from repolace_agents.tools import gitproc
 from repolace_agents.tools.gitproc import prlimit_path, require_prlimit, run_limited_git
 from repolace_shared.git import GitTimeoutError
-
 from tools_support import make_checkout, make_harness
 
 pytestmark = pytest.mark.anyio
@@ -76,8 +74,8 @@ class TestLimitsReachTheChild:
         git_pid = int(pidfile.read_text())
 
         try:
-            limits = open(f"/proc/{git_pid}/limits").read()
-            assert open(f"/proc/{git_pid}/comm").read().strip() == "git"  # not a surviving `prlimit` parent
+            limits = open(f"/proc/{git_pid}/limits").read()  # noqa: SIM115
+            assert open(f"/proc/{git_pid}/comm").read().strip() == "git"  # not a surviving `prlimit` parent  # noqa: SIM115
             assert f"{300 * MIB}" in next(line for line in limits.splitlines() if line.startswith("Max address space"))
             assert resource.getrlimit(resource.RLIMIT_AS) == before
         finally:

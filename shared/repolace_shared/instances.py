@@ -53,7 +53,7 @@ import json
 import os
 import re
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from types import MappingProxyType

@@ -7,11 +7,9 @@ and no global mock.
 """
 
 import pytest
-from sqlalchemy import select
-
-from repolace_shared.db.models import Task
-
 from api_support import FakeGithub, client_for, raw_issue, seed_repo
+from repolace_shared.db.models import Task
+from sqlalchemy import select
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db]
 

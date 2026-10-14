@@ -20,7 +20,6 @@ from pathlib import Path
 
 import pytest
 import structlog
-
 from verify.backends import docker as docker_module
 from verify.backends.docker import DockerBackend, build_script_argv
 from verify.config import DockerConfig

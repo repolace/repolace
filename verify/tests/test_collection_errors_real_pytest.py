@@ -13,22 +13,19 @@ with only the two container paths rewritten for the host, so this tests the flag
 ship rather than a copy of them. No Docker.
 """
 
-import os
 import subprocess
 import sys
 import textwrap
 from pathlib import Path
 
 import pytest
-
 from repolace_shared.db.models import TaskOutcome
+from repolace_shared.process import ProcessResult
 from verify.backends.docker import build_run_argv
 from verify.config import DockerConfig
 from verify.protocol import EnvironmentRef, RepoSpec
 from verify.report import parse_report
 from verify.scoring import agent_verdict, score
-
-from repolace_shared.process import ProcessResult
 
 PLUGIN_DIR = Path(__file__).resolve().parents[1] / "verify" / "plugin"
 FLAG = "--continue-on-collection-errors"
@@ -75,7 +72,7 @@ def run(root: Path, tag: str, *, with_flag: bool = True):
             "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
         },
         capture_output=True,
-        timeout=120,
+        timeout=120, check=False,
     )
     process = ProcessResult(
         returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr

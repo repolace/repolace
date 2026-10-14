@@ -6,7 +6,6 @@ What the overlay and the unscored runs *do* is in `test_stage.py`.
 import uuid
 
 import pytest
-
 from verify.protocol import RepoSpec
 from verify.stage import BASELINE_ATTEMPT, Verifier, VerifierNotReady
 from verify.testing import FakeBackend, FakeWorkspace

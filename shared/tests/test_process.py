@@ -15,7 +15,6 @@ import time
 from pathlib import Path
 
 import pytest
-
 from repolace_shared.process import run_process
 
 pytestmark = pytest.mark.anyio

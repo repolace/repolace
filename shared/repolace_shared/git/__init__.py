@@ -1,11 +1,11 @@
 from repolace_shared.git.repo import (
+    UNTRUSTED_TREE_CONFIG_ARGS,
     GitCommandError,
     GitError,
     GitExportError,
     GitRepo,
     GitTimeoutError,
     TokenProvider,
-    UNTRUSTED_TREE_CONFIG_ARGS,
     clone,
     redact,
     run_git,
@@ -23,6 +23,7 @@ from repolace_shared.git.workspace import (
 
 __all__ = [
     "PUSH_TOKEN_MIN_TTL_SECONDS",
+    "UNTRUSTED_TREE_CONFIG_ARGS",
     "GitCommandError",
     "GitError",
     "GitExportError",
@@ -30,7 +31,6 @@ __all__ = [
     "GitTimeoutError",
     "TaskWorkspace",
     "TokenProvider",
-    "UNTRUSTED_TREE_CONFIG_ARGS",
     "agent_branch_name",
     "clone",
     "github_clone_url",

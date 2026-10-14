@@ -13,7 +13,6 @@ import stat
 from pathlib import Path
 
 import pytest
-
 from verify.overlay import OverlayError, apply_overlay, validate_overlay_paths
 
 DIR_MODE = 0o777

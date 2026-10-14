@@ -10,13 +10,23 @@ import os
 from pathlib import Path
 
 import pytest
-
+from pipeline_support import (
+    TASK_ID,
+    attempt_record,
+    chunk,
+    make_deps,
+    make_instance,
+    request,
+)
 from repolace_agents.contracts import StopReason
 from repolace_pipeline.edit import StubEditRequest
 from repolace_pipeline.pr import PLUMBING_SUMMARY_NOTE
-from repolace_pipeline.runners import GoldAgent, GoldPatchRefused, StubAgent, write_gold_files
-
-from pipeline_support import TASK_ID, attempt_record, chunk, make_deps, make_instance, request
+from repolace_pipeline.runners import (
+    GoldAgent,
+    GoldPatchRefused,
+    StubAgent,
+    write_gold_files,
+)
 
 pytestmark = pytest.mark.anyio
 

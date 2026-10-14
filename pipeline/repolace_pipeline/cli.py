@@ -22,19 +22,17 @@ from typing import TYPE_CHECKING, Any
 import structlog
 from pydantic import ValidationError
 from pydantic_settings.exceptions import SettingsError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
+from repolace_agents.contracts import AgentRunner
 from repolace_gateway.errors import ConfigError, MissingProviderKey, UnpricedModelError
 from repolace_shared.db.models import Task
 from repolace_shared.db.session import create_engine, create_session_factory
 from repolace_shared.github.client import GithubClient
 from repolace_shared.instances import InstanceError, load_instance_by_id
 from repolace_shared.logging import configure_logging
-
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from verify.backends.docker import DockerBackend
 from verify.spec import load_specs
 
-from repolace_agents.contracts import AgentRunner
 from repolace_pipeline.agent_runner import LLMAgent
 from repolace_pipeline.config import get_settings
 from repolace_pipeline.errors import TaskNotClaimable, TaskNotFound

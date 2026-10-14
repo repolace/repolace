@@ -6,15 +6,14 @@ repository with nothing behind it, and one that withholds a good one is only a
 missed opportunity -- so the tests are weighted toward "closed".
 """
 
+import dataclasses
 import itertools
 
 import pytest
-
-from repolace_shared.db.models import TaskOutcome
-from verify.scoring import Score, Verdict
-
 from repolace_agents.contracts import AgentResult, StopReason
 from repolace_pipeline.gate import PrDecision, pr_decision
+from repolace_shared.db.models import TaskOutcome
+from verify.scoring import Score, Verdict
 
 
 def result(stop_reason: StopReason = StopReason.SUBMITTED) -> AgentResult:
@@ -30,15 +29,15 @@ HARM = Verdict(ok=False, reason="2 pass-to-pass regression(s): tests/test_a.py::
 
 
 def decide(**overrides) -> PrDecision:
-    fields = dict(
-        benchmark=False,
-        has_change=True,
-        scored=scored(None),
-        verdict=OK,
-        result=result(),
-        open_pr_on_failure=False,
-        open_pr_allowed=True,
-    )
+    fields = {
+        "benchmark": False,
+        "has_change": True,
+        "scored": scored(None),
+        "verdict": OK,
+        "result": result(),
+        "open_pr_on_failure": False,
+        "open_pr_allowed": True,
+    }
     return pr_decision(**{**fields, **overrides})
 
 
@@ -71,7 +70,7 @@ class TestSharedRules:
         assert "switched off" in decide(open_pr_allowed=False, has_change=False).reason
 
     def test_a_decision_is_immutable(self):
-        with pytest.raises(Exception):
+        with pytest.raises(dataclasses.FrozenInstanceError):
             decide().open = False  # type: ignore[misc]
 
 

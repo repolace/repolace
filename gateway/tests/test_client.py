@@ -17,13 +17,6 @@ import os
 from decimal import Decimal
 
 import pytest
-from litellm import exceptions as lx
-
-from repolace_gateway.budget import BudgetExceeded, BudgetLimit, TaskBudget, task_scope
-from repolace_gateway.client import TokenUsage
-from repolace_gateway.config import parse_config
-from repolace_gateway.errors import ConfigError, LLMCallError, MissingProviderKey, NoTaskScope
-
 from gateway_support import (
     ANTHROPIC_KEY,
     MESSAGES,
@@ -39,6 +32,16 @@ from gateway_support import (
     make_settings,
     raw_config,
     stored_json,
+)
+from litellm import exceptions as lx
+from repolace_gateway.budget import BudgetExceeded, BudgetLimit, TaskBudget, task_scope
+from repolace_gateway.client import TokenUsage
+from repolace_gateway.config import parse_config
+from repolace_gateway.errors import (
+    ConfigError,
+    LLMCallError,
+    MissingProviderKey,
+    NoTaskScope,
 )
 
 
@@ -237,23 +240,20 @@ class TestCredentials:
     @pytest.mark.parametrize("kwarg", ["api_base", "base_url", "api_key", "custom_llm_provider"])
     async def test_a_caller_cannot_redirect_the_key_to_another_host(self, kwarg):
         h = make_harness(make_response())
-        with task_scope(TASK_ID, TaskBudget()):
-            with pytest.raises(TypeError, match="cannot pass"):
-                await h.client.complete("agent", MESSAGES, **{kwarg: "https://evil.example"})
+        with task_scope(TASK_ID, TaskBudget()), pytest.raises(TypeError, match="cannot pass"):
+            await h.client.complete("agent", MESSAGES, **{kwarg: "https://evil.example"})
         assert h.acompletion.calls == []
 
     @pytest.mark.parametrize("kwarg", ["num_retries", "fallbacks", "stream"])
     async def test_a_caller_cannot_bypass_the_gateways_own_loop_or_response_shape(self, kwarg):
         h = make_harness(make_response())
-        with task_scope(TASK_ID, TaskBudget()):
-            with pytest.raises(TypeError, match="cannot pass"):
-                await h.client.complete("agent", MESSAGES, **{kwarg: 1})
+        with task_scope(TASK_ID, TaskBudget()), pytest.raises(TypeError, match="cannot pass"):
+            await h.client.complete("agent", MESSAGES, **{kwarg: 1})
 
     async def test_a_provider_error_that_echoes_the_key_is_scrubbed_everywhere_it_surfaces(self):
         h = make_harness(RuntimeError(f"auth failed for key {ANTHROPIC_KEY}"))
-        with task_scope(TASK_ID, TaskBudget()):
-            with pytest.raises(LLMCallError) as raised:
-                await h.client.complete("agent", MESSAGES)
+        with task_scope(TASK_ID, TaskBudget()), pytest.raises(LLMCallError) as raised:
+            await h.client.complete("agent", MESSAGES)
         assert ANTHROPIC_KEY not in str(raised.value)
         assert ANTHROPIC_KEY not in h.recorder.records[0].error
 
@@ -300,9 +300,8 @@ class TestBedrock:
         raw["models"]["main"].update(provider="bedrock", litellm_model="bedrock/x")
         h = make_harness(make_response(), config=parse_config(raw), settings=make_settings())
 
-        with task_scope(TASK_ID, TaskBudget()):
-            with pytest.raises(MissingProviderKey, match="GATEWAY_AWS_PROFILE"):
-                await h.client.complete("agent", MESSAGES)
+        with task_scope(TASK_ID, TaskBudget()), pytest.raises(MissingProviderKey, match="GATEWAY_AWS_PROFILE"):
+            await h.client.complete("agent", MESSAGES)
 
         assert h.acompletion.calls == []
 
@@ -312,9 +311,8 @@ class TestBedrock:
     )
     async def test_a_caller_cannot_override_the_aws_credentials(self, kwarg):
         h = self.bedrock_harness()
-        with task_scope(TASK_ID, TaskBudget()):
-            with pytest.raises(TypeError, match=kwarg):
-                await h.client.complete("agent", MESSAGES, **{kwarg: "elsewhere"})
+        with task_scope(TASK_ID, TaskBudget()), pytest.raises(TypeError, match=kwarg):
+            await h.client.complete("agent", MESSAGES, **{kwarg: "elsewhere"})
 
 
 @pytest.mark.anyio
@@ -438,18 +436,16 @@ class TestRetries:
     )
     async def test_a_failure_that_repetition_cannot_fix_is_not_retried(self, make_error):
         h = make_harness(make_error())
-        with task_scope(TASK_ID, TaskBudget()):
-            with pytest.raises(LLMCallError):
-                await h.client.complete("agent", MESSAGES)
+        with task_scope(TASK_ID, TaskBudget()), pytest.raises(LLMCallError):
+            await h.client.complete("agent", MESSAGES)
         assert len(h.acompletion.calls) == 1
         assert h.sleeps == []
 
     async def test_exhausted_retries_raise_with_the_cause_and_leave_an_error_row(self):
         final = rate_limited()
         h = make_harness(rate_limited(), rate_limited(), final)
-        with task_scope(TASK_ID, TaskBudget()) as scope:
-            with pytest.raises(LLMCallError) as raised:
-                await h.client.complete("agent", MESSAGES, attempt=1)
+        with task_scope(TASK_ID, TaskBudget()) as scope, pytest.raises(LLMCallError) as raised:
+            await h.client.complete("agent", MESSAGES, attempt=1)
 
         assert len(h.acompletion.calls) == 3 and h.sleeps == [1.0, 2.0]
         error = raised.value
@@ -468,9 +464,8 @@ class TestRetries:
         import asyncio
 
         h = make_harness(asyncio.CancelledError())
-        with task_scope(TASK_ID, TaskBudget()):
-            with pytest.raises(asyncio.CancelledError):
-                await h.client.complete("agent", MESSAGES)
+        with task_scope(TASK_ID, TaskBudget()), pytest.raises(asyncio.CancelledError):
+            await h.client.complete("agent", MESSAGES)
         assert h.recorder.records == []
 
 
@@ -511,9 +506,8 @@ class TestFallback:
     async def test_a_non_transient_failure_does_not_fall_back(self):
         """It would fail identically on the next model, and cost a second quota to learn it."""
         h = make_harness(unauthorised(), config=make_config(fallback="backup"))
-        with task_scope(TASK_ID, TaskBudget()):
-            with pytest.raises(LLMCallError):
-                await h.client.complete("agent", MESSAGES)
+        with task_scope(TASK_ID, TaskBudget()), pytest.raises(LLMCallError):
+            await h.client.complete("agent", MESSAGES)
         assert len(h.acompletion.calls) == 1
 
     async def test_when_the_fallback_fails_too_the_error_names_the_last_model_tried(self):
@@ -521,9 +515,8 @@ class TestFallback:
             *[rate_limited() for _ in range(6)],
             config=make_config(fallback="backup"),
         )
-        with task_scope(TASK_ID, TaskBudget()):
-            with pytest.raises(LLMCallError) as raised:
-                await h.client.complete("agent", MESSAGES)
+        with task_scope(TASK_ID, TaskBudget()), pytest.raises(LLMCallError) as raised:
+            await h.client.complete("agent", MESSAGES)
         assert raised.value.model == "openai/test-backup"
         assert raised.value.retries == 4  # two backoffs per model
         assert h.recorder.records[0].model == "openai/test-backup"
@@ -625,16 +618,14 @@ class TestRefusalsBeforeSpend:
 
     async def test_an_unknown_stage_is_a_config_error_naming_the_real_ones(self):
         h = make_harness(make_response())
-        with task_scope(TASK_ID, TaskBudget()):
-            with pytest.raises(ConfigError, match="unknown stage 'planner'"):
-                await h.client.complete("planner", MESSAGES)
+        with task_scope(TASK_ID, TaskBudget()), pytest.raises(ConfigError, match="unknown stage 'planner'"):
+            await h.client.complete("planner", MESSAGES)
         assert h.acompletion.calls == []
 
     async def test_a_missing_key_is_refused_before_the_call(self):
         h = make_harness(make_response(), settings=make_settings(anthropic_api_key=None))
-        with task_scope(TASK_ID, TaskBudget()):
-            with pytest.raises(MissingProviderKey, match="ANTHROPIC_API_KEY"):
-                await h.client.complete("agent", MESSAGES)
+        with task_scope(TASK_ID, TaskBudget()), pytest.raises(MissingProviderKey, match="ANTHROPIC_API_KEY"):
+            await h.client.complete("agent", MESSAGES)
         assert h.acompletion.calls == []
 
     async def test_a_fallbacks_missing_key_is_found_up_front_not_mid_outage(self):
@@ -644,9 +635,8 @@ class TestRefusalsBeforeSpend:
             config=make_config(fallback="backup"),
             settings=make_settings(openai_api_key=None),
         )
-        with task_scope(TASK_ID, TaskBudget()):
-            with pytest.raises(MissingProviderKey, match="OPENAI_API_KEY"):
-                await h.client.complete("agent", MESSAGES)
+        with task_scope(TASK_ID, TaskBudget()), pytest.raises(MissingProviderKey, match="OPENAI_API_KEY"):
+            await h.client.complete("agent", MESSAGES)
         assert h.acompletion.calls == []
 
     async def test_an_exhausted_budget_is_refused_before_anything_else_is_checked(self):
@@ -665,22 +655,19 @@ class TestOrderOfOperations:
         h = make_harness(
             make_priced_response("0.60"), recorder=ListRecorder(fail=RuntimeError("db down"))
         )
-        with task_scope(TASK_ID, TaskBudget()) as scope:
-            with pytest.raises(RuntimeError, match="db down"):
-                await h.client.complete("agent", MESSAGES)
+        with task_scope(TASK_ID, TaskBudget()) as scope, pytest.raises(RuntimeError, match="db down"):
+            await h.client.complete("agent", MESSAGES)
         assert (scope.budget.calls, scope.budget.spent_usd) == (1, Decimal("0.60"))
 
     async def test_a_recording_failure_is_not_swallowed(self):
         """A call that happened but was not recorded is spend `tasks.cost_usd` can never include."""
         h = make_harness(make_response(), recorder=ListRecorder(fail=RuntimeError("db down")))
-        with task_scope(TASK_ID, TaskBudget()):
-            with pytest.raises(RuntimeError, match="db down"):
-                await h.client.complete("agent", MESSAGES)
+        with task_scope(TASK_ID, TaskBudget()), pytest.raises(RuntimeError, match="db down"):
+            await h.client.complete("agent", MESSAGES)
 
     async def test_the_response_is_recorded_before_budget_exceeded_is_raised(self):
         h = make_harness(make_priced_response("0.60"))
-        with task_scope(TASK_ID, TaskBudget(max_usd="0.50")):
-            with pytest.raises(BudgetExceeded):
-                await h.client.complete("agent", MESSAGES)
+        with task_scope(TASK_ID, TaskBudget(max_usd="0.50")), pytest.raises(BudgetExceeded):
+            await h.client.complete("agent", MESSAGES)
         assert len(h.recorder.records) == 1
         assert h.recorder.records[0].cost_usd == Decimal("0.60")

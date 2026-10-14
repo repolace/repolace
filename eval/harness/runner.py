@@ -73,6 +73,13 @@ from enum import Enum
 from pathlib import Path
 
 import structlog
+from repolace_shared.paths import PathEscapesRoot, resolve_within
+from repolace_shared.process import (
+    REAP_TIMEOUT_SECONDS,
+    ProcessResult,
+    kill_process_tree,
+    run_process,
+)
 
 from harness.bench_repos import TOKEN_ENV_VAR
 from harness.db import (
@@ -87,8 +94,6 @@ from harness.db import (
 )
 from harness.enqueue import DEFAULT_RUNS_DIR, DEFAULT_WALL_CLOCK_SECONDS
 from harness.run_manifest import ManifestError, load_manifest, manifest_path
-from repolace_shared.paths import PathEscapesRoot, resolve_within
-from repolace_shared.process import REAP_TIMEOUT_SECONDS, ProcessResult, kill_process_tree, run_process
 
 log = structlog.get_logger()
 
@@ -308,7 +313,7 @@ async def _run_child(
     peak: list[int] = []
     sampler: asyncio.Task | None = None
     timed_out = False
-    with open(log_path, "ab") as log_file:
+    with open(log_path, "ab") as log_file:  # noqa: ASYNC230
         try:
             process = await asyncio.create_subprocess_exec(
                 *argv,

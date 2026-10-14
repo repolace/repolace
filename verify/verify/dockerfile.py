@@ -148,7 +148,7 @@ def image_cache_key(spec: RepoSpec, install: Sequence[str], source_dir: Path) ->
     digest.update(render_dockerfile(spec, install).encode("utf-8"))
     digest.update(plugin_source().read_bytes())
     for name, value in _manifest_digest(source_dir):
-        digest.update(f"{name}={value}\n".encode("utf-8"))
+        digest.update(f"{name}={value}\n".encode())
     return digest.hexdigest()[:_KEY_LENGTH]
 
 

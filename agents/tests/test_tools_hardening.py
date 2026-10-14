@@ -9,7 +9,6 @@ the *tools* honour them, and that a refusal changes nothing.
 import os
 
 import pytest
-
 from tools_support import make_harness, snapshot
 
 pytestmark = pytest.mark.anyio

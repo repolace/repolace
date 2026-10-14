@@ -76,8 +76,8 @@ def render_marker(request: StubEditRequest, indent: str = "") -> str:
         f"# base   {request.base_sha}",
         f"# picked {top.location} {top.qualified_symbol} [{top.chunk_type}]",
         f"#        {_rank_note(top)}",
-        f"#        top of {len(request.retrieved)} retrieved over "
-        f"{request.indexed_chunk_count} indexed chunks",
+        (f"#        top of {len(request.retrieved)} retrieved over "
+        f"{request.indexed_chunk_count} indexed chunks"),
         f"# {MARKER_RULE}",
     ]
     return "".join(f"{indent}{line}\n" for line in lines)

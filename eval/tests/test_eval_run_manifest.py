@@ -5,7 +5,6 @@ import stat
 from pathlib import Path
 
 import pytest
-
 from harness.run_manifest import (
     AGENTS,
     MANIFEST_FILENAME,
@@ -18,12 +17,12 @@ from harness.run_manifest import (
 
 
 def manifest(**overrides) -> RunManifest:
-    values = dict(
-        eval_run_id="sonnet-1", created_at="2026-10-03T12:00:00+00:00", git_sha="a" * 40,
-        model="anthropic/claude-sonnet-5-5", stage_models={"agent": "anthropic/claude-sonnet-5-5"},
-        limits={"max_usd": 2.0, "wall_seconds": 3600, "note": None}, runs_per_instance=3,
-        instance_ids=("psf__requests-1001", "psf__requests-1002"), agent="llm",
-    )
+    values = {
+        "eval_run_id": "sonnet-1", "created_at": "2026-10-03T12:00:00+00:00", "git_sha": "a" * 40,
+        "model": "anthropic/claude-sonnet-5-5", "stage_models": {"agent": "anthropic/claude-sonnet-5-5"},
+        "limits": {"max_usd": 2.0, "wall_seconds": 3600, "note": None}, "runs_per_instance": 3,
+        "instance_ids": ("psf__requests-1001", "psf__requests-1002"), "agent": "llm",
+    }
     values.update(overrides)
     return RunManifest(**values)
 

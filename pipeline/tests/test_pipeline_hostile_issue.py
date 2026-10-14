@@ -21,13 +21,6 @@ pushed where push-triggered CI holds secrets without a decision (see CLAUDE.md).
 import os
 
 import pytest
-from verify.protocol import ScriptResult, SuiteResult
-from verify.testing import FakeBackend
-
-from repolace_agents.contracts import StopReason
-from repolace_shared.db.models import TaskOutcome, TaskStatus
-from repolace_pipeline.run import run_task
-
 from pipeline_support import (
     AFTER,
     BASELINE,
@@ -40,6 +33,11 @@ from pipeline_support import (
     reload,
     seed_task,
 )
+from repolace_agents.contracts import StopReason
+from repolace_pipeline.run import run_task
+from repolace_shared.db.models import TaskOutcome, TaskStatus
+from verify.protocol import ScriptResult, SuiteResult
+from verify.testing import FakeBackend
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db, pytest.mark.usefixtures("embedder")]
 
@@ -184,7 +182,7 @@ class TestAnObedientModelCannotDoWhatTheIssueAsks:
         assert not os.path.exists("/repo/pwn")
 
     async def test_nothing_the_model_asked_for_reached_the_tree(self, hostile):
-        result, row, runs, backend, _ = hostile
+        _result, row, runs, _backend, _ = hostile
 
         assert row.changed_files == [] and row.patch_diff == ""
         assert row.agent_stop_reason == "no_change"

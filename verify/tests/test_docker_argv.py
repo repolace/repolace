@@ -7,10 +7,11 @@ assertions are individual and literal rather than a single comparison against a
 golden argv, which would go stale and get regenerated rather than read.
 """
 
+import itertools
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
-
 from verify.backends.docker import (
     build_argv,
     build_run_argv,
@@ -40,7 +41,7 @@ def script_argv(config: DockerConfig | None = None, spec: RepoSpec | None = None
 
 def has_pair(args: tuple[str, ...], flag: str, value: str) -> bool:
     """A `--flag value` pair, in that order and adjacent."""
-    return any(a == flag and b == value for a, b in zip(args, args[1:]))
+    return any(a == flag and b == value for a, b in itertools.pairwise(args))
 
 
 class TestContainment:
@@ -564,7 +565,7 @@ class TestReservedEnvironment:
         assert has_pair(build(spec=RepoSpec(key="a/b", extra_env={"TZ": "UTC"})), "-e", "TZ=UTC")
 
     def test_the_reserved_set_is_the_four_the_sandbox_owns(self):
-        assert RESERVED_ENV == {"PYTHONPATH", "HOME", "REPOLACE_REPORT_PATH", "REPOLACE_RUN_NONCE"}
+        assert {"PYTHONPATH", "HOME", "REPOLACE_REPORT_PATH", "REPOLACE_RUN_NONCE"} == RESERVED_ENV
 
     def test_the_reserved_names_are_still_set_by_the_sandbox_itself(self):
         args = build_run_argv(
@@ -663,7 +664,7 @@ def option_tokens(args: tuple[str, ...]) -> list[str]:
 
 def values_after(args: tuple[str, ...], flag: str) -> list[str]:
     before = before_the_image(args)
-    return [b for a, b in zip(before, before[1:]) if a == flag]
+    return [b for a, b in itertools.pairwise(before) if a == flag]
 
 
 BUILDERS_WITH_ALLOWLISTS = {
@@ -768,7 +769,7 @@ class TestNothingDangerousIsGranted:
             ("--mount", "type=bind,src=/,dst=/host"), ("--volumes-from", "other"),
             ("--add-host", "x:1.1.1.1"), ("--env-file", "/etc/environment"), ("-p", "80:80"),
         ],
-        ids=lambda added: " ".join(added),
+        ids=" ".join,
     )
     def test_the_detector_catches_each_dangerous_addition(self, build, added):
         """The denylist is only worth having if it fires. Insert each before the image
@@ -790,7 +791,7 @@ class TestAHostileSpecCannotChangeTheFlags:
     @staticmethod
     def without_pair(args: tuple[str, ...], flag: str, value_prefix: str) -> tuple[str, ...]:
         """`args` with the one `flag value` pair whose value starts with `value_prefix` removed."""
-        for index, (a, b) in enumerate(zip(args, args[1:])):
+        for index, (a, b) in enumerate(itertools.pairwise(args)):
             if a == flag and b.startswith(value_prefix):
                 return args[:index] + args[index + 2 :]
         raise AssertionError(f"no {flag} {value_prefix!r} in {args}")
@@ -861,7 +862,7 @@ class TestEnvironmentNamesAreNames:
     an exact-key reserved check: `HOME=/evil` emits `-e HOME=/evil=v`, which docker applies
     after the sandbox's own `-e HOME=/tmp` and which wins."""
 
-    PAYLOADS = ["HOME=/evil", "REPOLACE_RUN_NONCE=known#", "PYTHONPATH=/x:", "A=B", "REPOLACE_REPORT_PATH=/x"]
+    PAYLOADS: ClassVar = ["HOME=/evil", "REPOLACE_RUN_NONCE=known#", "PYTHONPATH=/x:", "A=B", "REPOLACE_REPORT_PATH=/x"]
 
     @pytest.mark.parametrize("name", PAYLOADS)
     def test_a_name_that_smuggles_an_assignment_is_refused_on_either_builder(self, build, name):

@@ -5,7 +5,6 @@ import uuid
 from dataclasses import FrozenInstanceError, fields
 
 import pytest
-
 from verify.protocol import ScriptResult
 from verify.scoring import Verdict
 from verify.stage import container_name

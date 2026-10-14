@@ -8,9 +8,7 @@ import os
 import stat
 
 import pytest
-
 from repolace_agents.tools import ToolLimits
-
 from tools_support import git, make_checkout, make_harness, snapshot
 
 pytestmark = pytest.mark.anyio

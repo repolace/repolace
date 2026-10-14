@@ -59,9 +59,6 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 import httpx
-
-from harness import specgen
-from harness.patches import ADDED, BINARY, MODIFIED, PatchError, files_in_patch
 from repolace_shared.git.repo import (
     CLONE_TIMEOUT_SECONDS,
     EXPORT_TIMEOUT_SECONDS,
@@ -80,6 +77,9 @@ from repolace_shared.instances import (
 )
 from verify.dockerfile import MANIFEST_NAMES
 from verify.scoring import is_protected_path
+
+from harness import specgen
+from harness.patches import ADDED, BINARY, MODIFIED, PatchError, files_in_patch
 
 #: Pure-Python pytest repositories, from the maintainer's recollection of the
 #: Verified mix -- the filters below, not this list, decide what is selected.
@@ -645,14 +645,14 @@ def render_manifest(
     out = [
         "# Instance manifest",
         "",
-        "Written by `repolace-eval select`. The filter is auditable from this file alone: every candidate, "
-        "and every instance that was rejected with the first reason it failed.",
+        ("Written by `repolace-eval select`. The filter is auditable from this file alone: every candidate, "
+        "and every instance that was rejected with the first reason it failed."),
         "",
         f"- dataset: `{dataset}` ({total_rows} rows)",
-        f"- seed: {seed}; target: {count} candidates; at most {max_per_repo} per repository. The seed is a degree "
-        f"of freedom in the result: fix and record it before the first agent run.",
-        f"- selected: {len(result.selected)}; rejected: {len(rejections)}; "
-        f"not evaluated (target or per-repo cap reached): {len(result.not_evaluated)}",
+        (f"- seed: {seed}; target: {count} candidates; at most {max_per_repo} per repository. The seed is a degree "
+        f"of freedom in the result: fix and record it before the first agent run."),
+        (f"- selected: {len(result.selected)}; rejected: {len(rejections)}; "
+        f"not evaluated (target or per-repo cap reached): {len(result.not_evaluated)}"),
         "",
         "## Selected",
         "",

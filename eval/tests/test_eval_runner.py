@@ -20,7 +20,7 @@ import sys
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -36,7 +36,12 @@ from eval_exec_support import (
 from harness import runner
 from harness.bench_repos import TOKEN_ENV_VAR
 from harness.db import queued_tasks, run_cost_usd
-from harness.enqueue import DEFAULT_WALL_CLOCK_SECONDS, ManifestInputs, build_manifest, ensure_manifest
+from harness.enqueue import (
+    DEFAULT_WALL_CLOCK_SECONDS,
+    ManifestInputs,
+    build_manifest,
+    ensure_manifest,
+)
 from harness.run_manifest import ManifestError, manifest_path
 from harness.runner import (
     ABANDONED_GRACE_SECONDS,
@@ -62,7 +67,7 @@ RUN = "run-1"
 
 
 def ago(**kwargs) -> datetime:
-    return datetime.now(timezone.utc) - timedelta(**kwargs)
+    return datetime.now(UTC) - timedelta(**kwargs)
 
 
 class FakeProcesses:
@@ -123,7 +128,7 @@ class TestPureHelpers:
 
     def test_the_exit_codes_are_the_pipelines(self):
         source = (Path(__file__).resolve().parents[2] / "pipeline" / "repolace_pipeline" / "cli.py").read_text()
-        declared = {name: int(value) for name, value in re.findall(r"^(EXIT_[A-Z_]+) = (\d+)$", source, re.M)}
+        declared = {name: int(value) for name, value in re.findall(r"^(EXIT_[A-Z_]+) = (\d+)$", source, re.MULTILINE)}
         known = {
             "EXIT_OK": runner.EXIT_OK,
             "EXIT_TASK_FAILED": runner.EXIT_TASK_FAILED,
@@ -137,7 +142,7 @@ class TestPureHelpers:
         2 too, so all three mean "this command cannot run as asked"). A new name is fine; a new NUMBER
         would be an exit status the runner cannot classify and would count as a harness failure."""
         source = (Path(__file__).resolve().parents[2] / "pipeline" / "repolace_pipeline" / "cli.py").read_text()
-        declared = {name: int(value) for name, value in re.findall(r"^(EXIT_[A-Z_]+) = (\d+)$", source, re.M)}
+        declared = {name: int(value) for name, value in re.findall(r"^(EXIT_[A-Z_]+) = (\d+)$", source, re.MULTILINE)}
         classified = {runner.EXIT_OK, runner.EXIT_TASK_FAILED, runner.EXIT_NOT_FOUND, runner.EXIT_NOT_CLAIMABLE}
 
         assert set(declared.values()) <= classified, sorted(set(declared.values()) - classified)
@@ -580,7 +585,7 @@ class TestAbandoned:
     async def row(self, session, repo, status, started_ago: timedelta | None, instance="a", run=RUN):
         return await add_task(
             session, repo, eval_run_id=run, instance_id=instance, run_index=0, status=status,
-            started_at=None if started_ago is None else datetime.now(timezone.utc) - started_ago,
+            started_at=None if started_ago is None else datetime.now(UTC) - started_ago,
         )
 
     async def test_a_stale_running_row_with_no_process_becomes_failed_never_queued(self, db_session, db_session_factory):
@@ -675,7 +680,7 @@ class TestAbandoned:
         harness = Path(runner.__file__).parent
         for path in (harness / "runner.py", harness / "db.py"):
             source = path.read_text()
-            assert not re.search(r"values\([^)]*TaskStatus\.QUEUED", source, re.S), path.name
+            assert not re.search(r"values\([^)]*TaskStatus\.QUEUED", source, re.DOTALL), path.name
             assert not re.search(r"status\s*=\s*['\"]queued['\"]", source), path.name
 
 
@@ -683,7 +688,7 @@ def write_manifest(runs_dir: Path, *, agent="llm", model="claude-test", timeout=
     inputs = ManifestInputs(runs_dir=runs_dir, agent=agent, model=model, timeout_seconds=timeout)
     document = build_manifest(
         eval_run_id=run, git_sha="a" * 40, instance_ids=["a"], runs=1, inputs=inputs,
-        created_at=datetime(2026, 10, 3, tzinfo=timezone.utc),
+        created_at=datetime(2026, 10, 3, tzinfo=UTC),
     )
     ensure_manifest(runs_dir, document)
     return manifest_path(runs_dir, run)
@@ -1135,7 +1140,7 @@ class TestInterruption:
             "DATABASE_URL": postgres_url, "DRIVER_CALLS": str(tmp_path / "calls.jsonl"), "DRIVER_CHILD": RECORDING_CHILD,
         })
         out = (tmp_path / "driver.out").open("w")
-        process = subprocess.Popen(
+        process = subprocess.Popen(  # noqa: ASYNC220
             [sys.executable, str(driver), "--eval-run-id", RUN, "--runs-dir", str(tmp_path / "runs"),
              "--max-total-usd", "100", "--timeout-seconds", "300", "-k", "1"],
             env=env, stdout=out, stderr=subprocess.STDOUT, start_new_session=True,

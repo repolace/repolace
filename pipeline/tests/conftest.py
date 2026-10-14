@@ -9,9 +9,8 @@ import os
 from pathlib import Path
 
 import pytest
-from retrieval.testing import FakeEmbedder, install_fake_embedder
-
 from pipeline_support import make_bare_origin, make_source_repo
+from retrieval.testing import FakeEmbedder, install_fake_embedder
 
 #: The integration tests build a real gateway client, which imports LiteLLM; without this it tries to
 #: fetch the current price map from GitHub at import time. `repolace_gateway.client` sets the same

@@ -6,7 +6,6 @@ whitespace). Matching exactly, such an instance can never score PASSED however g
 
 from repolace_shared.db.models import TaskOutcome
 from verify.scoring import expand_truncated_ids, expected_not_red, score
-
 from verify_support import suite
 
 FULL_A = "tests/t.py::test_x[a: str = None-Optional[str]]"

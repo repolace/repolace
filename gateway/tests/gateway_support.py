@@ -29,13 +29,17 @@ from decimal import Decimal
 from typing import Any
 
 import litellm
-
 from repolace_gateway.budget import TaskBudget
 from repolace_gateway.client import LLMClient
 from repolace_gateway.config import GatewayConfig, GatewaySettings, parse_config
 from repolace_gateway.recorder import CallRecord, Recorder
 from repolace_gateway.redaction import Redactor
-from repolace_shared.db.models import GithubInstallation, RegisteredRepo, Task, TaskStatus
+from repolace_shared.db.models import (
+    GithubInstallation,
+    RegisteredRepo,
+    Task,
+    TaskStatus,
+)
 
 TASK_ID = uuid.UUID("5c1d0e7a-0000-4000-8000-000000000012")
 

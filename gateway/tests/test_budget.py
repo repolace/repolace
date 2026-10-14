@@ -12,7 +12,7 @@ from decimal import Decimal
 
 import pytest
 import structlog
-
+from gateway_support import TASK_ID
 from repolace_gateway.budget import (
     DEFAULT_MAX_CALLS,
     DEFAULT_MAX_USD,
@@ -24,8 +24,6 @@ from repolace_gateway.budget import (
     task_scope,
 )
 from repolace_gateway.errors import NoTaskScope
-
-from gateway_support import TASK_ID
 
 
 class TestArithmetic:
@@ -143,9 +141,8 @@ class TestTaskScope:
             assert scope.budget.max_usd == DEFAULT_MAX_USD
 
     def test_the_scope_ends_with_the_block_even_when_it_raises(self):
-        with pytest.raises(RuntimeError):
-            with task_scope(TASK_ID):
-                raise RuntimeError("task blew up")
+        with pytest.raises(RuntimeError), task_scope(TASK_ID):
+            raise RuntimeError("task blew up")
         with pytest.raises(NoTaskScope):
             current_scope()
 

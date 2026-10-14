@@ -10,7 +10,6 @@ import sys
 import time
 
 import pytest
-
 from retrieval.config import MAX_QUERY_TERMS
 from retrieval.query import _MAX_SCAN_CHARS, RetrievalQuery, build_query
 
@@ -133,10 +132,9 @@ class TestUntrustedInput:
     def test_the_keyword_string_reaches_tsquery_as_bound_parameters_never_as_sql_text(self):
         """`_or_tsquery` is what actually defends the SQL; this pins that what
         this module hands it is still bound, not interpolated."""
+        from retrieval.retrieve import _or_tsquery
         from sqlalchemy import select
         from sqlalchemy.dialects import postgresql
-
-        from retrieval.retrieve import _or_tsquery
 
         query = build_query("t", "'); DROP TABLE code_chunks; -- evil_term")
         compiled = select(_or_tsquery(query.keyword)).compile(dialect=postgresql.dialect())
@@ -151,7 +149,7 @@ class TestUntrustedInput:
             "assert 'torch' not in sys.modules and 'sentence_transformers' not in sys.modules, "
             "[m for m in ('torch','sentence_transformers') if m in sys.modules]"
         )
-        done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+        done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
 
         assert done.returncode == 0, done.stderr
 

@@ -44,17 +44,17 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from pathlib import Path
 
+from repolace_shared.db.models import Task, TaskOutcome, TaskStatus, TaskTestRun
+from repolace_shared.instances import InstanceError, InstanceSpec, load_instances
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+from verify.config import DockerConfig
+from verify.protocol import SuiteResult
+from verify.scoring import expand_truncated_ids, expected_not_red
 
 from harness.bench_repos import DEFAULT_INSTANCES_DIR, atomic_write_text
 from harness.db import SessionFactory, check_eval_run_id, open_session_factory
 from harness.enqueue import DEFAULT_WALL_CLOCK_SECONDS, task_wall_clock_bound
-from repolace_shared.db.models import Task, TaskOutcome, TaskStatus, TaskTestRun
-from repolace_shared.instances import InstanceError, InstanceSpec, load_instances
-from verify.config import DockerConfig
-from verify.protocol import SuiteResult
-from verify.scoring import expand_truncated_ids, expected_not_red
 
 DEFAULT_RUNS = ("gold-1", "gold-2")
 VALIDATION_FILENAME = "VALIDATION.md"
@@ -317,9 +317,9 @@ def render_validation(verdicts: Sequence[InstanceVerdict], run_ids: Sequence[str
     lines = [
         "# Gold validation",
         "",
-        f"Compared runs: {', '.join(f'`{run}`' for run in run_ids)}. Written by `repolace-eval gold`; "
+        (f"Compared runs: {', '.join(f'`{run}`' for run in run_ids)}. Written by `repolace-eval gold`; "
         "this tool reads the database and **never edits an instance file**. "
-        "Proposals below are for the maintainer to apply or ignore.",
+        "Proposals below are for the maintainer to apply or ignore."),
         "",
         f"{len(verdicts)} instance(s): {len(accepted)} accepted, {len(rejected)} rejected.",
         "",

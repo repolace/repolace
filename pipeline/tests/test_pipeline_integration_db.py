@@ -17,14 +17,8 @@ import re
 from decimal import Decimal
 
 import pytest
-
-from repolace_shared.db.models import TaskOutcome, TaskStatus
-from repolace_shared.git import agent_branch_name
-from verify.protocol import SuiteResult
-from verify.testing import FakeBackend
-
 from pipeline_llm_support import (
-    DOCSTRING,
+    COLLECTED,
     FIXED,
     GREEN_AFTER,
     MODEL_NAME,
@@ -32,7 +26,6 @@ from pipeline_llm_support import (
     RED_BASELINE,
     REPLY_COST,
     VISIBLE,
-    COLLECTED,
     ScriptedProvider,
     call,
     happy_script,
@@ -41,6 +34,10 @@ from pipeline_llm_support import (
     run_real,
 )
 from pipeline_support import git, reload, seed_task
+from repolace_shared.db.models import TaskOutcome, TaskStatus
+from repolace_shared.git import agent_branch_name
+from verify.protocol import SuiteResult
+from verify.testing import FakeBackend
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db, pytest.mark.usefixtures("embedder")]
 
@@ -55,7 +52,7 @@ class TestTheHappyPathThroughTheRealGraph:
         return task, result, github, row, runs, provider, backend, origin
 
     async def test_the_whole_row_is_written(self, happy):
-        task, result, github, row, runs, provider, _, _ = happy
+        _task, result, _github, row, runs, provider, _, _ = happy
 
         assert result.status is row.status is TaskStatus.PR_OPENED, "a PR was opened, which is the success state"
         assert row.error_message is None
@@ -79,7 +76,7 @@ class TestTheHappyPathThroughTheRealGraph:
         assert row.cost_usd == sum((c.cost_usd for c in calls), Decimal(0)) == Decimal("0.0030")
 
     async def test_the_pr_is_the_pushed_branch_and_its_diff_is_the_recorded_patch(self, happy):
-        task, result, github, row, _, _, _, origin = happy
+        task, _result, github, row, _, _, _, origin = happy
         branch = agent_branch_name(7, task.id)
 
         (pull,) = github.pull_requests

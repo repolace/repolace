@@ -8,8 +8,12 @@ does.
 """
 
 import pytest
-
-from verify.dockerfile import image_cache_key, image_tag, plugin_source, render_dockerfile
+from verify.dockerfile import (
+    image_cache_key,
+    image_tag,
+    plugin_source,
+    render_dockerfile,
+)
 from verify.errors import SpecError
 from verify.protocol import RepoSpec
 

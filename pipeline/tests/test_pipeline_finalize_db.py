@@ -9,23 +9,27 @@ import uuid
 from decimal import Decimal
 
 import pytest
-
+from pipeline_support import reload, seed_task
 from repolace_gateway.recorder import CallRecord, Recorder
 from repolace_gateway.redaction import Redactor
+from repolace_pipeline.finalize import (
+    _clean,
+    first_model,
+    task_cost,
+    write_failure_minimal,
+    write_terminal,
+)
 from repolace_shared.db.models import TaskOutcome, TaskStatus
-from repolace_pipeline.finalize import _clean, first_model, task_cost, write_failure_minimal, write_terminal
-
-from pipeline_support import reload, seed_task
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db]
 
 
 def columns(**overrides):
-    values = dict(
-        status=TaskStatus.COMPLETED, outcome=TaskOutcome.FAILED, score_reason="because", error_message=None,
-        agent_stop_reason="submitted", retry_count=1, cost_usd=Decimal("0.25"), patch_sha="a" * 40,
-        patch_diff="diff", changed_files=["a.py"], pr_number=None, pr_url=None,
-    )
+    values = {
+        "status": TaskStatus.COMPLETED, "outcome": TaskOutcome.FAILED, "score_reason": "because", "error_message": None,
+        "agent_stop_reason": "submitted", "retry_count": 1, "cost_usd": Decimal("0.25"), "patch_sha": "a" * 40,
+        "patch_diff": "diff", "changed_files": ["a.py"], "pr_number": None, "pr_url": None,
+    }
     return {**values, **overrides}
 
 
@@ -37,9 +41,8 @@ async def write(factory, task_id, **overrides) -> bool:
 
 
 async def mark(factory, task_id, status: TaskStatus) -> None:
-    from sqlalchemy import update
-
     from repolace_shared.db.models import Task
+    from sqlalchemy import update
 
     async with factory() as session:
         await session.execute(update(Task).where(Task.id == task_id).values(status=status))
@@ -161,7 +164,7 @@ class TestTaskCost:
         task = await seed_task(db_session)
         await call(db_session_factory, task.id, "0")
 
-        assert await task_cost(db_session_factory, task.id) == Decimal("0")
+        assert await task_cost(db_session_factory, task.id) == Decimal(0)
 
     async def test_another_tasks_spend_is_not_included(self, db_session, db_session_factory):
         task = await seed_task(db_session)

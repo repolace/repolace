@@ -8,8 +8,6 @@ constants, rather than a second hand-written list that could drift from them.
 """
 
 import pytest
-
-from verify import scoring
 from verify.protocol import SuiteResult
 from verify.scoring import (
     _CONFIG_FILES,
@@ -18,6 +16,8 @@ from verify.scoring import (
     is_protected_path,
     is_test_path,
 )
+
+from verify import scoring
 
 PROTECTED = [
     "tests/test_a.py",

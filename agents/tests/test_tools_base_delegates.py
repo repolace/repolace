@@ -7,8 +7,8 @@ drift apart again.
 """
 
 from repolace_agents.tools import build_toolbox as package_build_toolbox
-from repolace_agents.tools.base import ToolBox, build_toolbox as base_build_toolbox
-
+from repolace_agents.tools.base import ToolBox
+from repolace_agents.tools.base import build_toolbox as base_build_toolbox
 from tools_support import make_harness
 
 
