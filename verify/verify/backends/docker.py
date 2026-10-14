@@ -28,9 +28,9 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import structlog
-
 from repolace_shared.git import redact
 from repolace_shared.process import ProcessResult, run_process
+
 from verify.config import (
     ENV_NAME,
     PLUGIN_DIR,

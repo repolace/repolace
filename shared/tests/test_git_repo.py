@@ -16,23 +16,21 @@ import time
 from pathlib import Path
 
 import pytest
-
 from repolace_shared.git.repo import (
-    GIT_TOKEN_ENV_VAR,
     _BASE_ARGS,
-    _git_env,
-    _parse_index_entries,
-    _refuse_unsupported_modes,
+    GIT_TOKEN_ENV_VAR,
     GitCommandError,
     GitExportError,
     GitRepo,
     GitTimeoutError,
+    _git_env,
+    _parse_index_entries,
+    _refuse_unsupported_modes,
     clone,
     redact,
     run_git,
     run_git_bytes,
 )
-
 from shared_support import git, write
 
 pytestmark = pytest.mark.anyio
@@ -71,7 +69,7 @@ def credential_fill(protocol: str, host: str, token: str, credential_host: str =
         input=f"protocol={protocol}\nhost={host}\n\n",
         env=_git_env(token, credential_host),
         capture_output=True,
-        text=True,
+        text=True, check=False,
     )
     return result.stdout
 

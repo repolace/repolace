@@ -8,9 +8,8 @@ exactly the way migrations 0009, 0010 and 0011 each landed to prevent.
 import uuid
 from dataclasses import fields
 
-from verify.protocol import SuiteResult
-
 from repolace_pipeline.testruns import to_row
+from verify.protocol import SuiteResult
 
 
 def build(**overrides) -> SuiteResult:

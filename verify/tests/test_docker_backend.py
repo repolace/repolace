@@ -15,9 +15,9 @@ import subprocess
 import textwrap
 import uuid
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
-
 from repolace_shared.git.workspace import task_workspace
 from verify.backends.docker import DockerBackend
 from verify.config import DockerConfig
@@ -623,7 +623,7 @@ class TestProbesAndScriptsThroughTheVerifier:
             assert in_image.stdout.strip() == "False"
         finally:
             if image is not None:
-                subprocess.run([DockerConfig().docker_binary, "rmi", "--force", image], capture_output=True)
+                subprocess.run([DockerConfig().docker_binary, "rmi", "--force", image], capture_output=True, check=False)
 
 
 
@@ -638,7 +638,7 @@ class TestAProbeCannotSubstituteAnotherRunsReport:
     error message, which is why errors carry no host paths either.
     """
 
-    SWAPS = {
+    SWAPS: ClassVar = {
         "symlink-to-the-baselines-report": "os.symlink({sibling!r}, path)",
         "symlink-to-a-host-file": "os.symlink({secret!r}, path)",
         "fifo": "os.mkfifo(path)",

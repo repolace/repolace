@@ -13,13 +13,23 @@ import inspect
 from pathlib import Path
 
 import pytest
-
 from repolace_shared.git.workspace import TaskWorkspace
 from verify.backends.docker import DockerBackend
 from verify.errors import EnvironmentBuildFailed, SandboxUnavailable
-from verify.protocol import EnvironmentRef, RepoSpec, SandboxBackend, ScriptResult, SuiteResult
+from verify.protocol import (
+    EnvironmentRef,
+    RepoSpec,
+    SandboxBackend,
+    ScriptResult,
+    SuiteResult,
+)
 from verify.stage import Workspace
-from verify.testing import DEFAULT_SUITE_RESULT, EXPORT_REFUSAL, FakeBackend, FakeWorkspace
+from verify.testing import (
+    DEFAULT_SUITE_RESULT,
+    EXPORT_REFUSAL,
+    FakeBackend,
+    FakeWorkspace,
+)
 
 pytestmark = pytest.mark.anyio
 

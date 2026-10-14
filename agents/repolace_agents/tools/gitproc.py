@@ -37,8 +37,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import structlog
-
-from repolace_shared.git import UNTRUSTED_TREE_CONFIG_ARGS, GitTimeoutError, sanitized_git_env
+from repolace_shared.git import (
+    UNTRUSTED_TREE_CONFIG_ARGS,
+    GitTimeoutError,
+    sanitized_git_env,
+)
 from repolace_shared.process import REAP_TIMEOUT_SECONDS, kill_process_tree
 
 log = structlog.get_logger()

@@ -20,11 +20,10 @@ from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, select, update
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from repolace_shared.db.models import LLMCall, Task, TaskStatus
 from repolace_shared.db.session import create_engine, create_session_factory
+from sqlalchemy import func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 SessionFactory = async_sessionmaker[AsyncSession]
 

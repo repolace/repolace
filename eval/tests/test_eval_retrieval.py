@@ -8,10 +8,9 @@ API of stream C and skips, saying so, where that is absent.
 
 import json
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
-from sqlalchemy import func, select
-
 from eval_support import (
     MOD,
     TEST_MOD,
@@ -30,20 +29,20 @@ from harness.retrieval_eval import (
     DEFAULT_MAX_INDEX_EQUIVALENTS,
     DEFAULT_MIN_GAIN_PP,
     EVAL_INSTALLATION_ID,
+    NO_CHANGED_LINES,
+    NOT_PYTHON,
     STRATEGIES,
     EvalRun,
-    NOT_PYTHON,
-    NO_CHANGED_LINES,
     GoldTargets,
     Query,
     RepoPlan,
     RetrievalApi,
     RetrievalEvalError,
     RetrievalUnavailable,
-    eval_github_repo_id,
-    indexed_chunk_spans,
     ensure_eval_repo,
+    eval_github_repo_id,
     gold_targets,
+    indexed_chunk_spans,
     load_eval_instances,
     open_git_source,
     paired_deltas,
@@ -54,9 +53,15 @@ from harness.retrieval_eval import (
     to_markdown,
 )
 from harness.select_instances import CloneCache
-from repolace_shared.db.models import ChunkType, CodeChunk, GithubInstallation, RegisteredRepo
-from repolace_shared.github.schemas import Repository, RepoOwner
+from repolace_shared.db.models import (
+    ChunkType,
+    CodeChunk,
+    GithubInstallation,
+    RegisteredRepo,
+)
+from repolace_shared.github.schemas import RepoOwner, Repository
 from repolace_shared.instances import load_instances
+from sqlalchemy import func, select
 
 LINES = [f"l{i}" for i in range(1, 31)]
 
@@ -68,7 +73,7 @@ def diff(path: str, old: list[str], new: list[str]) -> str:
     import difflib
 
     return "".join(
-        ["diff --git a/{0} b/{0}\n".format(path)]
+        [f"diff --git a/{path} b/{path}\n"]
         + [line if line.endswith("\n") else line + "\n"
            for line in difflib.unified_diff(
                [f"{x}\n" for x in old], [f"{x}\n" for x in new], f"a/{path}", f"b/{path}", lineterm="\n")]
@@ -173,7 +178,7 @@ class TestSyntheticIds:
 
 class TestApiBinding:
     def test_a_retrieval_without_the_strategy_aware_api_is_named(self):
-        def old_reindex(db, repo_id, path, sha):  # noqa: ANN001 -- mimics the pre-strategy signature
+        def old_reindex(db, repo_id, path, sha):
             return 0
 
         with pytest.raises(RetrievalUnavailable, match=r"reindex_if_stale has no parameter\(s\) strategy"):
@@ -743,7 +748,7 @@ def grid_run(cells: dict[tuple[str, str], list[float | None]], *, file_rr: float
 class TestStrategyGrid:
     """Eight cells on a handful of queries invite a winner's curse; every comparison is paired and has an interval."""
 
-    BASE = [0.5, 0.25, 1.0, 0.5, 0.25, 1.0, 0.5, 0.25, 1.0, 0.5]
+    BASE: ClassVar = [0.5, 0.25, 1.0, 0.5, 0.25, 1.0, 0.5, 0.25, 1.0, 0.5]
 
     def run(self, other):
         return grid_run({BASELINE_CELL: self.BASE, ("head_tail", "truncate"): other})
@@ -758,7 +763,7 @@ class TestStrategyGrid:
 
     def test_a_noisy_gain_whose_interval_includes_zero_does_not_meet_the_rule(self):
         # Mean +10 pp, but two big wins and two big losses among ten near-ties.
-        other = [v for v in self.BASE]
+        other = list(self.BASE)
         other[0], other[1], other[2], other[3] = other[0] + 0.5, other[1] + 0.75, other[2] - 0.5, other[3] - 0.0
         other = [min(1.0, max(0.0, v)) for v in other]
         primary = {d.metric: d for d in paired_deltas(self.run(other))}["chunk MRR"]

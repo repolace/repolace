@@ -29,14 +29,12 @@ What `None` means is not the same for every column, and the difference is the po
 
 import uuid
 from decimal import Decimal
-from typing import TypeVar
 
 import structlog
-from sqlalchemy import func, select, update
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
 from repolace_gateway.recorder import total_cost
 from repolace_shared.db.models import LLMCall, Task, TaskOutcome, TaskStatus
+from sqlalchemy import func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 log = structlog.get_logger()
 
@@ -47,10 +45,9 @@ log = structlog.get_logger()
 _NUL = "\x00"
 _REPLACEMENT = "\ufffd"
 
-_Text = TypeVar("_Text", str, list, None)
 
 
-def _clean(value: _Text) -> _Text:
+def _clean[Text: (str, list, None)](value: Text) -> Text:
     """`value` with NUL replaced by U+FFFD, for a string or a list of strings; anything else as is."""
     if isinstance(value, str):
         return value.replace(_NUL, _REPLACEMENT)

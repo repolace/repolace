@@ -9,7 +9,12 @@ first -- the same shadowing that once broke four `app/` packages.
 
 import uuid
 
-from repolace_shared.db.models import GithubInstallation, RegisteredRepo, Task, TaskStatus
+from repolace_shared.db.models import (
+    GithubInstallation,
+    RegisteredRepo,
+    Task,
+    TaskStatus,
+)
 
 INSTALLATION_ID = 4242
 

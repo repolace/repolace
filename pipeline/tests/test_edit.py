@@ -12,14 +12,12 @@ with retrieval entirely broken, which would make the whole slice worthless.
 import ast
 
 import pytest
-
+from pipeline_support import TASK_ID, chunk, empty_request, request
 from repolace_pipeline.edit import (
     NOT_A_FIX,
     apply_stub_edit,
     render_marker,
 )
-
-from pipeline_support import TASK_ID, chunk, empty_request, request
 
 SOURCE = '''"""Module docstring."""
 

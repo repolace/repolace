@@ -19,9 +19,9 @@ from collections import defaultdict
 from pathlib import Path
 
 import structlog
-
 from repolace_shared.git import redact
 from repolace_shared.process import ProcessResult
+
 from verify.protocol import SuiteResult
 
 log = structlog.get_logger()
@@ -340,7 +340,7 @@ def parse_report(
     try:
         return _parse_report(path, process, elapsed, nonce)
     except Exception as exc:
-        log.error("verify.report.unexpected", path=str(path), exc_info=True)
+        log.exception("verify.report.unexpected", path=str(path))
         return SuiteResult(
             exit_code=process.returncode,
             duration_seconds=round(elapsed, 3),

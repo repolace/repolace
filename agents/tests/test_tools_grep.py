@@ -8,10 +8,8 @@ become pathspec magic, become a tree-ish, or reach a file outside the tree.
 import os
 
 import pytest
-
 from repolace_agents.tools import search as search_module
 from repolace_shared.git import GitTimeoutError
-
 from tools_support import git, hit, make_checkout, make_harness, snapshot
 
 pytestmark = pytest.mark.anyio

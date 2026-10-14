@@ -17,14 +17,13 @@ import os
 import subprocess
 import tempfile
 from collections.abc import Mapping, Sequence
-from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import httpx
-
 from repolace_shared.db.models import (
     GithubInstallation,
     LLMCall,
@@ -264,7 +263,7 @@ def write_specs_file(path: Path, table: Mapping[str, Any]) -> Path:
 
 # --- report rows -------------------------------------------------------------
 
-T0 = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+T0 = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
 
 def task_row(
@@ -282,25 +281,25 @@ def task_row(
     # Imported here so the git/HTTP builders above stay usable on their own.
     from harness.report import TaskRow
 
-    values: dict[str, Any] = dict(
-        eval_run_id=eval_run_id,
-        instance_id=instance_id,
-        run_index=run_index,
-        status=status,
-        outcome=outcome,
-        agent_stop_reason="submitted",
-        attempts=1,
-        model=model,
-        llm_calls=3,
-        cost_usd=Decimal(cost) if cost is not None else None,
-        input_tokens=1000,
-        cached_input_tokens=400,
-        output_tokens=100,
-        started_at=T0,
-        completed_at=T0 + timedelta(seconds=seconds) if seconds is not None else None,
-        repo="psf/requests",
-        targeted_p2p=False,
-    )
+    values: dict[str, Any] = {
+        "eval_run_id": eval_run_id,
+        "instance_id": instance_id,
+        "run_index": run_index,
+        "status": status,
+        "outcome": outcome,
+        "agent_stop_reason": "submitted",
+        "attempts": 1,
+        "model": model,
+        "llm_calls": 3,
+        "cost_usd": Decimal(cost) if cost is not None else None,
+        "input_tokens": 1000,
+        "cached_input_tokens": 400,
+        "output_tokens": 100,
+        "started_at": T0,
+        "completed_at": T0 + timedelta(seconds=seconds) if seconds is not None else None,
+        "repo": "psf/requests",
+        "targeted_p2p": False,
+    }
     values.update(overrides)
     return TaskRow(**values)
 
@@ -333,11 +332,11 @@ async def seed_bench_repo(session, *, github_repo_id: int = 7001) -> RegisteredR
 
 async def add_eval_task(session, repo: RegisteredRepo, *, instance_id: str = "psf__requests-1001",
                         eval_run_id: str = "run-a", run_index: int = 0, **fields: Any) -> Task:
-    values: dict[str, Any] = dict(
-        repo_id=repo.id, issue_number=1001, issue_title="Fix the thing",
-        issue_url="https://github.com/acme/bench/issues/1001", target_branch=f"bench/{instance_id}",
-        status=TaskStatus.COMPLETED, eval_run_id=eval_run_id, instance_id=instance_id, run_index=run_index,
-    )
+    values: dict[str, Any] = {
+        "repo_id": repo.id, "issue_number": 1001, "issue_title": "Fix the thing",
+        "issue_url": "https://github.com/acme/bench/issues/1001", "target_branch": f"bench/{instance_id}",
+        "status": TaskStatus.COMPLETED, "eval_run_id": eval_run_id, "instance_id": instance_id, "run_index": run_index,
+    }
     values.update(fields)
     task = Task(**values)
     session.add(task)
@@ -349,7 +348,7 @@ def add_call(session, task: Task, *, model: str = "anthropic/test-main", cost: s
              input_tokens: int | None = 100, cached: int | None = 40, output: int | None = 10,
              created_at: datetime | None = None) -> None:
     session.add(LLMCall(
-        task_id=task.id, stage="agent", model=model, provider=model.split("/")[0],
+        task_id=task.id, stage="agent", model=model, provider=model.split("/", maxsplit=1)[0],
         input_tokens=input_tokens, cached_input_tokens=cached, output_tokens=output,
         cost_usd=Decimal(cost) if cost is not None else None, created_at=created_at or T0,
     ))
@@ -368,7 +367,7 @@ def run_manifest(
     agent: str = "llm",
     git_sha: str = "c0ffee" + "0" * 34,
     prefix: str = "inst",
-) -> "RunManifest":
+) -> RunManifest:
     """A manifest for `prefix-0 .. prefix-(n-1)` (or the given ids), `runs` runs each."""
     from harness.run_manifest import RunManifest
 

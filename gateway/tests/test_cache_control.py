@@ -13,9 +13,8 @@ long after the edit that caused it), or one that lands somewhere LiteLLM ignores
 import copy
 import json
 
-from repolace_gateway.client import with_cache_control
-
 from gateway_support import MESSAGES, TOOLS
+from repolace_gateway.client import with_cache_control
 
 EPHEMERAL = {"type": "ephemeral"}
 

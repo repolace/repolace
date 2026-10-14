@@ -8,7 +8,6 @@ budget arithmetic is what is under test here — not real BPE behaviour.
 import textwrap
 
 import pytest
-
 from retrieval.strategies import (
     DEFAULT_STRATEGY,
     ELISION,

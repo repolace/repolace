@@ -212,7 +212,7 @@ def _parse_hunks(lines: list[str], start: int, ranges: list[tuple[int, int]]) ->
             if run_first is not None and run_last is not None:
                 ranges.append((run_first, run_last))
             else:
-                anchor = max(run_anchor, 1)
+                anchor = max(run_anchor, 1)  # noqa: B023
                 ranges.append((anchor, anchor))
             run_open, run_first, run_last = False, None, None
 

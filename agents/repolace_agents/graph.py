@@ -38,7 +38,6 @@ from typing import Any, Literal
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
-
 from repolace_gateway.budget import BudgetExceeded, BudgetLimit, current_scope
 from repolace_gateway.errors import LLMCallError, NoTaskScope
 

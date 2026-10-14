@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from repolace_agents.contracts import AgentDeps, AttemptRecord, IssueContext
 from repolace_agents.tools.base import ToolBox, ToolOutcome, ToolSpec
 from verify.protocol import SuiteResult

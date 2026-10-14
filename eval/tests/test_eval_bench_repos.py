@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import ast
 import asyncio
-import json
 import logging
 import re
 import subprocess
@@ -18,7 +17,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-
 from eval_exec_support import (
     BASE_COMMIT,
     TOKEN,
@@ -33,11 +31,11 @@ from eval_exec_support import (
 from harness import bench_repos
 from harness.bench_repos import (
     BENCH_MARKER,
+    TOKEN_ENV_VAR,
     BenchRepo,
     BenchRepoError,
     GithubBench,
     NotCreatedByThisTool,
-    TOKEN_ENV_VAR,
     check_bench_name,
     check_push_target,
     load_bench_entries,
@@ -45,7 +43,8 @@ from harness.bench_repos import (
     main,
     upstream_checkout,
 )
-from repolace_shared.git.repo import GitCommandError, run_git as shared_run_git
+from repolace_shared.git.repo import GitCommandError
+from repolace_shared.git.repo import run_git as shared_run_git
 
 API = "https://api.test"
 GIT = "https://git.test"
@@ -409,7 +408,7 @@ class TestFork:
         )
 
         assert code == 1
-        assert all("/repos/repolace/repolace" != request.url.path for request in requests)
+        assert all(request.url.path != "/repos/repolace/repolace" for request in requests)
 
     def test_a_missing_token_is_a_usage_error_naming_the_variable(self, workdir, capsys):
         seed(workdir, "a")
@@ -796,7 +795,7 @@ class TestRealGitPush:
         assert run_git_sync("for-each-ref", "--format=%(refname) %(objectname)", cwd=bare) == f"refs/heads/main {base}"
         assert run_git_sync("rev-list", "--all", cwd=bare) == base, "only the base commit's history, nothing newer"
         for later in (fix, other):
-            assert subprocess.run(["git", "cat-file", "-e", later], cwd=bare).returncode != 0, "a later commit was pushed"
+            assert subprocess.run(["git", "cat-file", "-e", later], cwd=bare, check=False).returncode != 0, "a later commit was pushed"
 
     def test_a_second_push_of_the_same_commit_succeeds(self, workdir):
         sha = make_cached_upstream(workdir["cache"])
@@ -1299,4 +1298,4 @@ class TestUpstreamClone:
         assert seen_checkouts == [[".git"]], "no working-tree file may be written on the host"
         assert run_git_sync("rev-parse", "refs/heads/main", cwd=bare) == base
         assert run_git_sync("for-each-ref", "--format=%(refname)", cwd=bare) == "refs/heads/main"
-        assert subprocess.run(["git", "cat-file", "-e", fix], cwd=bare).returncode != 0, "the fix commit must not be pushed"
+        assert subprocess.run(["git", "cat-file", "-e", fix], cwd=bare, check=False).returncode != 0, "the fix commit must not be pushed"

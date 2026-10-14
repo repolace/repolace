@@ -15,12 +15,10 @@ assertion about the result, not about how a fake embeds.
 from pathlib import Path
 
 import pytest
-
+from rag_support import seed_repo, write
 from retrieval.index import index_repo
 from retrieval.query import build_query
 from retrieval.retrieve import hybrid_search
-
-from rag_support import seed_repo, write
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db]
 

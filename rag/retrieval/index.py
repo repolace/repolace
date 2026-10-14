@@ -5,12 +5,12 @@ import uuid
 from pathlib import Path
 
 import structlog
-from sqlalchemy import delete, func, select, update
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from repolace_shared.db.models import CodeChunk, RegisteredRepo
 from repolace_shared.git.repo import UNTRUSTED_TREE_CONFIG_ARGS, sanitized_git_env
 from repolace_shared.paths import PathEscapesRoot, resolve_within
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from retrieval.chunker import Chunk, chunk_python_file
 from retrieval.config import EMBED_BATCH_SIZE
 from retrieval.embed import embed_texts

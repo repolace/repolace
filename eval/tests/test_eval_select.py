@@ -8,10 +8,10 @@ with that upstream standing in for GitHub.
 
 import json
 from pathlib import Path
+from typing import ClassVar
 
 import httpx
 import pytest
-
 from eval_support import (
     CRLF_TEST,
     MOD,
@@ -33,9 +33,9 @@ from harness.select_instances import (
     Options,
     RawRow,
     Rejected,
+    Selected,
     SelectError,
     SelectionResult,
-    Selected,
     analyse_in_git,
     build_instance,
     choose,
@@ -537,7 +537,7 @@ async def accept_all(candidate: Candidate) -> Selected:
 
 @pytest.mark.anyio
 class TestChoose:
-    POOL = {"psf/requests": 6, "pallets/flask": 6, "mwaskom/seaborn": 6}
+    POOL: ClassVar = {"psf/requests": 6, "pallets/flask": 6, "mwaskom/seaborn": 6}
 
     async def test_it_spreads_across_repositories_before_repeating_one(self):
         result = await choose(stub_candidates(self.POOL), accept_all, count=4, max_per_repo=6, seed=0)
@@ -635,7 +635,7 @@ def dataset(upstream, tmp_path) -> list[dict]:
     source_test = patch_from(upstream, upstream.base, {"pkg/mod.py": edited_mod("return 2", "return 22")}, scratch)
 
     def row(instance_id, **kw):
-        values = dict(instance_id=instance_id, base_commit=upstream.base, patch=mod_gold, test_patch=plain_test)
+        values = {"instance_id": instance_id, "base_commit": upstream.base, "patch": mod_gold, "test_patch": plain_test}
         values.update(kw)
         return dataset_row(**values)
 
@@ -656,7 +656,7 @@ def dataset(upstream, tmp_path) -> list[dict]:
 def options(tmp_path: Path, **overrides) -> Options:
     tmp_path.mkdir(parents=True, exist_ok=True)
     specs = write_specs_file(tmp_path / "specs.json", TABLE)
-    values = dict(instances_dir=tmp_path / "instances", cache_dir=tmp_path / "cache", specs_path=specs)
+    values = {"instances_dir": tmp_path / "instances", "cache_dir": tmp_path / "cache", "specs_path": specs}
     values.update(overrides)
     return Options(**values)
 

@@ -11,12 +11,10 @@ import asyncio
 import json
 import re
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import func, select
-
 from eval_exec_support import add_repo, make_instance, run_git_sync, write_instances
 from harness.bench_repos import load_bench_entries, load_bench_repos
 from harness.enqueue import (
@@ -32,9 +30,10 @@ from harness.enqueue import (
 )
 from harness.run_manifest import ManifestError, load_manifest, manifest_path
 from repolace_shared.db.models import Task, TaskStatus
+from sqlalchemy import func, select
 from sqlalchemy.exc import DBAPIError
 
-FIXED_NOW = datetime(2026, 10, 3, 12, 0, 0, tzinfo=timezone.utc)
+FIXED_NOW = datetime(2026, 10, 3, 12, 0, 0, tzinfo=UTC)
 
 
 def read_manifest(path: Path) -> dict:
@@ -295,7 +294,11 @@ class TestManifest:
 
     async def test_the_limits_are_the_ones_in_code_plus_the_runners_wall_clock(self, db_session, db_session_factory):
         from repolace_agents.contracts import AgentLimits
-        from repolace_gateway.budget import DEFAULT_MAX_CALLS, DEFAULT_MAX_USD, DEFAULT_MAX_WALL_SECONDS
+        from repolace_gateway.budget import (
+            DEFAULT_MAX_CALLS,
+            DEFAULT_MAX_USD,
+            DEFAULT_MAX_WALL_SECONDS,
+        )
 
         await self.seed(db_session)
 
@@ -713,7 +716,7 @@ class TestRunnerWallClock:
     def index_wait_cap() -> float:
         # Read from the source: importing the pipeline's module would pull torch into this test.
         source = (Path(__file__).resolve().parents[2] / "pipeline" / "repolace_pipeline" / "run.py").read_text()
-        found = re.findall(r"^INDEX_WAIT_CAP_SECONDS = ([0-9.]+)$", source, re.M)
+        found = re.findall(r"^INDEX_WAIT_CAP_SECONDS = ([0-9.]+)$", source, re.MULTILINE)
         assert len(found) == 1, "INDEX_WAIT_CAP_SECONDS moved; teach this test where"
         return float(found[0])
 
@@ -731,7 +734,7 @@ class TestRunnerWallClock:
         )
 
     def test_the_default_covers_the_worst_case_sum_of_the_stages(self):
-        assert DEFAULT_WALL_CLOCK_SECONDS >= self.worst_case() + UNBOUNDED_STAGES_SLACK_SECONDS
+        assert self.worst_case() + UNBOUNDED_STAGES_SLACK_SECONDS <= DEFAULT_WALL_CLOCK_SECONDS
 
     def test_the_overrun_is_bounded_by_the_suite_not_by_a_probe_or_a_script(self):
         """Stage 5 counts a scored suite because it is the longest thing that can start late."""
@@ -747,4 +750,4 @@ class TestRunnerWallClock:
     def test_the_mirrored_index_wait_is_the_pipelines(self):
         from harness import enqueue
 
-        assert enqueue.INDEX_LOCK_WAIT_SECONDS == self.index_wait_cap()
+        assert self.index_wait_cap() == enqueue.INDEX_LOCK_WAIT_SECONDS

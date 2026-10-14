@@ -9,10 +9,8 @@ faithfully enough to test this would be the thing under test.
 from pathlib import Path
 
 import pytest
-
-from retrieval.testing import FakeEmbedder, install_fake_embedder
-
 from rag_support import write
+from retrieval.testing import FakeEmbedder, install_fake_embedder
 
 
 @pytest.fixture

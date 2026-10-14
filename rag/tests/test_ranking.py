@@ -8,7 +8,6 @@ import uuid
 from dataclasses import dataclass
 
 import pytest
-
 from retrieval.config import RRF_K
 from retrieval.ranking import merge_rrf, rrf_score
 

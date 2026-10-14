@@ -5,12 +5,18 @@ sums LLM spend, picks a first model and counts test runs is exactly the kind of 
 a mock cannot check, and it is the one place the report touches the database.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-
-from eval_support import T0, add_call, add_eval_task, add_test_run, run_manifest, seed_bench_repo
+from eval_support import (
+    T0,
+    add_call,
+    add_eval_task,
+    add_test_run,
+    run_manifest,
+    seed_bench_repo,
+)
 from harness.report import ReportError, build_report, load_rows
 from repolace_shared.db.models import Task, TaskOutcome, TaskStatus
 
@@ -103,7 +109,7 @@ class TestLoadRows:
         repo = await seed_bench_repo(db_session)
         await add_eval_task(
             db_session, repo, outcome=TaskOutcome.PASSED_WITH_TEST_EDIT, test_edit_justification="the test was wrong",
-            test_edit_approved_by="maintainer", test_edit_approved_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+            test_edit_approved_by="maintainer", test_edit_approved_at=datetime(2026, 2, 1, tzinfo=UTC),
         )
 
         (row,) = await load_rows(db_session, ["run-a"])

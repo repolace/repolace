@@ -11,7 +11,6 @@ import uuid
 from decimal import Decimal
 
 import pytest
-
 from repolace_pipeline.run import RunResult
 from repolace_shared.db.models import TaskOutcome, TaskStatus
 

@@ -38,8 +38,9 @@ from verify.protocol import ScriptResult, SuiteResult
 from verify.scoring import is_protected_path
 
 if TYPE_CHECKING:
-    from repolace_agents.contracts import SearchHit
     from repolace_gateway.client import ToolCall
+
+    from repolace_agents.contracts import SearchHit
 
 
 @dataclass(frozen=True)
@@ -267,11 +268,11 @@ def _check_property(tool: str, where: str, prop: object, *, nested: bool = False
     be advertised and not enforced.
     """
     if not isinstance(prop, Mapping):
-        raise ValueError(f"tool {tool!r}: {where} must be a schema object, got {_json_type(prop)}")
+        raise ValueError(f"tool {tool!r}: {where} must be a schema object, got {_json_type(prop)}")  # noqa: TRY004
 
     declared = prop.get("type")
     if isinstance(declared, (list, tuple)):
-        raise ValueError(
+        raise ValueError(  # noqa: TRY004
             f"tool {tool!r}: {where} has type {list(declared)!r}; a type must be a single name "
             f"(unions such as ['string', 'null'] are not supported -- make the argument optional "
             f"instead). Supported: {', '.join(sorted(_TYPE_CHECKS))}"
@@ -333,7 +334,7 @@ def _check_spec(spec: ToolSpec) -> None:
     """
     parameters = spec.parameters
     if not isinstance(parameters, Mapping):
-        raise ValueError(f"tool {spec.name!r}: parameters must be a schema object")
+        raise ValueError(f"tool {spec.name!r}: parameters must be a schema object")  # noqa: TRY004
 
     unenforced = sorted(set(parameters) - _TOP_LEVEL)
     if unenforced:
@@ -346,20 +347,20 @@ def _check_spec(spec: ToolSpec) -> None:
         raise ValueError(f"tool {spec.name!r}: the parameters object must have type 'object'")
     additional = parameters.get("additionalProperties", True)
     if not isinstance(additional, bool):
-        raise ValueError(
+        raise ValueError(  # noqa: TRY004
             f"tool {spec.name!r}: 'additionalProperties' must be true or false; a schema there "
             f"would not be enforced"
         )
 
     properties = parameters.get("properties", {})
     if not isinstance(properties, Mapping):
-        raise ValueError(f"tool {spec.name!r}: 'properties' must be an object")
+        raise ValueError(f"tool {spec.name!r}: 'properties' must be an object")  # noqa: TRY004
     for name, prop in properties.items():
         _check_property(spec.name, f"property {name!r}", prop)
 
     required = parameters.get("required", ())
     if not isinstance(required, (list, tuple)):
-        raise ValueError(f"tool {spec.name!r}: 'required' must be a list of property names")
+        raise ValueError(f"tool {spec.name!r}: 'required' must be a list of property names")  # noqa: TRY004
     for name in required:
         if name not in properties:
             raise ValueError(f"tool {spec.name!r}: required property {name!r} is not declared")
@@ -491,7 +492,7 @@ class ToolBox:
 
     def __init__(self, tools: Sequence[Tool], *, max_output_chars: int = ToolLimits().max_output_chars) -> None:
         if isinstance(max_output_chars, bool) or not isinstance(max_output_chars, int):
-            raise ValueError(f"max_output_chars must be an integer, got {_json_type(max_output_chars)}")
+            raise ValueError(f"max_output_chars must be an integer, got {_json_type(max_output_chars)}")  # noqa: TRY004
         if max_output_chars < _MIN_OUTPUT_CHARS:
             # Non-positive would slice from the end or keep nothing; a small
             # positive cap cannot hold the truncation trailer, which is counted

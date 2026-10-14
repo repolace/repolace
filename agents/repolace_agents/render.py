@@ -45,7 +45,7 @@ _FAMILIES = ("issue", "repository", "retrieved", "baseline", "feedback", "output
 #: would let a hostile body hide the legitimate content that follows. `>?` still
 #: covers an unterminated one, so it cannot be completed by what comes next, and
 #: `\b` keeps `</issues>` and `</output2>` -- other tags -- out of it.
-_CLOSING_TAG = re.compile(r"<\s*/\s*(?:%s)\b[A-Za-z0-9_-]*\s*>?" % "|".join(_FAMILIES), re.IGNORECASE)
+_CLOSING_TAG = re.compile(r"<\s*/\s*(?:{})\b[A-Za-z0-9_-]*\s*>?".format("|".join(_FAMILIES)), re.IGNORECASE)
 
 #: The only thing a nonce may be. It is spliced into a tag, so anything with `>`,
 #: whitespace or a newline in it would let the nonce itself break the framing.

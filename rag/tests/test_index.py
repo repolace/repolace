@@ -12,10 +12,9 @@ filesystem and git layers only.
 """
 
 import subprocess
-from pathlib import Path
 
 import pytest
-
+from rag_support import git, write
 from repolace_shared.git.repo import sanitized_git_env
 from retrieval.index import (
     MAX_SOURCE_BYTES,
@@ -23,8 +22,6 @@ from retrieval.index import (
     chunk_file,
     find_python_files,
 )
-
-from rag_support import git, write
 
 
 class TestFindPythonFiles:

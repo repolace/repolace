@@ -12,7 +12,6 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI
-
 from repolace_api.deps import get_github_client
 from repolace_api.routes.repos import router as repos_router
 from repolace_shared.db.models import GithubInstallation, RegisteredRepo

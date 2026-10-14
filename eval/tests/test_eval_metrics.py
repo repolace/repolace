@@ -1,9 +1,9 @@
 """`harness.metrics`: recall@k, MRR and hunk-to-chunk overlap, pure arithmetic."""
 
 import random
+from typing import ClassVar
 
 import pytest
-
 from harness.metrics import (
     BOOTSTRAP_RESAMPLES,
     BOOTSTRAP_SEED,
@@ -18,8 +18,8 @@ from harness.metrics import (
     innermost_overlapping,
     mean_of,
     percentile,
-    score_query,
     reachable_hunks,
+    score_query,
     spans_overlap,
     strictly_contains,
 )
@@ -104,7 +104,7 @@ class TestSpanOverlap:
 
 
 class TestChunkRecall:
-    HUNKS = [span("a.py", 10, 12), span("a.py", 50, 50), span("b.py", 3, 3)]
+    HUNKS: ClassVar = [span("a.py", 10, 12), span("a.py", 50, 50), span("b.py", 3, 3)]
 
     def test_recall_is_over_hunks_not_over_chunks(self):
         # One big chunk covers both a.py hunks: 2 of 3 hunks, not 1 of 1 chunk.

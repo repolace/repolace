@@ -6,12 +6,10 @@ as a raw mapping and promises it is `spec_from_mapping`-compatible. Nothing in
 """
 
 import pytest
-
 from repolace_shared.instances import InstanceSpec
 from verify.errors import SpecError
 from verify.protocol import RepoSpec
 from verify.spec import spec_from_mapping
-
 
 INSTANCE_ID = "psf__requests-2317"
 

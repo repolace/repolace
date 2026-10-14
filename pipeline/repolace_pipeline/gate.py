@@ -33,10 +33,9 @@ Both modes share three rules, stated first because they are easy to get wrong:
 
 from dataclasses import dataclass
 
+from repolace_agents.contracts import AgentResult
 from repolace_shared.db.models import TaskOutcome
 from verify.scoring import Score, Verdict
-
-from repolace_agents.contracts import AgentResult
 
 
 @dataclass(frozen=True)

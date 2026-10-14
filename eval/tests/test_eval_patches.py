@@ -8,7 +8,6 @@ hand-written ones are the shapes git will not produce on demand.
 from pathlib import Path
 
 import pytest
-
 from eval_support import commit_files, diff_between, make_repo
 from harness.patches import FileChange, PatchError, files_in_patch, old_side_hunks
 

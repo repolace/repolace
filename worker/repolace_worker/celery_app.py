@@ -1,5 +1,4 @@
 from celery import Celery
-
 from repolace_shared.config import SharedSettings
 
 _settings = SharedSettings()

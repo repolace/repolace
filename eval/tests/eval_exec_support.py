@@ -19,7 +19,6 @@ from collections.abc import Iterable
 from pathlib import Path
 
 import httpx
-
 from harness.bench_repos import BENCH_MARKER
 from repolace_shared.instances import InstanceSpec, dump_instance
 

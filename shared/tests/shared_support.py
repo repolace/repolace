@@ -39,5 +39,5 @@ def write(path: Path, content: str) -> None:
 
 def git_check_ref(name: str) -> bool:
     """Ask git itself whether a branch name is legal, rather than restating its rules here."""
-    result = subprocess.run(["git", "check-ref-format", "--branch", name], capture_output=True, text=True)
+    result = subprocess.run(["git", "check-ref-format", "--branch", name], capture_output=True, text=True, check=False)
     return result.returncode == 0

@@ -6,10 +6,15 @@ as an unexplained unscoreable run with nothing pointing back at the typo.
 """
 
 import pytest
-
 from verify.errors import SpecError
 from verify.protocol import RepoSpec
-from verify.spec import heuristic_install, install_commands, load_specs, resolve_spec, spec_from_mapping
+from verify.spec import (
+    heuristic_install,
+    install_commands,
+    load_specs,
+    resolve_spec,
+    spec_from_mapping,
+)
 
 
 def write(tmp_path, text: str):

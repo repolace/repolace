@@ -11,16 +11,7 @@ from decimal import Decimal
 
 import pytest
 from harness.report import build_report
-from verify.protocol import ScriptResult, SuiteResult
-from verify.testing import FakeBackend
-
-from repolace_agents.contracts import StopReason
-from repolace_gateway.budget import TaskBudget
-from repolace_shared.db.models import TaskOutcome, TaskStatus
-from repolace_shared.git import agent_branch_name
-from repolace_shared.instances import dump_instance
 from langgraph.errors import GraphRecursionError
-
 from pipeline_llm_support import (
     BENCH_AFTER,
     BENCH_BASELINE,
@@ -55,7 +46,14 @@ from pipeline_support import (
     reload,
     seed_task,
 )
+from repolace_agents.contracts import StopReason
+from repolace_gateway.budget import TaskBudget
 from repolace_pipeline.run import run_task
+from repolace_shared.db.models import TaskOutcome, TaskStatus
+from repolace_shared.git import agent_branch_name
+from repolace_shared.instances import dump_instance
+from verify.protocol import ScriptResult, SuiteResult
+from verify.testing import FakeBackend
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db, pytest.mark.usefixtures("embedder")]
 
@@ -334,7 +332,7 @@ class TestABenchmarkInstanceThroughTheRealGraph:
         task = await seed_bench(db_session)
         provider = ScriptedProvider(self.script())
         backend = FakeBackend(results=[BENCH_BASELINE, self.PROBE, BENCH_AFTER])
-        result, github = await run_real(db_session_factory, origin_url, task, provider, backend, instances_dir=directory)
+        result, _github = await run_real(db_session_factory, origin_url, task, provider, backend, instances_dir=directory)
         row, runs = await reload(db_session_factory, task.id)
         return result, row, runs, provider, backend, origin, task, instance
 
@@ -502,7 +500,7 @@ class TestAgentFailureModesAreNotHarnessErrors:
         async def script(deps):
             return agent_result(StopReason.STEP_CAP)
 
-        result = await run_task(
+        await run_task(
             task.id, db_session_factory, FakeGithubClient(), FakeBackend(results=[RED_BASELINE]),
             agent=ScriptedAgent(script), workspace_factory=local_workspace_factory(origin_url),
             embedder_warmup=lambda: None,

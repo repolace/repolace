@@ -10,11 +10,11 @@ is that it does NOT demand a fail-to-pass, and that each way of doing harm is
 seen.
 """
 
-import pytest
+from typing import ClassVar
 
+import pytest
 from repolace_shared.db.models import TaskOutcome
 from verify.scoring import Verdict, agent_verdict, score
-
 from verify_support import suite
 
 A = "tests/test_a.py::test_one"
@@ -236,7 +236,7 @@ class TestPreconditions:
         assert result.ok is False
         assert result.reason == "attempt unscoreable: collection crashed"
 
-    DRIFTS = {
+    DRIFTS: ClassVar = {
         "rootdir": "/elsewhere",
         "ini": {"filterwarnings": ["ignore"]},
         "plugins": ["registered-by-a-new-conftest"],
@@ -320,16 +320,16 @@ class TestAgreesWithScore:
     of those checks would eventually cause.
     """
 
-    DRIFT = {"rootdir": "/other", "ini": {}, "plugins": []}
+    DRIFT: ClassVar = {"rootdir": "/other", "ini": {}, "plugins": []}
 
-    SCENARIOS = {
-        "disqualified": dict(baseline=suite(passed=(A,)), attempt=suite(passed=(A,)), changed=["tests/test_a.py"]),
-        "baseline_error": dict(baseline=suite(error="no image"), attempt=suite(passed=(A,))),
-        "infrastructure": dict(
-            baseline=suite(passed=(A,)), attempt=suite(error="daemon"), infra=True
-        ),
-        "attempt_error": dict(baseline=suite(passed=(A,)), attempt=suite(error="boom")),
-        "drift": dict(baseline=suite(passed=(A,)), attempt=suite(passed=(A,), fingerprint=DRIFT)),
+    SCENARIOS: ClassVar = {
+        "disqualified": {"baseline": suite(passed=(A,)), "attempt": suite(passed=(A,)), "changed": ["tests/test_a.py"]},
+        "baseline_error": {"baseline": suite(error="no image"), "attempt": suite(passed=(A,))},
+        "infrastructure": {
+            "baseline": suite(passed=(A,)), "attempt": suite(error="daemon"), "infra": True
+        },
+        "attempt_error": {"baseline": suite(passed=(A,)), "attempt": suite(error="boom")},
+        "drift": {"baseline": suite(passed=(A,)), "attempt": suite(passed=(A,), fingerprint=DRIFT)},
     }
 
     @pytest.mark.parametrize("name", SCENARIOS)

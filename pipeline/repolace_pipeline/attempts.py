@@ -27,12 +27,11 @@ Only the end of the task rewinds (to the last *scored* commit), and only the pip
 from collections.abc import Awaitable, Callable
 
 import structlog
+from repolace_agents.contracts import AttemptRecord
 from repolace_shared.git import TaskWorkspace, redact
 from verify.errors import SandboxError, SandboxUnavailable
 from verify.protocol import SuiteResult
 from verify.stage import Verifier
-
-from repolace_agents.contracts import AttemptRecord
 
 log = structlog.get_logger()
 

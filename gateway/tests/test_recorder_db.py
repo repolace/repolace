@@ -16,15 +16,6 @@ design leans on:
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select, text
-from sqlalchemy.exc import IntegrityError
-
-from repolace_gateway.budget import TaskBudget, task_scope
-from repolace_gateway.client import LLMClient
-from repolace_gateway.recorder import CallRecord, Recorder, total_cost
-from repolace_gateway.redaction import REDACTED, Redactor
-from repolace_shared.db.models import LLMCall, Task
-
 from gateway_support import (
     ANTHROPIC_KEY,
     FOREIGN_OPENAI_KEY,
@@ -37,6 +28,13 @@ from gateway_support import (
     make_settings,
     seed_task,
 )
+from repolace_gateway.budget import TaskBudget, task_scope
+from repolace_gateway.client import LLMClient
+from repolace_gateway.recorder import CallRecord, Recorder, total_cost
+from repolace_gateway.redaction import REDACTED, Redactor
+from repolace_shared.db.models import LLMCall, Task
+from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db]
 
@@ -317,7 +315,6 @@ class TestThroughTheClient:
 
     async def test_a_failed_call_leaves_an_error_row_and_no_cost(self, db_session, db_session_factory):
         from litellm import exceptions as lx
-
         from repolace_gateway.errors import LLMCallError
 
         await seed_task(db_session)
@@ -329,9 +326,8 @@ class TestThroughTheClient:
                 lx.AuthenticationError(message="bad key", llm_provider="anthropic", model="test-main")
             ),
         )
-        with task_scope(TASK_ID, TaskBudget()):
-            with pytest.raises(LLMCallError):
-                await client.complete("agent", MESSAGES)
+        with task_scope(TASK_ID, TaskBudget()), pytest.raises(LLMCallError):
+            await client.complete("agent", MESSAGES)
 
         (row,) = await all_calls(db_session)
         assert "AuthenticationError" in row.error
