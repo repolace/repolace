@@ -67,6 +67,20 @@ litellm.suppress_debug_info = True
 
 log = structlog.get_logger()
 
+#: What never goes into a stored request: the key, and anything that names or carries AWS
+#: credentials. (The region is not one: it is provenance, not a credential.)
+_CREDENTIAL_KWARGS = frozenset(
+    {
+        "api_key",
+        "aws_profile_name",
+        "aws_access_key_id",
+        "aws_secret_access_key",
+        "aws_session_token",
+        "aws_role_name",
+        "aws_web_identity_token",
+    }
+)
+
 #: Kwargs a caller may not pass through to LiteLLM. Each one either redirects the
 #: provider key to another host (`api_base`, `base_url`, `custom_llm_provider`),
 #: bypasses the gateway's own retry and fallback (`num_retries`, `fallbacks`),
@@ -77,6 +91,14 @@ _RESERVED_KWARGS = frozenset(
         "messages",
         "tools",
         "api_key",
+        "aws_profile_name",
+        "aws_region_name",
+        "aws_access_key_id",
+        "aws_secret_access_key",
+        "aws_session_token",
+        "aws_role_name",
+        "aws_web_identity_token",
+        "aws_bedrock_client",
         "api_base",
         "base_url",
         "custom_llm_provider",
@@ -379,7 +401,7 @@ class LLMClient:
         """Refuse a model that cannot be priced or keyed, before any money is spent."""
         if model.key in self._verified:
             return
-        self._settings.api_key_for(model.provider)
+        self._settings.call_kwargs(model.provider)
         if model.price is None:
             try:
                 info = self._model_info_fn(model=model.litellm_model)
@@ -470,8 +492,9 @@ class LLMClient:
         kwargs: dict[str, Any] = {
             "model": model.litellm_model,
             "messages": sent_messages,
-            # Per call, never exported: see the module docstring.
-            "api_key": self._settings.api_key_for(model.provider),
+            # Per call, never exported: see the module docstring. A key for most providers;
+            # the profile and region for an AWS one, whose credentials boto3 resolves itself.
+            **self._settings.call_kwargs(model.provider),
             "timeout": self._config.retry.request_timeout_seconds,
             # Our retry loop is the only one, so that every retry is visible and bounded.
             "num_retries": 0,
@@ -496,7 +519,7 @@ class LLMClient:
             "params": {
                 key: value
                 for key, value in kwargs.items()
-                if key not in {"model", "messages", "tools", "api_key"}
+                if key not in {"model", "messages", "tools"} | _CREDENTIAL_KWARGS
             },
             "gateway": {
                 "stage": stage,

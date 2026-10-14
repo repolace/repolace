@@ -43,6 +43,32 @@ output = 10.00
 cache_read = 0.20
 cache_write = 2.50
 
+# --- the headline model, through Amazon Bedrock ----------------------------
+# Same model as `claude-sonnet-5-5`, called through Bedrock's global cross-region inference
+# profile, authenticated by an AWS profile (GATEWAY_AWS_PROFILE) and region
+# (GATEWAY_AWS_REGION) instead of an API key. Select it per sweep with
+#   GATEWAY_STAGE_MODELS='{"agent": "claude-sonnet-5-5-bedrock"}'
+# or `repolace-eval enqueue/run --model claude-sonnet-5-5-bedrock`. A Bedrock run is a separate
+# model in the benchmark report: never mix it with the direct-API model in one sweep.
+#
+# Priced from AWS's own rate card for this model's Marketplace offer
+# (`aws bedrock list-foundation-model-agreement-offers`, offer-5fu2rhus3byrs, read 2026-10-06):
+# the "Standard, Global" dimensions, which is what the `global.` profile is billed at. They equal
+# the direct API's rates. The regional ("Standard") dimensions are about 10% higher, so do NOT
+# reuse this entry for a `us.`, `eu.` or `in.` profile: that would be a different route with
+# a different price. cache_write is the 5-minute rate, because the gateway sends cache_control
+# without a ttl (the 1-hour rate is $4.00).
+[models.claude-sonnet-5-5-bedrock]
+provider = "bedrock"
+litellm_model = "bedrock/global.anthropic.claude-sonnet-5-5"
+supports_prompt_caching = true
+
+[models.claude-sonnet-5-5-bedrock.price]
+input = 2.00
+output = 10.00
+cache_read = 0.20
+cache_write = 2.50
+
 # --- cheap model -----------------------------------------------------------
 [models.claude-haiku-4-5-20251001]
 provider = "anthropic"

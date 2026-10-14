@@ -42,6 +42,16 @@ PROVIDER_KEY_FIELDS: Mapping[str, str] = {
     "gemini": "gemini_api_key",
 }
 
+#: Providers that authenticate with the AWS credential chain rather than one API key.
+#: Their credentials are never read here: a named profile (`GATEWAY_AWS_PROFILE`) is
+#: resolved by boto3 at call time, so a short-lived `aws login` or SSO session works and
+#: nothing long-lived has to sit in `.env`. Only the profile's *name* and the region are
+#: settings.
+AWS_PROVIDERS = frozenset({"bedrock"})
+
+#: Every provider a model may name.
+KNOWN_PROVIDERS = tuple(sorted({*PROVIDER_KEY_FIELDS, *AWS_PROVIDERS}))
+
 #: Stages the pipeline calls by name. A config missing either is wrong at load.
 REQUIRED_STAGES = ("agent", "cheap")
 
@@ -62,6 +72,10 @@ class GatewaySettings(BaseSettings):
     #: Aliased so the environment names carry a `GATEWAY_` prefix: bare
     #: `MODELS_PATH` and `STAGE_MODELS` are too generic to claim in a shared `.env`.
     #: (The provider keys keep their standard names, which other tooling expects.)
+    #: The AWS profile and region for the `bedrock` provider. `GATEWAY_`-prefixed for the same
+    #: reason as the two below, and so they survive the eval runner's environment allowlist.
+    aws_profile_name: str | None = Field(default=None, validation_alias="GATEWAY_AWS_PROFILE")
+    aws_region_name: str | None = Field(default=None, validation_alias="GATEWAY_AWS_REGION")
     models_path: Path = Field(default=DEFAULT_MODELS_PATH, validation_alias="GATEWAY_MODELS_PATH")
     #: Per-run stage routing overrides, e.g. `GATEWAY_STAGE_MODELS='{"agent": "gpt-x"}'`.
     #: How the eval runner points a one-run comparison at another model without
@@ -77,6 +91,25 @@ class GatewaySettings(BaseSettings):
                 f"no API key for provider {provider!r}: set {env_name} in the gateway's environment"
             )
         return secret.get_secret_value()
+
+    def call_kwargs(self, provider: str) -> dict[str, str]:
+        """The credential kwargs LiteLLM is given for one call to `provider`.
+
+        `{"api_key": ...}` for a keyed provider, the profile and region for an AWS one.
+        Raises `MissingProviderKey` naming the variable to set, before any call is made.
+        """
+        if provider in AWS_PROVIDERS:
+            missing = [
+                name
+                for name, value in (("GATEWAY_AWS_PROFILE", self.aws_profile_name), ("GATEWAY_AWS_REGION", self.aws_region_name))
+                if not value
+            ]
+            if missing:
+                raise MissingProviderKey(
+                    f"no AWS settings for provider {provider!r}: set {' and '.join(missing)} in the gateway's environment"
+                )
+            return {"aws_profile_name": self.aws_profile_name, "aws_region_name": self.aws_region_name}
+        return {"api_key": self.api_key_for(provider)}
 
     def secret_values(self) -> tuple[str, ...]:
         """Every configured key, for exact-match redaction of stored payloads."""
@@ -272,9 +305,9 @@ def _parse_model(key: str, table: Mapping[str, Any]) -> ModelConfig:
     litellm_model = _require(table, "litellm_model", str, where)
     supports_caching = _require(table, "supports_prompt_caching", bool, where)
 
-    if provider not in PROVIDER_KEY_FIELDS:
+    if provider not in KNOWN_PROVIDERS:
         raise ConfigError(
-            f"{where}.provider: unknown provider {provider!r}; known: {sorted(PROVIDER_KEY_FIELDS)}"
+            f"{where}.provider: unknown provider {provider!r}; known: {list(KNOWN_PROVIDERS)}"
         )
     # The key is chosen by `provider` and the route by LiteLLM's model prefix. If
     # they disagree, the call carries one vendor's key to another vendor's API.

@@ -5,6 +5,7 @@ description = "LiteLLM wrapper for model routing and cost tracking"
 requires-python = ">=3.12"
 dependencies = [
     "litellm>=1.50",
+    "boto3>=1.43",
     "repolace-shared",
     "sqlalchemy[asyncio]>=2.0",
     "pydantic-settings>=2.5",
