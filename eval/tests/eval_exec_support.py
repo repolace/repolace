@@ -315,12 +315,14 @@ with open(os.path.join(out, task + ".json"), "w") as handle:
                "start": time.time(), "pid": os.getpid()}, handle)
 print("child output on stdout", flush=True)
 print("child output on stderr", file=sys.stderr, flush=True)
-if plan.get("claim"):
-    sql("UPDATE tasks SET status = 'running', started_at = now() WHERE id = $1::uuid AND status = 'queued'")
+# The grandchild and its pid file come first: a test treats RUNNING as 'the child is ready'
+# and may kill the process group the moment it sees it, before a later write could land.
 if plan.get("grandchild"):
     grandchild = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(3600)"])
     with open(os.path.join(out, task + ".grandchild"), "w") as handle:
         handle.write(str(grandchild.pid))
+if plan.get("claim"):
+    sql("UPDATE tasks SET status = 'running', started_at = now() WHERE id = $1::uuid AND status = 'queued'")
 if plan.get("cost"):
     sql("INSERT INTO llm_calls (id, task_id, stage, model, provider, cost_usd) "
         "VALUES (gen_random_uuid(), $1::uuid, 'agent', 'm', 'p', " + str(plan["cost"]) + ")")
