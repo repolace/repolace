@@ -24,6 +24,7 @@ testpaths = [
     "agents/tests",
     "eval/tests",
     "api/tests",
+    "worker/tests",
 ]
 addopts = "-q"
 markers = [
