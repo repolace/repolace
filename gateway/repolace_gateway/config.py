@@ -55,6 +55,11 @@ KNOWN_PROVIDERS = tuple(sorted({*PROVIDER_KEY_FIELDS, *AWS_PROVIDERS}))
 #: Stages the pipeline calls by name. A config missing either is wrong at load.
 REQUIRED_STAGES = ("agent", "cheap")
 
+#: Stages a config may omit, and the stage whose route a missing one takes. Resolved at
+#: `route()` time, not copied at load, so a per-run `GATEWAY_STAGE_MODELS` override of the
+#: `agent` stage carries over to a stage that follows it.
+OPTIONAL_STAGE_FALLBACKS = {"resolve": "agent"}
+
 _MILLION = Decimal(1_000_000)
 #: Anything shorter is not a credential, and replacing it everywhere in a stored
 #: prompt would corrupt the record instead of protecting it.
@@ -222,6 +227,8 @@ class GatewayConfig:
 
     def route(self, stage: str) -> Route:
         stage_config = self.stages.get(stage)
+        if stage_config is None and stage in OPTIONAL_STAGE_FALLBACKS:
+            stage_config = self.stages.get(OPTIONAL_STAGE_FALLBACKS[stage])
         if stage_config is None:
             raise ConfigError(f"unknown stage {stage!r}; configured: {sorted(self.stages)}")
         return Route(
