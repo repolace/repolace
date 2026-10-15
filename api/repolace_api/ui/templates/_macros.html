@@ -15,7 +15,7 @@
 
 {% macro time(when) %}{% if when is none %}<span class="subtle">not started</span>{% else %}<time datetime="{{ when.isoformat() }}" title="{{ absolute(when) }}">{{ relative(when) }}</time>{% endif %}{% endmacro %}
 
-{# A horizontal bar made of SVG attributes: the CSP forbids style="". #}
+{# A horizontal bar made of SVG attributes: the CSP forbids inline style attributes. #}
 {% macro costbar(pct) %}<svg class="costbar" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="track" x="0" y="0" width="100" height="4" rx="2"/><rect class="fill" x="0" y="0" width="{{ pct }}" height="4" rx="2"/></svg>{% endmacro %}
 
 {% macro task_row(row) %}
