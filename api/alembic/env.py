@@ -3,7 +3,7 @@ from logging.config import fileConfig
 
 from alembic import context
 from repolace_shared.config import SharedSettings
-from repolace_shared.db import models  # noqa: F401
+from repolace_shared.db import models  # noqa: F401 -- registers the tables on Base.metadata
 from repolace_shared.db.base import Base
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection

@@ -47,7 +47,7 @@ _LONGREPR_LIMIT = 2000
 
 class _Recorder:
     def __init__(self, path):
-        self._handle = open(path, "a", encoding="utf-8", newline="\n")  # noqa: SIM115
+        self._handle = open(path, "a", encoding="utf-8", newline="\n")  # noqa: SIM115 -- held open until close()
         self._tests = 0
         self._collect_failures = 0
 
@@ -119,7 +119,7 @@ def pytest_configure(config):
             "ini": _watched_ini(config),
             "plugins": _plugin_names(config),
         }))
-    except Exception:  # noqa: BLE001
+    except Exception:
         # Say so on stderr, which the host keeps for a run that produced no report.
         # Silently dropping the recorder left an empty report and nothing to
         # diagnose it from, and the dropped handle was the only trace of it.
@@ -129,12 +129,12 @@ def pytest_configure(config):
 
             sys.stderr.write("repolace report plugin: configure failed, nothing will be recorded\n")
             traceback.print_exc(file=sys.stderr)
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
         if _recorder is not None:
             try:
                 _recorder.close()
-            except Exception:  # noqa: BLE001, S110
+            except Exception:
                 pass
         _recorder = None
 
@@ -195,7 +195,7 @@ def _plugin_names(config):
     """
     try:
         names = [name for name, _ in config.pluginmanager.list_name_plugin()]
-    except Exception:  # noqa: BLE001
+    except Exception:
         return []
     stable = []
     anonymous = 0
@@ -218,7 +218,7 @@ def _pytest_version():
     try:
         import pytest
         return pytest.__version__
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
 
 
@@ -239,7 +239,7 @@ def pytest_runtest_logreport(report):
             "longrepr_type": type(getattr(report, "longrepr", None)).__name__,
         })
         _recorder._tests += 1
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -262,7 +262,7 @@ def pytest_collectreport(report):
             "longrepr": str(longrepr)[:_LONGREPR_LIMIT] if longrepr is not None else None,
         })
         _recorder._collect_failures += 1
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -292,7 +292,7 @@ def pytest_collection_finish(session):
             "collected": sorted(files),
             "conftests": sorted(conftests),
         })
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
 
 
@@ -312,12 +312,12 @@ def pytest_sessionfinish(session, exitstatus):
             "tests": _recorder._tests,
             "collect_failures": _recorder._collect_failures,
         }))
-    except Exception:  # noqa: BLE001, S110
+    except Exception:
         pass
     finally:
         try:
             _recorder.close()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass
 
 
@@ -327,5 +327,5 @@ def pytest_unconfigure(config):
     if _depth == 0 and _recorder is not None:
         try:
             _recorder.close()
-        except Exception:  # noqa: BLE001, S110
+        except Exception:
             pass

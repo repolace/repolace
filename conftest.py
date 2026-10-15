@@ -243,7 +243,7 @@ async def db_engine(postgres_url: str):
 
 def _truncate_statement() -> str:
     """Every mapped table, derived rather than hand-listed so a new one cannot leak."""
-    from repolace_shared.db import models  # noqa: F401
+    from repolace_shared.db import models  # noqa: F401 -- registers the tables on Base.metadata
     from repolace_shared.db.base import Base
 
     names = ", ".join(f'"{table.name}"' for table in Base.metadata.sorted_tables)

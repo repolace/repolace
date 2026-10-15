@@ -75,6 +75,6 @@ ignore = [
 extend-immutable-calls = ["fastapi.Depends"]
 
 [tool.ruff.lint.per-file-ignores]
-"verify/verify/plugin/_repolace_report.py" = ["SIM105"]  # runs inside the sandbox; keep it plain and import-light
-"**/tests/**" = ["S110", "BLE001", "PLR0124", "PT012", "PT017", "ASYNC110", "ASYNC221", "ASYNC230"]
+"verify/verify/plugin/_repolace_report.py" = ["SIM105", "BLE001", "S110"]  # runs inside the sandbox and must never crash pytest
+"**/tests/**" = ["S110", "BLE001", "PLR0124", "PT012", "PT017", "ASYNC110", "ASYNC220", "ASYNC221", "ASYNC230"]
 "conftest.py" = ["BLE001"]

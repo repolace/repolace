@@ -781,7 +781,7 @@ def main(
 
     try:
         report = asyncio.run(run())
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- CLI top level: print a scrubbed error and exit 1
         print(f"repolace-eval fork: {_scrub(f'{type(exc).__name__}: {exc}', token)}", file=sys.stderr)
         return 1
     print(
@@ -830,7 +830,7 @@ def _delete_main(
 
     try:
         failures = asyncio.run(run())
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- CLI top level: print a scrubbed error and exit 1
         print(f"repolace-eval fork: {_scrub(f'{type(exc).__name__}: {exc}', token)}", file=sys.stderr)
         return 1
     return 1 if failures else 0

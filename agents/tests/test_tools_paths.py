@@ -235,7 +235,7 @@ class TestGitAliases:
             ".g‌it/hooks/pc",  # ZERO WIDTH NON-JOINER: HFS+ ignores it, so this is `.git`
             ".‍git/config",
             "﻿.git/config",
-            ".git‮/config",  # noqa: PLE2502
+            ".git\u202e/config",
             ".⁪git/config",
         ],
     )

@@ -163,7 +163,7 @@ class TestRenderIssue:
 
     @pytest.mark.parametrize(
         "hostile",
-        ["\x00", "\x1b", "\x07", "‮", "\u200b", "⁦", "﻿", "\U000e0041", "\ud800"],  # noqa: PLE2502
+        ["\x00", "\x1b", "\x07", "\u202e", "\u200b", "\u2066", "\ufeff", "\U000e0041", "\ud800"],
     )
     def test_invisible_and_control_characters_are_removed(self, hostile):
         """Zero-width, bidi and tag-block characters are how an instruction is hidden from a human reviewer."""
