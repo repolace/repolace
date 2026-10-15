@@ -163,7 +163,7 @@ class TestRefusedBeforeAnyMoneyIsSpent:
 
     async def test_a_model_litellm_does_not_know_is_refused_before_the_call(self):
         def unmapped(**_):
-            raise Exception("This model isn't mapped yet")  # noqa: TRY002
+            raise Exception("This model isn't mapped yet")  # noqa: TRY002 -- imitates litellm raising a bare Exception
 
         h = make_harness(config=make_config(agent_model="priced_by_litellm"), model_info_fn=unmapped)
         with task_scope(TASK_ID, TaskBudget()), pytest.raises(UnpricedModelError, match=r"\[models\.priced_by_litellm\.price\]"):

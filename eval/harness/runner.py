@@ -313,7 +313,7 @@ async def _run_child(
     peak: list[int] = []
     sampler: asyncio.Task | None = None
     timed_out = False
-    with open(log_path, "ab") as log_file:  # noqa: ASYNC230
+    with open(log_path, "ab") as log_file:  # noqa: ASYNC230 -- the child needs a real file descriptor for its output
         try:
             process = await asyncio.create_subprocess_exec(
                 *argv,

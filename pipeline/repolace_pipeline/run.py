@@ -285,7 +285,7 @@ async def _best_effort_cost(session_factory, task_id: uuid.UUID) -> Decimal | No
     """
     try:
         return await task_cost(session_factory, task_id)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- runs on the failure path and must not raise
         log.error("pipeline.cost.unavailable", error=str(exc))
         return None
 
@@ -1156,7 +1156,7 @@ async def run_task(
                 )
             except StageFailed as exc:
                 return await _fail(state, session_factory, task_id, exc.stage, exc.message, progress)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001 -- records the task as failed; cancellation is handled below
                 return await _fail(state, session_factory, task_id, "unknown", _describe(exc), progress)
             except BaseException as exc:
                 # Ctrl-C or cancellation would otherwise leave the task

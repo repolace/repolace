@@ -160,7 +160,7 @@ def _check_targets(targets: Sequence[str]) -> tuple[str, ...]:
     hence an error, not a result.
     """
     if isinstance(targets, str):
-        raise ValueError(f"targets must be a sequence of strings, not the single string {targets!r}")  # noqa: TRY004
+        raise ValueError(f"targets must be a sequence of strings, not the single string {targets!r}")  # noqa: TRY004 -- ValueError, like the neighbouring checks
     checked = tuple(targets)
     for target in checked:
         if not isinstance(target, str) or not target:

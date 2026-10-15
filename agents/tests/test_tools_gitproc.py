@@ -11,6 +11,7 @@ import os
 import resource
 import shlex
 import time
+from pathlib import Path
 
 import pytest
 from repolace_agents.tools import gitproc
@@ -74,8 +75,8 @@ class TestLimitsReachTheChild:
         git_pid = int(pidfile.read_text())
 
         try:
-            limits = open(f"/proc/{git_pid}/limits").read()  # noqa: SIM115
-            assert open(f"/proc/{git_pid}/comm").read().strip() == "git"  # not a surviving `prlimit` parent  # noqa: SIM115
+            limits = Path(f"/proc/{git_pid}/limits").read_text()
+            assert Path(f"/proc/{git_pid}/comm").read_text().strip() == "git"  # not a surviving `prlimit` parent
             assert f"{300 * MIB}" in next(line for line in limits.splitlines() if line.startswith("Max address space"))
             assert resource.getrlimit(resource.RLIMIT_AS) == before
         finally:
