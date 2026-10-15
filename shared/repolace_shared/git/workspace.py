@@ -26,6 +26,7 @@ import structlog
 
 from repolace_shared.git.repo import GitRepo, TokenProvider, clone, run_git
 from repolace_shared.github.client import GithubClient
+from repolace_shared.paths import resolve_within
 
 log = structlog.get_logger()
 
@@ -309,6 +310,111 @@ class TaskWorkspace:
         """
         return await self.repo.files_at(self.base_sha)
 
+    async def target_moved(self) -> tuple[bool, str]:
+        """Fetch the target branch and compare its tip with ``base_sha``.
+
+        Returns ``(moved, tip_sha)``. Authenticated and non-shallow (see
+        ``GitRepo.fetch_branch``). ``moved`` is simply "the tip is not the base":
+        a force-push that rewound the branch is movement too, and the caller's
+        merge-tree check says whether anything actually conflicts.
+        """
+        tip = await self.repo.fetch_branch(self.target_branch)
+        return tip != self.base_sha, tip
+
+    async def advance_base(self, new_base_sha: str) -> None:
+        """Move ``base_sha`` forward after the target's new tip was merged into HEAD.
+
+        The one place ``base_sha`` is reassigned. ``review_diff``, ``changed_files``,
+        ``baseline_files`` and ``squash`` all read it, so after this they are
+        relative to the new base: the PR shows only the agent's own change.
+
+        Refused unless ``new_base_sha`` is a full commit sha already contained in
+        HEAD. Without that check a caller could point the base at a commit the
+        branch does not descend from, and every diff and the squash would then
+        include (or silently drop) someone else's work. Note ``baseline_files``
+        then describes the *new* base, which is the tree the diff is against;
+        the sandbox baseline the scorer holds is the old one (see CLAUDE.md).
+        """
+        if not _FULL_SHA.fullmatch(new_base_sha):
+            raise ValueError(f"advance_base requires a full commit sha, got {new_base_sha!r}")
+        if not await self.repo.is_ancestor(new_base_sha, "HEAD"):
+            raise RuntimeError("refusing to advance the base: that commit is not contained in HEAD")
+        log.info("workspace.base_advanced", old=self.base_sha, new=new_base_sha)
+        self.base_sha = new_base_sha
+
+    async def commit_resolution(self, paths: Sequence[str], message: str) -> str:
+        """Conclude an in-progress merge from resolved ``paths``; return the merge commit sha.
+
+        The host's check, never the resolver's word. Refuses unless:
+
+        * a merge is in progress, and ``paths`` cover every unmerged path;
+        * every path stays inside the checkout (``resolve_within``, which refuses
+          absolute paths, ``..`` and symlinks) and none is under ``.git``;
+        * no named file still holds a conflict marker line (``<<<<<<<``,
+          ``|||||||``, ``=======`` alone on a line, ``>>>>>>>``);
+        * after staging, no unmerged entries remain and nothing else in the tree
+          was edited (a resolver that touches a non-conflicted file is refused,
+          not committed).
+
+        ``=======`` alone on a line is also a Markdown/RST heading underline, so
+        a legitimate file can be refused: that is the cautious direction, and the
+        refusal names the file and line.
+        """
+        if not message.strip():
+            raise ValueError("commit_resolution requires a non-empty commit message")
+        if not paths:
+            raise ValueError("commit_resolution requires at least one path")
+        if len(paths) > MAX_RESOLUTION_PATHS:
+            raise ValueError(f"refusing {len(paths)} paths; at most {MAX_RESOLUTION_PATHS} can be resolved")
+        if not await self.repo.merge_in_progress():
+            raise RuntimeError("no merge in progress; nothing to resolve")
+
+        root = self.repo.path.resolve()
+        relative: list[str] = []
+        for candidate in paths:
+            if "\0" in candidate:
+                raise ValueError("a path contains NUL")
+            resolved = resolve_within(root, candidate)
+            rel = resolved.relative_to(root)
+            if resolved == root or any(part.lower() == ".git" for part in rel.parts):
+                raise ValueError(f"refusing path {candidate!r}")
+            relative.append(rel.as_posix())
+        wanted = {os.fsencode(rel) for rel in relative}
+
+        unmerged = await self.repo.unmerged_files()
+        unmerged_paths = {entry.path for entry in unmerged}
+        # Both directions. A path that is not itself unmerged is not something
+        # the resolver was asked to touch, and staging it would commit whatever
+        # the working tree holds there.
+        extra = sorted(wanted - unmerged_paths)
+        if extra:
+            raise RuntimeError(
+                f"{len(extra)} path(s) are not unmerged and may not be committed as a resolution: "
+                + ", ".join(os.fsdecode(p) for p in extra[:5])
+            )
+        missing = sorted(unmerged_paths - wanted)
+        if missing:
+            raise RuntimeError(
+                f"{len(missing)} unmerged path(s) are not in the resolved set: "
+                + ", ".join(os.fsdecode(p) for p in missing[:5])
+            )
+
+        for rel in relative:
+            _refuse_markers(root / rel, rel)
+
+        await self.repo.stage_paths(relative)
+        if await self.repo.unmerged_files():
+            raise RuntimeError("unmerged entries remain after staging the resolved paths")
+        stray = [p for p in await self.repo.worktree_changes() if p not in wanted]
+        if stray:
+            raise RuntimeError(
+                "files outside the resolved set were modified: "
+                + ", ".join(os.fsdecode(p) for p in stray[:5])
+            )
+        sha = await self.repo.commit_merge(message)
+        log.info("workspace.resolution_committed", sha=sha, paths=len(relative))
+        return sha
+
     async def squash(self, message: str) -> str | None:
         """Step 8, so the PR is not 'attempt 1, attempt 2, fix debug output'."""
         return await self.repo.squash_onto(self.base_sha, message)
@@ -329,6 +435,29 @@ class TaskWorkspace:
             raise RuntimeError("agent branch is identical to the base commit; nothing to push")
         await self.repo.push_branch(self.agent_branch)
         return self.agent_branch
+
+
+#: A merge touching more conflicted paths than this is not one to hand a resolver.
+MAX_RESOLUTION_PATHS = 500
+
+_FULL_SHA = re.compile(r"[0-9a-f]{40}")
+
+#: A conflict marker line, as git writes them (also zdiff3's `|||||||` base line).
+_MARKER_LINE = re.compile(rb"^(<{7}|>{7}|\|{7})( .*)?$|^={7}$")
+
+#: A resolved file this large is not a source file a resolver edited.
+_MAX_RESOLVED_BYTES = 10_000_000
+
+
+def _refuse_markers(path: Path, display: str) -> None:
+    """Raise if ``path`` still holds a conflict marker line. A deleted file has none."""
+    if not path.exists():
+        return
+    if path.stat().st_size > _MAX_RESOLVED_BYTES:
+        raise RuntimeError(f"{display} is too large to check for conflict markers")
+    for number, line in enumerate(path.read_bytes().split(b"\n"), start=1):
+        if _MARKER_LINE.match(line.rstrip(b"\r")):
+            raise RuntimeError(f"{display}:{number} still holds a conflict marker")
 
 
 def _force_writable(func, path, exc: BaseException) -> None:
