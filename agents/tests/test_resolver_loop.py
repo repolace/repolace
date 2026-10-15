@@ -175,6 +175,32 @@ class TestResolving:
 
 
 class TestStops:
+    async def test_the_attempt_passed_to_the_gateway_is_the_round_number(self, checkout):
+        _, llm = await run(
+            checkout,
+            [
+                reply(None, fix("src/a.py", "1", "2", "1"), submit("first")),
+                reply(None, tool_call("read_file", {"path": "src/a.py"})),
+                reply(None, fix("src/b.py", "3", "4", "3"), submit("second")),
+            ],
+        )
+        assert [call.attempt for call in llm.calls] == [1, 2, 2]
+
+    @pytest.mark.parametrize("stop", ["gave_up", "step_cap", "budget", "llm_error"])
+    async def test_the_summary_is_none_unless_resolved_or_exhausted(self, checkout, stop):
+        # Round 1 submits (so a summary exists), then round 2 ends another way.
+        ending = {
+            "gave_up": [reply("no"), reply("no")],
+            "step_cap": [reply(None, tool_call("read_file", {"path": "src/a.py"}))],
+            "budget": [BudgetExceeded(BudgetLimit.USD, spent_usd=Decimal(3), calls=1, elapsed_seconds=1.0, response=None)],
+            "llm_error": [LLMCallError("x", stage="resolve", model="m", retries=0)],
+        }[stop]
+        result, _ = await run(
+            checkout, [reply(None, submit("round one")), *ending], limits=ResolverLimits(max_steps=2 if stop == "step_cap" else 6)
+        )
+        assert result.stop.value == stop and result.rounds == 2
+        assert result.summary is None
+
     async def test_the_step_cap_ends_a_run_that_never_submits(self, checkout):
         read = lambda: reply(None, tool_call("read_file", {"path": "src/a.py"}))  # noqa: E731 -- a scripted reply
         result, llm = await run(checkout, [read(), read()], limits=ResolverLimits(max_steps=2))

@@ -57,7 +57,9 @@ REQUIRED_STAGES = ("agent", "cheap")
 
 #: Stages a config may omit, and the stage whose route a missing one takes. Resolved at
 #: `route()` time, not copied at load, so a per-run `GATEWAY_STAGE_MODELS` override of the
-#: `agent` stage carries over to a stage that follows it.
+#: `agent` stage carries over to a stage that follows it. The shipped `models.toml` leaves
+#: `resolve` out on purpose, so a sweep's `--model` reaches the resolver too. An explicit
+#: override naming the optional stage (`{"resolve": "<model>"}`) is accepted while it is absent.
 OPTIONAL_STAGE_FALLBACKS = {"resolve": "agent"}
 
 _MILLION = Decimal(1_000_000)
@@ -241,6 +243,9 @@ class GatewayConfig:
         """The same config with some stages pointed at other models."""
         stages = dict(self.stages)
         for stage, model_key in overrides.items():
+            if stage not in stages and stage in OPTIONAL_STAGE_FALLBACKS:
+                # An absent optional stage is overridable: it starts from its fallback's settings.
+                stages[stage] = stages[OPTIONAL_STAGE_FALLBACKS[stage]]
             if stage not in stages:
                 raise ConfigError(f"cannot override unknown stage {stage!r}; configured: {sorted(stages)}")
             if model_key not in self.models:

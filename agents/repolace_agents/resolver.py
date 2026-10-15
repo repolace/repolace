@@ -165,7 +165,8 @@ class ResolverDeps:
 class ResolverResult:
     stop: ResolverStop
     #: The model's account of what it did, sanitised and capped. Untrusted wherever shown.
-    #: Set only when the model submitted (RESOLVED, or ROUNDS_EXHAUSTED with its last one).
+    #: Set only for RESOLVED and ROUNDS_EXHAUSTED (the model's last submitted one); None for
+    #: every other stop, even if an earlier round had submitted.
     summary: str | None
     #: Rounds started (a round ends with a submit), and model calls made.
     rounds: int
@@ -518,7 +519,8 @@ async def run_resolver_loop(deps: ResolverDeps, *, nonce: str) -> ResolverResult
     summary: str | None = None
 
     def result(stop: ResolverStop) -> ResolverResult:
-        return ResolverResult(stop, _clean_summary(summary), rounds=rounds, steps=steps)
+        kept = summary if stop in (ResolverStop.RESOLVED, ResolverStop.ROUNDS_EXHAUSTED) else None
+        return ResolverResult(stop, _clean_summary(kept), rounds=rounds, steps=steps)
 
     while True:
         if steps >= deps.limits.max_steps:
