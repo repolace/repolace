@@ -213,7 +213,7 @@ class TestContainerCleanup:
         removed = await remove_task_containers(task_id, process_runner=fake)
 
         assert fake.calls == [
-            ("docker", "ps", "-q", "--filter", "name=repolace-0123456789ab"),
+            ("docker", "ps", "-q", "--filter", "name=^repolace-0123456789ab-"),
             ("docker", "rm", "-f", "aabbccddeeff", "112233445566"),
         ]
         assert removed == ("aabbccddeeff", "112233445566")
@@ -562,7 +562,7 @@ class TestTimeout:
 
         prefix = f"repolace-{task.id.hex[:12]}"
         assert processes.calls == [
-            ("docker", "ps", "-q", "--filter", f"name={prefix}"),
+            ("docker", "ps", "-q", "--filter", f"name=^{prefix}-"),
             ("docker", "rm", "-f", "aabbccddeeff"),
         ]
         assert result.removed_containers == ("aabbccddeeff",)
@@ -1094,7 +1094,7 @@ class TestInterruption:
         await db_session.refresh(task)
         assert task.status is TaskStatus.FAILED and task.error_message == "runner: interrupted"
         prefix = f"repolace-{task.id.hex[:12]}"
-        assert ("docker", "ps", "-q", "--filter", f"name={prefix}") in processes.calls
+        assert ("docker", "ps", "-q", "--filter", f"name=^{prefix}-") in processes.calls
         assert ("docker", "rm", "-f", "aabbccddeeff") in processes.calls
 
     async def test_an_interrupt_leaves_a_row_that_was_never_claimed_queued(
@@ -1160,7 +1160,7 @@ class TestInterruption:
         await db_session.refresh(task)
         assert task.status is TaskStatus.FAILED and task.error_message == "runner: interrupted"
         calls = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
-        assert ["docker", "ps", "-q", "--filter", f"name=repolace-{task.id.hex[:12]}"] in calls
+        assert ["docker", "ps", "-q", "--filter", f"name=^repolace-{task.id.hex[:12]}-"] in calls
         assert f"interrupted by {signum.name}" in (tmp_path / "driver.out").read_text()
 
 

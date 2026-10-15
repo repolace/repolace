@@ -7,6 +7,7 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "alembic>=1.13",
+    "celery>=5.4",
     "repolace-shared",
 ]
 

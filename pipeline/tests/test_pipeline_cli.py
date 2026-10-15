@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 from pipeline_support import FakeGithubClient, make_instance, seed_task
 from repolace_gateway.config import GatewaySettings
-from repolace_pipeline import cli
+from repolace_pipeline import cli, resources
 from repolace_pipeline.agent_runner import LLMAgent
 from repolace_pipeline.errors import TaskNotClaimable, TaskNotFound
 from repolace_pipeline.run import RunResult
@@ -160,11 +160,11 @@ class Recorder:
             return result
 
         monkeypatch.setattr(cli, "get_settings", lambda: settings)
-        monkeypatch.setattr(cli, "create_engine", lambda url: Engine())
-        monkeypatch.setattr(cli, "create_session_factory", lambda engine: "factory")
-        monkeypatch.setattr(cli, "GithubClient", lambda app_id, key: self.github)
-        monkeypatch.setattr(cli, "DockerBackend", lambda: "backend")
-        monkeypatch.setattr(cli, "load_specs", lambda path: {})
+        monkeypatch.setattr(resources, "create_engine", lambda url: Engine())
+        monkeypatch.setattr(resources, "create_session_factory", lambda engine: "factory")
+        monkeypatch.setattr(resources, "GithubClient", lambda app_id, key: self.github)
+        monkeypatch.setattr(resources, "DockerBackend", lambda: "backend")
+        monkeypatch.setattr(resources, "load_specs", lambda path: {})
         monkeypatch.setattr(cli, "run_task", run_task)
         self.llm = object()
         self.llm_built_with = []
@@ -173,7 +173,7 @@ class Recorder:
             self.llm_built_with.append(session_factory)
             return self.llm
 
-        monkeypatch.setattr(cli, "build_llm_client", build_llm_client)
+        monkeypatch.setattr(resources, "build_llm_client", build_llm_client)
 
 
 class TestWhatIsPassedToRunTask:
@@ -212,7 +212,7 @@ class TestWhatIsPassedToRunTask:
         def refuse(session_factory, *args, **kwargs):
             raise cli.UsageError("--agent llm cannot run: no price (fix the model's [price] in gateway/models.toml)")
 
-        monkeypatch.setattr(cli, "build_llm_client", refuse)
+        monkeypatch.setattr(resources, "build_llm_client", refuse)
 
         code = await cli._run(uuid.UUID(TASK), agent="llm", no_pr=False)
 
@@ -242,7 +242,7 @@ class TestWhatIsPassedToRunTask:
         await cli._run(uuid.UUID(TASK), agent="stub", no_pr=False)
 
         factory = recorder.run_task_kwargs["workspace_factory"]
-        assert factory.func is cli.task_workspace
+        assert factory.func is resources.task_workspace
         assert factory.keywords == {"parent_dir": "/quota/workspaces"}
 
     @pytest.mark.anyio
@@ -455,3 +455,25 @@ class TestGoldRunnerFromATask:
 
         with pytest.raises(cli.UsageError, match="cannot load instance"):
             await cli._gold_runner(db_session_factory, tmp_path / "instances", task.id)
+
+
+class TestThePreflightedStages:
+    @pytest.mark.anyio
+    async def test_the_cli_path_preflights_agent_and_resolve(self, monkeypatch):
+        from repolace_gateway.client import LLMClient
+
+        stages = []
+
+        class Client:
+            def preflight(self, stage):
+                stages.append(stage)
+
+        real_build = resources.build_llm_client
+        recorder = Recorder(monkeypatch, RunResult(uuid.UUID(TASK), TaskStatus.COMPLETED))
+        monkeypatch.setattr(resources, "build_llm_client", real_build)  # undo the recorder's stub
+        monkeypatch.setattr(LLMClient, "from_settings", staticmethod(lambda *a, **k: Client()))
+        monkeypatch.setattr("repolace_gateway.config.GatewaySettings", object)
+
+        assert await cli._run(uuid.UUID(TASK), agent="llm", no_pr=False) == 0
+        assert recorder.run_task_kwargs["llm"] is not None
+        assert stages == ["agent", "resolve"]
