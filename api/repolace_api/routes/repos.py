@@ -1,6 +1,8 @@
+import base64
+import binascii
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
@@ -8,11 +10,12 @@ from uuid import UUID
 import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from repolace_shared.db.models import LLMCall, RegisteredRepo, Task, TaskOutcome, TaskStatus
 from repolace_shared.github.client import GithubClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from repolace_api.deps import get_db, get_github_client
 from repolace_api.schemas import (
@@ -50,6 +53,10 @@ def github_errors(repo_id: UUID) -> Iterator[None]:
     except httpx.RequestError as exc:
         log.error("github.api.unreachable", repo_id=str(repo_id), error=str(exc))
         raise HTTPException(status_code=502, detail="GitHub API unreachable") from exc
+    except ValidationError as exc:
+        # A payload that does not parse is GitHub's failure, not the client's.
+        log.error("github.api.malformed", repo_id=str(repo_id), error=str(exc))
+        raise HTTPException(status_code=502, detail="GitHub API returned an unexpected payload") from exc
 
 
 async def _active_repo(db: AsyncSession, repo_id: UUID) -> RegisteredRepo:
@@ -141,8 +148,8 @@ async def create_task(
     # branch needs no check: GitHub reported it when the repo was registered.
     if body.target_branch is not None:
         with github_errors(repo_id):
-            branches = await github.list_branches(repo.installation_id, repo.owner, repo.name)
-        if target_branch not in {b.name for b in branches}:
+            exists = await _branch_exists(github, repo, target_branch)
+        if not exists:
             raise HTTPException(
                 status_code=422, detail=f"target_branch {target_branch!r} is not a branch of {repo.full_name}"
             )
@@ -177,6 +184,35 @@ async def create_task(
         target_branch=task.target_branch,
     )
     return TaskCreated.model_validate(task, from_attributes=True)
+
+
+async def _branch_exists(github: GithubClient, repo: RegisteredRepo, name: str) -> bool:
+    branches = await github.list_branches(repo.installation_id, repo.owner, repo.name)
+    if name in {b.name for b in branches}:
+        return True
+    if not getattr(branches, "truncated", False):
+        return False
+    # The listing hit its page cap, so absence from it proves nothing.
+    if any(part in ("", ".", "..") for part in name.split("/")):
+        return False
+    return await github.branch_exists(repo.installation_id, repo.owner, repo.name, name)
+
+
+def encode_cursor(created_at: datetime, task_id: UUID) -> str:
+    raw = f"{created_at.astimezone(UTC).isoformat()}|{task_id}"
+    return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+
+
+def decode_cursor(cursor: str) -> tuple[datetime, UUID]:
+    try:
+        raw = base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)).decode()
+        stamp, task_id = raw.split("|")
+        created_at = datetime.fromisoformat(stamp)
+        if created_at.tzinfo is None:
+            raise ValueError("naive timestamp")
+        return created_at, UUID(task_id)
+    except (ValueError, binascii.Error) as exc:  # UnicodeDecodeError is a ValueError
+        raise HTTPException(status_code=422, detail="malformed cursor") from exc
 
 
 def _usd(value: float | None) -> Decimal | None:
@@ -216,9 +252,13 @@ async def estimate_task_cost(repo_id: UUID, db: AsyncSession = Depends(get_db)) 
     if n >= ESTIMATE_MIN_TASKS:
         return CostEstimate(basis="repo", n=n, p50_usd=p50, p90_usd=p90, upper_bound_usd=TASK_COST_CAP_USD)
 
-    # The model of the latest call of each task.
+    # The model of the latest call of each product task. Benchmark tasks are
+    # excluded here, not only from the cost pool: a bench sweep on another model
+    # must not choose which model this repo's estimate is quoted for.
     latest_call = (
         select(LLMCall.task_id, LLMCall.model)
+        .join(Task, Task.id == LLMCall.task_id)
+        .where(Task.eval_run_id.is_(None))
         .distinct(LLMCall.task_id)
         .order_by(LLMCall.task_id, LLMCall.created_at.desc())
         .subquery()
@@ -247,7 +287,7 @@ async def list_repo_tasks(
     status: TaskStatus | None = None,
     outcome: TaskOutcome | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
-    before: Annotated[datetime | None, Query(description="Keyset cursor: only tasks created strictly before this.")] = None,
+    cursor: Annotated[str | None, Query(description="Opaque token from a previous page's next_cursor.")] = None,
     include_benchmark: bool = False,
     db: AsyncSession = Depends(get_db),
 ) -> TaskPage:
@@ -258,21 +298,22 @@ async def list_repo_tasks(
     rows are hidden unless asked for.
     """
     await _active_repo(db, repo_id)
-    if before is not None and before.tzinfo is None:
-        raise HTTPException(status_code=422, detail="before must carry a timezone offset")
+    position = decode_cursor(cursor) if cursor is not None else None
 
-    query = select(Task).where(Task.repo_id == repo_id)
+    # Not the whole row: patch_diff and issue_body can be large and the list shows neither.
+    columns = [getattr(Task, name) for name in TaskListItem.model_fields]
+    query = select(Task).options(load_only(*columns)).where(Task.repo_id == repo_id)
     if status is not None:
         query = query.where(Task.status == status)
     if outcome is not None:
         query = query.where(Task.outcome == outcome)
     if not include_benchmark:
         query = query.where(Task.eval_run_id.is_(None))
-    if before is not None:
-        query = query.where(Task.created_at < before)
+    if position is not None:
+        query = query.where(tuple_(Task.created_at, Task.id) < tuple_(*position))
     # One extra row says whether there is a next page without a COUNT.
     rows = (await db.execute(query.order_by(Task.created_at.desc(), Task.id.desc()).limit(limit + 1))).scalars().all()
 
     page = rows[:limit]
-    next_before = page[-1].created_at if len(rows) > limit else None
-    return TaskPage(items=[TaskListItem.model_validate(r, from_attributes=True) for r in page], next_before=next_before)
+    next_cursor = encode_cursor(page[-1].created_at, page[-1].id) if len(rows) > limit else None
+    return TaskPage(items=[TaskListItem.model_validate(r, from_attributes=True) for r in page], next_cursor=next_cursor)
