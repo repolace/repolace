@@ -189,7 +189,8 @@ uv run --all-packages repolace-eval select
 # 2. Create the private bench-<instance_id> repositories in the repolace org and push each
 #    base commit. The token goes inline for this one command and is never put in .env.
 REPOLACE_BENCH_GITHUB_TOKEN=... uv run --all-packages repolace-eval fork
-#    Then install the GitHub App on those repositories so each gets a registered_repos row.
+#    Then install the GitHub App on those repositories; each gets a registered_repos row when
+#    GitHub's `installation` webhook arrives.
 
 # 3. Gold validation: the reference fix through the real pipeline, twice, at no LLM cost and
 #    with no PRs. Instances that do not score `passed` both times are dropped, not fixed.

@@ -26,22 +26,14 @@ def install(settings: ApiSettings = Depends(get_settings)) -> RedirectResponse:
 
 
 @router.get("/callback")
-async def callback(
-    installation_id: int,
-    setup_action: str,
-    db: AsyncSession = Depends(get_db),
-    github: GithubClient = Depends(get_github_client),
-) -> dict[str, str]:
-    structlog.contextvars.bind_contextvars(installation_id=installation_id)
-    log.info("github.callback", setup_action=setup_action)
-    if setup_action in ("install", "update"):
-        installation = await db.get(GithubInstallation, installation_id)
-        if installation is not None and installation.suspended_at is not None:
-            # The callback carries no proof of who is calling, so it must not undo what a
-            # signed `suspend` webhook did; only the `unsuspend` webhook lifts that.
-            log.warning("github.callback.suspended_ignored")
-            return {"status": "ok"}
-        await _sync_installation(installation_id, db, github)
+async def callback(installation_id: int, setup_action: str) -> dict[str, str]:
+    """Where GitHub sends the browser after an install. It only acknowledges.
+
+    The query string carries no proof of who is calling, so nothing here may read or
+    write state or call GitHub. The signed `installation` and `installation_repositories`
+    webhooks do the sync, and they arrive on their own.
+    """
+    log.info("github.callback", installation_id=installation_id, setup_action=setup_action)
     return {"status": "ok"}
 
 
