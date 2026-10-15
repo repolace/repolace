@@ -364,6 +364,8 @@ class TaskWorkspace:
             raise ValueError("commit_resolution requires a non-empty commit message")
         if not paths:
             raise ValueError("commit_resolution requires at least one path")
+        if len(paths) > MAX_RESOLUTION_PATHS:
+            raise ValueError(f"refusing {len(paths)} paths; at most {MAX_RESOLUTION_PATHS} can be resolved")
         if not await self.repo.merge_in_progress():
             raise RuntimeError("no merge in progress; nothing to resolve")
 
@@ -380,7 +382,17 @@ class TaskWorkspace:
         wanted = {os.fsencode(rel) for rel in relative}
 
         unmerged = await self.repo.unmerged_files()
-        missing = [entry.path for entry in unmerged if entry.path not in wanted]
+        unmerged_paths = {entry.path for entry in unmerged}
+        # Both directions. A path that is not itself unmerged is not something
+        # the resolver was asked to touch, and staging it would commit whatever
+        # the working tree holds there.
+        extra = sorted(wanted - unmerged_paths)
+        if extra:
+            raise RuntimeError(
+                f"{len(extra)} path(s) are not unmerged and may not be committed as a resolution: "
+                + ", ".join(os.fsdecode(p) for p in extra[:5])
+            )
+        missing = sorted(unmerged_paths - wanted)
         if missing:
             raise RuntimeError(
                 f"{len(missing)} unmerged path(s) are not in the resolved set: "
@@ -393,7 +405,7 @@ class TaskWorkspace:
         await self.repo.stage_paths(relative)
         if await self.repo.unmerged_files():
             raise RuntimeError("unmerged entries remain after staging the resolved paths")
-        stray = await self.repo.unstaged_changes()
+        stray = [p for p in await self.repo.worktree_changes() if p not in wanted]
         if stray:
             raise RuntimeError(
                 "files outside the resolved set were modified: "
@@ -424,6 +436,9 @@ class TaskWorkspace:
         await self.repo.push_branch(self.agent_branch)
         return self.agent_branch
 
+
+#: A merge touching more conflicted paths than this is not one to hand a resolver.
+MAX_RESOLUTION_PATHS = 500
 
 _FULL_SHA = re.compile(r"[0-9a-f]{40}")
 

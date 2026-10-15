@@ -523,6 +523,9 @@ CONFLICT_SYMLINK = "symlink"
 CONFLICT_GITLINK = "gitlink"
 CONFLICT_OTHER = "other"
 
+#: Upper bound on unmerged paths `unmerged_files` will return.
+MAX_UNMERGED_PATHS = 500
+
 _git_version_cache: tuple[int, int] | None = None
 
 
@@ -669,6 +672,10 @@ class GitRepo:
     #: rather than read from the checkout's remote, because the checkout is
     #: exactly what an agent can rewrite.
     credential_host: str = DEFAULT_CREDENTIAL_HOST
+    #: The remote URL the clone was made from. When set, `require_trusted_config`
+    #: demands `remote.origin.url` equal it: the key being *allowed* is not enough,
+    #: since where `origin` points decides where a fetch goes. None skips the check.
+    expected_remote_url: str | None = None
 
     async def _run(self, *args: str, authenticated: bool = False, timeout: float = DEFAULT_TIMEOUT_SECONDS) -> str:
         token = None
@@ -980,14 +987,30 @@ class GitRepo:
         for entry in raw.split(b"\0"):
             if not entry:
                 continue
-            key = entry.split(b"\n", 1)[0].decode("utf-8", errors="replace")
+            key_raw, _, value_raw = entry.partition(b"\n")
+            key = key_raw.decode("utf-8", errors="replace")
+            value = value_raw.decode("utf-8", errors="replace")
             if not _TRUSTED_CONFIG_KEYS.fullmatch(key):
                 bad.append(key)
+            elif not self._trusted_value(key, value):
+                bad.append(f"{key} (unexpected value)")
         if bad:
             raise UntrustedConfigError(
                 f"refusing to run: the checkout's .git/config holds {len(bad)} unexpected key(s): "
                 + ", ".join(sorted(set(bad))[:5])
             )
+
+    def _trusted_value(self, key: str, value: str) -> bool:
+        """Whether an allowed key holds the value our flow wrote."""
+        if key == "remote.origin.url":
+            return self.expected_remote_url is None or value == self.expected_remote_url
+        if key == "remote.origin.fetch":
+            return value == "+refs/heads/*:refs/remotes/origin/*"
+        if key.startswith("branch.") and key.endswith(".remote"):
+            return value == "origin"
+        if key.startswith("branch.") and key.endswith(".merge"):
+            return value.startswith("refs/heads/")
+        return True
 
     async def rev_parse(self, ref: str) -> str:
         """Resolve ``ref`` to a full 40-hex commit sha, or raise.
@@ -1039,6 +1062,7 @@ class GitRepo:
         await self.require_trusted_config()
         refspec = f"+refs/heads/{branch}:refs/remotes/origin/{branch}"
         await self._run(
+            "-c", "transfer.fsckObjects=true",
             "fetch", "--no-tags", "--no-recurse-submodules", "--no-write-fetch-head",
             "origin", "--", refspec,
             authenticated=True,
@@ -1102,12 +1126,36 @@ class GitRepo:
         does not.
         """
         raw = await run_git_bytes("ls-files", "-u", "-z", cwd=self.path, credential_host=self.credential_host)
-        return parse_unmerged(raw)
+        entries = parse_unmerged(raw)
+        if len(entries) > MAX_UNMERGED_PATHS:
+            raise GitError(f"{len(entries)} unmerged paths; refusing more than {MAX_UNMERGED_PATHS}")
+        return entries
 
-    async def unstaged_changes(self) -> list[bytes]:
-        """Tracked paths whose working-tree content differs from the index."""
-        raw = await run_git_bytes("diff", "--name-only", "-z", cwd=self.path, credential_host=self.credential_host)
-        return [part for part in raw.split(b"\0") if part]
+    async def worktree_changes(self) -> list[bytes]:
+        """Paths with a working-tree change or that are untracked (ignored files excluded).
+
+        From ``status --porcelain -z --untracked-files=all``. Entries that are
+        *only* staged (``Y`` blank) are skipped: during a merge git stages the
+        other side's clean changes itself, and those are expected.
+        """
+        raw = await run_git_bytes(
+            "status", "--porcelain", "-z", "--untracked-files=all",
+            cwd=self.path, credential_host=self.credential_host,
+        )
+        fields = raw.split(b"\0")
+        changed: list[bytes] = []
+        i = 0
+        while i < len(fields):
+            record = fields[i]
+            i += 1
+            if len(record) < 4:
+                continue
+            x, y, path = record[0:1], record[1:2], record[3:]
+            if x in (b"R", b"C"):
+                i += 1  # the original path follows as its own field
+            if y != b" ":
+                changed.append(path)
+        return changed
 
     async def stage_paths(self, paths: Sequence[str]) -> None:
         """``git add --all`` for exactly these paths, taken literally (no pathspec magic)."""
@@ -1156,7 +1204,7 @@ async def clone(
         timeout=CLONE_TIMEOUT_SECONDS,
     )
 
-    repo = GitRepo(path=destination, token_provider=token_provider)
+    repo = GitRepo(path=destination, token_provider=token_provider, expected_remote_url=url)
     if await repo.is_shallow():
         # Nothing above asks for a shallow clone, so this means the environment
         # forced one (a clone filter, a GIT_* override). Failing here beats
