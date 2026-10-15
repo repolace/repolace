@@ -287,7 +287,7 @@ class Task(Base):
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     #: Which process claimed the task (`<hostname>:<pid>` by default), so an
     #: abandoned row says whose it was.
-    claimed_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    claimed_by: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     repo: Mapped[RegisteredRepo] = relationship(back_populates="tasks")
     test_runs: Mapped[list["TaskTestRun"]] = relationship(

@@ -29,7 +29,7 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     op.add_column("tasks", sa.Column("heartbeat_at", sa.DateTime(timezone=True), nullable=True))
-    op.add_column("tasks", sa.Column("claimed_by", sa.String(), nullable=True))
+    op.add_column("tasks", sa.Column("claimed_by", sa.Text(), nullable=True))
     op.create_table(
         "task_stages",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
