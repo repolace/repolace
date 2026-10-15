@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -31,6 +33,18 @@ class Repository(BaseModel):
     private: bool
 
 
+class IssueLabel(BaseModel):
+    name: str
+
+
+class IssueUser(BaseModel):
+    login: str
+
+
+class Branch(BaseModel):
+    name: str
+
+
 class Issue(BaseModel):
     number: int
     title: str
@@ -40,6 +54,15 @@ class Issue(BaseModel):
     #: an empty body, which is why this is optional and not `str = ""`.
     body: str | None = None
     pull_request: dict | None = None
+    #: Untrusted like the body: label names and logins are chosen by whoever
+    #: filed or triaged the issue. Display data only.
+    labels: list[IssueLabel] = []
+    user: IssueUser | None = None
+    created_at: datetime | None = None
+
+    @property
+    def label_names(self) -> list[str]:
+        return [label.name for label in self.labels]
 
     @property
     def is_pull_request(self) -> bool:
