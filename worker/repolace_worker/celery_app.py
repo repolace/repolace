@@ -29,6 +29,8 @@ celery_app.conf.update(
     # Nothing reads a Celery result: the outcome is on the task row.
     task_ignore_result=True,
     worker_concurrency=_worker.concurrency,
+    worker_max_memory_per_child=_worker.max_memory_per_child_kib,
+    worker_max_tasks_per_child=_worker.max_tasks_per_child,
     # The backstop. The primary limit is `asyncio.timeout(task_bound_seconds)` inside the task,
     # because a Celery soft limit raises from a signal handler into arbitrary frames.
     task_time_limit=_worker.hard_time_limit_seconds,
@@ -43,12 +45,12 @@ celery_app.conf.update(
         "repolace-sweep-queued": {
             "task": SWEEP_TASK_NAME,
             "schedule": _worker.sweeper_interval_seconds,
-            "options": {"queue": _worker.maintenance_queue},
+            "options": {"queue": _worker.maintenance_queue, "expires": _worker.beat_expires_seconds},
         },
         "repolace-reap-abandoned": {
             "task": REAP_TASK_NAME,
             "schedule": _worker.reaper_interval_seconds,
-            "options": {"queue": _worker.maintenance_queue},
+            "options": {"queue": _worker.maintenance_queue, "expires": _worker.beat_expires_seconds},
         },
     },
 )

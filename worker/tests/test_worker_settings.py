@@ -22,3 +22,11 @@ def test_celery_is_configured_for_long_acks_late_work():
         "repolace.sweep_queued",
         "repolace.reap_abandoned",
     }
+
+
+def test_children_are_recycled_and_beat_messages_expire():
+    conf = celery_app.conf
+    assert conf.worker_max_memory_per_child == 4_000_000
+    assert conf.worker_max_tasks_per_child == 50
+    assert all(entry["options"]["expires"] == 60 for entry in conf.beat_schedule.values())
+    assert WorkerSettings().reaper_stale_seconds == 300.0

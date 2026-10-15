@@ -70,8 +70,9 @@ async def run_one(
     from repolace_shared.tasks_recovery import fail_if_running, remove_task_containers
 
     options = {**task_options(resources.settings), **run_task_overrides}
+    deadline = asyncio.timeout(bound_seconds)
     try:
-        async with asyncio.timeout(bound_seconds):
+        async with deadline:
             result = await run_task(
                 task_id,
                 resources.session_factory,
@@ -92,6 +93,10 @@ async def run_one(
         log.error("worker.task.not_found", task_id=str(task_id))
         return NOT_FOUND
     except TimeoutError:
+        if not deadline.expired():
+            # A TimeoutError the task raised itself (a socket, a subprocess), not our bound.
+            log.exception("worker.task.error", task_id=str(task_id))
+            return ERRORED
         log.error("worker.task.timeout", task_id=str(task_id), bound_seconds=bound_seconds)
         await asyncio.shield(fail_if_running(resources.session_factory, task_id, "worker: timeout"))
         await asyncio.shield(remove_task_containers(task_id))
@@ -121,17 +126,37 @@ def run_task_job(self: Any, task_id: str) -> str:
     )
 
 
+#: RabbitMQ closes a channel whose delivery stays unacked past `consumer_timeout`; an `acks_late`
+#: task holds its delivery for its whole run, so the broker setting must exceed the hard limit.
+def required_consumer_timeout_ms(settings: WorkerSettings) -> int:
+    return settings.hard_time_limit_seconds * 1000
+
+
 @worker_init.connect
-def _clean_orphans(**_: Any) -> None:
-    """Once per worker start, in the parent: drop clones older than any live task could be."""
+def _on_worker_start(**_: Any) -> None:
+    """Once per worker start, in the parent. Only the task role clones, so only it sweeps clones."""
     configure_logging("worker")
     settings: WorkerSettings = get_worker_settings()
+    if settings.role != "task":
+        log.info("worker.start", role=settings.role)
+        return
     remove_stale_workspaces(settings.workspace_parent_dir, settings.hard_time_limit_seconds)
+    log.info(
+        "worker.start",
+        role=settings.role,
+        task_time_limit_seconds=settings.hard_time_limit_seconds,
+        required_rabbitmq_consumer_timeout_ms=required_consumer_timeout_ms(settings),
+        note="the broker's consumer_timeout must exceed task_time_limit or acks_late tasks are killed",
+    )
 
 
 @worker_process_init.connect
 def _init_child(**_: Any) -> None:
     configure_logging("worker")
+    if get_worker_settings().role != "task":
+        # The maintenance worker needs the database and docker, nothing else: no model client,
+        # no provider keys, no torch.
+        return
     from repolace_pipeline.config import get_settings
     from repolace_pipeline.resources import build_resources
     from retrieval.embed import get_embedder

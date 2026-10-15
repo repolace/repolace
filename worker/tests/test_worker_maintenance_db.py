@@ -7,7 +7,7 @@ import pytest
 from pipeline_support import seed_task
 from repolace_shared.db.models import Task, TaskStatus
 from repolace_worker import maintenance
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db]
 
@@ -35,6 +35,29 @@ async def backdate(session, task, **columns):
     await session.commit()
 
 
+class FakeClaims:
+    """An in-memory stand-in for the Redis `SET NX EX` key; `expire()` is the TTL running out."""
+
+    def __init__(self):
+        self.keys: set[uuid.UUID] = set()
+
+    def claim(self, task_id):
+        if task_id in self.keys:
+            return False
+        self.keys.add(task_id)
+        return True
+
+    def release(self, task_id):
+        self.keys.discard(task_id)
+
+    def expire(self):
+        self.keys.clear()
+
+
+async def sweep(factory, publish, claims, **kwargs):
+    return await maintenance.sweep_queued(factory, FIVE_MIN, publish, claims=claims, **kwargs)
+
+
 class TestSweeper:
     async def test_only_old_queued_non_benchmark_rows_are_republished(self, db_session, db_session_factory):
         old = await add_task(db_session)
@@ -45,24 +68,51 @@ class TestSweeper:
             await backdate(db_session, task, created_at=OLD)
         sent: list[uuid.UUID] = []
 
-        published = await maintenance.sweep_queued(db_session_factory, FIVE_MIN, sent.append)
+        published = await sweep(db_session_factory, sent.append, FakeClaims())
 
         assert published == sent == [old.id]
         assert fresh.id not in sent
 
-    async def test_a_failed_publish_is_logged_and_the_rest_still_go(self, db_session, db_session_factory):
+    async def test_a_second_tick_republishes_nothing_until_the_key_expires(self, db_session, db_session_factory):
+        old = await add_task(db_session)
+        await backdate(db_session, old, created_at=OLD)
+        sent: list[uuid.UUID] = []
+        claims = FakeClaims()
+
+        await sweep(db_session_factory, sent.append, claims)
+        await sweep(db_session_factory, sent.append, claims)
+        assert sent == [old.id]
+
+        claims.expire()  # fifteen minutes later, the row is still queued
+        await sweep(db_session_factory, sent.append, claims)
+        assert sent == [old.id, old.id]
+
+    async def test_a_tick_is_capped(self, db_session, db_session_factory):
+        tasks = [await add_task(db_session) for _ in range(5)]
+        for i, task in enumerate(tasks):
+            await backdate(db_session, task, created_at=OLD + timedelta(seconds=i))
+        sent: list[uuid.UUID] = []
+
+        await sweep(db_session_factory, sent.append, FakeClaims(), max_per_tick=2)
+
+        assert sent == [tasks[0].id, tasks[1].id]
+
+    async def test_a_broker_error_aborts_the_tick_without_raising_and_frees_the_key(
+        self, db_session, db_session_factory
+    ):
         first, second = await add_task(db_session), await add_task(db_session)
         await backdate(db_session, first, created_at=OLD)
         await backdate(db_session, second, created_at=OLD + timedelta(minutes=1))
-        sent = []
+        attempts = []
+        claims = FakeClaims()
 
-        def flaky(task_id):
-            if task_id == first.id:
-                raise ConnectionError("broker down")
-            sent.append(task_id)
+        def down(task_id):
+            attempts.append(task_id)
+            raise ConnectionError("broker down")
 
-        assert await maintenance.sweep_queued(db_session_factory, FIVE_MIN, flaky) == [second.id]
-        assert sent == [second.id]
+        assert await sweep(db_session_factory, down, claims) == []
+        assert attempts == [first.id]  # the second row was not even tried
+        assert claims.keys == {first.id} - {first.id}  # the failed row's key was released
 
 
 class TestReaper:
@@ -94,3 +144,40 @@ class TestReaper:
         assert statuses[beating.id][0] is TaskStatus.RUNNING
         assert statuses[just_claimed.id][0] is TaskStatus.RUNNING
         assert statuses[queued.id][0] is TaskStatus.QUEUED
+
+    async def test_a_heartbeat_between_the_select_and_the_update_leaves_the_row_running(
+        self, db_session, db_session_factory, monkeypatch
+    ):
+        racing = await add_task(db_session, status=TaskStatus.RUNNING)
+        racing_id = racing.id
+        await backdate(db_session, racing, started_at=OLD, heartbeat_at=OLD)
+        real = maintenance.running_with_stale_heartbeat
+
+        async def select_then_beat(factory, older_than):
+            found = await real(factory, older_than)
+            if older_than != THREE_MIN:
+                return found  # the reaper's separate long-stale look
+            # The task beats after the reaper read it and before the reaper writes.
+            async with factory() as session:
+                await session.execute(update(Task).where(Task.id == racing_id).values(heartbeat_at=func.now()))
+                await session.commit()
+            return found
+
+        monkeypatch.setattr(maintenance, "running_with_stale_heartbeat", select_then_beat)
+        removed = []
+
+        async def remove(task_id):
+            removed.append(task_id)
+
+        reaped = await maintenance.reap_abandoned(db_session_factory, THREE_MIN, remove)
+
+        db_session.expire_all()
+        row = await db_session.get(Task, racing_id)
+        assert reaped == [] and removed == []
+        assert row.status is TaskStatus.RUNNING and row.error_message is None
+
+    async def test_a_fresh_heartbeat_is_never_failed(self, db_session, db_session_factory):
+        beating = await add_task(db_session, status=TaskStatus.RUNNING)
+        await backdate(db_session, beating, started_at=OLD, heartbeat_at=datetime.now(UTC))
+
+        assert await maintenance.reap_abandoned(db_session_factory, THREE_MIN, lambda _: None) == []

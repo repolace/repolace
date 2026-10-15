@@ -95,6 +95,35 @@ async def running_with_stale_heartbeat(
         return [TaskRef(task_id, instance_id, run_index) for task_id, instance_id, run_index in rows]
 
 
+async def fail_if_heartbeat_stale(
+    factory: SessionFactory, task_id: uuid.UUID, message: str, older_than: timedelta
+) -> bool:
+    """RUNNING -> FAILED only if the row is *still* running **and still stale** at write time.
+
+    The staleness test is part of the UPDATE's own WHERE clause, so a heartbeat that lands between
+    a reaper's SELECT and this write leaves the row running. Returns whether this call failed it
+    (decided by RETURNING, not by a count that could include another writer's change).
+    """
+    cutoff = func.now() - older_than
+    async with factory() as session:
+        result = await session.execute(
+            update(Task)
+            .where(
+                Task.id == task_id,
+                Task.status == TaskStatus.RUNNING,
+                or_(
+                    Task.heartbeat_at < cutoff,
+                    Task.heartbeat_at.is_(None) & (func.coalesce(Task.started_at, Task.created_at) < cutoff),
+                ),
+            )
+            .values(status=TaskStatus.FAILED, error_message=message, completed_at=func.now())
+            .returning(Task.id)
+        )
+        failed = result.scalar_one_or_none() is not None
+        await session.commit()
+        return failed
+
+
 async def remove_task_containers(
     task_id: uuid.UUID,
     *,
@@ -113,7 +142,7 @@ async def remove_task_containers(
     """
     prefix = f"repolace-{task_id.hex[:12]}"
     try:
-        listed = await process_runner(docker, "ps", "-q", "--filter", f"name={prefix}", timeout=timeout, env=env)
+        listed = await process_runner(docker, "ps", "-q", "--filter", f"name=^{prefix}-", timeout=timeout, env=env)
         if listed.timed_out or listed.returncode != 0:
             log.error("runner.docker.ps_failed", prefix=prefix, returncode=listed.returncode)
             return ()
