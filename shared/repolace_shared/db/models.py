@@ -281,6 +281,13 @@ class Task(Base):
     )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Bumped every ~30 s by the process running the task. A `running` row whose
+    #: heartbeat has gone stale is a dead runner, which is what the worker's
+    #: reaper looks for. NULL on a row that was never claimed.
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Which process claimed the task (`<hostname>:<pid>` by default), so an
+    #: abandoned row says whose it was.
+    claimed_by: Mapped[str | None] = mapped_column(String, nullable=True)
 
     repo: Mapped[RegisteredRepo] = relationship(back_populates="tasks")
     test_runs: Mapped[list["TaskTestRun"]] = relationship(
@@ -294,6 +301,45 @@ class Task(Base):
         passive_deletes=True,
         order_by="LLMCall.created_at",
     )
+    #: `passive_deletes` for the same reason as `llm_calls`.
+    stages: Mapped[list["TaskStage"]] = relationship(
+        back_populates="task",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="TaskStage.started_at",
+    )
+
+
+TASK_STAGE_STATUSES = ("running", "ok", "failed")
+_TASK_STAGE_STATUS_LIST = ", ".join(f"'{s}'" for s in TASK_STAGE_STATUSES)
+
+
+class TaskStage(Base):
+    """One pipeline stage of one task: when it started, when it ended, how it ended.
+
+    Written best-effort by the pipeline (a database blip must not change a
+    stage's outcome), so a missing or still-`running` row is evidence of a lost
+    write or a dead runner, never proof of what the stage did. The task row stays
+    the source of truth for the result.
+    """
+
+    __tablename__ = "task_stages"
+    __table_args__ = (
+        Index("ix_task_stages_task_id_started_at", "task_id", "started_at"),
+        CheckConstraint(f"status IN ({_TASK_STAGE_STATUS_LIST})", name="ck_task_stages_status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False
+    )
+    stage: Mapped[str] = mapped_column(Text, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    task: Mapped[Task] = relationship(back_populates="stages")
 
 
 class TaskTestRun(Base):
