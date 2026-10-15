@@ -6,6 +6,7 @@ Real local bare remotes throughout (see conftest `source_repo`/`origin`), as in
 run the operation, assert the sentinel never appeared.
 """
 
+import dataclasses
 import http.server
 import subprocess
 import threading
@@ -22,6 +23,7 @@ from repolace_shared.git.repo import (
     CONFLICT_GITLINK,
     CONFLICT_MODE,
     CONFLICT_SYMLINK,
+    MAX_UNMERGED_PATHS,
     GitError,
     GitVersionError,
     UntrustedConfigError,
@@ -31,7 +33,7 @@ from repolace_shared.git.repo import (
     require_git_version,
     run_git_checked,
 )
-from repolace_shared.git.workspace import task_workspace
+from repolace_shared.git.workspace import MAX_RESOLUTION_PATHS, task_workspace
 from shared_support import git, write
 
 pytestmark = pytest.mark.anyio
@@ -327,7 +329,7 @@ class TestCommitResolutionRefusals:
         async with workspace_for(origin_url) as workspace:
             await self._in_conflict(workspace, push_upstream)
             write(workspace.path / "src" / "app.py", APP_AGENT)
-            with pytest.raises(RuntimeError, match="not in the resolved set"):
+            with pytest.raises(RuntimeError, match="not unmerged"):
                 await workspace.commit_resolution(["README.md"], "merge")
 
     async def test_an_edit_outside_the_named_paths_is_refused(self, origin_url, push_upstream):
@@ -494,7 +496,7 @@ class TestHostileCheckout:
             write(workspace.path / "src" / "app.py", APP_AGENT)
 
             with pytest.raises(UntrustedConfigError):
-                await workspace.commit_resolution(["src/app.py", ".gitattributes"], "merge")
+                await workspace.commit_resolution(["src/app.py"], "merge")
 
             assert not sentinel.exists(), "a clean filter from the checkout's config ran on the host"
 
@@ -562,8 +564,11 @@ class TestCredentialOnFetch:
 
             async with workspace_for(origin_url, token_provider=provider) as workspace:
                 git(workspace.path, "config", "remote.origin.url", f"http://127.0.0.1:{server.server_port}/x.git")
+                # The URL check would refuse first; lift it so this test still
+                # proves the *credential helper* is the second, independent control.
+                unchecked = dataclasses.replace(workspace.repo, expected_remote_url=None)
                 with pytest.raises(GitError):
-                    await workspace.repo.fetch_branch("main")
+                    await unchecked.fetch_branch("main")
         finally:
             server.shutdown()
 
@@ -591,3 +596,129 @@ class TestCredentialOnFetch:
             capture_output=True, text=True, check=False,
         )
         assert TOKEN not in out.stdout
+
+
+class TestResolutionScope:
+    """`commit_resolution` commits the conflicted paths and nothing else."""
+
+    async def _in_conflict(self, workspace, push_upstream):
+        await workspace.start_agent_branch(1, TASK_ID)
+        write(workspace.path / "src" / "app.py", APP_AGENT)
+        await workspace.record_attempt("fix")
+        push_upstream({"src/app.py": APP_UPSTREAM})
+        _, tip = await workspace.target_moved()
+        await workspace.repo.merge_no_commit(tip)
+        head = await workspace.repo.head_sha()
+        write(workspace.path / "src" / "app.py", APP_AGENT)
+        return head
+
+    async def test_an_extra_modified_tracked_file_in_paths_is_refused(self, origin_url, push_upstream):
+        async with workspace_for(origin_url) as workspace:
+            head = await self._in_conflict(workspace, push_upstream)
+            write(workspace.path / "README.md", "# tampered\n")
+            with pytest.raises(RuntimeError, match="not unmerged"):
+                await workspace.commit_resolution(["src/app.py", "README.md"], "merge")
+            assert await workspace.repo.head_sha() == head
+            assert await workspace.repo.merge_in_progress()
+
+    async def test_an_extra_untracked_file_in_paths_is_refused(self, origin_url, push_upstream):
+        async with workspace_for(origin_url) as workspace:
+            head = await self._in_conflict(workspace, push_upstream)
+            write(workspace.path / "stray.py", "X = 1\n")
+            with pytest.raises(RuntimeError, match="not unmerged"):
+                await workspace.commit_resolution(["src/app.py", "stray.py"], "merge")
+            assert await workspace.repo.head_sha() == head
+
+    async def test_a_modified_tracked_file_left_out_of_paths_is_refused(self, origin_url, push_upstream):
+        async with workspace_for(origin_url) as workspace:
+            head = await self._in_conflict(workspace, push_upstream)
+            write(workspace.path / "README.md", "# tampered\n")
+            with pytest.raises(RuntimeError, match="outside the resolved set"):
+                await workspace.commit_resolution(["src/app.py"], "merge")
+            assert await workspace.repo.head_sha() == head
+
+    async def test_an_untracked_file_left_out_of_paths_is_refused(self, origin_url, push_upstream):
+        async with workspace_for(origin_url) as workspace:
+            head = await self._in_conflict(workspace, push_upstream)
+            write(workspace.path / "stray.py", "X = 1\n")
+            with pytest.raises(RuntimeError, match="outside the resolved set"):
+                await workspace.commit_resolution(["src/app.py"], "merge")
+            assert await workspace.repo.head_sha() == head
+
+    async def test_the_upstream_sides_staged_changes_are_not_mistaken_for_strays(
+        self, origin_url, push_upstream
+    ):
+        async with workspace_for(origin_url) as workspace:
+            await workspace.start_agent_branch(1, TASK_ID)
+            write(workspace.path / "src" / "app.py", APP_AGENT)
+            await workspace.record_attempt("fix")
+            push_upstream({"src/app.py": APP_UPSTREAM, "README.md": "# sample\nupstream\n"})
+            _, tip = await workspace.target_moved()
+            await workspace.repo.merge_no_commit(tip)
+            write(workspace.path / "src" / "app.py", APP_AGENT)
+
+            sha = await workspace.commit_resolution(["src/app.py"], "merge")
+            assert sha == await workspace.repo.head_sha()
+
+    async def test_more_paths_than_the_cap_are_refused(self, origin_url, push_upstream):
+        async with workspace_for(origin_url) as workspace:
+            await self._in_conflict(workspace, push_upstream)
+            many = [f"f{i}.py" for i in range(MAX_RESOLUTION_PATHS + 1)]
+            with pytest.raises(ValueError, match="at most 500"):
+                await workspace.commit_resolution(many, "merge")
+
+    async def test_more_unmerged_paths_than_the_cap_are_refused(self, origin_url, monkeypatch):
+        async with workspace_for(origin_url) as workspace:
+            records = b"".join(
+                b"100644 " + b"1" * 40 + b" 2\tf" + str(i).encode() + b"\x00"
+                for i in range(MAX_UNMERGED_PATHS + 1)
+            )
+
+            async def fake(*args, **kwargs):
+                return records
+
+            monkeypatch.setattr(repo_module, "run_git_bytes", fake)
+            with pytest.raises(GitError, match="refusing more than 500"):
+                await workspace.repo.unmerged_files()
+
+
+class TestConfigValues:
+    """Allowed keys must also hold the values our flow wrote."""
+
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            ("remote.origin.url", "https://evil.example/x.git"),
+            ("remote.origin.fetch", "+refs/*:refs/*"),
+            ("branch.main.remote", "elsewhere"),
+            ("branch.main.merge", "refs/tags/x"),
+        ],
+    )
+    async def test_a_changed_value_is_refused(self, origin_url, key, value):
+        async with workspace_for(origin_url) as workspace:
+            git(workspace.path, "config", key, value)
+            with pytest.raises(UntrustedConfigError, match="unexpected value"):
+                await workspace.repo.require_trusted_config()
+            with pytest.raises(UntrustedConfigError):
+                await workspace.repo.fetch_branch("main")
+
+    async def test_the_values_the_clone_wrote_are_accepted(self, origin_url):
+        async with workspace_for(origin_url) as workspace:
+            assert workspace.repo.expected_remote_url == origin_url
+            await workspace.repo.require_trusted_config()
+
+
+class TestFetchIntegrity:
+    async def test_the_fetch_asks_git_to_check_objects(self, origin_url, monkeypatch):
+        async with workspace_for(origin_url) as workspace:
+            calls: list[tuple[str, ...]] = []
+            real = repo_module.run_git
+
+            async def spy(*args, **kwargs):
+                calls.append(args)
+                return await real(*args, **kwargs)
+
+            monkeypatch.setattr(repo_module, "run_git", spy)
+            await workspace.repo.fetch_branch("main")
+            (fetch,) = [c for c in calls if "fetch" in c]
+            assert "transfer.fsckObjects=true" in fetch
