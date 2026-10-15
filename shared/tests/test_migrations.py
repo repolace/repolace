@@ -183,6 +183,82 @@ class TestMigration0013:
             assert rows == [("acme/sample",)]
 
 
+async def _task_stage_state(dsn: str) -> dict[str, set[str]]:
+    import asyncpg
+
+    conn = await asyncpg.connect(dsn)
+    try:
+        table = await conn.fetch("SELECT 1 FROM information_schema.tables WHERE table_name = 'task_stages'")
+        cols = await conn.fetch(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'tasks' "
+            "AND column_name IN ('heartbeat_at', 'claimed_by')"
+        )
+        idx = await conn.fetch("SELECT indexname FROM pg_indexes WHERE indexname = 'ix_task_stages_task_id_started_at'")
+    finally:
+        await conn.close()
+    return {
+        "table": {"task_stages"} if table else set(),
+        "tasks": {r[0] for r in cols},
+        "index": {r[0] for r in idx},
+    }
+
+
+class TestMigration0014:
+    def test_it_upgrades_downgrades_and_upgrades_again(self, scratch_url):
+        dsn = _dsn(make_url(scratch_url))
+        absent = {"table": set(), "tasks": set(), "index": set()}
+        present = {
+            "table": {"task_stages"},
+            "tasks": {"heartbeat_at", "claimed_by"},
+            "index": {"ix_task_stages_task_id_started_at"},
+        }
+        with mock.patch.dict(os.environ, {"DATABASE_URL": scratch_url}):
+            command.upgrade(_config(), "0013")
+            assert _in_thread(lambda: _task_stage_state(dsn)) == absent
+            command.upgrade(_config(), "0014")
+            assert _in_thread(lambda: _task_stage_state(dsn)) == present
+            command.downgrade(_config(), "0013")
+            assert _in_thread(lambda: _task_stage_state(dsn)) == absent
+            command.upgrade(_config(), "0014")
+            assert _in_thread(lambda: _task_stage_state(dsn)) == present
+
+    def test_the_status_check_and_the_cascade_hold(self, scratch_url):
+        dsn = _dsn(make_url(scratch_url))
+        import asyncpg
+
+        async def go() -> None:
+            conn = await asyncpg.connect(dsn)
+            try:
+                await conn.execute(
+                    "INSERT INTO github_installations (id, account_login, account_id, account_type) "
+                    "VALUES (1, 'acme', 1, 'Organization')"
+                )
+                await conn.execute(
+                    "INSERT INTO registered_repos (id, installation_id, github_repo_id, owner, name, "
+                    "full_name, default_branch, private) VALUES "
+                    "('00000000-0000-0000-0000-000000000001', 1, 7, 'acme', 'sample', 'acme/sample', 'main', false)"
+                )
+                await conn.execute(
+                    "INSERT INTO tasks (id, repo_id, issue_number, issue_title, issue_url, target_branch) VALUES "
+                    "('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 1, 't', 'u', 'main')"
+                )
+                insert = (
+                    "INSERT INTO task_stages (id, task_id, stage, started_at, status) VALUES "
+                    "(gen_random_uuid(), '00000000-0000-0000-0000-000000000002', 'clone', now(), $1)"
+                )
+                await conn.execute(insert, "ok")
+                with pytest.raises(asyncpg.CheckViolationError):
+                    await conn.execute(insert, "bogus")
+                await conn.execute("DELETE FROM tasks")
+                assert await conn.fetchval("SELECT count(*) FROM task_stages") == 0
+            finally:
+                await conn.close()
+
+        with mock.patch.dict(os.environ, {"DATABASE_URL": scratch_url}):
+            command.upgrade(_config(), "0014")
+            _in_thread(go)
+
+
 class TestModelsAgreeWithMigrations:
     def test_alembic_check_is_clean_at_head(self, scratch_url):
         """The model and the migration chain describe the same schema.
