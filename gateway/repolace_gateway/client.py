@@ -397,6 +397,18 @@ class LLMClient:
 
     # -- pre-spend checks -----------------------------------------------------
 
+    def preflight(self, stage: str) -> None:
+        """Refuse a stage whose model, or its fallback, cannot be priced or keyed.
+
+        The check `complete` runs before it spends anything, exposed so a caller can run
+        it before it claims work. Raises `UnpricedModelError`, `MissingProviderKey` or
+        `ConfigError`, like `complete`.
+        """
+        route = self._config.route(stage)
+        for model in (route.primary, route.fallback):
+            if model is not None:
+                self._verify_usable(model)
+
     def _verify_usable(self, model: ModelConfig) -> None:
         """Refuse a model that cannot be priced or keyed, before any money is spent."""
         if model.key in self._verified:
@@ -562,8 +574,7 @@ class LLMClient:
 
         route = self._config.route(stage)
         candidates = [route.primary] + ([route.fallback] if route.fallback else [])
-        for candidate in candidates:
-            self._verify_usable(candidate)
+        self.preflight(stage)
         use_cache = route.stage.cache if cache is None else cache
 
         started = self._clock()

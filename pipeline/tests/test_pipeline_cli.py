@@ -144,6 +144,7 @@ class Recorder:
             verify_specs_path="specs.toml",
             instances_dir="/instances",
             embedding_strategy="head_tail",
+            workspace_parent_dir="/quota/workspaces",
         )
 
         class Engine:
@@ -229,6 +230,16 @@ class TestWhatIsPassedToRunTask:
         assert recorder.run_task_kwargs["open_pr"] is True
         assert recorder.run_task_kwargs["instances_dir"] == "/instances"
         assert recorder.run_task_kwargs["embedding_strategy"] == "head_tail"
+
+    @pytest.mark.anyio
+    async def test_the_workspace_parent_dir_setting_reaches_the_clone(self, monkeypatch):
+        recorder = Recorder(monkeypatch, RunResult(uuid.UUID(TASK), TaskStatus.COMPLETED))
+
+        await cli._run(uuid.UUID(TASK), agent="stub", no_pr=False)
+
+        factory = recorder.run_task_kwargs["workspace_factory"]
+        assert factory.func is cli.task_workspace
+        assert factory.keywords == {"parent_dir": "/quota/workspaces"}
 
     @pytest.mark.anyio
     async def test_no_pr_is_passed_through(self, monkeypatch):

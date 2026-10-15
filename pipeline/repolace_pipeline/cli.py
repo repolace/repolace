@@ -13,6 +13,7 @@ the GitHub App credentials at all.
 
 import argparse
 import asyncio
+import functools
 import sys
 import uuid
 from collections.abc import Sequence
@@ -26,6 +27,7 @@ from repolace_agents.contracts import AgentRunner
 from repolace_gateway.errors import ConfigError, MissingProviderKey, UnpricedModelError
 from repolace_shared.db.models import Task
 from repolace_shared.db.session import create_engine, create_session_factory
+from repolace_shared.git.workspace import task_workspace
 from repolace_shared.github.client import GithubClient
 from repolace_shared.instances import InstanceError, load_instance_by_id
 from repolace_shared.logging import configure_logging
@@ -83,18 +85,10 @@ def preflight_agent_models(client: "LLMClient") -> None:
     The gateway already refuses an unpriced model -- but at the first *call*, which is after the
     claim, the clone, the index, the baseline and the sandbox build. A task row left `failed` by
     a missing line in `models.toml` is a harness error in the benchmark's report, so the check
-    belongs where nothing has happened yet. It runs the gateway's own pre-spend check
-    (`_verify_usable`, which is what `complete` runs), so the two cannot disagree about what
-    "priced" means.
-
-    `_verify_usable` and `_config` are private: the gateway has no public preflight, and writing a
-    second price check here would be the drift this avoids. Requested of the gateway stream as
-    `LLMClient.preflight(stage)`.
+    belongs where nothing has happened yet. It runs `LLMClient.preflight`, the gateway's own
+    pre-spend check (what `complete` runs), so the two cannot disagree about what "priced" means.
     """
-    route = client._config.route(AGENT_STAGE)
-    for model in (route.primary, route.fallback):
-        if model is not None:
-            client._verify_usable(model)
+    client.preflight(AGENT_STAGE)
 
 
 def build_llm_client(
@@ -184,6 +178,7 @@ async def _run(task_id: uuid.UUID, *, agent: str, no_pr: bool) -> int:
             instances_dir=settings.instances_dir,
             open_pr=open_pr_allowed(agent, no_pr),
             embedding_strategy=settings.embedding_strategy,
+            workspace_factory=functools.partial(task_workspace, parent_dir=settings.workspace_parent_dir),
         )
     except UsageError as exc:
         log.error("pipeline.cli.usage", error=str(exc))
