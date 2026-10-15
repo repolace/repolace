@@ -56,18 +56,7 @@ async def test_the_worker_preflights_the_agent_and_resolve_stages(monkeypatch):
     assert built.llm is client
 
 
-async def test_a_config_without_the_resolve_stage_is_tolerated(monkeypatch):
-    # The `resolve` stage lands with feat/conflict-resolver; until then its absence is not an error.
-    client = FakeClient(known=("agent",))
-    install(monkeypatch, client)
-
-    built = await resources.build_resources(SETTINGS, "llm")
-
-    assert client.stages == ["agent", "resolve"]
-    assert built.llm is client
-
-
-async def test_any_other_config_error_on_resolve_is_not_swallowed(monkeypatch):
+async def test_a_resolve_stage_that_cannot_be_priced_refuses_the_worker(monkeypatch):
     class Bad(FakeClient):
         def preflight(self, stage):
             if stage == "resolve":

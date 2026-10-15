@@ -31,8 +31,8 @@ log = structlog.get_logger()
 
 #: The stage whose model the pipeline's agent calls; both it and its fallback are checked up front.
 AGENT_STAGE = "agent"
-#: The merge-conflict resolver's stage. It lands with `feat/conflict-resolver`; until that branch is
-#: merged the gateway config has no such stage and the check is skipped (see `preflight_agent_models`).
+#: The merge-conflict resolver's stage. It follows `agent` unless the config names it
+#: (`repolace_gateway.config.OPTIONAL_STAGE_FALLBACKS`), so it is always routable.
 RESOLVE_STAGE = "resolve"
 
 
@@ -49,16 +49,10 @@ def preflight_agent_models(client: "LLMClient") -> None:
     belongs where nothing has happened yet. It runs `LLMClient.preflight`, the gateway's own
     pre-spend check (what `complete` runs), so the two cannot disagree about what "priced" means.
 
-    Both the `agent` and the `resolve` stage are checked. `resolve` is optional in the gateway
-    config and falls back to `agent`'s model once `feat/conflict-resolver` is merged; a config that
-    does not know the stage yet is skipped, and only that "unknown stage" error is swallowed.
+    Both the `agent` and the `resolve` stage are checked.
     """
     client.preflight(AGENT_STAGE)
-    try:
-        client.preflight(RESOLVE_STAGE)
-    except ConfigError as exc:
-        if "unknown stage" not in str(exc):
-            raise
+    client.preflight(RESOLVE_STAGE)
 
 
 def build_llm_client(
