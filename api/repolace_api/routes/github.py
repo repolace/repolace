@@ -35,6 +35,12 @@ async def callback(
     structlog.contextvars.bind_contextvars(installation_id=installation_id)
     log.info("github.callback", setup_action=setup_action)
     if setup_action in ("install", "update"):
+        installation = await db.get(GithubInstallation, installation_id)
+        if installation is not None and installation.suspended_at is not None:
+            # The callback carries no proof of who is calling, so it must not undo what a
+            # signed `suspend` webhook did; only the `unsuspend` webhook lifts that.
+            log.warning("github.callback.suspended_ignored")
+            return {"status": "ok"}
         await _sync_installation(installation_id, db, github)
     return {"status": "ok"}
 
