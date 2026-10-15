@@ -60,6 +60,9 @@ class TaskListItem(BaseModel):
     pr_url: str | None
     pr_number: int | None
     error_message: str | None
+    #: `eval_run_id IS NOT NULL`. Benchmark rows are hidden from the list unless
+    #: asked for, and their oracle-bearing fields are nulled wherever they appear.
+    is_benchmark: bool = False
     created_at: datetime
     started_at: datetime | None
     completed_at: datetime | None
@@ -96,6 +99,11 @@ class TestRunSummary(BaseModel):
 
 class TaskDetail(TaskListItem):
     repo_id: UUID
+    repo_full_name: str
+    #: `SUM(llm_calls.cost_usd)` while the task has no terminal `cost_usd`, so a
+    #: running task shows what it has spent so far. NULL once `cost_usd` is set,
+    #: or when no priced call exists yet.
+    cost_so_far_usd: Decimal | None = None
     issue_url: str
     open_pr_on_failure: bool
     attempts: int

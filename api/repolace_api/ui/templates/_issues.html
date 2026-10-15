@@ -1,0 +1,15 @@
+{% for i in issues %}
+<label class="opt">
+  <input type="radio" name="issue_number" value="{{ i.number }}"{% if i.number == issue_number %} checked{% endif %}>
+  <span>
+    <span class="t"><span class="n">#{{ i.number }}</span>{{ i.title }}</span>
+    <span class="meta">
+      {% for lb in i.labels %}<span class="lbl">{{ lb }}</span>{% endfor %}
+      {% if i.created_at %}<span>opened {{ relative(i.created_at) }}{% if i.author %} by {{ i.author }}{% endif %}</span>{% elif i.author %}<span>by {{ i.author }}</span>{% endif %}
+    </span>
+  </span>
+</label>
+{% else %}
+<p class="empty">{% if q %}No open issues match <q>{{ q }}</q>.{% else %}This repository has no open issues.{% endif %}</p>
+{% endfor %}
+{% if issue_total > issues|length %}<p class="hint empty">Showing {{ issues|length }} of {{ issue_total }}. Search to narrow the list.</p>{% endif %}

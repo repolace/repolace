@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% set t = v.detail %}
+{% block title %}#{{ t.issue_number }} {{ t.issue_title }} | repolace{% endblock %}
+{% block crumbs %}
+<li><a href="/ui/repos">Repositories</a></li>
+<li>{{ t.repo_full_name }}</li>
+<li><a href="/ui/repos/{{ t.repo_id }}/tasks">Tasks</a></li>
+<li aria-current="page">Task {{ short_id(t.id) }}</li>
+{% endblock %}
+{% block content %}
+<div class="head">
+  <a class="back" href="/ui/repos/{{ t.repo_id }}/tasks">{{ icon("arrow-left") }}All tasks</a>
+  <h1><span class="mono">#{{ t.issue_number }}</span>{{ t.issue_title }}</h1>
+</div>
+{# Polled while the task is live. The fragment answers 286 once it is terminal, which stops htmx polling;
+   a task that is already terminal renders without hx-trigger at all. #}
+<div id="live"{% if v.live %} hx-get="/ui/tasks/{{ t.id }}/live" hx-trigger="{{ poll }}" hx-swap="innerHTML" aria-live="polite"{% endif %}>
+{% include "_task_live.html" %}
+</div>
+{% endblock %}

@@ -10,6 +10,7 @@ from repolace_api.config import get_settings
 from repolace_api.routes.github import router as github_router
 from repolace_api.routes.repos import router as repos_router
 from repolace_api.routes.tasks import router as tasks_router
+from repolace_api.ui import mount_ui
 
 
 @asynccontextmanager
@@ -31,6 +32,7 @@ app = FastAPI(title="repolace", lifespan=lifespan)
 app.include_router(github_router)
 app.include_router(repos_router)
 app.include_router(tasks_router)
+mount_ui(app)
 
 
 @app.get("/healthz")

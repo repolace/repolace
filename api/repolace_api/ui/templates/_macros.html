@@ -1,0 +1,71 @@
+{% from "_icons.html" import icon %}
+
+{# Status badge: a pill. Text is the enum value, never retyped. #}
+{% macro badge(status) %}<span class="badge b-{{ status }}">{{ icon(status) }}{{ status }}</span>{% endmacro %}
+
+{# Outcome chip: a different shape from the badge on purpose. `outcome` is the
+   enum value or none (rendered "unscored", a label for NULL, not an enum member). #}
+{% macro chip(outcome, approved_by=none, approved_at=none) %}
+{% if outcome is none %}<span class="chip c-unscored">{{ icon("dash") }}{{ unscored }}</span>
+{% elif outcome == "passed" %}<span class="chip c-passed">{{ icon("check") }}{{ outcome }}</span>
+{% elif outcome == "failed" %}<span class="chip c-failed">{{ icon("x") }}{{ outcome }}</span>
+{% elif outcome == "passed_with_test_edit" %}<span class="chip c-edit">{{ icon("pencil") }}{{ outcome }}{% if approved_at is not none %}<span class="sub" title="Approved by {{ approved_by }}">{{ icon("check") }}approved</span>{% else %}<span class="sub pending">{{ icon("clock") }}awaiting sign-off</span>{% endif %}</span>
+{% endif %}
+{% endmacro %}
+
+{% macro time(when) %}{% if when is none %}<span class="subtle">not started</span>{% else %}<time datetime="{{ when.isoformat() }}" title="{{ absolute(when) }}">{{ relative(when) }}</time>{% endif %}{% endmacro %}
+
+{# A horizontal bar made of SVG attributes: the CSP forbids style="". #}
+{% macro costbar(pct) %}<svg class="costbar" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="track" x="0" y="0" width="100" height="4" rx="2"/><rect class="fill" x="0" y="0" width="{{ pct }}" height="4" rx="2"/></svg>{% endmacro %}
+
+{% macro task_row(row) %}
+{% set t = row.item %}
+<tr id="task-{{ t.id }}"{% if row.live %} class="is-live" hx-get="/ui/tasks/{{ t.id }}/row" hx-trigger="{{ poll }}" hx-swap="outerHTML"{% endif %}>
+  <td class="issue-cell"><span class="n">#{{ t.issue_number }}</span><a class="rowlink" href="/ui/tasks/{{ t.id }}">{{ t.issue_title }}</a>{% if t.is_benchmark %} <span class="tag">benchmark</span>{% endif %}</td>
+  <td><span class="branch">{{ icon("branch") }}{{ t.target_branch }}</span></td>
+  <td><div class="stcell">{{ badge(t.status.value) }}{% if row.note %}<span class="note{{ ' err' if row.note_is_error }}"><span class="k">{{ row.note_key }}</span>{{ row.note }}</span>{% endif %}</div></td>
+  <td>{{ chip(t.outcome.value if t.outcome else none) }}</td>
+  <td class="num">{{ money(row.cost) }}{% if row.cost_is_so_far %}<span class="sofar">so far</span>{% endif %}</td>
+  <td class="muted">{{ time(t.started_at) }}</td>
+  <td>{% if t.pr_url %}<a href="{{ t.pr_url }}" target="_blank" rel="noopener noreferrer" class="mono">{{ icon("pr_opened") }} #{{ t.pr_number }}</a>{% else %}<span class="subtle" aria-label="No PR">&mdash;</span>{% endif %}</td>
+</tr>
+{% endmacro %}
+
+{% macro strip_node(n) %}
+<li class="stage st-{{ n.state }}"><span class="nm">{{ icon({"pending": "circle-dashed", "running": "running", "ok": "circle-check", "failed": "circle-x", "skipped": "circle-slash"}[n.state]) }}{{ n.label }}</span><span class="sm"><b>{{ n.state }}</b> &middot; {{ n.detail }}</span></li>
+{% endmacro %}
+
+{% macro estimate_panel(e) %}
+<div class="est" role="group" aria-labelledby="estlab">
+  <div class="lab"><span id="estlab">Estimated cost (p50 &ndash; p90)</span>{% if e.low_history %}<span class="flag">{{ icon("triangle") }}low history</span>{% endif %}</div>
+  {% if e.p50 is not none %}
+  <div class="range">{{ money(e.p50) }} &ndash; {{ money(e.p90) }}<small>p50 &ndash; p90</small></div>
+  {% else %}
+  <div class="none">No estimate yet</div>
+  {% endif %}
+  <div>
+    <svg class="bar" viewBox="0 0 100 14" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="track" x="0" y="3" width="100" height="8" rx="4"/>{% if e.p50 is not none %}<rect class="band" x="{{ e.left_pct }}" y="3" width="{{ e.width_pct }}" height="8"/><rect class="p50" x="{{ [e.left_pct - 0.6, 0]|max }}" y="0" width="1.2" height="14"/>{% endif %}</svg>
+    <div class="scale" aria-hidden="true"><span>$0</span><span>cap {{ money(e.cap) }}</span></div>
+  </div>
+  <div class="basis">{{ e.basis_text }}</div>
+</div>
+{% endmacro %}
+
+{% macro diff_block(d, open, pushed) %}
+<details class="diff"{% if open %} open{% endif %}>
+  <summary><svg class="i chev" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg><span class="diff-title">Diff</span>{% if not pushed %}<span class="tag">not pushed</span>{% endif %}<span class="muted">{{ d.files|length }} file{{ "" if d.files|length == 1 else "s" }} changed</span><span class="stat"><span class="a">+{{ d.added }}</span><span class="d">&minus;{{ d.deleted }}</span></span></summary>
+  {% for f in d.files %}
+  <details class="file" open>
+    <summary><svg class="i chev" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg><span class="mono"><strong>{{ f.path }}</strong></span><span class="tag">{{ f.status }}</span><span class="stat"><span class="a">+{{ f.added }}</span><span class="d">&minus;{{ f.deleted }}</span></span></summary>
+    <div class="code" role="region" aria-label="Diff of {{ f.path }}" tabindex="0">
+      {% for l in f.lines %}
+      {% if l.kind == "hunk" or l.kind == "meta" %}<div class="dl {{ l.kind }}"><span class="g"></span><span class="g"></span><span class="t">{{ l.html }}</span></div>
+      {% else %}<div class="dl {{ l.kind }}"><span class="g">{{ l.old if l.old is not none else "" }}</span><span class="g">{{ l.new if l.new is not none else "" }}</span><span class="t"><span class="sg">{{ l.sign }}</span>{{ l.html }}</span></div>
+      {% endif %}
+      {% endfor %}
+    </div>
+  </details>
+  {% endfor %}
+  {% if d.truncated_lines %}<p class="diffnote">Diff truncated: {{ d.truncated_lines }} more line{{ "" if d.truncated_lines == 1 else "s" }} not shown.</p>{% endif %}
+</details>
+{% endmacro %}
