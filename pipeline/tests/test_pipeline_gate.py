@@ -11,7 +11,7 @@ import itertools
 
 import pytest
 from repolace_agents.contracts import AgentResult, StopReason
-from repolace_pipeline.gate import PrDecision, pr_decision
+from repolace_pipeline.gate import PrDecision, count_changed_lines, pr_decision
 from repolace_shared.db.models import TaskOutcome
 from verify.scoring import Score, Verdict
 
@@ -163,3 +163,70 @@ class TestProductMode:
 
         assert decision.open is True
         assert "no evidence of harm" in decision.reason, "the flag must not mask the real reason"
+
+
+CAPS = {"max_changed_files": 10, "max_changed_lines": 500}
+
+
+class TestScopeCap:
+    """A change past the cap is not proposed, in either mode, and no flag overrides it."""
+
+    def test_a_change_at_both_limits_still_passes(self):
+        assert decide(changed_files=10, changed_lines=500, **CAPS).open is True
+
+    @pytest.mark.parametrize(("files", "lines"), [(11, 1), (1, 501), (11, 501)])
+    def test_one_over_either_limit_refuses(self, files, lines):
+        decision = decide(changed_files=files, changed_lines=lines, **CAPS)
+
+        assert decision.open is False
+        assert "scope cap" in decision.reason and f"{files} files, {lines} lines" in decision.reason
+
+    @pytest.mark.parametrize("benchmark", [True, False])
+    def test_open_pr_on_failure_does_not_override_it(self, benchmark):
+        decision = decide(
+            benchmark=benchmark,
+            scored=scored(TaskOutcome.PASSED),
+            open_pr_on_failure=True,
+            changed_files=11,
+            changed_lines=1,
+            **CAPS,
+        )
+
+        assert decision.open is False and "scope cap" in decision.reason
+
+    def test_no_cap_configured_means_no_limit(self):
+        assert decide(changed_files=10_000, changed_lines=10_000_000).open is True
+
+    def test_the_reason_names_counts_and_no_test(self):
+        decision = decide(benchmark=True, changed_files=11, changed_lines=1, **CAPS)
+
+        assert "::" not in decision.reason
+
+
+class TestCountChangedLines:
+    def test_counts_added_and_removed_lines_but_not_headers(self):
+        diff = (
+            "diff --git a/x.py b/x.py\nindex 1..2 100644\n--- a/x.py\n+++ b/x.py\n"
+            "@@ -1,2 +1,2 @@\n context\n-old\n+new\n"
+        )
+
+        assert count_changed_lines(diff) == 2
+
+    def test_a_removed_line_that_looks_like_a_header_still_counts(self):
+        diff = "diff --git a/x.sql b/x.sql\n--- a/x.sql\n+++ b/x.sql\n@@ -1 +1 @@\n--- a comment\n+++ b comment\n"
+
+        assert count_changed_lines(diff) == 2
+
+    def test_a_second_file_resets_the_hunk_state(self):
+        diff = (
+            "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-1\n+2\n"
+            "diff --git a/b b/b\n--- a/b\n+++ b/b\n@@ -1 +1 @@\n-3\n+4\n"
+        )
+
+        assert count_changed_lines(diff) == 4
+
+    def test_a_binary_change_has_no_lines(self):
+        assert count_changed_lines("diff --git a/i.png b/i.png\nBinary files a/i.png and b/i.png differ\n") == 0
+
+    def test_an_empty_diff_is_zero(self):
+        assert count_changed_lines("") == 0

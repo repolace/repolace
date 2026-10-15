@@ -178,6 +178,8 @@ async def _run(task_id: uuid.UUID, *, agent: str, no_pr: bool) -> int:
             instances_dir=settings.instances_dir,
             open_pr=open_pr_allowed(agent, no_pr),
             embedding_strategy=settings.embedding_strategy,
+            max_changed_files=settings.max_changed_files,
+            max_changed_lines=settings.max_changed_lines,
             workspace_factory=functools.partial(task_workspace, parent_dir=settings.workspace_parent_dir),
         )
     except UsageError as exc:

@@ -145,6 +145,8 @@ class Recorder:
             instances_dir="/instances",
             embedding_strategy="head_tail",
             workspace_parent_dir="/quota/workspaces",
+            max_changed_files=10,
+            max_changed_lines=500,
         )
 
         class Engine:
@@ -230,6 +232,8 @@ class TestWhatIsPassedToRunTask:
         assert recorder.run_task_kwargs["open_pr"] is True
         assert recorder.run_task_kwargs["instances_dir"] == "/instances"
         assert recorder.run_task_kwargs["embedding_strategy"] == "head_tail"
+        assert recorder.run_task_kwargs["max_changed_files"] == 10
+        assert recorder.run_task_kwargs["max_changed_lines"] == 500
 
     @pytest.mark.anyio
     async def test_the_workspace_parent_dir_setting_reaches_the_clone(self, monkeypatch):
