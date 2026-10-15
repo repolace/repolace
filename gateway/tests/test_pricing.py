@@ -171,6 +171,20 @@ class TestRefusedBeforeAnyMoneyIsSpent:
         assert h.acompletion.calls == []
         assert h.recorder.records == []
 
+    def test_preflight_refuses_an_unpriced_model_without_a_task_scope_or_a_call(self):
+        """The check the CLI runs before it claims a row needs neither a scope nor a budget."""
+
+        def unmapped(**_):
+            raise Exception("This model isn't mapped yet")  # noqa: TRY002 -- imitates litellm raising a bare Exception
+
+        h = make_harness(config=make_config(agent_model="priced_by_litellm"), model_info_fn=unmapped)
+        with pytest.raises(UnpricedModelError, match=r"\[models\.priced_by_litellm\.price\]"):
+            h.client.preflight("agent")
+        assert h.acompletion.calls == []
+
+    def test_preflight_passes_a_priced_model(self):
+        make_harness().client.preflight("agent")
+
     async def test_a_map_entry_with_missing_rates_is_refused_before_the_call(self):
         h = make_harness(
             config=make_config(agent_model="priced_by_litellm"),

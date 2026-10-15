@@ -42,6 +42,10 @@ class PipelineSettings(BaseSettings):
     #: retrieval reads it, and a different value forces a full reindex of every
     #: repo it meets.
     embedding_strategy: str = "truncate"
+    #: Where each task's clone is made. A probe or script can write as much as it likes
+    #: into its export, so this directory should sit on a size- and inode-limited
+    #: filesystem. Unset means the process's `TMPDIR`.
+    workspace_parent_dir: Path | None = None
 
     @property
     def github_app_private_key(self) -> str:
