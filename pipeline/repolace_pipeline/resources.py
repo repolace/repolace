@@ -6,6 +6,7 @@ client, sandbox backend, specs, the model client and its up-front checks). `run_
 them.
 """
 
+import functools
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -14,6 +15,7 @@ from pydantic import ValidationError
 from pydantic_settings.exceptions import SettingsError
 from repolace_gateway.errors import ConfigError, MissingProviderKey, UnpricedModelError
 from repolace_shared.db.session import create_engine, create_session_factory
+from repolace_shared.git.workspace import task_workspace
 from repolace_shared.github.client import GithubClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from verify.backends.docker import DockerBackend
@@ -133,3 +135,14 @@ async def build_resources(settings: PipelineSettings, agent_kind: str) -> Resour
         await resources.aclose()
         raise
     return resources
+
+
+def task_options(settings: PipelineSettings) -> dict[str, Any]:
+    """The settings-derived keyword arguments `run_task` gets, so the CLI and the worker agree."""
+    return {
+        "instances_dir": settings.instances_dir,
+        "embedding_strategy": settings.embedding_strategy,
+        "max_changed_files": settings.max_changed_files,
+        "max_changed_lines": settings.max_changed_lines,
+        "workspace_factory": functools.partial(task_workspace, parent_dir=settings.workspace_parent_dir),
+    }

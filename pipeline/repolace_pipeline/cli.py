@@ -13,7 +13,6 @@ the GitHub App credentials at all.
 
 import argparse
 import asyncio
-import functools
 import sys
 import uuid
 from collections.abc import Sequence
@@ -22,7 +21,6 @@ from pathlib import Path
 import structlog
 from repolace_agents.contracts import AgentRunner
 from repolace_shared.db.models import Task
-from repolace_shared.git.workspace import task_workspace
 from repolace_shared.instances import InstanceError, load_instance_by_id
 from repolace_shared.logging import configure_logging
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -37,6 +35,7 @@ from repolace_pipeline.resources import (
     build_llm_client,
     build_resources,
     preflight_agent_models,
+    task_options,
 )
 from repolace_pipeline.run import run_task
 from repolace_pipeline.runners import GoldAgent
@@ -109,12 +108,8 @@ async def _run(task_id: uuid.UUID, *, agent: str, no_pr: bool) -> int:
             resources.specs,
             agent=runner,
             llm=resources.llm,
-            instances_dir=settings.instances_dir,
             open_pr=open_pr_allowed(agent, no_pr),
-            embedding_strategy=settings.embedding_strategy,
-            max_changed_files=settings.max_changed_files,
-            max_changed_lines=settings.max_changed_lines,
-            workspace_factory=functools.partial(task_workspace, parent_dir=settings.workspace_parent_dir),
+            **task_options(settings),
         )
     except UsageError as exc:
         log.error("pipeline.cli.usage", error=str(exc))
