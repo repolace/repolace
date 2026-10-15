@@ -46,6 +46,12 @@ class PipelineSettings(BaseSettings):
     #: into its export, so this directory should sit on a size- and inode-limited
     #: filesystem. Unset means the process's `TMPDIR`.
     workspace_parent_dir: Path | None = None
+    #: The largest change a task may propose as a PR: files touched, and lines added plus
+    #: removed. The 18 benchmark gold patches are at most 4 files and 126 lines, so these never
+    #: trip on a fix the benchmark expects. A task over either limit still finishes and is
+    #: scored; only the PR is withheld.
+    max_changed_files: int = 10
+    max_changed_lines: int = 500
 
     @property
     def github_app_private_key(self) -> str:

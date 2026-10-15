@@ -379,6 +379,19 @@ class TestAPrIsOpened:
         assert "refs/heads/" + agent_branch_name(7, task.id) not in git(origin, "for-each-ref", "--format=%(refname)")
 
 
+    async def test_a_change_over_the_scope_cap_is_scored_but_not_proposed(self, db_session, db_session_factory, origin_url, origin):
+        task = await seed_task(db_session)
+
+        result, github = await run(
+            db_session_factory, origin_url, task, agent_that(StopReason.SUBMITTED),
+            FakeBackend(results=[BASELINE, AFTER]), max_changed_lines=0,
+        )
+
+        assert result.status is TaskStatus.COMPLETED and github.pull_requests == []
+        assert "scope cap" in result.pr_gate_reason
+        assert "refs/heads/" + agent_branch_name(7, task.id) not in git(origin, "for-each-ref", "--format=%(refname)")
+
+
 class TestPlumbingStub:
     """`--agent stub`: the default runner, kept flowing through the same code as the real agent."""
 

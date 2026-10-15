@@ -105,7 +105,7 @@ from repolace_pipeline.finalize import (
     write_failure_minimal,
     write_terminal,
 )
-from repolace_pipeline.gate import PrDecision, pr_decision
+from repolace_pipeline.gate import PrDecision, count_changed_lines, pr_decision
 from repolace_pipeline.pr import PrFacts, commit_message, pr_title, render_pr_body
 from repolace_pipeline.runners import GoldAgent, StubAgent
 from repolace_pipeline.testruns import record_test_run
@@ -183,6 +183,8 @@ class _Seams:
     budget: TaskBudget | None
     open_pr: bool
     embedding_strategy: str
+    max_changed_files: int | None
+    max_changed_lines: int | None
 
 
 @dataclass
@@ -806,6 +808,10 @@ async def _run_stages(
             result=result,
             open_pr_on_failure=task.open_pr_on_failure,
             open_pr_allowed=seams.open_pr,
+            changed_files=len(changed),
+            changed_lines=count_changed_lines(diff),
+            max_changed_files=seams.max_changed_files,
+            max_changed_lines=seams.max_changed_lines,
         )
         log.info("pipeline.gate", open=decision.open, reason=decision.reason)
 
@@ -1105,6 +1111,8 @@ async def run_task(
     budget: TaskBudget | None = None,
     open_pr: bool = True,
     embedding_strategy: str = DEFAULT_STRATEGY,
+    max_changed_files: int | None = None,
+    max_changed_lines: int | None = None,
 ) -> RunResult:
     """Run one task. `backend` and `specs` are the caller's, like everything else.
 
@@ -1125,6 +1133,7 @@ async def run_task(
       the agent stage does, not when the task does (see `_agent_budget`).
     * `open_pr` -- False never opens one, whatever the gate would say. A gold run refuses True.
     * `embedding_strategy` -- how the index is built and queried.
+    * `max_changed_files`, `max_changed_lines` -- the PR scope cap (see `gate`); None is no cap.
     """
     if isinstance(agent, GoldAgent) and open_pr:
         # In the API, not only in the CLI: a gold run validates an instance by pushing the reference
@@ -1140,6 +1149,8 @@ async def run_task(
         budget=budget,
         open_pr=open_pr,
         embedding_strategy=embedding_strategy,
+        max_changed_files=max_changed_files,
+        max_changed_lines=max_changed_lines,
     )
     progress = _Progress()
     async with session_factory() as state:
