@@ -64,6 +64,24 @@ def make_source(root: Path, name: str, body: str) -> Path:
     return source
 
 
+@pytest.fixture(scope="session")
+def base_image_available():
+    """The base image, pulled once per session with a few tries.
+
+    A test that builds a fresh image resolves the base image's metadata from the registry,
+    and one timed-out request there failed the build (and the test) in a stress run. Pulling
+    it up front, with retries, turns a flaky registry into a skip with a reason, rather than
+    a failure that says nothing about the code under test.
+    """
+    image = RepoSpec(key="x").base_image
+    binary = DockerConfig().docker_binary
+    for _ in range(3):
+        pulled = subprocess.run([binary, "pull", "-q", image], capture_output=True, text=True, check=False)
+        if pulled.returncode == 0:
+            return image
+    pytest.skip(f"could not pull {image} (the registry is unreachable): {pulled.stderr.strip()[-200:]}")
+
+
 @pytest.fixture
 def backend():
     # A short run timeout: these suites take under a second, and a hung daemon
@@ -586,7 +604,7 @@ class TestProbesAndScriptsThroughTheVerifier:
             assert not (workspace.path / "_repolace_script.py").exists()
 
     async def test_the_overlay_runs_in_scored_runs_and_is_invisible_to_probes_and_the_image(
-        self, backend, origin_url, tmp_path
+        self, backend, origin_url, tmp_path, base_image_available
     ):
         """The oracle must reach the scored runs and nothing else: not a probe, not
         a script, and not the image layer the cache shares between tasks.
