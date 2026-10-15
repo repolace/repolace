@@ -22,6 +22,10 @@ model = "claude-sonnet-5-5"
 cache = true                # the agent loop re-sends a long, mostly stable prefix every step
 max_tokens = 8192
 
+# There is deliberately no [stages.resolve] table: the merge-conflict resolver's `resolve`
+# stage follows `agent` (repolace_gateway.config.OPTIONAL_STAGE_FALLBACKS), so a per-run
+# GATEWAY_STAGE_MODELS override of `agent` reaches it too and a sweep never mixes two models.
+
 [stages.cheap]
 model = "claude-haiku-4-5-20251001"
 cache = false               # single-shot calls: a cache write costs more than it saves
