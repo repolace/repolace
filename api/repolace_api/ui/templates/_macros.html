@@ -9,30 +9,30 @@
 {% if outcome is none %}<span class="chip c-unscored">{{ icon("dash") }}{{ unscored }}</span>
 {% elif outcome == "passed" %}<span class="chip c-passed">{{ icon("check") }}{{ outcome }}</span>
 {% elif outcome == "failed" %}<span class="chip c-failed">{{ icon("x") }}{{ outcome }}</span>
-{% elif outcome == "passed_with_test_edit" %}<span class="chip c-edit">{{ icon("pencil") }}{{ outcome }}{% if approved_at is not none %}<span class="sub" title="Approved by {{ approved_by }}">{{ icon("check") }}approved</span>{% else %}<span class="sub pending">{{ icon("clock") }}awaiting sign-off</span>{% endif %}</span>
+{% elif outcome == "passed_with_test_edit" %}<span class="chip c-edit">{{ icon("pencil") }}{{ outcome }}{% if approved_at is not none %}<span class="sub" title="Approved by {{ approved_by }}">{{ icon("check") }}approved<span class="sr"> by {{ approved_by }}</span></span>{% else %}<span class="sub pending">{{ icon("clock") }}awaiting sign-off</span>{% endif %}</span>
 {% endif %}
 {% endmacro %}
 
-{% macro time(when) %}{% if when is none %}<span class="subtle">not started</span>{% else %}<time datetime="{{ when.isoformat() }}" title="{{ absolute(when) }}">{{ relative(when) }}</time>{% endif %}{% endmacro %}
+{% macro time(when) %}{% if when is none %}<span class="subtle">not started</span>{% else %}<time datetime="{{ when.isoformat() }}" title="{{ absolute(when) }}">{{ relative(when) }}<span class="sr"> ({{ absolute(when) }})</span></time>{% endif %}{% endmacro %}
 
 {# A horizontal bar made of SVG attributes: the CSP forbids inline style attributes. #}
 {% macro costbar(pct) %}<svg class="costbar" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true" focusable="false"><rect class="track" x="0" y="0" width="100" height="4" rx="2"/><rect class="fill" x="0" y="0" width="{{ pct }}" height="4" rx="2"/></svg>{% endmacro %}
 
 {% macro task_row(row) %}
 {% set t = row.item %}
-<tr id="task-{{ t.id }}"{% if row.live %} class="is-live" hx-get="/ui/tasks/{{ t.id }}/row" hx-trigger="{{ poll }}" hx-swap="outerHTML"{% endif %}>
-  <td class="issue-cell"><span class="n">#{{ t.issue_number }}</span><a class="rowlink" href="/ui/tasks/{{ t.id }}">{{ t.issue_title }}</a>{% if t.is_benchmark %} <span class="tag">benchmark</span>{% endif %}</td>
+<tr id="task-{{ t.id }}" data-task-id="{{ t.id }}" data-issue="{{ t.issue_number }}" data-task-status="{{ t.status.value }}" data-task-stage="{{ row.note if row.note_key == 'stage' else '' }}"{% if row.live %} class="is-live" hx-get="/ui/tasks/{{ t.id }}/row" hx-trigger="{{ poll }}" hx-swap="outerHTML"{% endif %}>
+  <td class="issue-cell"><span class="n">#{{ t.issue_number }}</span><a class="rowlink" id="link-{{ t.id }}" href="/ui/tasks/{{ t.id }}">{{ t.issue_title }}</a>{% if t.is_benchmark %} <span class="tag">benchmark</span>{% endif %}</td>
   <td><span class="branch">{{ icon("branch") }}{{ t.target_branch }}</span></td>
   <td><div class="stcell">{{ badge(t.status.value) }}{% if row.note %}<span class="note{{ ' err' if row.note_is_error }}"><span class="k">{{ row.note_key }}</span>{{ row.note }}</span>{% endif %}</div></td>
   <td>{{ chip(t.outcome.value if t.outcome else none) }}</td>
   <td class="num">{{ money(row.cost) }}{% if row.cost_is_so_far %}<span class="sofar">so far</span>{% endif %}</td>
   <td class="muted">{{ time(t.started_at) }}</td>
-  <td>{% if is_https(t.pr_url) %}<a href="{{ t.pr_url }}" target="_blank" rel="noopener noreferrer" class="mono">{{ icon("pr_opened") }} #{{ t.pr_number }}</a>{% else %}<span class="subtle" aria-label="No PR">&mdash;</span>{% endif %}</td>
+  <td>{% if is_https(t.pr_url) %}<a href="{{ t.pr_url }}" target="_blank" rel="noopener noreferrer" class="mono">{{ icon("pr_opened") }} #{{ t.pr_number }}</a>{% else %}<span class="subtle" aria-hidden="true">&mdash;</span><span class="sr">No PR</span>{% endif %}</td>
 </tr>
 {% endmacro %}
 
 {% macro strip_node(n) %}
-<li class="stage st-{{ n.state }}"><span class="nm">{{ icon({"pending": "circle-dashed", "running": "running", "ok": "circle-check", "failed": "circle-x", "skipped": "circle-slash"}[n.state]) }}{{ n.label }}</span><span class="sm"><b>{{ n.state }}</b> &middot; {{ n.detail }}</span></li>
+<li class="stage st-{{ n.state }}"><span class="nm">{{ icon({"pending": "circle-dashed", "running": "running", "ok": "circle-check", "failed": "circle-x", "skipped": "circle-slash"}[n.state]) }}{{ n.label }}</span><span class="sm"><b>{{ n.state }}</b> &middot; {% if n.state == "running" %}<span aria-hidden="true">{{ n.detail }}</span>{% else %}{{ n.detail }}{% endif %}</span></li>
 {% endmacro %}
 
 {% macro estimate_panel(e) %}

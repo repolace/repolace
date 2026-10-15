@@ -34,8 +34,8 @@
     var btn = document.getElementById("theme-toggle");
     if (!btn) return;
     function label() {
-      btn.textContent = "theme: " + current;
-      btn.setAttribute("aria-label", "Colour theme: " + current + ". Activate to change.");
+      // The visible text is the accessible name (WCAG 2.5.3): stable word first, state after it.
+      btn.textContent = "Theme: " + current;
     }
     label();
     btn.hidden = false;

@@ -4,11 +4,12 @@
 {% set oc = t.outcome.value if t.outcome else none %}
 
 <div class="metaline">
+  <span hidden data-task-id="{{ t.id }}" data-issue="{{ t.issue_number }}" data-task-status="{{ t.status.value }}" data-task-stage="{{ v.running_label or '' }}"></span>
   {{ badge(t.status.value) }}
   {{ chip(oc, t.test_edit_approved_by, t.test_edit_approved_at) }}
   <span>targets <span class="branch">{{ icon("branch") }}{{ t.target_branch }}</span></span>
   <span>started {{ time(t.started_at) }}</span>
-  {% if v.ran_seconds is not none %}<span>{{ "ran" if not v.live else "running for" }} <span class="mono">{{ v.ran }}</span></span>{% endif %}
+  {% if v.ran_seconds is not none %}<span>{{ "ran" if not v.live else "running for" }} {% if v.live %}<span class="mono" aria-hidden="true">{{ v.ran }}</span>{% else %}<span class="mono">{{ v.ran }}</span>{% endif %}</span>{% endif %}
   {% if is_https(t.pr_url) %}<a href="{{ t.pr_url }}" target="_blank" rel="noopener noreferrer" class="mono">{{ icon("pr_opened") }} PR #{{ t.pr_number }}</a>{% else %}<span class="muted">no PR</span>{% endif %}
   {% if t.is_benchmark %}<span class="tag">benchmark</span>{% endif %}
   {% if v.heartbeat_stale_seconds is not none %}<span class="flag">{{ icon("triangle") }}no heartbeat for {{ duration(v.heartbeat_stale_seconds) }}</span>{% endif %}
@@ -28,7 +29,7 @@
   <h2 id="plh" class="sr">Pipeline</h2>
   <ol class="strip">
     {% for n in v.main_nodes %}{{ strip_node(n) }}{% endfor %}
-    <li class="tailgrp" aria-label="Delivery"><ol class="strip">{% for n in v.delivery_nodes %}{{ strip_node(n) }}{% endfor %}</ol></li>
+    <li class="tailgrp"><ol class="strip" aria-label="Delivery">{% for n in v.delivery_nodes %}{{ strip_node(n) }}{% endfor %}</ol></li>
   </ol>
 </section>
 

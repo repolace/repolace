@@ -12,7 +12,7 @@
 :root {
   color-scheme: light;
   --bg: #f5f6f8; --surface: #ffffff; --surface-2: #f3f5f8; --surface-3: #e8ecf1;
-  --border: #d8dde4; --border-strong: #b8c0cb;
+  --border: #d8dde4; --border-strong: #7a8594;
   --fg: #181d25; --fg-muted: #47505d; --fg-subtle: #5a6370;
   --accent: #1d5bd0; --accent-strong: #1549ad; --btn-bg: #1d5bd0; --btn-fg: #ffffff; --focus: #1d5bd0;
   --ok: #16723a; --ok-bg: #dcf5e3; --run: #1d5bd0; --run-bg: #e2ecff;
@@ -37,7 +37,7 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0e1116; --surface: #151a21; --surface-2: #1b2129; --surface-3: #232a34;
-    --border: #2a323d; --border-strong: #3b4552;
+    --border: #2a323d; --border-strong: #6b7686;
     --fg: #e6e9ef; --fg-muted: #a6afbc; --fg-subtle: #8d97a5;
     --accent: #7aa7ff; --accent-strong: #9dbdff; --btn-bg: #3b6fe0; --focus: #9dbdff;
     --ok: #56d17a; --ok-bg: #16301f; --run: #7aa7ff; --run-bg: #172540;
@@ -53,7 +53,7 @@
 }
 :root[data-theme="dark"] {
   --bg: #0e1116; --surface: #151a21; --surface-2: #1b2129; --surface-3: #232a34;
-  --border: #2a323d; --border-strong: #3b4552;
+  --border: #2a323d; --border-strong: #6b7686;
   --fg: #e6e9ef; --fg-muted: #a6afbc; --fg-subtle: #8d97a5;
   --accent: #7aa7ff; --accent-strong: #9dbdff; --btn-bg: #3b6fe0; --focus: #9dbdff;
   --ok: #56d17a; --ok-bg: #16301f; --run: #7aa7ff; --run-bg: #172540;
@@ -305,4 +305,17 @@ dl.sum dt { color: var(--fg-muted); }
 @media (max-width: 700px) {
   .tasks th:nth-child(2), .tasks td:nth-child(2), .tasks th:nth-child(6), .tasks td:nth-child(6) { display: none; }
   .tasks { min-width: 640px; }
+}
+
+/* Windows high contrast: author colours are replaced, so anything that carried meaning by fill needs a border. */
+@media (forced-colors: active) {
+  .badge, .chip, .tag, .flag, .lbl, .branch { border: 1px solid CanvasText; }
+  .strip .stage { border: 1px solid CanvasText; border-top-width: 3px; }
+  .st-failed { border: 2px solid Mark !important; background: Canvas !important; }
+  .st-skipped { border-style: dashed !important; background: Canvas !important; }
+  .st-running { border-top-color: Highlight; }
+  .seg[aria-current="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+  .dl.add, .dl.del { border-left: 3px solid CanvasText; }
+  .costbar rect.fill, .est .bar .band { fill: Highlight; }
+  .costbar rect.track, .est .bar .track { fill: Canvas; stroke: CanvasText; }
 }

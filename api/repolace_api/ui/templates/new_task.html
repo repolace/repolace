@@ -10,7 +10,7 @@
 {% block content %}
 <div class="pagehead"><h1>New task</h1><span class="mono">{{ repo.full_name }}</span></div>
 
-{% if form_error %}<p class="formerr" id="form-error" role="alert" tabindex="-1" autofocus>{{ form_error }}</p>{% endif %}
+{% if form_error and not branch_error %}<p class="formerr" id="form-error" role="alert" tabindex="-1" data-focus-on-load>{{ form_error }}</p>{% endif %}
 {% for p in problems %}<p class="problem" role="alert">{{ p }}</p>{% endfor %}
 
 <form method="post" action="/ui/repos/{{ repo.id }}/tasks">
@@ -22,6 +22,7 @@
         <input id="issue-q" type="search" name="q" value="{{ q }}" placeholder="Search by title, number or label" autocomplete="off"
                hx-get="/ui/repos/{{ repo.id }}/tasks/new/issues" hx-trigger="input changed delay:250ms, search" hx-target="#issue-list" hx-swap="innerHTML" hx-include="closest form">
       </div>
+      <p class="sr" id="issue-count" role="status"></p>
       <fieldset class="issues" id="issue-list">
         <legend class="sr">Open issues</legend>
         {% include "_issues.html" %}
@@ -33,12 +34,13 @@
         <div class="stephead"><span class="stepnum" aria-hidden="true">2</span><h2 id="step2">Target branch</h2></div>
         <div class="field">
           <label for="target_branch">Open the pull request against</label>
-          <select id="target_branch" name="target_branch">
+          <select id="target_branch" name="target_branch"{% if branch_error %} aria-invalid="true" aria-describedby="branch-error branch-hint"{% else %} aria-describedby="branch-hint"{% endif %}>
             {% for b in (branch_names or [default_branch]) %}
             <option value="{{ b }}"{% if b == chosen_branch %} selected{% endif %}>{{ b }}{% if b == default_branch %} (default){% endif %}</option>
             {% endfor %}
           </select>
-          <span class="hint">The default branch is preselected. A branch GitHub does not know is refused.</span>
+          {% if branch_error %}<p class="formerr" id="branch-error" role="alert" tabindex="-1" data-focus-on-load>{{ branch_error }}</p>{% endif %}
+          <span class="hint" id="branch-hint">The default branch is preselected. A branch GitHub does not know is refused.</span>
         </div>
       </section>
 

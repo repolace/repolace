@@ -252,6 +252,7 @@ async def _new_task_context(
     issue_number: int | None,
     target_branch: str | None,
     form_error: str | None = None,
+    branch_error: str | None = None,
 ) -> dict[str, Any]:
     repo = await active_repo(db, repo_id)
     problems: list[str] = []
@@ -286,7 +287,9 @@ async def _new_task_context(
         "estimate": estimate,
         "problems": problems,
         "form_error": form_error,
+        "branch_error": branch_error,
         "q": "",
+        "oob": False,
     }
 
 
@@ -319,6 +322,7 @@ async def new_task_issues(
         issue_total=len(matches),
         issue_number=_int_or_none(issue_number),
         q=q,
+        oob=True,
     )
 
 
@@ -380,9 +384,10 @@ async def create_task_form(
     number = _int_or_none(form.get("issue_number"))
     branch = (form.get("target_branch") or "").strip() or None
 
-    async def again(message: str, status_code: int) -> HTMLResponse:
+    async def again(message: str, status_code: int, is_branch: bool = False) -> HTMLResponse:
         ctx = await _new_task_context(
-            request, db, github, repo_id, issue_number=number, target_branch=branch, form_error=message
+            request, db, github, repo_id, issue_number=number, target_branch=branch,
+            form_error=message, branch_error=message if is_branch else None,
         )
         return render("new_task.html", status_code=status_code, **ctx)
 
@@ -396,7 +401,7 @@ async def create_task_form(
     try:
         created = await enqueue_task(db, github, repo_id, body)
     except HTTPException as exc:
-        return await again(str(exc.detail), exc.status_code)
+        return await again(str(exc.detail), exc.status_code, is_branch=exc.status_code in (400, 422))
     return RedirectResponse(f"/ui/tasks/{created.id}", status_code=303)
 
 

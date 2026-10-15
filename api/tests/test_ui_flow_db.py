@@ -206,7 +206,8 @@ class TestEnqueue:
 
         assert response.status_code == 422
         html = response.text
-        assert re.search(r'<p class="formerr" id="form-error" role="alert" tabindex="-1" autofocus>.*is not a branch of acme/sample', html)
+        assert re.search(r'id="branch-error" role="alert" tabindex="-1" data-focus-on-load>[^<]*is not a branch of acme/sample', html)
+        assert 'aria-invalid="true" aria-describedby="branch-error branch-hint"' in html
         assert "no-such-branch" in html
         assert 'name="issue_number" value="7" checked' in html  # the pick survives
         assert (await db_session.execute(select(Task))).first() is None

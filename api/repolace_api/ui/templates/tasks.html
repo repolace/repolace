@@ -21,11 +21,11 @@
   <form method="get" action="/ui/repos/{{ repo.id }}/tasks" class="toolbar" id="filters" hx-get="/ui/repos/{{ repo.id }}/tasks" hx-trigger="change" hx-target="#tasklist" hx-select="#tasklist" hx-swap="outerHTML" hx-push-url="true">
     {% if filters.status is not none %}<input type="hidden" name="status" value="{{ filters.status.value }}">{% endif %}
     <label class="sel"><span>Outcome</span>
-      <select name="outcome">
+      <select id="filter-outcome" name="outcome">
         {% for o in outcome_filters %}<option value="{{ o }}"{% if o == filters.outcome_value %} selected{% endif %}>{{ o if o != "all" else "all outcomes" }}</option>{% endfor %}
       </select>
     </label>
-    <label class="check"><input type="checkbox" name="benchmark" value="1"{% if filters.benchmark %} checked{% endif %}>include benchmark</label>
+    <label class="check"><input id="filter-benchmark" type="checkbox" name="benchmark" value="1"{% if filters.benchmark %} checked{% endif %}>include benchmark</label>
     <noscript><button class="btn" type="submit">Apply</button></noscript>
   </form>
   {% if running_count %}<p class="live"><span class="dot" aria-hidden="true"></span><span>{{ running_count }} running &middot; rows refresh every 3 s</span></p>{% endif %}
@@ -40,7 +40,7 @@
           <th scope="col" class="num">Cost USD</th><th scope="col">Started</th><th scope="col">PR</th>
         </tr>
       </thead>
-      <tbody aria-live="polite">
+      <tbody>
         {% include "_task_rows.html" %}
       </tbody>
     </table>

@@ -298,7 +298,7 @@ class TestTaskDetail:
 
         assert f'hx-get="/ui/tasks/{task.id}/live"' in full.text
         assert 'hx-trigger="every 3s"' in full.text
-        assert 'aria-live="polite"' in full.text
+        assert 'aria-live' not in full.text.split('id="live"')[1].split('>')[0]  # polled regions are not live regions
         assert fragment.status_code == 200
         assert "st-running" in fragment.text
         assert "Running: Retrieve" in fragment.text

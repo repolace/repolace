@@ -1,3 +1,4 @@
+{% if oob %}<div hx-swap-oob="innerHTML:#issue-count">{{ issue_total }} open issue{{ "" if issue_total == 1 else "s" }}{% if q %} match &ldquo;{{ q }}&rdquo;{% endif %}</div>{% endif %}
 {% for i in issues %}
 <label class="opt">
   <input type="radio" name="issue_number" value="{{ i.number }}"{% if i.number == issue_number %} checked{% endif %}>

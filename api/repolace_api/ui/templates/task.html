@@ -15,7 +15,7 @@
 </div>
 {# Polled while the task is live. The fragment answers 286 once it is terminal, which stops htmx polling;
    a task that is already terminal renders without hx-trigger at all. #}
-<div id="live"{% if v.live %} hx-get="/ui/tasks/{{ t.id }}/live" hx-trigger="{{ poll }}" hx-swap="innerHTML" aria-live="polite"{% endif %}>
+<div id="live"{% if v.live %} hx-get="/ui/tasks/{{ t.id }}/live" hx-trigger="{{ poll }}" hx-swap="innerHTML"{% endif %}>
 {% include "_task_live.html" %}
 </div>
 {% endblock %}
