@@ -1,5 +1,6 @@
 """`GET /repos/{id}/tasks`, `GET /tasks/{id}` and `GET /repos/{id}/tasks/estimate`."""
 
+import urllib.parse
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -54,7 +55,7 @@ class TestTaskList:
         body = (await get(db_session_factory, f"/repos/{repo.id}/tasks")).json()
 
         assert [i["issue_number"] for i in body["items"]] == [4, 3]
-        assert body["next_before"] is None
+        assert body["next_cursor"] is None
         old = body["items"][1]
         assert old["issue_title"] == "Boom"
         assert (old["status"], old["outcome"]) == ("pr_opened", "failed")
@@ -67,15 +68,15 @@ class TestTaskList:
     async def test_pages_walk_the_whole_list_with_no_overlap_and_no_gap(self, db_session, db_session_factory):
         repo = await self.seed_ten(db_session)
         seen: list[int] = []
-        before = None
+        cursor = None
         pages = 0
         while True:
-            params = {"limit": 4, **({"before": before} if before else {})}
+            params = {"limit": 4, **({"cursor": cursor} if cursor else {})}
             body = (await get(db_session_factory, f"/repos/{repo.id}/tasks", **params)).json()
             seen += [i["issue_number"] for i in body["items"]]
             pages += 1
-            before = body["next_before"]
-            if before is None:
+            cursor = body["next_cursor"]
+            if cursor is None:
                 break
 
         assert seen == list(range(10, 0, -1))
@@ -87,29 +88,48 @@ class TestTaskList:
         body = (await get(db_session_factory, f"/repos/{repo.id}/tasks", limit=10)).json()
 
         assert len(body["items"]) == 10
-        assert body["next_before"] is None
+        assert body["next_cursor"] is None
 
-    async def test_the_cursor_is_the_last_items_created_at_and_is_exclusive(self, db_session, db_session_factory):
+    async def test_rows_with_identical_created_at_are_each_returned_exactly_once(
+        self, db_session, db_session_factory
+    ):
+        repo = await seed_repo(db_session)
+        for i in range(7):
+            await seed_task(db_session, repo, issue_number=i + 1, created_at=at(0))
+
+        seen: list[int] = []
+        cursor = None
+        while True:
+            params = {"limit": 3, **({"cursor": cursor} if cursor else {})}
+            body = (await get(db_session_factory, f"/repos/{repo.id}/tasks", **params)).json()
+            seen += [i["issue_number"] for i in body["items"]]
+            cursor = body["next_cursor"]
+            if cursor is None:
+                break
+
+        assert sorted(seen) == list(range(1, 8))
+
+    async def test_the_cursor_survives_url_encoding_and_is_url_safe(self, db_session, db_session_factory):
         repo = await self.seed_ten(db_session)
-
         first = (await get(db_session_factory, f"/repos/{repo.id}/tasks", limit=3)).json()
-        assert first["next_before"] == first["items"][-1]["created_at"]
+        cursor = first["next_cursor"]
 
-        second = (await get(db_session_factory, f"/repos/{repo.id}/tasks", before=first["next_before"])).json()
+        assert urllib.parse.quote(cursor, safe="") == cursor  # nothing to escape
+        async with client_for(db_session_factory, FakeGithub()) as client:
+            second = (await client.get(f"/repos/{repo.id}/tasks?limit=20&cursor={cursor}")).json()
         assert [i["issue_number"] for i in second["items"]] == [7, 6, 5, 4, 3, 2, 1]
+
+    @pytest.mark.parametrize("cursor", ["!!!", "bm90LWEtY3Vyc29y", "", "MjAyNi0xMC0wMVQxMjowMDowMHxub3QtYS11dWlk"])
+    async def test_a_malformed_cursor_is_422(self, db_session, db_session_factory, cursor):
+        repo = await seed_repo(db_session)
+
+        assert (await get(db_session_factory, f"/repos/{repo.id}/tasks", cursor=cursor)).status_code == 422
 
     @pytest.mark.parametrize("limit", [0, 101, -1])
     async def test_limit_outside_1_to_100_is_422(self, db_session, db_session_factory, limit):
         repo = await seed_repo(db_session)
 
         assert (await get(db_session_factory, f"/repos/{repo.id}/tasks", limit=limit)).status_code == 422
-
-    async def test_a_before_without_a_timezone_is_422(self, db_session, db_session_factory):
-        repo = await seed_repo(db_session)
-
-        response = await get(db_session_factory, f"/repos/{repo.id}/tasks", before="2026-10-01T12:00:00")
-
-        assert response.status_code == 422
 
     async def test_status_and_outcome_filters_combine(self, db_session, db_session_factory):
         repo = await seed_repo(db_session)
@@ -166,7 +186,6 @@ class TestTaskDetail:
             patch_diff="diff --git a/x b/x\n",
             score_reason="every curated test passes",
             retry_count=1,
-            claimed_by="host:123",
             heartbeat_at=at(8),
             started_at=at(1),
         )
@@ -205,7 +224,7 @@ class TestTaskDetail:
         assert body["test_edit_justification"] == "the test was wrong"
         assert body["test_edit_approved_by"] == "rounak"
         assert body["test_edit_approved_at"].startswith("2026-10-01T12:09")
-        assert body["claimed_by"] == "host:123"
+        assert "claimed_by" not in body
         assert body["heartbeat_at"].startswith("2026-10-01T12:08")
         assert [(s["stage"], s["status"]) for s in body["stages"]] == [
             ("clone", "ok"),
@@ -239,7 +258,74 @@ class TestTaskDetail:
         body = (await get(db_session_factory, f"/tasks/{task.id}")).json()
 
         assert (body["attempts"], body["stages"], body["test_runs"]) == (0, [], [])
-        assert body["outcome"] is None and body["claimed_by"] is None and body["heartbeat_at"] is None
+        assert body["outcome"] is None and body["heartbeat_at"] is None
+
+
+class TestBenchmarkTasksAreScrubbed:
+    SENTINELS = ("SENTINEL_TEST_ID", "SENTINEL_DIFF", "SENTINEL_STAGE_ERR", "SENTINEL_TASK_ERR", "SENTINEL_FILE")
+
+    async def seed(self, db_session, **extra):
+        repo = await seed_repo(db_session)
+        task = await seed_task(
+            db_session,
+            repo,
+            status=TaskStatus.COMPLETED,
+            outcome=TaskOutcome.FAILED,
+            agent_stop_reason="max_attempts",
+            cost_usd=Decimal("0.5"),
+            score_reason="expected tests/test_x.py::SENTINEL_TEST_ID still red",
+            patch_diff="diff --git a/SENTINEL_DIFF b/SENTINEL_DIFF\n",
+            changed_files=["SENTINEL_FILE.py"],
+            error_message="SENTINEL_TASK_ERR",
+            claimed_by="host:1",
+            **extra,
+        )
+        db_session.add(
+            TaskStage(
+                task_id=task.id,
+                stage="agent",
+                status="failed",
+                started_at=at(1),
+                ended_at=at(2),
+                error="SENTINEL_STAGE_ERR",
+            )
+        )
+        db_session.add(TaskTestRun(task_id=task.id, attempt=1, commit_sha="a", duration_seconds=Decimal(3)))
+        await db_session.commit()
+        return task
+
+    async def test_no_sentinel_appears_anywhere_in_a_benchmark_tasks_body(self, db_session, db_session_factory):
+        task = await self.seed(db_session, eval_run_id="r", instance_id="i", run_index=0)
+
+        response = await get(db_session_factory, f"/tasks/{task.id}")
+
+        assert response.status_code == 200
+        for sentinel in self.SENTINELS:
+            assert sentinel not in response.text
+        body = response.json()
+        assert body["score_reason"] is None and body["patch_diff"] is None
+        assert body["changed_files"] is None and body["error_message"] is None
+        assert body["stages"][0]["error"] is None
+
+    async def test_what_the_ui_still_needs_survives_the_scrub(self, db_session, db_session_factory):
+        task = await self.seed(db_session, eval_run_id="r", instance_id="i", run_index=0)
+
+        body = (await get(db_session_factory, f"/tasks/{task.id}")).json()
+
+        assert (body["status"], body["outcome"], body["agent_stop_reason"]) == ("completed", "failed", "max_attempts")
+        assert Decimal(str(body["cost_usd"])) == Decimal("0.5")
+        assert body["attempts"] == 1
+        assert (body["stages"][0]["stage"], body["stages"][0]["status"]) == ("agent", "failed")
+        assert body["stages"][0]["started_at"] and body["stages"][0]["ended_at"]
+
+    async def test_a_product_task_still_returns_them_but_never_claimed_by(self, db_session, db_session_factory):
+        task = await self.seed(db_session)
+
+        response = await get(db_session_factory, f"/tasks/{task.id}")
+
+        for sentinel in self.SENTINELS:
+            assert sentinel in response.text
+        assert "host:1" not in response.text
 
 
 class TestEstimate:
@@ -333,3 +419,53 @@ class TestEstimate:
         body = await self.estimate(db_session_factory, repo)
 
         assert "basis" in body
+
+    async def test_another_repos_benchmark_rows_neither_pick_the_model_nor_fill_the_pool(
+        self, db_session, db_session_factory
+    ):
+        mine = await seed_repo(db_session)
+        other = await seed_repo(db_session, id=uuid.uuid4(), github_repo_id=100, name="other", full_name="acme/other")
+        await self.costed(db_session, mine, [Decimal("0.50")], model="m1")
+        # Five benchmark rows on the same model elsewhere would reach the threshold with the one above.
+        for i in range(5):
+            task = await seed_task(
+                db_session,
+                other,
+                issue_number=i + 1,
+                cost_usd=Decimal(9),
+                created_at=at(i),
+                eval_run_id="r",
+                instance_id=f"i{i}",
+                run_index=0,
+            )
+            db_session.add(LLMCall(task_id=task.id, stage="agent", model="m1", provider="p", created_at=at(i)))
+        await db_session.commit()
+
+        body = await self.estimate(db_session_factory, mine)
+
+        assert (body["basis"], body["n"]) == ("none", 1)
+
+    async def test_a_benchmark_task_does_not_choose_this_repos_model(self, db_session, db_session_factory):
+        repo = await seed_repo(db_session)
+        other = await seed_repo(db_session, id=uuid.uuid4(), github_repo_id=100, name="other", full_name="acme/other")
+        # Product history on m1 elsewhere; the newest task here is a benchmark row on m2.
+        for i in range(5):
+            task = await seed_task(db_session, other, issue_number=i + 1, cost_usd=Decimal("0.2"), created_at=at(i))
+            db_session.add(LLMCall(task_id=task.id, stage="agent", model="m1", provider="p", created_at=at(i)))
+        await self.costed(db_session, repo, [Decimal("0.3")], model="m1")
+        bench = await seed_task(
+            db_session,
+            repo,
+            issue_number=50,
+            cost_usd=Decimal(1),
+            created_at=at(100),
+            eval_run_id="r",
+            instance_id="i",
+            run_index=0,
+        )
+        db_session.add(LLMCall(task_id=bench.id, stage="agent", model="m2", provider="p", created_at=at(100)))
+        await db_session.commit()
+
+        body = await self.estimate(db_session_factory, repo)
+
+        assert (body["basis"], body["n"]) == ("model", 6)

@@ -6,6 +6,7 @@ import httpx
 import pytest
 from api_support import FakeGithub, client_for, raw_issue, seed_repo
 from repolace_shared.db.models import Task
+from repolace_shared.github.schemas import Branch
 from sqlalchemy import func, select
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db]
@@ -110,5 +111,53 @@ class TestCreateTaskChecksTheBranch:
 
     async def test_a_github_failure_while_listing_branches_is_a_502(self, db_session, db_session_factory):
         response = await self.post(db_session, db_session_factory, _Down(raw_issue(7)), target_branch="develop")
+
+        assert response.status_code == 502
+
+    async def test_whitespace_around_the_branch_is_stripped_before_the_check(self, db_session, db_session_factory):
+        response = await self.post(db_session, db_session_factory, FakeGithub(raw_issue(7)), target_branch=" develop ")
+
+        assert response.status_code == 201
+        assert response.json()["target_branch"] == "develop"
+
+    async def test_a_truncated_listing_falls_back_to_asking_about_the_one_branch(
+        self, db_session, db_session_factory
+    ):
+        github = FakeGithub(raw_issue(7), truncated=True, hidden_branches=("feature/deep",))
+
+        found = await self.post(db_session, db_session_factory, github, target_branch="feature/deep")
+
+        assert found.status_code == 201
+        assert github.exists_calls == ["feature/deep"]
+
+    async def test_a_truncated_listing_and_a_missing_branch_is_still_422(self, db_session, db_session_factory):
+        github = FakeGithub(raw_issue(7), truncated=True)
+
+        response = await self.post(db_session, db_session_factory, github, target_branch="nope")
+
+        assert response.status_code == 422
+        assert github.exists_calls == ["nope"]
+
+    async def test_a_complete_listing_does_not_ask_again(self, db_session, db_session_factory):
+        github = FakeGithub(raw_issue(7))
+
+        await self.post(db_session, db_session_factory, github, target_branch="nope")
+
+        assert github.exists_calls == []
+
+    async def test_a_traversal_name_is_refused_without_a_request_when_truncated(self, db_session, db_session_factory):
+        github = FakeGithub(raw_issue(7), truncated=True)
+
+        response = await self.post(db_session, db_session_factory, github, target_branch="../../x")
+
+        assert response.status_code == 422
+        assert github.exists_calls == []
+
+    async def test_a_malformed_github_payload_is_a_502(self, db_session, db_session_factory):
+        class Malformed(FakeGithub):
+            async def list_branches(self, *args):
+                return [Branch.model_validate({"nope": 1})]
+
+        response = await self.post(db_session, db_session_factory, Malformed(raw_issue(7)), target_branch="develop")
 
         assert response.status_code == 502
