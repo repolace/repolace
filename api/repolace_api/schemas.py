@@ -67,8 +67,8 @@ class TaskListItem(BaseModel):
 
 class TaskPage(BaseModel):
     items: list[TaskListItem]
-    #: Pass as `before` for the next page; null when this was the last one.
-    next_before: datetime | None
+    #: Opaque token: pass as `cursor` for the next page; null on the last one.
+    next_cursor: str | None
 
 
 class StageOut(BaseModel):
@@ -107,7 +107,6 @@ class TaskDetail(TaskListItem):
     test_edit_justification: str | None
     test_edit_approved_by: str | None
     test_edit_approved_at: datetime | None
-    claimed_by: str | None
     heartbeat_at: datetime | None
     updated_at: datetime
     stages: list[StageOut]
