@@ -27,7 +27,7 @@
   <td>{{ chip(t.outcome.value if t.outcome else none) }}</td>
   <td class="num">{{ money(row.cost) }}{% if row.cost_is_so_far %}<span class="sofar">so far</span>{% endif %}</td>
   <td class="muted">{{ time(t.started_at) }}</td>
-  <td>{% if t.pr_url %}<a href="{{ t.pr_url }}" target="_blank" rel="noopener noreferrer" class="mono">{{ icon("pr_opened") }} #{{ t.pr_number }}</a>{% else %}<span class="subtle" aria-label="No PR">&mdash;</span>{% endif %}</td>
+  <td>{% if is_https(t.pr_url) %}<a href="{{ t.pr_url }}" target="_blank" rel="noopener noreferrer" class="mono">{{ icon("pr_opened") }} #{{ t.pr_number }}</a>{% else %}<span class="subtle" aria-label="No PR">&mdash;</span>{% endif %}</td>
 </tr>
 {% endmacro %}
 
@@ -52,7 +52,7 @@
 {% endmacro %}
 
 {% macro diff_block(d, open, pushed) %}
-<details class="diff"{% if open %} open{% endif %}>
+<details class="diff" hx-disable{% if open %} open{% endif %}>
   <summary><svg class="i chev" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg><span class="diff-title">Diff</span>{% if not pushed %}<span class="tag">not pushed</span>{% endif %}<span class="muted">{{ d.files|length }} file{{ "" if d.files|length == 1 else "s" }} changed</span><span class="stat"><span class="a">+{{ d.added }}</span><span class="d">&minus;{{ d.deleted }}</span></span></summary>
   {% for f in d.files %}
   <details class="file" open>

@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   {# allowEval off: htmx never calls new Function. includeIndicatorStyles off: no injected <style>, which the CSP blocks. #}
-  <meta name="htmx-config" content='{"allowEval": false, "includeIndicatorStyles": false}'>
+  <meta name="htmx-config" content='{"allowEval": false, "allowScriptTags": false, "selfRequestsOnly": true, "includeIndicatorStyles": false}'>
   <title>{% block title %}repolace{% endblock %}</title>
   <link rel="preload" href="/ui/static/fonts/ibm-plex-sans-latin-400.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/ui/static/fonts/ibm-plex-sans-latin-500.woff2" as="font" type="font/woff2" crossorigin>

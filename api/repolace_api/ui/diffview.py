@@ -15,19 +15,32 @@ removed line that reads `-- foo` is not mistaken for a `--- a/file` header.
 """
 
 import re
+import time
 from dataclasses import dataclass, field
+from pathlib import PurePosixPath
 
 from markupsafe import Markup, escape
 from pygments import lex
-from pygments.lexers import get_lexer_for_filename
+from pygments.lexers import get_lexer_by_name
 from pygments.token import Comment, Keyword, Name, Number, String, _TokenType
 from pygments.util import ClassNotFound
 
 #: Rendering cap, from the design spec: past either, the rest is dropped and said so.
 MAX_LINES = 2000
 MAX_BYTES = 300_000
-#: A single very long line (a minified file) is shown escaped but not highlighted.
-MAX_HIGHLIGHT_LINE = 2000
+#: A single long line (a minified file) is shown escaped but not highlighted.
+MAX_HIGHLIGHT_LINE = 300
+#: Total wall time one diff may spend in Pygments; past it every remaining line is plain.
+HIGHLIGHT_BUDGET_SECONDS = 2.0
+
+#: Only these extensions are lexed. The file name is chosen by the agent, and some
+#: Pygments lexers go quadratic on a short line (an 800-character `.ly` line took
+#: 9 s), so picking a lexer from an arbitrary name would hand it a CPU-burn knob.
+LEXERS: dict[str, str] = {
+    ".py": "python", ".js": "javascript", ".ts": "typescript", ".tsx": "tsx", ".json": "json",
+    ".md": "markdown", ".toml": "toml", ".yml": "yaml", ".yaml": "yaml", ".sh": "bash",
+    ".css": "css", ".html": "html", ".go": "go", ".rs": "rust", ".sql": "sql", ".txt": "text",
+}  # fmt: skip
 
 _HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
 
@@ -66,19 +79,21 @@ def _token_class(ttype: _TokenType) -> str | None:
         return "s"
     if ttype in Number:
         return "nu"
-    if ttype in Keyword:
+    if ttype in Keyword or ttype in Name.Tag:
         return "k"
-    if ttype in Name.Function or ttype in Name.Class or ttype in Name.Builtin or ttype in Name.Decorator:
+    if ttype in Name.Function or ttype in Name.Class or ttype in Name.Builtin or ttype in Name.Decorator or ttype in Name.Attribute:
         return "f"
     return None
 
 
-def highlight_line(text: str, filename: str) -> Markup:
-    """One line of code as escaped markup, highlighted when a lexer exists for the file."""
-    if len(text) > MAX_HIGHLIGHT_LINE:
+def highlight_line(text: str, filename: str, deadline: float | None = None) -> Markup:
+    """One line of code as escaped markup; highlighted only for an allowlisted extension and inside the budget."""
+    ext = PurePosixPath(filename).suffix.lower()
+    name = LEXERS.get(ext)
+    if name is None or len(text) > MAX_HIGHLIGHT_LINE or (deadline is not None and time.monotonic() > deadline):
         return Markup(escape(text))
     try:
-        lexer = get_lexer_for_filename(filename, stripnl=False, ensurenl=False)
+        lexer = get_lexer_by_name(name, stripnl=False, ensurenl=False)
     except ClassNotFound:
         return Markup(escape(text))
     parts: list[Markup] = []
@@ -105,8 +120,9 @@ def _strip_ab(path: str) -> str:
     return path
 
 
-def parse_diff(text: str) -> ParsedDiff:
+def parse_diff(text: str, budget_seconds: float = HIGHLIGHT_BUDGET_SECONDS) -> ParsedDiff:
     """Parse a unified diff. Never raises on odd input: unrecognised lines are shown as meta."""
+    deadline = time.monotonic() + budget_seconds
     raw_lines = text.split("\n")
     if raw_lines and raw_lines[-1] == "":
         raw_lines.pop()
@@ -137,19 +153,19 @@ def parse_diff(text: str) -> ParsedDiff:
             marker = line[:1]
             body = line[1:]
             if marker == "+":
-                current.lines.append(DiffLine("add", None, new_no, "+", highlight_line(body, current.path)))
+                current.lines.append(DiffLine("add", None, new_no, "+", highlight_line(body, current.path, deadline)))
                 current.added += 1
                 new_no += 1
                 new_left -= 1
                 continue
             if marker == "-":
-                current.lines.append(DiffLine("del", old_no, None, "-", highlight_line(body, current.path)))
+                current.lines.append(DiffLine("del", old_no, None, "-", highlight_line(body, current.path, deadline)))
                 current.deleted += 1
                 old_no += 1
                 old_left -= 1
                 continue
             if marker == " " or line == "":
-                current.lines.append(DiffLine("ctx", old_no, new_no, " ", highlight_line(body, current.path)))
+                current.lines.append(DiffLine("ctx", old_no, new_no, " ", highlight_line(body, current.path, deadline)))
                 old_no += 1
                 new_no += 1
                 old_left -= 1

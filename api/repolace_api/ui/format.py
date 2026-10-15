@@ -88,3 +88,8 @@ def first_line(text: str | None, limit: int = 140) -> str:
         return ""
     line = text.strip().splitlines()[0] if text.strip() else ""
     return line if len(line) <= limit else line[: limit - 1] + "\N{HORIZONTAL ELLIPSIS}"
+
+
+def is_https(url: str | None) -> bool:
+    """Only an https URL is rendered as a link: a stored `javascript:` or `data:` value is shown as text."""
+    return bool(url) and url.startswith("https://")

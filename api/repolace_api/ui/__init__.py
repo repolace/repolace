@@ -10,10 +10,12 @@ from fastapi import FastAPI, Request, Response
 from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import PlainTextResponse
 from starlette.staticfiles import StaticFiles
 
+from repolace_api.config import UiSettings
 from repolace_api.ui.router import error_page, redirect_root, router
-from repolace_api.ui.security import is_ui_path, security_headers
+from repolace_api.ui.security import SECURITY_HEADERS, UiSecurityMiddleware, is_ui_path, parse_allowed_hosts
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -29,10 +31,16 @@ class UiStaticFiles(StaticFiles):
         return response
 
 
-def mount_ui(app: FastAPI) -> None:
+def mount_ui(app: FastAPI, allowed_hosts: str | list[str] | None = None) -> None:
+    """Wire the pages, static files, host allowlist, headers and HTML error pages into `app`.
+
+    `allowed_hosts` defaults to the `UI_ALLOWED_HOSTS` setting (localhost only if unset).
+    """
+    hosts = parse_allowed_hosts(allowed_hosts if allowed_hosts is not None else UiSettings().ui_allowed_hosts)
+    app.state.ui_allowed_hosts = hosts
     app.include_router(router)
     app.mount("/ui/static", UiStaticFiles(directory=STATIC_DIR), name="ui-static")
-    app.middleware("http")(security_headers)
+    app.add_middleware(UiSecurityMiddleware, hosts=hosts)
     app.add_api_route("/", redirect_root, include_in_schema=False)
 
     @app.exception_handler(StarletteHTTPException)
@@ -46,6 +54,17 @@ def mount_ui(app: FastAPI) -> None:
         if is_ui_path(request.url.path):
             return error_page(404, "Not found.")
         return await request_validation_exception_handler(request, exc)
+
+
+    @app.exception_handler(Exception)
+    async def _unhandled(request: Request, exc: Exception) -> Response:
+        # Runs in Starlette's outermost layer, outside the middleware, so the headers are set here.
+        # The exception itself is logged by uvicorn; nothing from it reaches the page.
+        if is_ui_path(request.url.path):
+            response = error_page(500, "Something went wrong. See the server log.")
+            response.headers.update(SECURITY_HEADERS)
+            return response
+        return PlainTextResponse("Internal Server Error", status_code=500)
 
 
 __all__ = ["STATIC_DIR", "mount_ui"]

@@ -26,7 +26,7 @@ def ui_app(session_factory, github: FakeGithub | None = None) -> FastAPI:
     app = FastAPI()
     app.include_router(repos_router)
     app.include_router(tasks_router)
-    mount_ui(app)
+    mount_ui(app, allowed_hosts=["test"])
     app.state.session_factory = session_factory
     fake = github or FakeGithub()
     app.dependency_overrides[get_github_client] = lambda: fake

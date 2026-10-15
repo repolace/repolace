@@ -14,6 +14,7 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from pydantic import ValidationError
@@ -83,6 +84,7 @@ env.globals.update(
     relative=fmt.relative,
     absolute=fmt.absolute,
     short_id=fmt.short_id,
+    is_https=fmt.is_https,
 )
 
 
@@ -206,7 +208,8 @@ async def task_page(task_id: UUID, db: AsyncSession = Depends(get_db)) -> HTMLRe
     detail = await load_task_detail(db, task_id)
     if detail is None:
         raise HTTPException(status_code=404, detail="task not found")
-    return render("task.html", v=build_detail(detail))
+    # Diff parsing and highlighting is CPU work on agent-written text: off the event loop.
+    return render("task.html", v=await run_in_threadpool(build_detail, detail))
 
 
 @router.get("/tasks/{task_id}/live", response_class=HTMLResponse)
@@ -215,7 +218,7 @@ async def task_live(task_id: UUID, db: AsyncSession = Depends(get_db)) -> HTMLRe
     detail = await load_task_detail(db, task_id)
     if detail is None:
         raise HTTPException(status_code=404, detail="task not found")
-    view = build_detail(detail)
+    view = await run_in_threadpool(build_detail, detail)
     return render("_task_live.html", status_code=200 if view.live else 286, v=view)
 
 
@@ -361,9 +364,18 @@ async def create_task_form(
     if not same_origin(request):
         log.warning("ui.enqueue.cross_origin", origin=request.headers.get("origin"), host=request.headers.get("host"))
         return error_page(403, "Cross-origin request refused. Submit the form from this site.")
-    raw = await request.body()
-    if len(raw) > MAX_FORM_BYTES:
+    try:
+        declared = int(request.headers.get("content-length") or 0)
+    except ValueError:
+        return error_page(400, "Bad Content-Length.")
+    if declared > MAX_FORM_BYTES:
         return error_page(413, "Form too large.")
+    buffer = bytearray()
+    async for chunk in request.stream():  # a chunked body has no Content-Length, so cap what arrives too
+        buffer += chunk
+        if len(buffer) > MAX_FORM_BYTES:
+            return error_page(413, "Form too large.")
+    raw = bytes(buffer)
     form = {k: v[0] for k, v in parse_qs(raw.decode("utf-8", errors="replace"), keep_blank_values=True).items()}
     number = _int_or_none(form.get("issue_number"))
     branch = (form.get("target_branch") or "").strip() or None

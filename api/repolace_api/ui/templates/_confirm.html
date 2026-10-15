@@ -3,7 +3,7 @@
 {% if picked %}
 <dl class="sum">
   <dt>Issue</dt>
-  <dd><span class="mono">#{{ picked.number }}</span> <a href="{{ picked.html_url }}" target="_blank" rel="noopener noreferrer">{{ picked.title }}</a></dd>
+  <dd><span class="mono">#{{ picked.number }}</span> {% if is_https(picked.html_url) %}<a href="{{ picked.html_url }}" target="_blank" rel="noopener noreferrer">{{ picked.title }}</a>{% else %}{{ picked.title }}{% endif %}</dd>
   <dt>Repository</dt>
   <dd class="mono">{{ repo.full_name }}</dd>
 </dl>

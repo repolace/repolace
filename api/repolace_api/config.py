@@ -27,3 +27,13 @@ class ApiSettings(BaseSettings):
 @lru_cache
 def get_settings() -> ApiSettings:
     return ApiSettings()
+
+
+class UiSettings(BaseSettings):
+    """Only what `mount_ui` needs, so building the app never requires the database or GitHub values."""
+
+    model_config = SettingsConfigDict(env_file=_REPO_ROOT_ENV_FILE, extra="ignore")
+
+    #: Comma-separated `Host` values the UI and API answer to (DNS-rebinding guard).
+    #: Add a tunnel hostname here; `UI_ALLOWED_HOSTS=localhost,127.0.0.1,[::1],my.tunnel.example`.
+    ui_allowed_hosts: str = "localhost,127.0.0.1,[::1]"
