@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 from pipeline_support import FakeGithubClient, make_instance, seed_task
 from repolace_gateway.config import GatewaySettings
-from repolace_pipeline import cli
+from repolace_pipeline import cli, resources
 from repolace_pipeline.agent_runner import LLMAgent
 from repolace_pipeline.errors import TaskNotClaimable, TaskNotFound
 from repolace_pipeline.run import RunResult
@@ -160,11 +160,11 @@ class Recorder:
             return result
 
         monkeypatch.setattr(cli, "get_settings", lambda: settings)
-        monkeypatch.setattr(cli, "create_engine", lambda url: Engine())
-        monkeypatch.setattr(cli, "create_session_factory", lambda engine: "factory")
-        monkeypatch.setattr(cli, "GithubClient", lambda app_id, key: self.github)
-        monkeypatch.setattr(cli, "DockerBackend", lambda: "backend")
-        monkeypatch.setattr(cli, "load_specs", lambda path: {})
+        monkeypatch.setattr(resources, "create_engine", lambda url: Engine())
+        monkeypatch.setattr(resources, "create_session_factory", lambda engine: "factory")
+        monkeypatch.setattr(resources, "GithubClient", lambda app_id, key: self.github)
+        monkeypatch.setattr(resources, "DockerBackend", lambda: "backend")
+        monkeypatch.setattr(resources, "load_specs", lambda path: {})
         monkeypatch.setattr(cli, "run_task", run_task)
         self.llm = object()
         self.llm_built_with = []
@@ -173,7 +173,7 @@ class Recorder:
             self.llm_built_with.append(session_factory)
             return self.llm
 
-        monkeypatch.setattr(cli, "build_llm_client", build_llm_client)
+        monkeypatch.setattr(resources, "build_llm_client", build_llm_client)
 
 
 class TestWhatIsPassedToRunTask:
@@ -212,7 +212,7 @@ class TestWhatIsPassedToRunTask:
         def refuse(session_factory, *args, **kwargs):
             raise cli.UsageError("--agent llm cannot run: no price (fix the model's [price] in gateway/models.toml)")
 
-        monkeypatch.setattr(cli, "build_llm_client", refuse)
+        monkeypatch.setattr(resources, "build_llm_client", refuse)
 
         code = await cli._run(uuid.UUID(TASK), agent="llm", no_pr=False)
 
