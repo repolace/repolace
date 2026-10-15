@@ -526,6 +526,29 @@ CONFLICT_OTHER = "other"
 _git_version_cache: tuple[int, int] | None = None
 
 
+class UntrustedConfigError(GitError):
+    """The checkout's own ``.git/config`` holds a key nothing in our flow writes."""
+
+
+#: The only keys a checkout's own ``.git/config`` may hold when an operation
+#: that merges, stages, commits or fetches runs. This is what ``git clone`` writes
+#: and nothing in this module adds to it (every other setting travels as ``-c``).
+#:
+#: An allowlist, not a deny list, for the reason CLAUDE.md gives for the whole
+#: ``.git`` trust boundary: ``merge.<driver>.driver``, ``filter.<f>.clean``,
+#: ``diff.<d>.textconv``, ``core.sshCommand``, ``core.pager``, ``url.<x>.insteadOf``
+#: and ``include.path`` are each a host command or a redirect, the tracked
+#: ``.gitattributes`` (which needs no sandbox write) supplies the selector, and
+#: the list grows with every git release. The pinned config *files* cannot cover
+#: this -- the repository's own config is not one of them -- so the set of
+#: permitted keys is closed instead.
+_TRUSTED_CONFIG_KEYS = re.compile(
+    r"core\.(repositoryformatversion|filemode|bare|logallrefupdates|ignorecase|precomposeunicode|symlinks)"
+    r"|remote\.origin\.(url|fetch)"
+    r"|branch\..+\.(remote|merge)"
+)
+
+
 class GitVersionError(GitError):
     """The installed git is older than the primitives here need."""
 
@@ -933,6 +956,39 @@ class GitRepo:
             ok_codes=ok_codes,
         )
 
+    async def require_trusted_config(self) -> None:
+        """Refuse to go on if ``.git/config`` holds any key outside ``_TRUSTED_CONFIG_KEYS``.
+
+        Called first by every primitive below that fetches, merges, stages or
+        commits: those are the operations on which git consults drivers,
+        filters, ssh commands and URL rewrites that the checkout's own config
+        can supply. ``-c core.hooksPath=/dev/null`` and ``core.fsmonitor=`` on
+        every invocation already beat the config for those two keys; this closes
+        the rest without enumerating them.
+        """
+        try:
+            raw = await run_git_bytes(
+                "config", "--local", "--no-includes", "--list", "-z",
+                cwd=self.path, credential_host=self.credential_host,
+            )
+        except GitCommandError as exc:
+            # Fail closed. An `include.path` pointing at a file that is not
+            # config makes git itself refuse to list (observed), and a config
+            # git cannot read is not one we can call trusted.
+            raise UntrustedConfigError(f"refusing to run: cannot read the checkout's .git/config: {exc.stderr}") from exc
+        bad: list[str] = []
+        for entry in raw.split(b"\0"):
+            if not entry:
+                continue
+            key = entry.split(b"\n", 1)[0].decode("utf-8", errors="replace")
+            if not _TRUSTED_CONFIG_KEYS.fullmatch(key):
+                bad.append(key)
+        if bad:
+            raise UntrustedConfigError(
+                f"refusing to run: the checkout's .git/config holds {len(bad)} unexpected key(s): "
+                + ", ".join(sorted(set(bad))[:5])
+            )
+
     async def rev_parse(self, ref: str) -> str:
         """Resolve ``ref`` to a full 40-hex commit sha, or raise.
 
@@ -980,6 +1036,7 @@ class GitRepo:
         non-shallow, and that is asserted afterwards rather than assumed.
         """
         branch = await self._validated_branch(branch)
+        await self.require_trusted_config()
         refspec = f"+refs/heads/{branch}:refs/remotes/origin/{branch}"
         await self._run(
             "fetch", "--no-tags", "--no-recurse-submodules", "--no-write-fetch-head",
@@ -1001,6 +1058,7 @@ class GitRepo:
         raises, so an error can never read as an answer.
         """
         await require_git_version()
+        await self.require_trusted_config()
         ours_sha = await self.rev_parse(ours)
         theirs_sha = await self.rev_parse(theirs)
         code, out = await self._run_checked(
@@ -1017,6 +1075,7 @@ class GitRepo:
         ancestor into the markers, which is what a resolver needs. On conflict
         the working tree holds markers and the index holds stages 1/2/3.
         """
+        await self.require_trusted_config()
         theirs_sha = await self.rev_parse(theirs)
         code, _ = await self._run_checked(
             "-c", "merge.conflictStyle=zdiff3",
@@ -1026,6 +1085,7 @@ class GitRepo:
         return code == 0
 
     async def abort_merge(self) -> None:
+        await self.require_trusted_config()
         await self._run("merge", "--abort")
 
     async def merge_in_progress(self) -> bool:
@@ -1053,12 +1113,14 @@ class GitRepo:
         """``git add --all`` for exactly these paths, taken literally (no pathspec magic)."""
         if not paths:
             raise ValueError("stage_paths requires at least one path")
+        await self.require_trusted_config()
         await self._run("--literal-pathspecs", "add", "--all", "--", *paths)
 
     async def commit_merge(self, message: str) -> str:
         """Conclude an in-progress merge with ``message``; return the new HEAD sha."""
         if not message.strip():
             raise ValueError("commit_merge requires a non-empty commit message")
+        await self.require_trusted_config()
         await self._run("commit", "--no-verify", "--message", message)
         return await self.head_sha()
 
