@@ -2513,6 +2513,8 @@ source = { editable = "api" }
 dependencies = [
     { name = "alembic" },
     { name = "fastapi" },
+    { name = "jinja2" },
+    { name = "pygments" },
     { name = "repolace-shared" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -2521,6 +2523,8 @@ dependencies = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "jinja2", specifier = ">=3.1" },
+    { name = "pygments", specifier = ">=2.17" },
     { name = "repolace-shared", editable = "shared" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
