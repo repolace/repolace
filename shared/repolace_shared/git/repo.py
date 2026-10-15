@@ -279,19 +279,22 @@ def _spawn_git(
     )
 
 
-async def run_git_bytes(
+async def run_git_checked(
     *args: str,
     cwd: Path | None = None,
     token: str | None = None,
     credential_host: str = DEFAULT_CREDENTIAL_HOST,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
-) -> bytes:
-    """Run one git command, returning stdout **undecoded**.
+    ok_codes: frozenset[int] = frozenset({0}),
+) -> tuple[int, bytes]:
+    """Run one git command; return ``(exit_code, stdout)`` undecoded.
 
-    `run_git` decodes with `errors="replace"`, which is right for messages and
-    irreversibly wrong for content: a blob would be corrupted, and a path that
-    is not valid UTF-8 would name a *different* file. A repository is entitled
-    to both, so anything reading either goes through here.
+    ``ok_codes`` is how a caller says "this command's exit status carries an
+    answer": ``merge-tree`` exits 1 for "conflicts" and ``merge-base
+    --is-ancestor`` exits 1 for "no". Any exit outside the set raises
+    ``GitCommandError``, so a 128 (a real failure) can never be read as an
+    answer. The default is ``{0}``, exactly the old behaviour: widening it is a
+    decision made at one named call site, never a global.
     """
     process = await _spawn_git(*args, cwd=cwd, token=token, credential_host=credential_host)
     # Captured now, while the pid is certainly still valid: start_new_session
@@ -317,14 +320,35 @@ async def run_git_bytes(
         kill_process_tree(pgid, args)
         raise
 
-    if process.returncode != 0:
+    returncode = process.returncode if process.returncode is not None else -1
+    if returncode not in ok_codes:
         raise GitCommandError(
             args,
-            process.returncode or -1,
+            returncode or -1,
             stderr.decode("utf-8", errors="replace"),
             stdout.decode("utf-8", errors="replace"),
         )
 
+    return returncode, stdout
+
+
+async def run_git_bytes(
+    *args: str,
+    cwd: Path | None = None,
+    token: str | None = None,
+    credential_host: str = DEFAULT_CREDENTIAL_HOST,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> bytes:
+    """Run one git command, returning stdout **undecoded**.
+
+    `run_git` decodes with `errors="replace"`, which is right for messages and
+    irreversibly wrong for content: a blob would be corrupted, and a path that
+    is not valid UTF-8 would name a *different* file. A repository is entitled
+    to both, so anything reading either goes through here.
+    """
+    _code, stdout = await run_git_checked(
+        *args, cwd=cwd, token=token, credential_host=credential_host, timeout=timeout
+    )
     return stdout
 
 
@@ -477,6 +501,133 @@ async def _write_blobs(process, entries: Sequence[tuple[str, str, bytes]],
             _write_blob(destination, path, content, _BLOB_MODES[mode], made, dir_mode)
 
     await asyncio.gather(feed(), drain())
+
+
+#: `merge-tree --write-tree` arrived in git 2.38. Older gits either lack the
+#: flag or (2.33-2.37) accept a different, trivial-merge-only form, so the
+#: version is checked rather than inferred from a failure.
+MIN_GIT_VERSION = (2, 38)
+
+_GIT_VERSION_RE = re.compile(rb"git version (\d+)\.(\d+)")
+_SHA_RE = re.compile(r"[0-9a-f]{40}")
+
+#: Modes that make a path a plain text/blob file.
+_BLOB_MODE_NAMES = frozenset({"100644", "100755"})
+
+#: Conflict kinds `conflict_kind` can return.
+CONFLICT_BOTH_MODIFIED = "both_modified"
+CONFLICT_BOTH_ADDED = "both_added"
+CONFLICT_DELETE_MODIFY = "delete_modify"
+CONFLICT_MODE = "mode"
+CONFLICT_SYMLINK = "symlink"
+CONFLICT_GITLINK = "gitlink"
+CONFLICT_OTHER = "other"
+
+_git_version_cache: tuple[int, int] | None = None
+
+
+class GitVersionError(GitError):
+    """The installed git is older than the primitives here need."""
+
+
+async def require_git_version(minimum: tuple[int, int] = MIN_GIT_VERSION) -> None:
+    """Raise ``GitVersionError`` unless ``git --version`` is at least ``minimum``.
+
+    Runs through the same pinned wrapper as everything else. The answer is
+    cached for the process: the binary on PATH does not change mid-task.
+    """
+    global _git_version_cache
+    if _git_version_cache is None:
+        raw = await run_git_bytes("--version")
+        match = _GIT_VERSION_RE.search(raw)
+        if match is None:
+            raise GitVersionError(f"cannot parse git's version from {raw[:80]!r}")
+        _git_version_cache = (int(match.group(1)), int(match.group(2)))
+    if _git_version_cache < minimum:
+        found = ".".join(map(str, _git_version_cache))
+        needed = ".".join(map(str, minimum))
+        raise GitVersionError(f"git >= {needed} is required for merge-tree --write-tree; found {found}")
+
+
+@dataclass(frozen=True)
+class MergeTreeResult:
+    """What ``merge-tree --write-tree`` said. ``paths`` are raw bytes, never decoded."""
+
+    clean: bool
+    tree: str
+    conflicted_paths: tuple[bytes, ...]
+
+
+@dataclass(frozen=True)
+class UnmergedEntry:
+    """One path with unmerged index entries.
+
+    ``stages`` maps stage number to the entry's mode string: 1 is the common
+    ancestor, 2 ours, 3 theirs. A missing stage means that side has no entry
+    (deleted, or not yet added).
+    """
+
+    path: bytes
+    stages: dict[int, str]
+
+
+def conflict_kind(stages: dict[int, str]) -> str:
+    """Classify an unmerged path from its stage modes.
+
+    Only ``both_modified`` and ``both_added`` on plain blob modes are something
+    a text resolver can reasonably handle; everything else is named so a caller
+    can stop on it instead of asking a model to edit a conflict that has no
+    text to edit (a deleted file, a mode flip, a symlink, a submodule).
+    """
+    present = set(stages.values())
+    if any(mode == "160000" for mode in present):
+        return CONFLICT_GITLINK
+    if any(mode == "120000" for mode in present):
+        return CONFLICT_SYMLINK
+    if 2 not in stages or 3 not in stages:
+        return CONFLICT_DELETE_MODIFY
+    if not present <= _BLOB_MODE_NAMES:
+        return CONFLICT_OTHER
+    if stages[2] != stages[3] or (1 in stages and stages[1] != stages[2]):
+        return CONFLICT_MODE
+    return CONFLICT_BOTH_MODIFIED if 1 in stages else CONFLICT_BOTH_ADDED
+
+
+def parse_merge_tree(raw: bytes, *, clean: bool) -> MergeTreeResult:
+    """Parse ``merge-tree --write-tree --name-only -z`` output.
+
+    Shape: ``<tree>\\0`` then, when conflicted, each conflicted path
+    NUL-terminated, then one empty field, then informational messages (ignored:
+    they are prose, and paths come from the list above, never from them).
+    """
+    fields = raw.split(b"\0")
+    tree = fields[0].decode("ascii", errors="replace")
+    if not _SHA_RE.fullmatch(tree):
+        raise GitError(f"unparseable merge-tree output: {raw[:80]!r}")
+    paths: list[bytes] = []
+    for field_ in fields[1:]:
+        if not field_:
+            break
+        paths.append(field_)
+    if clean and paths:
+        raise GitError("merge-tree reported a clean merge but listed conflicted paths")
+    return MergeTreeResult(clean=clean, tree=tree, conflicted_paths=tuple(paths))
+
+
+def parse_unmerged(raw: bytes) -> list[UnmergedEntry]:
+    """Parse ``ls-files -u -z``: ``<mode> <oid> <stage>\\t<path>`` records, grouped by path."""
+    by_path: dict[bytes, dict[int, str]] = {}
+    for record in raw.split(b"\0"):
+        if not record:
+            continue
+        meta, separator, path = record.partition(b"\t")
+        fields = meta.split(b" ")
+        if not separator or len(fields) != 3 or not path:
+            raise GitError(f"unparseable ls-files -u record: {meta!r}")
+        mode = fields[0].decode("ascii", errors="replace")
+        stage = int(fields[2])
+        by_path.setdefault(path, {})[stage] = mode
+    return [UnmergedEntry(path=path, stages=stages) for path, stages in by_path.items()]
 
 
 @dataclass(frozen=True)
@@ -757,6 +908,159 @@ class GitRepo:
             timeout=PUSH_TIMEOUT_SECONDS,
         )
         log.info("git.push", path=str(self.path), branch=branch, remote=remote)
+
+    # -- a target branch that moved after the clone ----------------------------
+    #
+    # Everything below goes through `_run`/`run_git_checked`, so it inherits the
+    # pinned config, the allowlisted environment, the process-group kill and the
+    # host-checked credential helper. Nothing here is a second git wrapper.
+    #
+    # Model-chosen strings never reach git as an option: branch names are
+    # validated and then live inside a refspec after `--`; refs are resolved to a
+    # 40-hex sha first and only the sha is passed on.
+
+    async def _run_checked(
+        self,
+        *args: str,
+        ok_codes: frozenset[int] = frozenset({0}),
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    ) -> tuple[int, bytes]:
+        return await run_git_checked(
+            *args,
+            cwd=self.path,
+            credential_host=self.credential_host,
+            timeout=timeout,
+            ok_codes=ok_codes,
+        )
+
+    async def rev_parse(self, ref: str) -> str:
+        """Resolve ``ref`` to a full 40-hex commit sha, or raise.
+
+        ``--verify --end-of-options`` so a ref that looks like an option is
+        treated as a name, and the result is checked to be a sha rather than
+        trusted to be one.
+        """
+        out = (await self._run("rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}")).strip()
+        if not _SHA_RE.fullmatch(out):
+            raise GitError(f"rev-parse of {ref!r} did not return a full sha: {out!r}")
+        return out
+
+    async def is_ancestor(self, ancestor: str, descendant: str) -> bool:
+        """Whether ``ancestor`` is reachable from ``descendant`` (exit 1 is "no", not a failure)."""
+        a = await self.rev_parse(ancestor)
+        d = await self.rev_parse(descendant)
+        code, _ = await self._run_checked(
+            "merge-base", "--is-ancestor", a, d, ok_codes=frozenset({0, 1})
+        )
+        return code == 0
+
+    async def _validated_branch(self, branch: str) -> str:
+        """``branch`` if git itself accepts it as a plain branch name, else ``GitError``.
+
+        Refuses an option-looking name before git is asked at all, and a name
+        ``check-ref-format --branch`` would *expand* (``@{-1}``) rather than
+        return unchanged, because the result must be the string that was given.
+        """
+        if not branch or branch.startswith("-") or "\0" in branch or "\n" in branch:
+            raise GitError(f"refusing branch name {branch!r}")
+        try:
+            expanded = (await self._run("check-ref-format", "--branch", branch)).strip()
+        except GitCommandError:
+            raise GitError(f"refusing branch name {branch!r}") from None
+        if expanded != branch:
+            raise GitError(f"refusing branch name {branch!r}")
+        return branch
+
+    async def fetch_branch(self, branch: str) -> str:
+        """Fetch the remote's ``branch`` into ``refs/remotes/origin/<branch>``; return its tip sha.
+
+        Authenticated, so the credential helper (host-checked) is in play. The
+        refspec is forced (``+``) because the target may have been force-pushed.
+        Never ``--depth`` and never ``--update-shallow``: the clone must stay
+        non-shallow, and that is asserted afterwards rather than assumed.
+        """
+        branch = await self._validated_branch(branch)
+        refspec = f"+refs/heads/{branch}:refs/remotes/origin/{branch}"
+        await self._run(
+            "fetch", "--no-tags", "--no-recurse-submodules", "--no-write-fetch-head",
+            "origin", "--", refspec,
+            authenticated=True,
+            timeout=PUSH_TIMEOUT_SECONDS,
+        )
+        if await self.is_shallow():
+            raise GitError("clone became shallow after fetch; incremental indexing requires full history")
+        tip = await self.rev_parse(f"refs/remotes/origin/{branch}")
+        log.info("git.fetch_branch", path=str(self.path), branch=branch, tip=tip)
+        return tip
+
+    async def merge_tree(self, ours: str, theirs: str) -> MergeTreeResult:
+        """Would merging ``theirs`` into ``ours`` conflict? Touches neither index nor working tree.
+
+        ``merge-tree --write-tree`` writes only objects. Exit 0 is clean and
+        exit 1 is conflicts; any other exit (git uses 128 for a real error)
+        raises, so an error can never read as an answer.
+        """
+        await require_git_version()
+        ours_sha = await self.rev_parse(ours)
+        theirs_sha = await self.rev_parse(theirs)
+        code, out = await self._run_checked(
+            "merge-tree", "--write-tree", "--name-only", "-z", ours_sha, theirs_sha,
+            ok_codes=frozenset({0, 1}),
+        )
+        return parse_merge_tree(out, clean=code == 0)
+
+    async def merge_no_commit(self, theirs: str) -> bool:
+        """Merge ``theirs`` into HEAD, leaving the result uncommitted. True when clean.
+
+        ``--no-ff`` so a clean merge still stops for the caller to commit, and
+        ``--no-edit`` so no editor is ever opened. ``zdiff3`` puts the common
+        ancestor into the markers, which is what a resolver needs. On conflict
+        the working tree holds markers and the index holds stages 1/2/3.
+        """
+        theirs_sha = await self.rev_parse(theirs)
+        code, _ = await self._run_checked(
+            "-c", "merge.conflictStyle=zdiff3",
+            "merge", "--no-commit", "--no-ff", "--no-edit", theirs_sha,
+            ok_codes=frozenset({0, 1}),
+        )
+        return code == 0
+
+    async def abort_merge(self) -> None:
+        await self._run("merge", "--abort")
+
+    async def merge_in_progress(self) -> bool:
+        code, _ = await self._run_checked(
+            "rev-parse", "--verify", "--quiet", "MERGE_HEAD", ok_codes=frozenset({0, 1})
+        )
+        return code == 0
+
+    async def unmerged_files(self) -> list[UnmergedEntry]:
+        """Every path with unresolved index entries, with each stage's mode.
+
+        Read ``conflict_kind(entry.stages)`` rather than guessing: a delete,
+        mode, symlink or gitlink conflict has stage modes a both-modified one
+        does not.
+        """
+        raw = await run_git_bytes("ls-files", "-u", "-z", cwd=self.path, credential_host=self.credential_host)
+        return parse_unmerged(raw)
+
+    async def unstaged_changes(self) -> list[bytes]:
+        """Tracked paths whose working-tree content differs from the index."""
+        raw = await run_git_bytes("diff", "--name-only", "-z", cwd=self.path, credential_host=self.credential_host)
+        return [part for part in raw.split(b"\0") if part]
+
+    async def stage_paths(self, paths: Sequence[str]) -> None:
+        """``git add --all`` for exactly these paths, taken literally (no pathspec magic)."""
+        if not paths:
+            raise ValueError("stage_paths requires at least one path")
+        await self._run("--literal-pathspecs", "add", "--all", "--", *paths)
+
+    async def commit_merge(self, message: str) -> str:
+        """Conclude an in-progress merge with ``message``; return the new HEAD sha."""
+        if not message.strip():
+            raise ValueError("commit_merge requires a non-empty commit message")
+        await self._run("commit", "--no-verify", "--message", message)
+        return await self.head_sha()
 
 
 async def clone(
