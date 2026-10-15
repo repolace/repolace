@@ -12,6 +12,7 @@ class ApiSettings(BaseSettings):
 
     database_url: str
     redis_url: str
+    celery_broker_url: str
 
     github_app_id: str
     github_app_slug: str

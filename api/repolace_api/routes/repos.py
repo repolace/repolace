@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from repolace_api.deps import get_db, get_github_client
+from repolace_api.publisher import TaskPublisher, get_publisher
 
 router = APIRouter(prefix="/repos", tags=["repos"])
 log = structlog.get_logger()
@@ -77,11 +78,12 @@ async def create_task(
     body: CreateTaskRequest,
     db: AsyncSession = Depends(get_db),
     github: GithubClient = Depends(get_github_client),
+    publisher: TaskPublisher = Depends(get_publisher),
 ) -> dict:
     """Queue a task. Does not run it.
 
-    The pipeline is a separate process (`repolace-run-task`); this endpoint only
-    inserts the row. Keeping it that way is what stops the API image from
+    The pipeline runs in a Celery worker (or `repolace-run-task`); this endpoint
+    inserts the row and publishes its id by name. Keeping it that way is what stops the API image from
     needing the retrieval stack and torch -- see the packaging rule in
     CLAUDE.md.
     """
@@ -122,6 +124,8 @@ async def create_task(
     )
     db.add(task)
     await db.commit()
+    # After the commit, and never fatal: the row is `queued`, which is what the sweeper republishes.
+    await publisher.publish(task.id)
 
     log.info(
         "repos.task.queued",
