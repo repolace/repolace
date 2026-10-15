@@ -37,7 +37,7 @@ import socket
 import subprocess
 import uuid
 from collections.abc import Callable, Mapping
-from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager, suppress
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from decimal import Decimal
@@ -254,6 +254,9 @@ class _StageSink:
 _stage_sink: ContextVar[_StageSink | None] = ContextVar("repolace_stage_sink", default=None)
 
 MAX_STAGE_ERROR_CHARS = 1000
+#: Longest a stage-record write may take before it is abandoned. A write that hangs (a stalled
+#: connection pool, a lock) must not delay the stage or the task it describes.
+STAGE_WRITE_TIMEOUT_SECONDS = 5.0
 
 
 async def _write_stage_start(sink: _StageSink, name: str) -> uuid.UUID:
@@ -293,13 +296,13 @@ async def _stage(name: str):
     row_id: uuid.UUID | None = None
     if sink is not None:
         try:
-            row_id = await _write_stage_start(sink, name)
+            row_id = await asyncio.wait_for(_write_stage_start(sink, name), STAGE_WRITE_TIMEOUT_SECONDS)
         except Exception as exc:  # noqa: BLE001 -- the record is best-effort; the stage must still run
-            log.error("pipeline.stage.record_failed", stage=name, error=str(exc)[:300])
+            log.error("pipeline.stage.record_failed", stage=name, error=_short(exc))
     try:
         yield
     except BaseException as exc:
-        await _finish_stage(sink, row_id, name, "failed", _stage_error(exc))
+        await _finish_stage(sink, row_id, name, "failed", exc)
         if isinstance(exc, Exception) and not isinstance(exc, PipelineError):
             raise StageFailed(name, _describe(exc)) from exc
         raise  # already tagged, or cancellation
@@ -307,15 +310,22 @@ async def _stage(name: str):
         await _finish_stage(sink, row_id, name, "ok", None)
 
 
+def _short(exc: BaseException) -> str:
+    return f"{type(exc).__name__}: {exc}"[:300]
+
+
 async def _finish_stage(
-    sink: _StageSink | None, row_id: uuid.UUID | None, name: str, status: str, error: str | None
+    sink: _StageSink | None, row_id: uuid.UUID | None, name: str, status: str, failure: BaseException | None
 ) -> None:
+    """Close the stage's row. Everything, including describing `failure`, is inside the guard,
+    so nothing here can replace the stage's own exception."""
     if sink is None or row_id is None:
         return
     try:
-        await _write_stage_end(sink, row_id, status, error)
+        error = _stage_error(failure) if failure is not None else None
+        await asyncio.wait_for(_write_stage_end(sink, row_id, status, error), STAGE_WRITE_TIMEOUT_SECONDS)
     except Exception as exc:  # noqa: BLE001 -- best-effort, see `_stage`
-        log.error("pipeline.stage.record_failed", stage=name, error=str(exc)[:300])
+        log.error("pipeline.stage.record_failed", stage=name, error=_short(exc))
 
 
 def default_claimant() -> str:
@@ -334,10 +344,25 @@ async def _heartbeat(session_factory, task_id: uuid.UUID, interval: float) -> No
         await asyncio.sleep(interval)
         try:
             async with session_factory() as session:
-                await session.execute(update(Task).where(Task.id == task_id).values(heartbeat_at=func.now()))
+                await session.execute(update(Task)
+                    .where(Task.id == task_id, Task.status == TaskStatus.RUNNING)
+                    .values(heartbeat_at=func.now()))
                 await session.commit()
         except Exception as exc:  # noqa: BLE001 -- a missed beat must not fail the task
             log.error("pipeline.heartbeat.failed", error=str(exc)[:300])
+
+
+async def _stop_heartbeat(heartbeat: asyncio.Task) -> None:
+    """Cancel the heartbeat and wait for it to be gone.
+
+    `asyncio.wait` never raises the child's outcome, and it still propagates *our own*
+    cancellation, which `suppress(CancelledError)` around `await heartbeat` would have
+    swallowed.
+    """
+    heartbeat.cancel()
+    await asyncio.wait({heartbeat})
+    if not heartbeat.cancelled() and heartbeat.exception() is not None:
+        log.error("pipeline.heartbeat.crashed", error=_short(heartbeat.exception()))
 
 
 async def _claim(
@@ -1286,7 +1311,5 @@ async def run_task(
                     raise
         finally:
             # Always stopped and awaited, so it never outlives the task or raises after it.
-            heartbeat.cancel()
-            with suppress(asyncio.CancelledError, Exception):
-                await heartbeat
+            await _stop_heartbeat(heartbeat)
             _stage_sink.reset(sink_token)
