@@ -7,7 +7,7 @@ from repolace_shared.github.auth import (
     InstallationTokenCache,
     build_app_jwt,
 )
-from repolace_shared.github.schemas import Installation, Issue, PullRequest, Repository
+from repolace_shared.github.schemas import Branch, Installation, Issue, PullRequest, Repository
 
 log = structlog.get_logger()
 
@@ -86,6 +86,27 @@ class GithubClient:
                 log.warning("github.pagination.max_pages_exceeded", owner=owner, repo=repo)
                 break
         return [issue for issue in issues if not issue.is_pull_request]
+
+    async def list_branches(self, installation_id: int, owner: str, repo: str) -> list[Branch]:
+        token = await self._token_cache.get_token(installation_id, self._http)
+        branches: list[Branch] = []
+        page = 1
+        while True:
+            response = await self._http.get(
+                f"/repos/{owner}/{repo}/branches",
+                headers={"Authorization": f"token {token}"},
+                params={"per_page": _PAGE_SIZE, "page": page},
+            )
+            response.raise_for_status()
+            batch = response.json()
+            branches.extend(Branch.model_validate(branch) for branch in batch)
+            if len(batch) < _PAGE_SIZE:
+                break
+            page += 1
+            if page > _MAX_PAGES:
+                log.warning("github.pagination.max_pages_exceeded", owner=owner, repo=repo)
+                break
+        return branches
 
     async def create_pull_request(
         self,
