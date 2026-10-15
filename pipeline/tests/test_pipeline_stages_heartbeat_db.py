@@ -8,6 +8,7 @@ and the heartbeat leave `claimed_by` and `heartbeat_at` for the reaper to read.
 import asyncio
 import os
 import socket
+import time
 
 import pytest
 import repolace_pipeline.run as run_module
@@ -21,7 +22,7 @@ from pipeline_support import (
     seed_task,
 )
 from repolace_agents.contracts import StopReason
-from repolace_shared.db.models import TaskStage, TaskStatus
+from repolace_shared.db.models import Task, TaskStage, TaskStatus
 from sqlalchemy import select
 from test_pipeline_run_task_db import agent_that, run
 from verify.testing import FakeBackend
@@ -272,3 +273,152 @@ class TestClaimAndHeartbeat:
 
         leaked = [t for t in set(asyncio.all_tasks()) - before if "_heartbeat" in repr(t.get_coro())]
         assert leaked == []
+
+
+class TestHardening:
+    async def test_cancelling_run_task_mid_stage_fails_the_stage_and_reraises(
+        self, db_session, db_session_factory, origin_url
+    ):
+        task = await seed_task(db_session)
+        entered = asyncio.Event()
+
+        async def hang(deps):
+            entered.set()
+            await asyncio.sleep(3600)
+
+        running = asyncio.create_task(
+            run(db_session_factory, origin_url, task, ScriptedAgent(hang), FakeBackend(results=[BASELINE, AFTER]))
+        )
+        await asyncio.wait_for(entered.wait(), 60)
+        running.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await running
+
+        row, _ = await reload(db_session_factory, task.id)
+        assert row.status is TaskStatus.FAILED and row.error_message.startswith("interrupted: ")
+        stages = await stage_rows(db_session_factory, task.id)
+        assert (stages[-1].stage, stages[-1].status) == ("agent", "failed")
+        assert stages[-1].error and "CancelledError" in stages[-1].error
+        assert {r.status for r in stages[:-1]} == {"ok"}
+
+    async def test_a_second_cancellation_during_heartbeat_teardown_is_not_swallowed(self):
+        async def slow_to_die():
+            try:
+                await asyncio.sleep(3600)
+            except asyncio.CancelledError:
+                await asyncio.sleep(0.3)
+                raise
+
+        beating = asyncio.create_task(slow_to_die())
+        await asyncio.sleep(0)
+        stopping = asyncio.create_task(run_module._stop_heartbeat(beating))
+        await asyncio.sleep(0.05)
+        stopping.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await stopping
+        await asyncio.wait({beating})
+
+    async def test_a_crashed_heartbeat_does_not_raise_from_teardown(self):
+        async def crash():
+            raise RuntimeError("boom")
+
+        beating = asyncio.create_task(crash())
+        await asyncio.sleep(0.01)
+        await run_module._stop_heartbeat(beating)
+
+    async def test_concurrent_tasks_each_get_only_their_own_stage_rows(
+        self, db_session, db_session_factory, origin_url, monkeypatch
+    ):
+        first = await seed_task(db_session)
+        second = Task(
+            repo_id=first.repo_id,
+            issue_number=8,
+            issue_title="another issue",
+            issue_url="https://github.com/acme/sample/issues/8",
+            target_branch="main",
+            status=TaskStatus.QUEUED,
+        )
+        db_session.add(second)
+        await db_session.commit()
+        monkeypatch.setattr(run_module, "INDEX_WAIT_STEP_SECONDS", 0.05)
+
+        await asyncio.gather(
+            run(db_session_factory, origin_url, first, agent_that(StopReason.STEP_CAP),
+                FakeBackend(results=[BASELINE, AFTER])),
+            run(db_session_factory, origin_url, second, agent_that(StopReason.STEP_CAP),
+                FakeBackend(results=[BASELINE, AFTER])),
+        )
+
+        for task in (first, second):
+            rows = await stage_rows(db_session_factory, task.id)
+            assert [r.stage for r in rows] == [*STAGES_TO_THE_REVIEW, "finalize"]
+            assert {r.status for r in rows} == {"ok"}
+        assert run_module._stage_sink.get() is None
+
+    async def test_a_late_heartbeat_does_not_touch_a_finished_task(self, db_session, db_session_factory, origin_url):
+        task = await seed_task(db_session)
+        await run(
+            db_session_factory, origin_url, task, agent_that(StopReason.STEP_CAP), FakeBackend(results=[BASELINE, AFTER])
+        )
+        assert run_module._stage_sink.get() is None, "run_task must not leave its sink in the caller's context"
+        before = (await reload(db_session_factory, task.id))[0].heartbeat_at
+        assert before is not None
+
+        late = asyncio.create_task(run_module._heartbeat(db_session_factory, task.id, 0.01))
+        await asyncio.sleep(0.2)
+        late.cancel()
+        await asyncio.wait({late})
+
+        assert (await reload(db_session_factory, task.id))[0].heartbeat_at == before
+
+    async def test_the_stage_error_is_capped(self, db_session, db_session_factory):
+        task = await seed_task(db_session)
+        token = run_module._stage_sink.set(run_module._StageSink(db_session_factory, task.id))
+        try:
+            with pytest.raises(run_module.StageFailed):
+                async with run_module._stage("clone"):
+                    raise ValueError("x" * 5000)
+        finally:
+            run_module._stage_sink.reset(token)
+
+        (row,) = await stage_rows(db_session_factory, task.id)
+        assert len(row.error) == run_module.MAX_STAGE_ERROR_CHARS
+
+    async def test_describing_the_failure_cannot_replace_the_stages_own_exception(
+        self, db_session, db_session_factory, monkeypatch
+    ):
+        task = await seed_task(db_session)
+
+        def broken(exc):
+            raise RuntimeError("describing failed")
+
+        monkeypatch.setattr(run_module, "_stage_error", broken)
+        token = run_module._stage_sink.set(run_module._StageSink(db_session_factory, task.id))
+        try:
+            with pytest.raises(run_module.StageFailed, match="the real problem"):
+                async with run_module._stage("clone"):
+                    raise ValueError("the real problem")
+        finally:
+            run_module._stage_sink.reset(token)
+
+    @pytest.mark.parametrize("which", ["_write_stage_start", "_write_stage_end"])
+    async def test_a_hanging_stage_write_is_abandoned_without_changing_the_outcome(
+        self, db_session, db_session_factory, origin_url, monkeypatch, which
+    ):
+        task = await seed_task(db_session)
+
+        async def hang(*args, **kwargs):
+            await asyncio.sleep(3600)
+
+        monkeypatch.setattr(run_module, which, hang)
+        monkeypatch.setattr(run_module, "STAGE_WRITE_TIMEOUT_SECONDS", 0.05)
+
+        started = time.monotonic()
+        result, _ = await run(
+            db_session_factory, origin_url, task, agent_that(StopReason.STEP_CAP), FakeBackend(results=[BASELINE, AFTER])
+        )
+
+        assert time.monotonic() - started < 120
+        row, runs = await reload(db_session_factory, task.id)
+        assert result.status is row.status is TaskStatus.COMPLETED
+        assert row.agent_stop_reason == "step_cap" and [r.attempt for r in runs] == [0, 1]
