@@ -10,6 +10,7 @@ from repolace_api.config import get_settings
 from repolace_api.publisher import CeleryTaskPublisher
 from repolace_api.routes.github import router as github_router
 from repolace_api.routes.repos import router as repos_router
+from repolace_api.routes.tasks import router as tasks_router
 
 
 @asynccontextmanager
@@ -34,6 +35,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="repolace", lifespan=lifespan)
 app.include_router(github_router)
 app.include_router(repos_router)
+app.include_router(tasks_router)
 
 
 @app.get("/healthz")
