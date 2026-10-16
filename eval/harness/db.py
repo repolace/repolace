@@ -13,16 +13,16 @@ runner is built to prevent.
 from __future__ import annotations
 
 import re
-import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
 
 from repolace_shared.db.models import LLMCall, Task, TaskStatus
 from repolace_shared.db.session import create_engine, create_session_factory
-from sqlalchemy import func, select, update
+from repolace_shared.tasks_recovery import TaskRef
+from repolace_shared.tasks_recovery import running_older_than as _running_older_than
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 SessionFactory = async_sessionmaker[AsyncSession]
@@ -56,11 +56,8 @@ async def open_session_factory() -> AsyncIterator[SessionFactory]:
         await engine.dispose()
 
 
-@dataclass(frozen=True)
-class QueuedTask:
-    task_id: uuid.UUID
-    instance_id: str
-    run_index: int
+#: The same record the shared recovery helpers return, so a stale row is one type everywhere.
+QueuedTask = TaskRef
 
 
 async def queued_tasks(factory: SessionFactory, eval_run_id: str) -> list[QueuedTask]:
@@ -95,38 +92,6 @@ async def run_cost_usd(factory: SessionFactory, eval_run_id: str) -> Decimal:
         return Decimal(total)
 
 
-async def fail_if_running(factory: SessionFactory, task_id: uuid.UUID, message: str) -> bool:
-    """RUNNING -> FAILED with `message`, only if the row is still RUNNING.
-
-    Conditional so a task that finished in the same instant keeps its real
-    status. Returns whether this call changed the row. Deliberately the only
-    write the runner makes to a task's status.
-    """
-    async with factory() as session:
-        result = await session.execute(
-            update(Task)
-            .where(Task.id == task_id, Task.status == TaskStatus.RUNNING)
-            .values(status=TaskStatus.FAILED, error_message=message, completed_at=func.now())
-        )
-        await session.commit()
-        return result.rowcount == 1
-
-
 async def running_older_than(factory: SessionFactory, eval_run_id: str, age: timedelta) -> list[QueuedTask]:
-    """RUNNING tasks of the run that started more than `age` ago, by the database's clock.
-
-    `started_at` is written by the database (`now()` in the claim), so the cutoff
-    uses the database's clock too. A RUNNING row with no `started_at` should not
-    exist; it is judged by `created_at` rather than skipped, so it cannot hide.
-    """
-    async with factory() as session:
-        rows = await session.execute(
-            select(Task.id, Task.instance_id, Task.run_index)
-            .where(
-                Task.eval_run_id == eval_run_id,
-                Task.status == TaskStatus.RUNNING,
-                func.coalesce(Task.started_at, Task.created_at) < func.now() - age,
-            )
-            .order_by(Task.run_index, Task.instance_id, Task.id)
-        )
-        return [QueuedTask(task_id, instance_id, run_index) for task_id, instance_id, run_index in rows]
+    """RUNNING tasks of the run that started more than `age` ago (see `tasks_recovery`)."""
+    return await _running_older_than(factory, age, eval_run_id=eval_run_id)

@@ -64,7 +64,7 @@ import sys
 import threading
 import time
 import uuid
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, suppress
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -76,17 +76,16 @@ import structlog
 from repolace_shared.paths import PathEscapesRoot, resolve_within
 from repolace_shared.process import (
     REAP_TIMEOUT_SECONDS,
-    ProcessResult,
     kill_process_tree,
     run_process,
 )
+from repolace_shared.tasks_recovery import ProcessRunner, fail_if_running, remove_task_containers
 
 from harness.bench_repos import TOKEN_ENV_VAR
 from harness.db import (
     QueuedTask,
     SessionFactory,
     check_eval_run_id,
-    fail_if_running,
     open_session_factory,
     queued_tasks,
     run_cost_usd,
@@ -109,7 +108,6 @@ ABANDONED_GRACE_SECONDS = 600.0
 
 GATEWAY_STAGE_MODELS_VAR = "GATEWAY_STAGE_MODELS"
 
-ProcessRunner = Callable[..., Awaitable[ProcessResult]]
 _CONTAINER_ID = re.compile(r"[0-9a-f]{12,64}")
 
 
@@ -238,39 +236,6 @@ async def _sample_peak_rss(pid: int, interval: float, peak: list[int]) -> None:
         if value is not None and (not peak or value > peak[0]):
             peak[:] = [value]
         await asyncio.sleep(interval)
-
-
-async def remove_task_containers(
-    task_id: uuid.UUID,
-    *,
-    process_runner: ProcessRunner = run_process,
-    docker: str = "docker",
-    timeout: float = 30.0,
-    env: Mapping[str, str] | None = None,
-) -> tuple[str, ...]:
-    """`docker ps -q --filter name=repolace-<12 hex>` then `docker rm -f` for any survivors.
-
-    Needed because the sandbox starts containers through a `docker run` client
-    that the pipeline launches in its own session: killing the child's process
-    group does not reach it, and the container belongs to the daemon anyway.
-    Best effort -- a missing docker binary or a daemon that does not answer is
-    logged, not raised, since the row has already been settled.
-    """
-    prefix = f"repolace-{task_id.hex[:12]}"
-    try:
-        listed = await process_runner(docker, "ps", "-q", "--filter", f"name={prefix}", timeout=timeout, env=env)
-        if listed.timed_out or listed.returncode != 0:
-            log.error("runner.docker.ps_failed", prefix=prefix, returncode=listed.returncode)
-            return ()
-        ids = tuple(listed.stdout.decode("utf-8", errors="replace").split())
-        # `docker ps -q` prints hex ids; anything else is not passed to `rm`.
-        ids = tuple(item for item in ids if _CONTAINER_ID.fullmatch(item))
-        if ids:
-            await process_runner(docker, "rm", "-f", *ids, timeout=timeout, env=env)
-    except OSError as exc:
-        log.error("runner.docker.unavailable", prefix=prefix, error=str(exc))
-        return ()
-    return ids
 
 
 async def _settle_interrupted(
