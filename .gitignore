@@ -22,3 +22,7 @@ eval/cache/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+
+# Claude Code: commit the path-scoped rules, nothing else (settings.local.json, worktrees/).
+.claude/*
+!.claude/rules/
