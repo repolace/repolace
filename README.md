@@ -2,7 +2,7 @@
 
 An autonomous software-engineering agent platform. A user registers a GitHub repo, repolace fetches its open issues, the user picks one issue and a target branch, and an agent attempts a fix in an isolated sandbox, verifies it against the repo's own test suite, and opens a PR on success.
 
-The design, with the reasoning behind each decision, is in [CLAUDE.md](CLAUDE.md). This file is the status and the how-to.
+The design, with the reasoning behind each decision, is in [CLAUDE.md](CLAUDE.md) and the area files under [.claude/rules/](.claude/rules/). This file is the status and the how-to.
 
 ## Status
 
@@ -217,7 +217,7 @@ uv run --all-packages repolace-eval report --run sweep-1 --gold-run gold-1 --gol
 
 **How the number is computed:** passes over *planned* tasks, counting every task that is not a pass as a non-pass whatever the reason (a harness error, an unscoreable instance, a pass that edited tests). The rate over only the scoreable tasks is printed as a labelled secondary figure. The interval is over instances, because repeated runs of one instance are not independent.
 
-**What it will and will not show.** The instances are a filtered subset of SWE-bench Verified (pure-Python pytest repositories, gold-validated, with a simple-fix filter), a public benchmark that models have probably seen. So the figure is **not the published Verified score** and does not predict performance on unseen issues, and at 15–20 instances its 95% interval is roughly 30–40 percentage points wide. Hidden fail-to-pass tests are kept from the agent's feedback by a filter, not by the sandbox, and a deliberately adversarial agent could still signal through it. CLAUDE.md states each of these, with the reasoning.
+**What it will and will not show.** The instances are a filtered subset of SWE-bench Verified (pure-Python pytest repositories, gold-validated, with a simple-fix filter), a public benchmark that models have probably seen. So the figure is **not the published Verified score** and does not predict performance on unseen issues, and at 15–20 instances its 95% interval is roughly 30–40 percentage points wide. Hidden fail-to-pass tests are kept from the agent's feedback by a filter, not by the sandbox, and a deliberately adversarial agent could still signal through it. `.claude/rules/benchmark.md` states each of these, with the reasoning.
 
 ## Index freshness
 
