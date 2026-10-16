@@ -263,7 +263,7 @@ class TestTaskDetail:
         assert "acme/sample#5" in html
         assert '<span class="tag">baseline</span>' in html
         assert "all passing" in html and "1 failing" in html
-        assert "<details class=\"diff\" open>" in html  # pushed, so open
+        assert '<details class="diff" hx-disable open>' in html  # pushed, so open
         assert "app.py" in html
         assert task.id.hex[:8] in html
         # no polling on a finished task
@@ -348,7 +348,7 @@ class TestTaskDetail:
         html = (await page(db_session_factory, f"/ui/tasks/{task.id}/live")).text
 
         assert "$0.40" in html and "so far" in html
-        assert re.search(r"<b>running</b> &middot; \d+:\d\d", html)
+        assert re.search(r"<b>running</b> &middot; (?:<span aria-hidden=.true.>)?\d+:\d\d", html)
 
     async def test_a_failed_task_shows_the_error_block_the_failed_stage_and_an_aborted_run(
         self, db_session, db_session_factory
@@ -391,7 +391,7 @@ class TestTaskDetail:
             patch_diff="--- a/x.py\n+++ b/x.py\n@@ -1 +1 @@\n-a\n+b\n",
         )
         html = (await page(db_session_factory, f"/ui/tasks/{task.id}")).text
-        assert '<details class="diff">' in html
+        assert '<details class="diff" hx-disable>' in html
         assert 'class="tag">not pushed' in html
 
     async def test_an_empty_diff_says_no_changes_and_a_null_diff_shows_no_panel(self, db_session, db_session_factory):

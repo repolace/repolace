@@ -37,7 +37,7 @@ class TestNewTaskPage:
         assert '<option value="develop">develop</option>' in html
         assert "2 open" in html
         # no issue picked yet: the start button is disabled and the hint says why
-        assert re.search(r'<button type="submit" class="btn btn-primary" disabled>', html)
+        assert re.search(r'<button type="submit" class="btn btn-primary" aria-describedby="pick-hint" disabled>', html)
         assert "Pick an issue in step 1" in html
         assert 'hx-trigger="input changed delay:250ms, search"' in html
         assert 'aria-live="polite"' in html
@@ -252,7 +252,7 @@ class TestListPaging:
         await self.seed_many(db_session, repo, 120)
         async with ui_client(db_session_factory) as client:
             first = (await client.get(f"/ui/repos/{repo.id}/tasks")).text
-            seen = re.findall(r'<a class="rowlink" href="/ui/tasks/[^"]+">(issue-\d+)</a>', first)
+            seen = re.findall(r'<a class="rowlink" id="link-[^"]+" href="/ui/tasks/[^"]+">(issue-\d+)</a>', first)
             assert len(seen) == 50
             fragments = 0
             html = first
@@ -264,7 +264,7 @@ class TestListPaging:
                 response = await client.get(url)
                 html = response.text
                 assert "<html" not in html  # a fragment: rows plus the next load-more
-                seen += re.findall(r'<a class="rowlink" href="/ui/tasks/[^"]+">(issue-\d+)</a>', html)
+                seen += re.findall(r'<a class="rowlink" id="link-[^"]+" href="/ui/tasks/[^"]+">(issue-\d+)</a>', html)
                 fragments += 1
 
         assert fragments == 2
