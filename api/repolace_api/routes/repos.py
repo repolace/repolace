@@ -143,11 +143,15 @@ async def create_task(
     github: GithubClient = Depends(get_github_client),
     publisher: TaskPublisher = Depends(get_publisher),
 ) -> TaskCreated:
-    return await enqueue_task(db, github, repo_id, body)
+    return await enqueue_task(db, github, repo_id, body, publisher)
 
 
 async def enqueue_task(
-    db: AsyncSession, github: GithubClient, repo_id: UUID, body: CreateTaskRequest
+    db: AsyncSession,
+    github: GithubClient,
+    repo_id: UUID,
+    body: CreateTaskRequest,
+    publisher: TaskPublisher,
 ) -> TaskCreated:
     """Queue a task. Does not run it.
 

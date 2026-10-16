@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
 from repolace_api.deps import get_db, get_github_client
+from repolace_api.publisher import TaskPublisher, get_publisher
 from repolace_api.routes.repos import (
     _LIST_COLUMNS,
     TASK_COST_CAP_USD,
@@ -363,6 +364,7 @@ async def create_task_form(
     repo_id: UUID,
     db: AsyncSession = Depends(get_db),
     github: GithubClient = Depends(get_github_client),
+    publisher: TaskPublisher = Depends(get_publisher),
 ):
     """Enqueue through the same function as `POST /repos/{id}/tasks`, then redirect to the task."""
     if not same_origin(request):
@@ -399,7 +401,7 @@ async def create_task_form(
         return await again("That issue number is not valid.", 422)
     await active_repo(db, repo_id)  # 404 for an unknown repo, not a form error
     try:
-        created = await enqueue_task(db, github, repo_id, body)
+        created = await enqueue_task(db, github, repo_id, body, publisher)
     except HTTPException as exc:
         return await again(str(exc.detail), exc.status_code, is_branch=exc.status_code in (400, 422))
     return RedirectResponse(f"/ui/tasks/{created.id}", status_code=303)
