@@ -61,3 +61,27 @@ def test_the_role_is_read_from_the_environment(monkeypatch):
 def test_the_required_broker_timeout_exceeds_the_hard_limit():
     settings = WorkerSettings()
     assert tasks.required_consumer_timeout_ms(settings) == settings.hard_time_limit_seconds * 1000
+
+
+def test_a_failed_child_init_ends_the_child_instead_of_leaving_it_without_resources(monkeypatch, probes):
+    """Celery's `Signal.send` swallows an `Exception` from a `worker_process_init` receiver, so the
+    old bare re-raise left a live child with `_state is None` that acked every task as a failure."""
+    with_role(monkeypatch, "task")
+
+    def boom():
+        raise RuntimeError("no provider key")
+
+    monkeypatch.setattr("retrieval.embed.get_embedder", boom)
+
+    with pytest.raises(SystemExit) as raised:
+        tasks._init_child()
+
+    assert not isinstance(raised.value, Exception)  # the property Celery's `send` cannot swallow
+    assert tasks._state is None
+    assert probes["build"] == 1
+
+
+def test_children_get_time_to_load_the_model_before_celery_kills_them():
+    from repolace_worker.celery_app import celery_app
+
+    assert celery_app.conf.worker_proc_alive_timeout >= 60

@@ -163,13 +163,22 @@ def _init_child(**_: Any) -> None:
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+    resources = None
     try:
         resources = loop.run_until_complete(build_resources(get_settings(), "llm"))
         get_embedder()
-    except BaseException:
-        # A misconfigured model or key: the child dies loudly and unacked messages stay queued.
+    except BaseException as exc:
+        # A misconfigured model or key. Celery's `Signal.send` catches and logs any `Exception` a
+        # `worker_process_init` receiver raises, and the child then carries on with no resources,
+        # failing (and acking) every task it is handed. `SystemExit` is not an `Exception`, so it
+        # gets through: the child really dies and unacked messages stay queued.
         log.critical("worker.child.init_failed", exc_info=True)
-        raise
+        try:
+            if resources is not None:
+                loop.run_until_complete(resources.aclose())
+        finally:
+            loop.close()
+        raise SystemExit(1) from exc
     install_state(ChildState(loop, resources))
     log.info("worker.child.ready", pid=os.getpid())
 
