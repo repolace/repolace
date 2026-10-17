@@ -1,6 +1,6 @@
 # Package A: deployment hardening for the Celery worker and the API container
 
-Read `COMMON.md` first. Budget: **hard stop at about $15**. Model: Claude Sonnet 5.5.
+Read `COMMON.md` first. Model: Claude Opus 5.5, started in plan mode.
 Branch: `cloud/a-deployment-hardening`, from `main`. PR target: `main`.
 
 ## Goal

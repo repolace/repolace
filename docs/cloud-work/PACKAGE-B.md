@@ -1,6 +1,6 @@
 # Package B: database performance
 
-Read `COMMON.md` first. Budget: **hard stop at about $12**. Model: Claude Sonnet 5.5.
+Read `COMMON.md` first. Model: Claude Opus 5.5, started in plan mode.
 Branch: `cloud/b-db-performance`, from `main`. PR target: `main`.
 **Migration number: this package takes `0015`.** Package C also needs a migration; it takes the next number
 after yours and rebases when you merge, so write yours on top of `0014`.
