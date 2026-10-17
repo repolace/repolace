@@ -259,6 +259,92 @@ class TestMigration0014:
             _in_thread(go)
 
 
+#: What migration 0015 changes, by index name, so "before" and "after" are one comparison each.
+INDEXES_0015 = {"ix_tasks_repo_created_id", "ix_tasks_active", "ix_llm_calls_task_created_desc"}
+SUPERSEDED_0015 = {"ix_tasks_repo_id_created_at"}
+
+
+async def _valid_indexes_0015(dsn: str) -> dict[str, set[str]]:
+    """The 0015-relevant indexes that exist and are valid (a failed CONCURRENTLY build leaves an invalid one)."""
+    import asyncpg
+
+    conn = await asyncpg.connect(dsn)
+    try:
+        rows = await conn.fetch(
+            "SELECT c.relname FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid "
+            "WHERE i.indisvalid AND c.relname = ANY($1::text[])",
+            sorted(INDEXES_0015 | SUPERSEDED_0015),
+        )
+    finally:
+        await conn.close()
+    present = {r[0] for r in rows}
+    return {"new": present & INDEXES_0015, "superseded": present & SUPERSEDED_0015}
+
+
+BEFORE_0015 = {"new": set(), "superseded": SUPERSEDED_0015}
+AFTER_0015 = {"new": INDEXES_0015, "superseded": set()}
+
+
+class TestMigration0015:
+    def test_it_upgrades_downgrades_and_upgrades_again(self, scratch_url):
+        """The downgrade restores the index it dropped, and the second upgrade proves it left nothing behind."""
+        dsn = _dsn(make_url(scratch_url))
+        with mock.patch.dict(os.environ, {"DATABASE_URL": scratch_url}):
+            command.upgrade(_config(), "0014")
+            assert _in_thread(lambda: _valid_indexes_0015(dsn)) == BEFORE_0015
+            command.upgrade(_config(), "0015")
+            assert _in_thread(lambda: _valid_indexes_0015(dsn)) == AFTER_0015
+            command.downgrade(_config(), "0014")
+            assert _in_thread(lambda: _valid_indexes_0015(dsn)) == BEFORE_0015
+            command.upgrade(_config(), "0015")
+            assert _in_thread(lambda: _valid_indexes_0015(dsn)) == AFTER_0015
+
+    def test_it_is_safe_to_rerun_after_an_interrupted_build(self, scratch_url):
+        """CREATE INDEX CONCURRENTLY that dies leaves an INVALID index of the same name; the retry must replace it."""
+        dsn = _dsn(make_url(scratch_url))
+        with mock.patch.dict(os.environ, {"DATABASE_URL": scratch_url}):
+            command.upgrade(_config(), "0015")
+            # What a cancelled concurrent build leaves behind: the name taken, the index unusable.
+            invalidate = "UPDATE pg_index SET indisvalid = false WHERE indexrelid = 'ix_tasks_active'::regclass"
+            _in_thread(lambda: _execute(dsn, invalidate))
+            assert _in_thread(lambda: _valid_indexes_0015(dsn))["new"] == INDEXES_0015 - {"ix_tasks_active"}
+
+            # The failed run never reached the version table, so the retry starts again from 0014 with the
+            # first steps already applied and the broken index in the way.
+            command.stamp(_config(), "0014")
+            command.upgrade(_config(), "0015")
+
+            assert _in_thread(lambda: _valid_indexes_0015(dsn)) == AFTER_0015
+
+    def test_no_row_is_lost_either_way(self, scratch_url):
+        dsn = _dsn(make_url(scratch_url))
+        with mock.patch.dict(os.environ, {"DATABASE_URL": scratch_url}):
+            command.upgrade(_config(), "0014")
+            _in_thread(
+                lambda: _execute(
+                    dsn,
+                    "INSERT INTO github_installations (id, account_login, account_id, account_type) "
+                    "VALUES (1, 'acme', 1, 'Organization')",
+                    "INSERT INTO registered_repos (id, installation_id, github_repo_id, owner, name, "
+                    "full_name, default_branch, private) VALUES "
+                    "('00000000-0000-0000-0000-000000000001', 1, 7, 'acme', 'sample', 'acme/sample', 'main', false)",
+                    "INSERT INTO tasks (id, repo_id, issue_number, issue_title, issue_url, target_branch, status) "
+                    "SELECT gen_random_uuid(), '00000000-0000-0000-0000-000000000001', g, 't', 'u', 'main', "
+                    "'queued' FROM generate_series(1, 25) AS g",
+                    "INSERT INTO llm_calls (id, task_id, stage, model, provider) "
+                    "SELECT gen_random_uuid(), id, 'agent', 'm', 'p' FROM tasks",
+                )
+            )
+
+            def counts():
+                return _in_thread(lambda: _fetch(dsn, "SELECT (SELECT count(*) FROM tasks), (SELECT count(*) FROM llm_calls)"))
+
+            command.upgrade(_config(), "0015")
+            assert counts() == [(25, 25)]
+            command.downgrade(_config(), "0014")
+            assert counts() == [(25, 25)]
+
+
 class TestModelsAgreeWithMigrations:
     def test_alembic_check_is_clean_at_head(self, scratch_url):
         """The model and the migration chain describe the same schema.
