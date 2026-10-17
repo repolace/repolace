@@ -3,7 +3,7 @@
 # A repository with no entry here gets `RepoSpec` defaults plus the install
 # heuristic in `verify/verify/spec.py`, which is the state every repository
 # starts in. Add an entry when the heuristic gets it wrong -- that is the
-# fiddly, per-repo cost CLAUDE.md warns is "the part that will actually cost
+# fiddly, per-repo cost that .claude/rules/verify-sandbox.md warns is "the part that will actually cost
 # the time", and this file is where it accumulates one repo at a time.
 #
 # Unknown fields are refused rather than ignored: a typo that silently stopped

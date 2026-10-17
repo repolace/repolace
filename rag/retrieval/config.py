@@ -22,5 +22,5 @@ ENCODE_BATCH_SIZE: Final[int] = 32
 
 # Methods this short (in source lines) are folded into the class-skeleton chunk
 # instead of getting their own standalone chunk — a one-line getter/setter
-# embeds poorly in isolation (see CLAUDE.md's chunking-strategy discussion).
+# embeds poorly in isolation.
 MIN_STANDALONE_CHUNK_LINES: Final[int] = 2
