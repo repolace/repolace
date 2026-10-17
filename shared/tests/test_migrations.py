@@ -259,6 +259,73 @@ class TestMigration0014:
             _in_thread(go)
 
 
+async def _conflict_reason_state(dsn: str) -> dict[str, set[str]]:
+    import asyncpg
+
+    conn = await asyncpg.connect(dsn)
+    try:
+        cols = await conn.fetch(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'tasks' AND column_name = 'conflict_reason'"
+        )
+        checks = await conn.fetch(
+            "SELECT conname FROM pg_constraint WHERE conname = 'ck_tasks_conflict_reason_needs_conflicting'"
+        )
+    finally:
+        await conn.close()
+    return {"tasks": {r[0] for r in cols}, "check": {r[0] for r in checks}}
+
+
+class TestMigration0015:
+    def test_it_upgrades_downgrades_and_upgrades_again(self, scratch_url):
+        dsn = _dsn(make_url(scratch_url))
+        absent = {"tasks": set(), "check": set()}
+        present = {"tasks": {"conflict_reason"}, "check": {"ck_tasks_conflict_reason_needs_conflicting"}}
+        with mock.patch.dict(os.environ, {"DATABASE_URL": scratch_url}):
+            command.upgrade(_config(), "0014")
+            assert _in_thread(lambda: _conflict_reason_state(dsn)) == absent
+            command.upgrade(_config(), "0015")
+            assert _in_thread(lambda: _conflict_reason_state(dsn)) == present
+            command.downgrade(_config(), "0014")
+            assert _in_thread(lambda: _conflict_reason_state(dsn)) == absent
+            command.upgrade(_config(), "0015")
+            assert _in_thread(lambda: _conflict_reason_state(dsn)) == present
+
+    def test_only_a_conflicting_task_may_carry_a_reason(self, scratch_url):
+        dsn = _dsn(make_url(scratch_url))
+        import asyncpg
+
+        async def go() -> None:
+            conn = await asyncpg.connect(dsn)
+            try:
+                await conn.execute(
+                    "INSERT INTO github_installations (id, account_login, account_id, account_type) "
+                    "VALUES (1, 'acme', 1, 'Organization')"
+                )
+                await conn.execute(
+                    "INSERT INTO registered_repos (id, installation_id, github_repo_id, owner, name, "
+                    "full_name, default_branch, private) VALUES "
+                    "('00000000-0000-0000-0000-000000000001', 1, 7, 'acme', 'sample', 'acme/sample', 'main', false)"
+                )
+                insert = (
+                    "INSERT INTO tasks (id, repo_id, issue_number, issue_title, issue_url, target_branch, "
+                    "status, conflict_reason) VALUES "
+                    "(gen_random_uuid(), '00000000-0000-0000-0000-000000000001', 1, 't', 'u', 'main', $1, $2)"
+                )
+                await conn.execute(insert, "conflicting", "the resolver gave up")
+                await conn.execute(insert, "completed", None)
+                await conn.execute(insert, "conflicting", None)  # the pipeline's job, not the constraint's
+                for status in ("completed", "failed", "pr_opened", "queued", "running"):
+                    with pytest.raises(asyncpg.CheckViolationError):
+                        await conn.execute(insert, status, "a reason on the wrong status")
+            finally:
+                await conn.close()
+
+        with mock.patch.dict(os.environ, {"DATABASE_URL": scratch_url}):
+            command.upgrade(_config(), "0015")
+            _in_thread(go)
+
+
 class TestModelsAgreeWithMigrations:
     def test_alembic_check_is_clean_at_head(self, scratch_url):
         """The model and the migration chain describe the same schema.
