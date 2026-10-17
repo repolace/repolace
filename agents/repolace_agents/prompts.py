@@ -54,8 +54,26 @@ EMPTY_TOOL_OUTPUT = "(no output)"
 ELIDED = "[output from attempt {attempt} elided]"
 
 
+#: The tool that ends the single agent's loop (and the editor's and the debugger's, under the roles).
+SUBMIT = "submit"
+
+
 def elided(attempt: int) -> str:
     return ELIDED.format(attempt=attempt)
+
+
+def nudge_for(exit_tool: str) -> str:
+    """What a reply with no tool call gets, naming the tool that ends the loop. `NUDGE` itself for `submit`."""
+    if exit_tool == SUBMIT:
+        return NUDGE
+    return f"Your last reply called no tool. Call a tool to continue, or call `{exit_tool}` if you are finished."
+
+
+def skipped_after(exit_tool: str) -> str:
+    """The answer to a call made after the loop's exit tool in the same reply. `SKIPPED_AFTER_SUBMIT` for `submit`."""
+    if exit_tool == SUBMIT:
+        return SKIPPED_AFTER_SUBMIT
+    return f"not executed: your work in this role ended when `{exit_tool}` was called"
 
 
 def build_system_prompt(limits: AgentLimits, nonce: str) -> str:

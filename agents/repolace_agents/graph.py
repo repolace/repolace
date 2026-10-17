@@ -10,7 +10,8 @@ of a counter we remember to check.
 
 * `localize` makes no model call. It builds the two opening messages from the
   deps and the baseline *as `feedback.baseline_summary` renders it*.
-* `agent` is the only node that calls the model. It stops on `submit`, on the
+* `agent` is the only node that calls the model, through `_run_loop` (the bounded
+  tool loop every model-calling node shares). It stops on `submit`, on the
   step cap, on a budget, or on a provider failure -- and for the last two it does
   **not** append the response that crossed the line: its tool calls cannot be
   executed, so appending it would leave an assistant message whose `tool_calls`
@@ -45,16 +46,18 @@ from repolace_agents.contracts import AgentDeps, AgentLimits, AgentResult, StopR
 from repolace_agents.feedback import baseline_summary, render_feedback, visible_feedback
 from repolace_agents.prompts import (
     EMPTY_TOOL_OUTPUT,
-    NUDGE,
-    SKIPPED_AFTER_SUBMIT,
     SKIPPED_BUDGET,
+    SUBMIT,
     TOO_MANY_CALLS,
     build_localize_message,
     build_system_prompt,
     elided,
+    nudge_for,
+    skipped_after,
 )
 from repolace_agents.render import escape_invisible, require_nonce, sanitize_text
 from repolace_agents.state import AgentState
+from repolace_agents.tools.base import ToolBox
 
 _BUDGET_STOPS = {
     BudgetLimit.USD: StopReason.BUDGET_USD,
@@ -242,34 +245,61 @@ async def localize(state: AgentState, runtime: Runtime[RunContext]) -> dict[str,
     return {"messages": ({"role": "system", "content": system}, {"role": "user", "content": user})}
 
 
-async def agent(state: AgentState, runtime: Runtime[RunContext]) -> dict[str, Any]:
-    """Run one attempt: the bounded tool loop. See the module docstring for how it stops."""
-    deps = runtime.context.deps
-    llm, tools = deps.llm, deps.tools
-    assert llm is not None and tools is not None  # run_graph refuses a None before the graph is built
+@dataclass(frozen=True)
+class LoopOutcome:
+    """What one bounded tool loop hands back to the node that ran it."""
 
-    attempt_no = state.attempt + 1
-    messages = list(_elide_tool_outputs(state.messages, state.attempt) if state.attempt else state.messages)
-    schemas = tools.schemas()
-    steps = state.steps
-    attempt_steps = 0
+    #: The conversation as the loop left it, ready to store in the state.
+    messages: tuple[Mapping[str, Any], ...]
+    #: Model calls made. A call that crossed a budget is counted (it was paid for) but not appended.
+    calls: int
+    stop: StopReason
+    #: What the exit tool carried (`submit`'s summary), or None if it was never called.
+    summary: str | None
+
+
+async def _run_loop(
+    ctx: RunContext,
+    messages: Sequence[Mapping[str, Any]],
+    toolbox: ToolBox,
+    stage: str,
+    step_cap: int,
+    exit_tool: str,
+    *,
+    attempt: int,
+) -> LoopOutcome:
+    """The bounded tool loop: call the model on `stage`, run what it asks for, until something ends it.
+
+    It ends on the exit tool (`exit_tool` names it, for the wording of the nudge and of a call
+    made after it), on `step_cap` model calls, on a budget, or on a provider failure -- and for
+    the last two the response that crossed the line is **not** appended (see the module
+    docstring). `attempt` is what each call is recorded under. Every node that calls the model
+    calls it through here, so every one of them is held to the same bounds: at most
+    `MAX_TOOL_CALLS_PER_REPLY` executed per reply, the budget checked between tool calls,
+    mid-attempt elision past `MAX_TRANSCRIPT_CHARS`, and every call answered.
+    """
+    llm = ctx.deps.llm
+    assert llm is not None  # run_graph refuses a None before the graph is built
+
+    messages = list(messages)
+    schemas = toolbox.schemas()
+    calls = 0
     summary: str | None = None
 
     while True:
-        if attempt_steps >= deps.limits.max_steps_per_attempt:
+        if calls >= step_cap:
             stop = StopReason.STEP_CAP
             break
         if _transcript_chars(messages) > MAX_TRANSCRIPT_CHARS:
-            messages = list(_elide_tool_outputs(messages, attempt_no, keep_last=KEEP_RECENT_TOOL_RESULTS))
+            messages = list(_elide_tool_outputs(messages, attempt, keep_last=KEEP_RECENT_TOOL_RESULTS))
         try:
             # A tuple, so the client and this loop cannot alias one mutable list.
-            response = await llm.complete("agent", tuple(messages), schemas, attempt=attempt_no)
+            response = await llm.complete(stage, tuple(messages), schemas, attempt=attempt)
         except BudgetExceeded as exc:
             if exc.response is not None:
                 # The call happened and was paid for, so it is a step; but it is
                 # not appended -- its tool calls cannot be run.
-                steps += 1
-                attempt_steps += 1
+                calls += 1
             stop = _BUDGET_STOPS[exc.limit]
             break
         except LLMCallError as exc:
@@ -280,12 +310,11 @@ async def agent(state: AgentState, runtime: Runtime[RunContext]) -> dict[str, An
             stop = StopReason.LLM_ERROR
             break
 
-        steps += 1
-        attempt_steps += 1
+        calls += 1
         messages.append(_assistant_turn(response))
 
         if not response.tool_calls:
-            messages.append({"role": "user", "content": NUDGE})
+            messages.append({"role": "user", "content": nudge_for(exit_tool)})
             continue
 
         submitted = False
@@ -293,8 +322,8 @@ async def agent(state: AgentState, runtime: Runtime[RunContext]) -> dict[str, An
         for index, call in enumerate(response.tool_calls):
             # Every call is answered, whatever happens to it, or the next request is invalid.
             if submitted:
-                # Submit is the agent's last word, so a call after it is not run.
-                messages.append({"role": "tool", "tool_call_id": call.id, "content": SKIPPED_AFTER_SUBMIT})
+                # The exit tool is the model's last word, so a call after it is not run.
+                messages.append({"role": "tool", "tool_call_id": call.id, "content": skipped_after(exit_tool)})
                 continue
             if budget_stop is not None:
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": SKIPPED_BUDGET})
@@ -308,7 +337,7 @@ async def agent(state: AgentState, runtime: Runtime[RunContext]) -> dict[str, An
                 budget_stop = _BUDGET_STOPS[exc.limit]
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": SKIPPED_BUDGET})
                 continue
-            outcome = await tools.dispatch(call)
+            outcome = await toolbox.dispatch(call)
             # Tool output is untrusted too (file contents, search hits, test output): invisible
             # characters are escaped, not deleted, so it still matches what `edit_file` is given.
             # Empty content is replaced because some providers reject an empty tool message.
@@ -324,12 +353,30 @@ async def agent(state: AgentState, runtime: Runtime[RunContext]) -> dict[str, An
             stop = StopReason.SUBMITTED
             break
 
+    return LoopOutcome(messages=tuple(messages), calls=calls, stop=stop, summary=summary)
+
+
+async def agent(state: AgentState, runtime: Runtime[RunContext]) -> dict[str, Any]:
+    """Run one attempt: the bounded tool loop. See the module docstring for how it stops."""
+    deps = runtime.context.deps
+    assert deps.llm is not None and deps.tools is not None  # run_graph refuses a None before the graph is built
+
+    messages = _elide_tool_outputs(state.messages, state.attempt) if state.attempt else state.messages
+    loop = await _run_loop(
+        runtime.context,
+        messages,
+        deps.tools,
+        "agent",
+        deps.limits.max_steps_per_attempt,
+        SUBMIT,
+        attempt=state.attempt + 1,
+    )
     return {
-        "messages": tuple(messages),
-        "steps": steps,
-        "attempt_steps": attempt_steps,
-        "summary": summary,
-        "stop_reason": stop,
+        "messages": loop.messages,
+        "steps": state.steps + loop.calls,
+        "attempt_steps": loop.calls,
+        "summary": loop.summary,
+        "stop_reason": loop.stop,
         "feedback_clean": None,
     }
 
