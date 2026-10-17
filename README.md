@@ -18,7 +18,7 @@ The design, with the reasoning behind each decision, is in [CLAUDE.md](CLAUDE.md
 | Task pipeline | Done — `repolace-run-task` runs `run_task` end to end (checkout lifecycle, index, baseline, agent stage, score, PR gate, squash, push, PR, terminal write). `--agent llm` (the real agent) is the default; `stub` and `gold` remain |
 | Verify sandbox | Done — rootless locked-down Docker container from a prepared per-repo image, byte-identical tree export (no `.git`), pytest report parsing, scored runs plus unscored probes and scratch scripts, hidden-test overlay for benchmark instances |
 | Git hardening | Done — credential helper scoped to host, hooks and fsmonitor disabled, global/system git config pinned to `/dev/null`, path traversal guards, symlink refusal |
-| LiteLLM gateway | Done — stage routing, per-task budget (default $2, 150 calls, one hour), refuses an unpriced model rather than record it as free, every call recorded in `llm_calls`. The headline model is priced in `gateway/models.toml` |
+| LiteLLM gateway | Done — stage routing, per-task budget (default $2, 150 calls, one hour), refuses an unpriced model rather than record it as free, every call recorded in `llm_calls`. The Phase 1 headline model is Gemini 3.1 Pro on Vertex AI (`vertex-gemini-3-1-pro-preview`), priced in `gateway/models.toml`; Sonnet 5.5 is a later comparison column |
 | Agent | Built and wired into `repolace-run-task`, never run against a real provider — a LangGraph graph (`localize → agent → verify`, retry edge), nine tools, and a no-oracle feedback filter, in `agents/` |
 | Retry loop | Built and wired in, not yet exercised by a real run — up to 3 scored attempts inside the graph |
 | Benchmark harness | Built, not yet run — `eval/harness/` (`repolace-eval`): instance selection, private benchmark repos, gold validation, sweep runner, report, retrieval eval |
@@ -201,12 +201,12 @@ uv run --all-packages repolace-eval run --eval-run-id gold-2 --agent gold
 uv run --all-packages repolace-eval gold --runs gold-1,gold-2        # writes eval/instances/VALIDATION.md
 
 # 4. A dry run on a few instances, one run each, to see real cost and wall time first...
-uv run --all-packages repolace-eval enqueue --eval-run-id dry-1 --agent llm --model claude-sonnet-5-5 \
+uv run --all-packages repolace-eval enqueue --eval-run-id dry-1 --agent llm --model vertex-gemini-3-1-pro-preview \
   --instances <id>,<id>,<id> --runs 1
-uv run --all-packages repolace-eval run --eval-run-id dry-1 --agent llm --model claude-sonnet-5-5
+uv run --all-packages repolace-eval run --eval-run-id dry-1 --agent llm --model vertex-gemini-3-1-pro-preview
 #    ...then the sweep (3 runs per instance by default).
-uv run --all-packages repolace-eval enqueue --eval-run-id sweep-1 --agent llm --model claude-sonnet-5-5
-uv run --all-packages repolace-eval run --eval-run-id sweep-1 --agent llm --model claude-sonnet-5-5 \
+uv run --all-packages repolace-eval enqueue --eval-run-id sweep-1 --agent llm --model vertex-gemini-3-1-pro-preview
+uv run --all-packages repolace-eval run --eval-run-id sweep-1 --agent llm --model vertex-gemini-3-1-pro-preview \
   -k 3 --max-total-usd <cap>
 
 # 5. The report, from the database and the run's manifest only.
@@ -246,7 +246,7 @@ When a task starts, repolace checks the repo's `indexed_commit_sha` against the 
 
 ## What comes next
 
-**Phase 1 completion:** gold validation, a dry run and the sweep (the headline model is already priced in `gateway/models.toml`). Benchmark repos must contain no tracked symlinks or submodules — the export refuses both.
+**Phase 1 completion:** gold validation, a dry run and the sweep (the headline model, Gemini 3.1 Pro on Vertex AI, is already priced in `gateway/models.toml`; confirm the rates in your Cloud console first). Benchmark repos must contain no tracked symlinks or submodules — the export refuses both.
 
 **Phase 2:** Split into specialized agents (planner/editor/reviewer/debugger), async queue dispatch, merge-conflict resolution sub-loop, basic UI.
 
