@@ -1,11 +1,54 @@
+import importlib
+import os
+
 import pytest
 from repolace_worker.celery_app import celery_app
 from repolace_worker.config import DEFAULT_TASK_BOUND_SECONDS, WorkerSettings
 
+#: Same idea as `REPOLACE_TEST_DB_REQUIRED` in the root conftest: a silent skip is how a missing
+#: dependency turns into a green build that checked nothing.
+REQUIRE_EVAL_ENV_VAR = "REPOLACE_TEST_EVAL_REQUIRED"
+
+
+def import_eval(name: str):
+    """Import a module of the eval harness, which the worker may not depend on at run time.
+
+    Under `uv sync --all-packages` it is always importable. When it is not, the test that needs it
+    skips, unless `REPOLACE_TEST_EVAL_REQUIRED` is set, in which case it fails.
+    """
+    try:
+        return importlib.import_module(name)
+    except ImportError as exc:
+        reason = f"the eval harness is not importable: {exc}"
+        if os.environ.get(REQUIRE_EVAL_ENV_VAR):
+            pytest.fail(f"{reason} (and {REQUIRE_EVAL_ENV_VAR} is set)")
+        pytest.skip(reason)
+
 
 def test_the_bound_equals_the_eval_runners_derived_bound():
-    enqueue = pytest.importorskip("harness.enqueue")
+    enqueue = import_eval("harness.enqueue")
     assert enqueue.task_wall_clock_bound() == DEFAULT_TASK_BOUND_SECONDS
+
+
+class TestAMissingEvalHarnessIsNotASilentSkip:
+    @pytest.fixture
+    def no_eval(self, monkeypatch):
+        def refuse(name):
+            raise ModuleNotFoundError(f"No module named {name!r}", name=name)
+
+        monkeypatch.setattr(importlib, "import_module", refuse)
+
+    def test_it_fails_when_the_harness_is_required(self, no_eval, monkeypatch):
+        monkeypatch.setenv(REQUIRE_EVAL_ENV_VAR, "1")
+
+        with pytest.raises(pytest.fail.Exception, match=REQUIRE_EVAL_ENV_VAR):
+            import_eval("harness.enqueue")
+
+    def test_it_skips_when_the_harness_is_not_required(self, no_eval, monkeypatch):
+        monkeypatch.delenv(REQUIRE_EVAL_ENV_VAR, raising=False)
+
+        with pytest.raises(pytest.skip.Exception, match="not importable"):
+            import_eval("harness.enqueue")
 
 
 def test_the_hard_limit_is_the_bound_plus_the_grace():

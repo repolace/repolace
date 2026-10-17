@@ -1,5 +1,6 @@
 """Settings for the Celery worker and its two beat jobs."""
 
+import math
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -62,6 +63,18 @@ class WorkerSettings(BaseSettings):
     @property
     def hard_time_limit_seconds(self) -> int:
         return int(self.task_bound_seconds + self.hard_limit_grace_seconds)
+
+    @property
+    def sweeper_scan_limit(self) -> int:
+        """The most old `queued` rows one sweeper tick reads: what one dedupe window can republish.
+
+        A row republished in this window is skipped, not removed, so later ticks read past the ones
+        already sent to find new ones: `max_per_tick` per tick for the ticks in a window. Reading
+        more than that only loads rows no tick could act on. Oldest first, so a backlog larger than
+        this drains from the front while the rest waits its turn.
+        """
+        ticks_per_window = math.ceil(self.sweeper_dedupe_seconds / self.sweeper_interval_seconds)
+        return self.sweeper_max_per_tick * ticks_per_window
 
 
 @lru_cache
