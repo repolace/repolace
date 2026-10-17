@@ -13,7 +13,7 @@ The design, with the reasoning behind each decision, is in [CLAUDE.md](CLAUDE.md
 | Monorepo scaffolding | Done — `uv` workspace, Docker Compose (Postgres + pgvector, Redis, RabbitMQ) |
 | FastAPI service | Done — health check, GitHub App webhook handler, repo registration, issue listing, task enqueue (`POST /repos/{id}/tasks`) |
 | GitHub App integration | Done — installation events, repo auto-registration, issue fetching |
-| Database schema | Done — Alembic migrations 0001–0013: installations, repos, tasks, test runs, code chunks, `llm_calls`, agent outputs and the benchmark columns |
+| Database schema | Done — Alembic migrations 0001–0014: installations, repos, tasks, test runs, code chunks, `llm_calls`, agent outputs, the benchmark columns, task stages and heartbeat |
 | RAG layer | Done — Python AST chunking via tree-sitter, 4 embedding strategies threaded through indexing and search (recorded per repo in `registered_repos.index_strategy`), pgvector HNSW + full-text hybrid retrieval |
 | Task pipeline | Done — `repolace-run-task` runs `run_task` end to end (checkout lifecycle, index, baseline, agent stage, score, PR gate, squash, push, PR, terminal write). `--agent llm` (the real agent) is the default; `stub` and `gold` remain |
 | Verify sandbox | Done — rootless locked-down Docker container from a prepared per-repo image, byte-identical tree export (no `.git`), pytest report parsing, scored runs plus unscored probes and scratch scripts, hidden-test overlay for benchmark instances |
@@ -22,7 +22,7 @@ The design, with the reasoning behind each decision, is in [CLAUDE.md](CLAUDE.md
 | Agent | Built and wired into `repolace-run-task`, never run against a real provider — a LangGraph graph (`localize → agent → verify`, retry edge), nine tools, and a no-oracle feedback filter, in `agents/` |
 | Retry loop | Built and wired in, not yet exercised by a real run — up to 3 scored attempts inside the graph |
 | Benchmark harness | Built, not yet run — `eval/harness/` (`repolace-eval`): instance selection, private benchmark repos, gold validation, sweep runner, report, retrieval eval |
-| Celery worker dispatch | Scaffolded — `worker/` service stands up but is unused; tasks run through the `repolace-run-task` CLI until Phase 2 |
+| Celery worker dispatch | Implemented, not yet exercised by a real run — `worker/repolace_worker/tasks.py` runs `run_task` as the Celery task `repolace.run_task`, the API publishes product tasks after commit (`api/repolace_api/publisher.py`), and `worker/repolace_worker/maintenance.py` holds the maintenance jobs. The compose `worker` service is minimal: no maintenance worker or beat, no `env_file`, no docker socket. The benchmark runner still uses the `repolace-run-task` CLI |
 | Observability (OTel + Grafana) | Not started — structured JSON logging with task IDs only |
 | UI | Built — server-rendered Jinja2 + HTMX under `/ui` (`api/repolace_api/ui/`): task list, new-task flow, task detail with stage strip, diff and test runs. No auth until Phase 4, so localhost or a private tunnel only. Not yet viewed against the full compose stack |
 
@@ -53,14 +53,14 @@ User picks issue + target branch
 └──────────────┘
 ```
 
-**Phase 1 runs one task per host process, with no queue.** `POST /repos/{id}/tasks` only inserts a queued row; the pipeline runs separately through the `repolace-run-task` CLI on the host, which keeps the retrieval stack and torch out of the API image. The benchmark runner starts several of those processes at once. The Celery worker and RabbitMQ containers exist from Phase 0 but are not used for pipeline execution until Phase 2, when the worker will call the same `run_task`.
+**The pipeline runs outside the API process.** `POST /repos/{id}/tasks` inserts a queued row and publishes the task id to RabbitMQ after the commit; a Celery worker (`worker/repolace_worker/tasks.py`) claims the row and calls `run_task`. This keeps the retrieval stack and torch out of the API image. The `repolace-run-task` CLI calls the same `run_task` as one host process per task, and the benchmark runner starts several of those processes at once. The compose `worker` service is minimal today (see the status table), so the CLI remains the way to run a task end to end.
 
 ## Monorepo structure
 
 ```
 repolace/
   api/            FastAPI orchestrator
-  worker/         Celery worker (scaffolded, not yet dispatched)
+  worker/         Celery worker: runs product tasks, plus maintenance jobs
   agents/         LangGraph graph, prompts, feedback filter, the nine agent tools
   gateway/        LiteLLM wrapper: routing, budget, pricing, llm_calls recorder
   rag/            AST chunking, embedding, pgvector indexing, hybrid retrieval
@@ -80,7 +80,7 @@ Each workspace package has a distinct top-level import (`repolace_api`, `repolac
 | Language | Python 3.12+ |
 | API | FastAPI |
 | Agent orchestration | LangGraph |
-| Queue | RabbitMQ + Celery (scaffolded) |
+| Queue | RabbitMQ + Celery |
 | LLM gateway | LiteLLM |
 | Vector store | PostgreSQL + pgvector |
 | Embeddings | Local via `sentence-transformers` (`st-codesearch-distilroberta-base`, 768-dim) |
@@ -116,7 +116,7 @@ cd infra
 docker compose up -d
 ```
 
-This starts Postgres (with pgvector), Redis, and RabbitMQ.
+This starts Postgres (with pgvector), Redis, RabbitMQ, the API and the Celery worker.
 
 ### Run migrations
 
@@ -246,7 +246,7 @@ When a task starts, repolace checks the repo's `indexed_commit_sha` against the 
 
 ## What comes next
 
-**Phase 1 completion:** price the headline model, then gold validation, a dry run and the sweep. Benchmark repos must contain no tracked symlinks or submodules — the export refuses both.
+**Phase 1 completion:** gold validation, a dry run and the sweep (the headline model is already priced in `gateway/models.toml`). Benchmark repos must contain no tracked symlinks or submodules — the export refuses both.
 
 **Phase 2:** Split into specialized agents (planner/editor/reviewer/debugger), async queue dispatch, merge-conflict resolution sub-loop, basic UI.
 

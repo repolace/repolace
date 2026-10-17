@@ -116,7 +116,8 @@ _BASE_ARGS: tuple[str, ...] = (
     # checkout or push -- but they are not the real fix, because enumerating
     # dangerous keys is a losing game. The structural halves are the config-file
     # pins in `sanitized_git_env` and the export rewrite in `export_index_to`.
-    # See the .git trust boundary note in CLAUDE.md.
+    # See the .git trust boundary notes in .claude/rules/verify-sandbox.md ("Danger 2")
+    # and .claude/rules/git-and-pr-flow.md.
 )
 
 #: Environment passed through to git. An allowlist, not a filter: the process
@@ -217,8 +218,8 @@ def sanitized_git_env() -> dict[str, str]:
     -- pairs with a `filter.x.smudge` there and runs a command on the host
     during `checkout-index`; `diff=x` plus `diff.x.textconv` runs one during the
     Reviewer's diff. `_BASE_ARGS` does not stop either, because it clears the
-    keys it enumerates and this is the enumeration game CLAUDE.md already calls
-    unwinnable.
+    keys it enumerates and this is the enumeration game that
+    .claude/rules/git-and-pr-flow.md already calls unwinnable.
 
     So the config *files* are pinned, not just the variables. git then reads no
     configuration it was not handed on the command line, which is structural --
@@ -537,8 +538,8 @@ class UntrustedConfigError(GitError):
 #: that merges, stages, commits or fetches runs. This is what ``git clone`` writes
 #: and nothing in this module adds to it (every other setting travels as ``-c``).
 #:
-#: An allowlist, not a deny list, for the reason CLAUDE.md gives for the whole
-#: ``.git`` trust boundary: ``merge.<driver>.driver``, ``filter.<f>.clean``,
+#: An allowlist, not a deny list, for the reason .claude/rules/git-and-pr-flow.md
+#: gives for the whole ``.git`` trust boundary: ``merge.<driver>.driver``, ``filter.<f>.clean``,
 #: ``diff.<d>.textconv``, ``core.sshCommand``, ``core.pager``, ``url.<x>.insteadOf``
 #: and ``include.path`` are each a host command or a redirect, the tracked
 #: ``.gitattributes`` (which needs no sandbox write) supplies the selector, and

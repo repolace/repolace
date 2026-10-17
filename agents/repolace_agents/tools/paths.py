@@ -8,7 +8,7 @@ input to a filesystem call, and this is the *only* function that turns one into 
 
 Confinement is deliberately small -- `resolve_within` for "inside the tree, no
 symlinks", then three refusals of our own, each with the reason beside it. The
-reasons matter more than the code: this is a confused-deputy surface (CLAUDE.md,
+reasons matter more than the code: this is a confused-deputy surface (.claude/rules/verify-sandbox.md,
 "Danger 2"), where nothing escapes and the *host* later acts on something the
 agent wrote.
 """

@@ -34,7 +34,8 @@ log = structlog.get_logger()
 
 #: Mirrors `repolace_gateway.budget.DEFAULT_MAX_USD` (the per-task cap). Not
 #: imported: the gateway package pulls LiteLLM, which the API image must not
-#: carry (see the packaging rule in CLAUDE.md). Change both together.
+#: carry (see the dependency direction in CLAUDE.md, "Architecture"; the cap is described in
+#: .claude/rules/api-and-ui.md). Change both together.
 TASK_COST_CAP_USD = Decimal("2.00")
 #: Fewer finished tasks than this is not a distribution worth quoting.
 ESTIMATE_MIN_TASKS = 5
@@ -157,8 +158,8 @@ async def enqueue_task(
 
     The pipeline runs in a Celery worker (or `repolace-run-task`); this endpoint
     inserts the row and publishes its id by name. Keeping it that way is what stops the API image from
-    needing the retrieval stack and torch -- see the packaging rule in
-    CLAUDE.md.
+    needing the retrieval stack and torch -- see CLAUDE.md, "Build phases"
+    ("One host process per task").
     """
     repo = await active_repo(db, repo_id)
 

@@ -1,8 +1,8 @@
 """Resolving a ``RepoSpec``, and guessing one when nobody wrote it down.
 
 Two jobs, deliberately together: what a curated spec file says, and what to do
-for a repository nobody has curated yet. CLAUDE.md calls dependency
-installation "the part that will actually cost the time", and the honest shape
+for a repository nobody has curated yet. .claude/rules/verify-sandbox.md calls
+dependency installation "the part that will actually cost the time", and the honest shape
 of that cost is a heuristic that works for most repositories plus a file where
 the exceptions get recorded one at a time.
 

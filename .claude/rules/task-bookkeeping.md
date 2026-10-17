@@ -7,7 +7,7 @@ paths:
   - "worker/**"
 ---
 
-## Task bookkeeping (migrations 0012 and 0013)
+## Task bookkeeping (migrations 0012 to 0014)
 
 - **0012:** `llm_calls`, `tasks.issue_body`, and the nullable benchmark columns `tasks.eval_run_id`, `instance_id`, `run_index`. **`llm_calls` lives in Postgres** for the reason `task_test_runs` stores raw sets: cost, latency and the trajectory *are* the benchmark's evidence, and none can be recovered once the call is over (a cost not captured then cannot be re-priced later without re-running, and a trajectory cannot be inspected once the clone it came from is gone). Benchmark rows are queryable from `tasks` itself rather than from a second store that could drift. The price is that the table holds repository source verbatim, which matters for private repositories (redaction strips credential-shaped strings and the exact keys the gateway holds, not code). `llm_calls.cost_usd` has eight decimals where `tasks.cost_usd` has four, because a cheap-model call prices in thousandths of a cent.
 - **0013:** `tasks.patch_diff`, `tasks.score_reason`, `tasks.agent_stop_reason` (a string behind `ck_tasks_agent_stop_reason` with the eight values, not a Postgres enum, so adding one is a drop-and-recreate of one constraint instead of an `ALTER TYPE`), `registered_repos.index_strategy`, the all-or-none CHECK `ck_tasks_eval_columns_together` (`eval_run_id`, `instance_id` and `run_index` are all NULL or all set: the unique index below ignores rows with a NULL, so without it an enqueue that forgot `run_index` would silently lose its idempotency), and the partial unique index `uq_tasks_eval_instance_run` on `(eval_run_id, instance_id, run_index) WHERE eval_run_id IS NOT NULL`, which makes `enqueue` idempotent.

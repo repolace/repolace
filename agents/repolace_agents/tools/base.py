@@ -12,7 +12,7 @@ is the same misattribution the benchmark's scoring exists to avoid. So
 everything else propagates.
 
 The agent's authority is bounded by what its tools can do, not by what its prompt
-says (CLAUDE.md, "PR conversation handling"). That is why the argument checks
+says (.claude/rules/later-visions.md, "PR conversation handling"). That is why the argument checks
 live here, in code that runs on every call, rather than in a tool description the
 model is merely asked to follow.
 

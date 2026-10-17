@@ -10,7 +10,8 @@ edit attempt. Both go through `verify.stage.Verifier`, so nothing here knows tha
 containers exist -- swapping Docker for gVisor or a remote executor is a
 different `SandboxBackend`, not a change to this file.
 
-The ordering is load-bearing and matches CLAUDE.md's branch/PR flow: index from
+The ordering is load-bearing and matches the branch/PR flow in
+.claude/rules/git-and-pr-flow.md: index from
 the clean tree, then baseline, then branch, then the agent. Baseline before the
 branch because it is what "the tests pass" is measured against -- without it a
 repo with pre-existing failures scores as a failure whatever the agent did.
@@ -126,7 +127,8 @@ REQUIRED_PERMISSIONS = {"contents": "write", "pull_requests": "write"}
 #: it immediately -- that is the normal case for a benchmark (three runs of one instance), not
 #: an error. Twenty minutes is longer than any first index this project has seen.
 #: How often the running process bumps `tasks.heartbeat_at`. The reaper treats a `running` row
-#: as abandoned only after several missed beats (see CLAUDE.md), so this is not a deadline.
+#: as abandoned only after several missed beats (see .claude/rules/task-bookkeeping.md,
+#: "Task stages and heartbeat"), so this is not a deadline.
 HEARTBEAT_INTERVAL_SECONDS = 30.0
 INDEX_WAIT_STEP_SECONDS = 10.0
 INDEX_WAIT_CAP_SECONDS = 1200.0

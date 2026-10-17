@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import (
 
 
 def create_engine(database_url: str) -> AsyncEngine:
-    return create_async_engine(database_url)
+    # A worker child holds one engine for days; without a ping, the first claim after a Postgres
+    # restart or a dropped idle connection fails and the row waits for the sweeper.
+    return create_async_engine(database_url, pool_pre_ping=True)
 
 
 def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:

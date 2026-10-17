@@ -16,7 +16,7 @@ off Linux. Read it from the dry run before choosing K for the sweep.
 pipeline's `task_test_runs` is unique on `(task_id, attempt)`; a second run of a
 row would fail on insert at best and mix two runs' evidence at worst. Every
 status write here is `RUNNING -> FAILED`, conditional on the row still being
-RUNNING (see `harness.db.fail_if_running`), so a task that finished in the same
+RUNNING (see `repolace_shared.tasks_recovery.fail_if_running`), so a task that finished in the same
 instant keeps its real status. That covers three cases: a child killed on the
 wall-clock timeout, a child that died (OOM kill, crash) leaving its row RUNNING,
 and `--mark-abandoned` for rows whose runner itself died.
