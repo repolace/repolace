@@ -5,6 +5,7 @@ writer cannot resurrect a finished task), it cannot be made to fail by a NUL byt
 "never priced" apart from "free" in both ways it can arise.
 """
 
+import asyncio
 import uuid
 from decimal import Decimal
 
@@ -20,6 +21,7 @@ from repolace_pipeline.finalize import (
     write_terminal,
 )
 from repolace_shared.db.models import TaskOutcome, TaskStatus
+from sqlalchemy import func, select
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db]
 
@@ -56,6 +58,32 @@ async def call(factory, task_id, cost: str | None, model: str = "claude-sonnet-5
             cost_usd=None if cost is None else Decimal(cost),
         )
     )
+
+
+class TestTheTerminalTimestampIsTheRealTime:
+    """The task's session holds one transaction open for the whole run; `now()` would be its start."""
+
+    @pytest.mark.parametrize("writer", ["terminal", "minimal"])
+    async def test_completed_at_is_when_the_write_happened_not_when_the_transaction_began(
+        self, db_session, db_session_factory, writer
+    ):
+        task = await seed_task(db_session, status=TaskStatus.RUNNING)
+
+        async with db_session_factory() as session:
+            await session.execute(select(1))  # begins the transaction, as loading the task row does
+            began = (await session.execute(select(func.clock_timestamp()))).scalar_one()
+            await asyncio.sleep(1.2)
+            if writer == "terminal":
+                assert await write_terminal(session, task.id, **columns())
+            else:
+                assert await write_failure_minimal(
+                    session, task.id, error_message="x", pr_number=None, pr_url=None
+                )
+            await session.commit()
+
+        row, _ = await reload(db_session_factory, task.id)
+        assert (row.completed_at - began).total_seconds() >= 1.0
+        assert (row.updated_at - began).total_seconds() >= 1.0
 
 
 class TestOnlyARunningRowIsWritten:
