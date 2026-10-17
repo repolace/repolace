@@ -1,6 +1,6 @@
 # Package D: the agent role split, on the long-lived branch `phase-2/agents`
 
-Read `COMMON.md` first. Budget: **hard stop at about $28**. Model: Claude Opus 5.5.
+Read `COMMON.md` first. Model: Claude Opus 5.5, started in plan mode.
 Branch: **`phase-2/agents`** (it already exists on the remote with one commit, `agents/PHASE2.md`).
 **Do not open a pull request into `main`, and do not merge it there.** This branch stays unmerged until the
 Phase 1 benchmark has run on `main`, so the benchmark is measured on the code that was benchmarked; only then

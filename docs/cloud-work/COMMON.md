@@ -89,15 +89,21 @@ Expected on `main` today: every package green; the Docker-marked tests skip.
   the report and fix the test in a separate commit with the reason in the message.
 * Test filenames must be unique repo-wide (prefix them with your area).
 
-## Budget and stopping
+## Plan first, then work
 
-Your package states a hard stop in dollars. You cannot see the counter exactly, so keep a rough running
-estimate and **stop at about 80% of it**: commit what is green, push the branch, open the PR as a **draft**
-if unfinished, write the report, and stop. An unfinished but green and honest PR is a good result; a
-half-edited tree is not. Do not start large new directions late.
+You may be started in plan mode. If so, read first and write a plan that names the files you will change,
+the tests you will write (and which existing tests prove nothing regresses), the order of work, and the risks
+you see. Then wait to be approved. After approval, follow the same order below. Do not run the bootstrap or
+edit anything while planning.
+
+## Working order, and finishing
 
 Work in this order: read, write the failing tests, implement, run the checks, update the rule file, PR, report.
 Do not run the whole test suite after every edit; run the package you touched, and the full set once at the end.
+
+Prefer a smaller package that is green and honest over a larger one that is half done. If you cannot finish
+the whole package, commit what is green, push the branch, open the PR as a **draft**, and say in the report
+exactly what is left. A half-edited tree is never a result.
 
 ## Style
 
@@ -115,5 +121,4 @@ NOT RUN     what you could not run here (Docker, providers) and the risk that le
 CHOICES     every decision you made that was not written down, and why
 FOUND ELSEWHERE   bugs or doubts outside your files, with file:line
 NOT DONE    anything in the package you did not finish, and why
-BUDGET      rough share of the stated budget used
 ```

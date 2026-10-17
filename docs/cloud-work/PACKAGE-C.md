@@ -1,6 +1,6 @@
 # Package C: wire the merge-conflict resolver into the pipeline
 
-Read `COMMON.md` first. Budget: **hard stop at about $20**. Model: Claude Opus 5.5.
+Read `COMMON.md` first. Model: Claude Opus 5.5, started in plan mode.
 Branch: `cloud/c-conflict-resolver`, from `main`. PR target: `main`.
 **Migration number:** you need one (a nullable `tasks.conflict_reason`). Package B takes `0015` and will usually
 merge first. Write yours as `0015` on top of `0014` while you work, and **renumber to `0016` with
