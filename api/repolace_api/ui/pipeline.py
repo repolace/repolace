@@ -6,7 +6,7 @@ derived and never stored: `pending` (no row yet, or never reached) and
 stage state: it belongs to the task outcome, and "Review passed" beside an
 outcome of `failed` would read as a contradiction.
 
-Rows are best-effort writes (see CLAUDE.md, "Stage rows are best-effort"), so a
+Rows are best-effort writes (see .claude/rules/task-bookkeeping.md, "Stage rows are best-effort"), so a
 missing row or a `running` row under a terminal task is a lost write, not
 evidence of what the stage did. The task row stays the source of truth for the
 result; this module only says what the rows show.

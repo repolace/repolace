@@ -24,7 +24,7 @@ The design, with the reasoning behind each decision, is in [CLAUDE.md](CLAUDE.md
 | Benchmark harness | Built, not yet run — `eval/harness/` (`repolace-eval`): instance selection, private benchmark repos, gold validation, sweep runner, report, retrieval eval |
 | Celery worker dispatch | Scaffolded — `worker/` service stands up but is unused; tasks run through the `repolace-run-task` CLI until Phase 2 |
 | Observability (OTel + Grafana) | Not started — structured JSON logging with task IDs only |
-| UI | Not started |
+| UI | Built — server-rendered Jinja2 + HTMX under `/ui` (`api/repolace_api/ui/`): task list, new-task flow, task detail with stage strip, diff and test runs. No auth until Phase 4, so localhost or a private tunnel only. Not yet viewed against the full compose stack |
 
 ## Architecture
 
