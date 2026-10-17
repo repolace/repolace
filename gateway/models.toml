@@ -102,8 +102,10 @@ supports_prompt_caching = true   # priced by LiteLLM's map; no [price] needed
 #   GATEWAY_STAGE_MODELS='{"agent": "gemini-3-8-flash"}'    (or `repolace-eval run --model ...`)
 # Prices were read from each provider's own pricing page on 2026-10-17 (see each entry).
 # supports_prompt_caching is false for both: the gateway sends Anthropic-style `cache_control`,
-# which neither provider is configured to honour here, so cached-input discounts are not
-# claimed and cost is, if anything, overstated.
+# which neither provider is configured to honour here. That does not stop a provider caching a
+# repeated prefix on its own (Gemini does, implicitly), and a response that reports cached tokens
+# against a price with no cache_read rate is refused as unpriced. So the Gemini price below carries
+# its cache_read rate even though the flag is false.
 
 # Gemini 3.8 Flash. LiteLLM 1.98.0's pinned price map has no `gemini-3.8-flash` (the unpinned
 # upstream map does), so the price is set explicitly. ai.google.dev/gemini-api/docs/pricing,
@@ -121,6 +123,7 @@ supports_prompt_caching = false
 [models.gemini-3-8-flash.price]
 input = 0.75
 output = 3.75
+cache_read = 0.075   # context cache read, same page and dates as above ($0.15 from 2027-01-01)
 
 # MiniMax M2.5 over MiniMax's OpenAI-compatible API, international endpoint
 # (https://api.minimax.io/v1 by default; a key issued for the China platform, api.minimaxi.com,
