@@ -10,6 +10,7 @@ import uuid
 from collections.abc import Callable
 from contextlib import suppress
 from datetime import timedelta
+from functools import partial
 from typing import Any, Protocol
 
 import structlog
@@ -62,9 +63,14 @@ class RedisSweepClaims:
         self._redis.close()
 
 
-def publish_by_name(task_id: uuid.UUID) -> None:
-    """`send_task` by name with the row id as the Celery id, as the API does. No broker retry."""
-    celery_app.send_task(RUN_TASK_NAME, args=[str(task_id)], task_id=str(task_id), retry=False)
+def publish_by_name(task_id: uuid.UUID, *, expires: float | None = None) -> None:
+    """`send_task` by name with the row id as the Celery id, as the API does. No broker retry.
+
+    `expires` (seconds) makes a message that nobody consumed in time dead on arrival at a worker,
+    which is what keeps a backlog from holding several live copies of one row.
+    """
+    options = {} if expires is None else {"expires": expires}
+    celery_app.send_task(RUN_TASK_NAME, args=[str(task_id)], task_id=str(task_id), retry=False, **options)
 
 
 async def sweep_queued(
@@ -74,6 +80,7 @@ async def sweep_queued(
     *,
     claims: SweepClaims,
     max_per_tick: int = 50,
+    scan_limit: int | None = None,
 ) -> list[uuid.UUID]:
     """Republish `queued` non-benchmark rows older than `min_age`, at most once per dedupe window.
 
@@ -83,7 +90,12 @@ async def sweep_queued(
     against a dead broker is what turns an outage into a storm. A duplicate message that does get
     through is harmless: same task id, and the claim is conditional. Benchmark rows (`eval_run_id`
     set) belong to the eval runner and are never published.
+
+    The query reads at most `scan_limit` rows, oldest first (default `WorkerSettings.sweeper_scan_limit`),
+    so a long backlog costs a bounded read each tick instead of every old id in the table.
     """
+    if scan_limit is None:
+        scan_limit = get_worker_settings().sweeper_scan_limit
     async with factory() as session:
         rows = await session.scalars(
             select(Task.id)
@@ -93,6 +105,7 @@ async def sweep_queued(
                 Task.created_at < func.now() - min_age,
             )
             .order_by(Task.created_at, Task.id)
+            .limit(scan_limit)
         )
         ids = list(rows)
     published: list[uuid.UUID] = []
@@ -170,7 +183,14 @@ def sweep_queued_job() -> int:
             asyncio.run(
                 _with_factory(
                     lambda factory: sweep_queued(
-                        factory, age, claims=claims, max_per_tick=settings.sweeper_max_per_tick
+                        factory,
+                        age,
+                        # One dedupe window is the longest a row is left alone, so a copy still
+                        # unconsumed after it is dead before the next one is published.
+                        partial(publish_by_name, expires=settings.sweeper_dedupe_seconds),
+                        claims=claims,
+                        max_per_tick=settings.sweeper_max_per_tick,
+                        scan_limit=settings.sweeper_scan_limit,
                     )
                 )
             )
