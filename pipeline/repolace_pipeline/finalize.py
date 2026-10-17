@@ -33,7 +33,7 @@ from decimal import Decimal
 import structlog
 from repolace_gateway.recorder import total_cost
 from repolace_shared.db.models import LLMCall, Task, TaskOutcome, TaskStatus
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 log = structlog.get_logger()
@@ -173,11 +173,25 @@ async def task_cost(session_factory: async_sessionmaker[AsyncSession], task_id: 
     return await total_cost(session_factory, task_id)
 
 
+#: The stage the editing model is called on: the single agent's, and the Phase 2 editor's and debugger's.
+EDITOR_STAGE = "agent"
+
+
 async def first_model(session_factory: async_sessionmaker[AsyncSession], task_id: uuid.UUID) -> str | None:
-    """The first model the task called -- what the PR body names -- or `None` if it called none."""
+    """The model that edited -- what the PR body names -- or `None` if the task called none.
+
+    The first call on the `agent` stage, which is the single agent's and, under the Phase 2 roles,
+    the editor's. Before the roles every call was on that stage, so this is the first model called,
+    as it always was; with them the planner calls first, on `plan`, and a planner routed to a
+    cheaper model must not be what the pull request says made the change. A task with no `agent`
+    call at all falls back to its first call of any stage.
+    """
     async with session_factory() as session:
         return (
             await session.execute(
-                select(LLMCall.model).where(LLMCall.task_id == task_id).order_by(LLMCall.created_at).limit(1)
+                select(LLMCall.model)
+                .where(LLMCall.task_id == task_id)
+                .order_by(case((LLMCall.stage == EDITOR_STAGE, 0), else_=1), LLMCall.created_at)
+                .limit(1)
             )
         ).scalar_one_or_none()

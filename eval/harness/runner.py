@@ -28,9 +28,9 @@ claimable. A child that exits 2 or 3 never owned the row, so its row is not
 touched: 3 can mean another runner is running it right now.
 
 **The run manifest.** `enqueue` writes `eval/runs/<run>/manifest.json` naming the
-agent, the model and the wall-clock cap the sweep is meant to use. The runner
-refuses to start (exit 2) when its own `--agent`, `--model` or `--timeout-seconds`
-disagree with it, because the report describes the sweep from that file and a
+agent, the model, the wall-clock cap and whether the Phase 2 roles run (`--roles`) that
+the sweep is meant to use. The runner refuses to start (exit 2) when its own `--agent`,
+`--model`, `--timeout-seconds` or `--roles` disagree with it, because the report describes the sweep from that file and a
 mismatch would make it describe something that did not run. A run with no manifest
 is allowed through with a warning. Transient provider errors are retried only by
 the gateway inside each task; the runner never retries or re-runs a task.
@@ -147,6 +147,8 @@ class RunnerConfig:
     model: str | None = None
     max_total_usd: Decimal | None = None
     limit: int | None = None
+    #: Run the Phase 2 role split (`repolace-run-task --roles`); must match the manifest.
+    roles: bool = False
 
 
 @dataclass(frozen=True)
@@ -191,6 +193,9 @@ def child_argv(command: Sequence[str], task_id: uuid.UUID, config: RunnerConfig)
     # the intent is on the command line and in the process list.
     if not config.open_pr or config.agent == "gold":
         argv.append("--no-pr")
+    # Read with a default: a caller outside this module may hand in a config built before the field.
+    if getattr(config, "roles", False):
+        argv.append("--roles")
     return argv
 
 
@@ -373,6 +378,8 @@ def check_manifest(runs_dir: Path, config: RunnerConfig) -> bool:
         problems.append(f"agent: the manifest says {manifest.agent!r}, this run was given {config.agent!r}")
     if config.agent == "llm" and manifest.model != config.model:
         problems.append(f"model: the manifest says {manifest.model!r}, this run was given {config.model!r}")
+    if manifest.roles != config.roles:
+        problems.append(f"roles: the manifest says {manifest.roles!r}, this run was given {config.roles!r}")
     recorded = manifest.limits.get("runner_wall_clock_seconds")
     if recorded != config.timeout_seconds:
         problems.append(
@@ -574,6 +581,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--agent", choices=("llm", "gold"), default="llm")
     parser.add_argument("--no-pr", action="store_true", help="never open a pull request (always on for --agent gold)")
     parser.add_argument("--model", help="gateway model key for the agent stage (sets GATEWAY_STAGE_MODELS)")
+    parser.add_argument(
+        "--roles", action="store_true",
+        help="run the Phase 2 role split (passes --roles to each task; --agent llm only, must match the manifest)",
+    )
     parser.add_argument("--max-total-usd", type=_positive_usd, default=None, help="stop dispatching once the run has spent this")
     parser.add_argument("--limit", type=_positive_int, default=None, help="dispatch at most this many tasks")
     parser.add_argument(
@@ -640,6 +651,10 @@ def main(
         print(f"repolace-eval run: {exc}", file=sys.stderr)
         return 2
 
+    if args.roles and args.agent != "llm":
+        print("repolace-eval run: --roles needs --agent llm", file=sys.stderr)
+        return 2
+
     if args.agent == "llm" and not args.mark_abandoned and args.max_total_usd is None:
         print(
             "repolace-eval run: --max-total-usd is required for --agent llm: a sweep spends real money "
@@ -674,6 +689,7 @@ def main(
                 model=args.model,
                 max_total_usd=args.max_total_usd,
                 limit=args.limit,
+                roles=args.roles,
             )
             summary = await run_queue(
                 factory, config, runs_dir=args.runs_dir, child_command=child_command, process_runner=process_runner

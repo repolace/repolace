@@ -62,9 +62,10 @@ REQUIRED_STAGES = ("agent", "cheap")
 #: Stages a config may omit, and the stage whose route a missing one takes. Resolved at
 #: `route()` time, not copied at load, so a per-run `GATEWAY_STAGE_MODELS` override of the
 #: `agent` stage carries over to a stage that follows it. The shipped `models.toml` leaves
-#: `resolve` out on purpose, so a sweep's `--model` reaches the resolver too. An explicit
+#: `resolve`, `plan` and `review` out on purpose, so a sweep's `--model` reaches the resolver and
+#: the Phase 2 planner and reviewer too and a sweep never mixes models by accident. An explicit
 #: override naming the optional stage (`{"resolve": "<model>"}`) is accepted while it is absent.
-OPTIONAL_STAGE_FALLBACKS = {"resolve": "agent"}
+OPTIONAL_STAGE_FALLBACKS = {"resolve": "agent", "plan": "agent", "review": "agent"}
 
 _MILLION = Decimal(1_000_000)
 #: Anything shorter is not a credential, and replacing it everywhere in a stored

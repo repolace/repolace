@@ -20,9 +20,17 @@ Keys, all required, no others::
     instance_ids        list  distinct, valid instance ids
     agent               str   "llm", "gold" or "stub"
 
+And one optional key:
+
+    roles               bool  the Phase 2 role split ran (`--roles`); only with agent "llm"
+
 Unknown and missing keys are errors, not defaults: a manifest that silently stopped
 applying (a typo'd `instance_ids`) would turn the planned grid into the observed one
-and the anchoring into theatre.
+and the anchoring into theatre. `roles` is the one exception, and only in one
+direction: it is written when true and absent when false, so a single-agent manifest
+is byte for byte what it was before the key existed, and every manifest written before
+it -- all of them single-agent runs, because nothing else could run -- reads as what it
+is. A misspelt `roles` is still an unknown key.
 
 The loader raises `ManifestError`; `harness.report` re-raises it as `ReportError`.
 """
@@ -49,6 +57,8 @@ _KEYS = frozenset({
     "eval_run_id", "created_at", "git_sha", "model", "stage_models", "limits",
     "runs_per_instance", "instance_ids", "agent",
 })
+#: Keys that may be absent, read as their default when they are. See the module docstring.
+_OPTIONAL_KEYS = frozenset({"roles"})
 #: A run id is a directory name and appears in a file name; hold it to the same
 #: shape an instance id has, minus nothing a shell would treat specially.
 _RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
@@ -70,6 +80,9 @@ class RunManifest:
     runs_per_instance: int
     instance_ids: tuple[str, ...]
     agent: str
+    #: The Phase 2 role split ran instead of the single agent. A run with it and one without
+    #: are different agents, so the runner refuses to start one under the other's manifest.
+    roles: bool = False
 
     def planned_pairs(self) -> frozenset[tuple[str, int]]:
         """The expected grid: every `(instance_id, run_index)` the run was meant to produce."""
@@ -102,9 +115,10 @@ def _string_map(value: object, name: str, where: str) -> dict[str, str]:
 def _from_mapping(data: object, where: str) -> RunManifest:
     if not isinstance(data, dict):
         raise ManifestError(f"{where}: top level must be a JSON object, got {type(data).__name__}")
-    unknown = sorted(set(data) - _KEYS)
+    unknown = sorted(set(data) - _KEYS - _OPTIONAL_KEYS)
     if unknown:
-        raise ManifestError(f"{where}: unknown key(s) {', '.join(unknown)}; known keys are {', '.join(sorted(_KEYS))}")
+        known = ", ".join(sorted(_KEYS | _OPTIONAL_KEYS))
+        raise ManifestError(f"{where}: unknown key(s) {', '.join(unknown)}; known keys are {known}")
     missing = sorted(_KEYS - set(data))
     if missing:
         raise ManifestError(f"{where}: missing key(s) {', '.join(missing)}")
@@ -154,10 +168,16 @@ def _from_mapping(data: object, where: str) -> RunManifest:
     if agent not in AGENTS:
         raise ManifestError(f"{where}: agent must be one of {', '.join(AGENTS)}, got {agent!r}")
 
+    roles = data.get("roles", False)
+    if not isinstance(roles, bool):
+        raise ManifestError(f"{where}: roles must be true or false, got {roles!r}")
+    if roles and agent != "llm":
+        raise ManifestError(f"{where}: roles applies only to the llm agent, and this manifest's agent is {agent!r}")
+
     return RunManifest(
         eval_run_id=run_id, created_at=created, git_sha=data["git_sha"], model=data["model"],
         stage_models=_string_map(data["stage_models"], "stage_models", where), limits=dict(limits),
-        runs_per_instance=runs, instance_ids=tuple(ids), agent=agent,
+        runs_per_instance=runs, instance_ids=tuple(ids), agent=agent, roles=roles,
     )
 
 
@@ -186,12 +206,16 @@ def load_manifest(path: Path) -> RunManifest:
 
 
 def _document(manifest: RunManifest) -> dict[str, Any]:
-    return {
+    document = {
         "eval_run_id": manifest.eval_run_id, "created_at": manifest.created_at, "git_sha": manifest.git_sha,
         "model": manifest.model, "stage_models": dict(manifest.stage_models), "limits": dict(manifest.limits),
         "runs_per_instance": manifest.runs_per_instance, "instance_ids": list(manifest.instance_ids),
         "agent": manifest.agent,
     }
+    if manifest.roles:
+        # Written only when true, so a single-agent manifest is unchanged (see the module docstring).
+        document["roles"] = True
+    return document
 
 
 def dump_manifest(manifest: RunManifest, runs_dir: Path) -> Path:

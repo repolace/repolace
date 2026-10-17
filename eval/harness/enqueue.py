@@ -186,12 +186,14 @@ class ManifestInputs:
     repo_root: Path = _REPO_ROOT
     allow_dirty_tree: bool = False
     clock: Callable[[], datetime] = field(default=_utc_now)
+    #: Run the Phase 2 role split (`repolace-run-task --roles`); `llm` only. Recorded in the manifest.
+    roles: bool = False
 
 
 # --- the manifest ---------------------------------------------------------------
 #
 # The format, its validation and its atomic writer are `harness.run_manifest`'s: the
-# report reads the same module, so the nine keys have exactly one definition.
+# report reads the same module, so the keys (nine, and the optional `roles`) have exactly one definition.
 
 
 def code_limits() -> dict[str, object]:
@@ -233,6 +235,8 @@ def build_manifest(
     model = (inputs.model or "").strip()
     if inputs.agent == "llm" and not model:
         raise ManifestError("--model is required for the llm agent: the manifest must name the model that ran")
+    if inputs.roles and inputs.agent != "llm":
+        raise ManifestError("--roles needs --agent llm: the stub and gold runners call no model")
     return RunManifest(
         eval_run_id=eval_run_id,
         created_at=created_at.astimezone(UTC).replace(microsecond=0).isoformat(),
@@ -244,6 +248,7 @@ def build_manifest(
         runs_per_instance=runs,
         instance_ids=tuple(sorted(set(instance_ids))),
         agent=inputs.agent,
+        roles=inputs.roles,
     )
 
 
@@ -435,6 +440,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="the per-task wall clock `run` will use; recorded in the manifest, `run` must match",
     )
     parser.add_argument("--allow-dirty-tree", action="store_true", help="record the commit sha even if tracked files are modified")
+    parser.add_argument(
+        "--roles", action="store_true",
+        help="the Phase 2 role split instead of the single agent (--agent llm only); recorded in the manifest, `run` must match",
+    )
     parser.add_argument("--instances-dir", type=Path, default=DEFAULT_INSTANCES_DIR)
     parser.add_argument("--bench-repos-file", type=Path, default=None, help=f"default: <instances-dir>/{MAPPING_FILENAME}")
     parser.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
@@ -456,6 +465,8 @@ def main(
             raise ValueError("--timeout-seconds must be a positive, finite number")
         if args.agent == "llm" and not (args.model or "").strip():
             raise ValueError("--model is required for the llm agent: the manifest must name the model that ran")
+        if args.roles and args.agent != "llm":
+            raise ValueError("--roles needs --agent llm: the stub and gold runners call no model")
         instances = load_instances(args.instances_dir)
         bench_repos = load_bench_repos(args.bench_repos_file or args.instances_dir / MAPPING_FILENAME)
     except (ValueError, InstanceError, BenchRepoError) as exc:
@@ -469,7 +480,7 @@ def main(
         return 2
     inputs = ManifestInputs(
         runs_dir=args.runs_dir, agent=args.agent, model=args.model, timeout_seconds=args.timeout_seconds,
-        repo_root=repo_root, allow_dirty_tree=args.allow_dirty_tree,
+        repo_root=repo_root, allow_dirty_tree=args.allow_dirty_tree, roles=args.roles,
     )
 
     async def run() -> EnqueueResult:

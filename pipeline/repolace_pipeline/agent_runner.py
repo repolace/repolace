@@ -13,6 +13,7 @@ test can fix it, which is exactly why production code must not reach for it. The
 this module's global, so a test can replace `run_agent` and see that the pipeline uses it.
 """
 
+import dataclasses
 from dataclasses import dataclass
 
 from repolace_agents.contracts import AgentDeps, AgentResult
@@ -23,10 +24,18 @@ from repolace_agents.run import run_agent
 class LLMAgent:
     """The model-driven runner. A class, not a bare function, so the log names it (`runner=LLMAgent`)."""
 
+    #: Run the Phase 2 role split (`AgentLimits.roles`) instead of the single agent. Off by
+    #: default and unbenchmarked; `repolace-run-task --roles` is the only thing that sets it.
+    #: Applied to the deps' limits here, so `run_task` (which builds `AgentLimits()`) and the
+    #: `AgentRunner` contract stay as they are.
+    roles: bool = False
+
     async def __call__(self, deps: AgentDeps) -> AgentResult:
         if deps.llm is None or deps.tools is None:
             # `run_task` gives an agent tools only when it was given a model. Refused here, before
             # the graph, with the cause named: the graph's own check would say what is missing,
             # and not that the caller forgot `llm=`.
             raise ValueError("LLMAgent needs a model client and the toolbox; pass llm= to run_task")
+        if self.roles:
+            deps = dataclasses.replace(deps, limits=dataclasses.replace(deps.limits, roles=True))
         return await run_agent(deps)

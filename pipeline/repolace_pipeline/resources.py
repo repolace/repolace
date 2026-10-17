@@ -34,13 +34,18 @@ AGENT_STAGE = "agent"
 #: The merge-conflict resolver's stage. It follows `agent` unless the config names it
 #: (`repolace_gateway.config.OPTIONAL_STAGE_FALLBACKS`), so it is always routable.
 RESOLVE_STAGE = "resolve"
+#: The Phase 2 planner's and reviewer's stages (`repolace_agents.roles`). Optional and following
+#: `agent` like `resolve`; checked only when the run uses the roles. The editor and the debugger
+#: call `agent` itself.
+PLAN_STAGE = "plan"
+REVIEW_STAGE = "review"
 
 
 class UsageError(Exception):
     """The invocation cannot run as asked. Carries the one line to show."""
 
 
-def preflight_agent_models(client: "LLMClient") -> None:
+def preflight_agent_models(client: "LLMClient", *, roles: bool = False) -> None:
     """Refuse a model that cannot be priced or keyed, before any task row is claimed.
 
     The gateway already refuses an unpriced model -- but at the first *call*, which is after the
@@ -49,15 +54,21 @@ def preflight_agent_models(client: "LLMClient") -> None:
     belongs where nothing has happened yet. It runs `LLMClient.preflight`, the gateway's own
     pre-spend check (what `complete` runs), so the two cannot disagree about what "priced" means.
 
-    Both the `agent` and the `resolve` stage are checked.
+    The `agent` and the `resolve` stage are always checked; with `roles`, so are `plan` and
+    `review`, so a role stage that cannot be priced or keyed fails here and not mid-run.
     """
     client.preflight(AGENT_STAGE)
     client.preflight(RESOLVE_STAGE)
+    if roles:
+        client.preflight(PLAN_STAGE)
+        client.preflight(REVIEW_STAGE)
 
 
 def build_llm_client(
     session_factory: async_sessionmaker[AsyncSession],
     settings: "GatewaySettings | None" = None,
+    *,
+    roles: bool = False,
     **client_kwargs: Any,
 ) -> "LLMClient":
     """The process's one model client, with its models checked.
@@ -76,7 +87,7 @@ def build_llm_client(
     try:
         gateway_settings = settings if settings is not None else GatewaySettings()
         client = LLMClient.from_settings(gateway_settings, session_factory, **client_kwargs)
-        preflight_agent_models(client)
+        preflight_agent_models(client, roles=roles)
     except UnpricedModelError as exc:
         raise UsageError(f"--agent llm cannot run: {exc} (fix the model's [price] in gateway/models.toml)") from exc
     except MissingProviderKey as exc:
@@ -107,11 +118,12 @@ class Resources:
             await self.engine.dispose()
 
 
-async def build_resources(settings: PipelineSettings, agent_kind: str) -> Resources:
+async def build_resources(settings: PipelineSettings, agent_kind: str, *, roles: bool = False) -> Resources:
     """Everything a task runs against, for `agent_kind` (`llm`, `stub` or `gold`).
 
-    Only `llm` builds the model client (and so checks the models). A `UsageError` from that check
-    closes what was already built before it propagates, so a refused model leaks nothing.
+    Only `llm` builds the model client (and so checks the models, the role stages too with
+    `roles`). A `UsageError` from that check closes what was already built before it propagates,
+    so a refused model leaks nothing.
     """
     engine = create_engine(settings.database_url)
     github = GithubClient(settings.github_app_id, settings.github_app_private_key)
@@ -124,7 +136,7 @@ async def build_resources(settings: PipelineSettings, agent_kind: str) -> Resour
         if agent_kind == "llm":
             # Before `run_task` claims a row: a model that cannot be priced must not leave a
             # `failed` task behind. One client per process, as the engine is.
-            resources.llm = build_llm_client(session_factory)
+            resources.llm = build_llm_client(session_factory, roles=roles)
     except BaseException:
         await resources.aclose()
         raise

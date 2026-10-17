@@ -89,17 +89,17 @@ async def _gold_runner(
         raise UsageError(f"--agent gold cannot load instance {instance_id!r}: {exc}") from exc
 
 
-async def _run(task_id: uuid.UUID, *, agent: str, no_pr: bool) -> int:
+async def _run(task_id: uuid.UUID, *, agent: str, no_pr: bool, roles: bool = False) -> int:
     settings = get_settings()
     resources: Resources | None = None
     try:
-        resources = await build_resources(settings, agent)
+        resources = await build_resources(settings, agent, roles=roles)
         # None is the plumbing stub, which has no model and so no client.
         runner: AgentRunner | None = None
         if agent == "gold":
             runner = await _gold_runner(resources.session_factory, settings.instances_dir, task_id)
         elif agent == "llm":
-            runner = LLMAgent()
+            runner = LLMAgent(roles=roles)
         result = await run_task(
             task_id,
             resources.session_factory,
@@ -153,13 +153,25 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="run everything but never open a pull request, whatever the gate would decide",
     )
+    parser.add_argument(
+        "--roles",
+        action="store_true",
+        help="with --agent llm: run the Phase 2 planner/editor/debugger/reviewer split instead of the "
+        "single agent (off by default and unbenchmarked)",
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.roles and args.agent != "llm":
+        # The stub and the gold runner call no model, so `--roles` would be silently ignored.
+        parser.error("--roles needs --agent llm")
     configure_logging("pipeline")
-    return asyncio.run(_run(args.task_id, agent=args.agent, no_pr=args.no_pr))
+    # `roles` is passed only when it is set, so a plain run calls `_run` exactly as before.
+    extra = {"roles": True} if args.roles else {}
+    return asyncio.run(_run(args.task_id, agent=args.agent, no_pr=args.no_pr, **extra))
 
 
 if __name__ == "__main__":
