@@ -71,6 +71,13 @@ class TestTheShippedFile:
         assert price is not None
         assert (price.input, price.output) == (Decimal("0.00000075"), Decimal("0.00000375"))
 
+    def test_a_gemini_call_that_hits_the_providers_implicit_cache_is_priced_not_refused(self):
+        """Gemini caches a repeated prefix on its own; a price with no cache_read would raise on it."""
+        price = load_config(DEFAULT_MODELS_PATH).models["gemini-3-8-flash"].price
+        cost = price.cost(input_tokens=1000, cached_input_tokens=400, cache_write_tokens=0, output_tokens=100)
+        assert cost == (Decimal(600) * Decimal("0.00000075") + Decimal(400) * Decimal("0.000000075")
+                        + Decimal(100) * Decimal("0.00000375"))
+
     def test_the_comparison_models_can_be_routed_to_the_agent_stage(self):
         for key in ("gemini-3-8-flash", "minimax-m2-5"):
             config = load_config(DEFAULT_MODELS_PATH, stage_models={"agent": key})
