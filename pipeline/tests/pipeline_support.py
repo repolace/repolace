@@ -186,6 +186,45 @@ def local_workspace_factory(url: str):
     return partial(task_workspace, clone_url=url)
 
 
+def push_upstream(
+    origin_url: str,
+    work: Path,
+    files: dict[str, str | None],
+    *,
+    symlinks: dict[str, str] | None = None,
+    message: str = "upstream",
+) -> str:
+    """Land a commit on the remote's `main` after the task cloned it: the target branch moving.
+
+    `files` maps a path to its new content, or to None to delete it; `symlinks` replaces a path with
+    a symlink to the given target. `work` is a fresh directory for the pushing clone. Returns the tip.
+    """
+    git(work.parent, "clone", "-q", "--branch", "main", origin_url, str(work))
+    for name, content in files.items():
+        if content is None:
+            git(work, "rm", "-q", name)
+        else:
+            write(work / name, content)
+    for name, target in (symlinks or {}).items():
+        (work / name).unlink(missing_ok=True)
+        (work / name).symlink_to(target)
+    git(work, "add", "-A")
+    git(work, "commit", "-q", "-m", message)
+    git(work, "push", "-q", "origin", "main")
+    return git(work, "rev-parse", "HEAD")
+
+
+def rewrite_upstream(origin_url: str, work: Path) -> str:
+    """Force-push the remote's `main` to a commit that does not descend from what the task cloned."""
+    git(work.parent, "clone", "-q", "--branch", "main", origin_url, str(work))
+    git(work, "checkout", "-q", "--orphan", "rewritten")
+    write(work / "README.md", "# rewritten history\n")
+    git(work, "add", "-A")
+    git(work, "commit", "-q", "-m", "rewritten")
+    git(work, "push", "-q", "--force", "origin", "rewritten:main")
+    return git(work, "rev-parse", "HEAD")
+
+
 # --- the GitHub boundary -----------------------------------------------------
 
 

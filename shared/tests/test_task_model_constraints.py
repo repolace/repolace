@@ -25,6 +25,7 @@ MIGRATION_0013 = (
     / "versions"
     / "0013_add_agent_outputs_and_index_strategy.py"
 )
+MIGRATION_0015 = MIGRATION_0013.with_name("0015_add_task_conflict_reason.py")
 
 
 def _declared_checks() -> dict[str, str]:
@@ -56,10 +57,8 @@ class _RecordingOp:
         self.indexes[name] = SimpleNamespace(columns=list(columns), **kwargs)
 
 
-@pytest.fixture(scope="module")
-def migration_0013():
-    """What 0013's `upgrade()` asks Alembic to create, recorded rather than executed."""
-    spec = importlib.util.spec_from_file_location("migration_0013_under_test", MIGRATION_0013)
+def _record_upgrade(path: Path, name: str) -> _RecordingOp:
+    spec = importlib.util.spec_from_file_location(name, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -67,6 +66,18 @@ def migration_0013():
     module.op = recorder
     module.upgrade()
     return recorder
+
+
+@pytest.fixture(scope="module")
+def migration_0013():
+    """What 0013's `upgrade()` asks Alembic to create, recorded rather than executed."""
+    return _record_upgrade(MIGRATION_0013, "migration_0013_under_test")
+
+
+@pytest.fixture(scope="module")
+def migration_0015():
+    """What 0015's `upgrade()` asks Alembic to create, recorded rather than executed."""
+    return _record_upgrade(MIGRATION_0015, "migration_0015_under_test")
 
 
 class TestStopReasonConstant:
@@ -150,3 +161,17 @@ class TestEvalInstanceRunIndexDeclaration:
         assert created.columns == [column.name for column in declared.columns]
         assert created.unique is True
         assert str(created.postgresql_where) == str(declared.dialect_options["postgresql"]["where"])
+
+
+class TestConflictReasonCheck:
+    NAME = "ck_tasks_conflict_reason_iff_conflicting"
+
+    def test_the_model_ties_the_reason_to_the_conflicting_status(self):
+        normalised = " ".join(_declared_checks()[self.NAME].split())
+
+        assert normalised == "(status = 'conflicting') = (conflict_reason IS NOT NULL)"
+
+    def test_the_migration_creates_the_same_predicate(self, migration_0015):
+        assert " ".join(migration_0015.checks[self.NAME].split()) == " ".join(
+            _declared_checks()[self.NAME].split()
+        )

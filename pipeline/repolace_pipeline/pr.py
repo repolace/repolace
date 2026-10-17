@@ -211,6 +211,9 @@ class PrFacts:
     model: str | None
     cost_usd: Decimal | None
     retrieved: tuple[RetrievedChunk, ...]
+    #: Host-written: how the target branch, which moved while the task ran, was merged into this
+    #: branch. None when it did not move. Never the resolver's own account of what it did.
+    target_merge: str | None = None
 
     @property
     def benchmark(self) -> bool:
@@ -365,6 +368,8 @@ def _section_run(facts: PrFacts) -> str:
         ("cost", cost),
         ("stopped because", _code(facts.stop_reason) if facts.stop_reason else "-"),
     ]
+    if facts.target_merge is not None:
+        rows.append(("target branch", facts.target_merge))
     table = "\n".join(f"| {name} | {value} |" for name, value in rows)
     return f"## Run\n\n| | |\n|---|---|\n{table}\n"
 

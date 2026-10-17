@@ -1,6 +1,7 @@
 """Writing a task's terminal state, so that no path can forget a column.
 
-A task ends one of three ways -- `completed` (ran to the end, no PR), `pr_opened`, or
+A task ends one of four ways -- `completed` (ran to the end, no PR), `pr_opened`,
+`conflicting` (the target branch moved and the change could not be merged onto it), or
 `failed` (repolace itself broke) -- and each used to write its own handful of columns by
 hand. That is how `retry_count`, `cost_usd`, `patch_sha` and `changed_files` came to be
 columns nothing ever wrote: a path that did not know about a column could not omit it by
@@ -25,6 +26,7 @@ What `None` means is not the same for every column, and the difference is the po
 * `outcome` is `None` for a task that was never scored (a failure, or an inadmissible
   instance), which must never be recorded as `failed`: that would charge an instrument
   limitation to the agent.
+* `conflict_reason` is set exactly when the status is `conflicting`; a CHECK holds that.
 """
 
 import uuid
@@ -79,6 +81,7 @@ async def write_terminal(
     changed_files: list[str] | None,
     pr_number: int | None,
     pr_url: str | None,
+    conflict_reason: str | None,
 ) -> bool:
     """Write the task's final row. Executes the UPDATE; the caller commits. True if a row changed.
 
@@ -109,6 +112,7 @@ async def write_terminal(
             changed_files=_clean(changed_files),
             pr_number=pr_number,
             pr_url=_clean(pr_url),
+            conflict_reason=_clean(conflict_reason),
             completed_at=func.clock_timestamp(),
             updated_at=func.clock_timestamp(),
         )

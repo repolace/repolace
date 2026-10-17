@@ -183,6 +183,11 @@ class Task(Base):
             "(eval_run_id IS NULL) = (instance_id IS NULL) AND (eval_run_id IS NULL) = (run_index IS NULL)",
             name="ck_tasks_eval_columns_together",
         ),
+        # A `conflicting` task always says why, and nothing else carries a reason (0015).
+        CheckConstraint(
+            "(status = 'conflicting') = (conflict_reason IS NOT NULL)",
+            name="ck_tasks_conflict_reason_iff_conflicting",
+        ),
         # Makes the harness's enqueue idempotent: a re-run after a crash cannot
         # create a second row for one (run, instance, run_index), which would be
         # scored twice. Partial because every product task has a NULL
@@ -288,6 +293,10 @@ class Task(Base):
     #: Which process claimed the task (`<hostname>:<pid>` by default), so an
     #: abandoned row says whose it was.
     claimed_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Why a `conflicting` task could not merge its change onto the target branch, which moved
+    #: while it ran. Host-written and short; set exactly when the status is `conflicting`
+    #: (`ck_tasks_conflict_reason_iff_conflicting`), so `error_message` keeps its one meaning.
+    conflict_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     repo: Mapped[RegisteredRepo] = relationship(back_populates="tasks")
     test_runs: Mapped[list["TaskTestRun"]] = relationship(
