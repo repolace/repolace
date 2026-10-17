@@ -269,7 +269,7 @@ async def _conflict_reason_state(dsn: str) -> dict[str, set[str]]:
             "WHERE table_name = 'tasks' AND column_name = 'conflict_reason'"
         )
         checks = await conn.fetch(
-            "SELECT conname FROM pg_constraint WHERE conname = 'ck_tasks_conflict_reason_iff_conflicting'"
+            "SELECT conname FROM pg_constraint WHERE conname = 'ck_tasks_conflict_reason_needs_conflicting'"
         )
     finally:
         await conn.close()
@@ -280,7 +280,7 @@ class TestMigration0015:
     def test_it_upgrades_downgrades_and_upgrades_again(self, scratch_url):
         dsn = _dsn(make_url(scratch_url))
         absent = {"tasks": set(), "check": set()}
-        present = {"tasks": {"conflict_reason"}, "check": {"ck_tasks_conflict_reason_iff_conflicting"}}
+        present = {"tasks": {"conflict_reason"}, "check": {"ck_tasks_conflict_reason_needs_conflicting"}}
         with mock.patch.dict(os.environ, {"DATABASE_URL": scratch_url}):
             command.upgrade(_config(), "0014")
             assert _in_thread(lambda: _conflict_reason_state(dsn)) == absent
@@ -291,7 +291,7 @@ class TestMigration0015:
             command.upgrade(_config(), "0015")
             assert _in_thread(lambda: _conflict_reason_state(dsn)) == present
 
-    def test_a_conflicting_task_needs_a_reason_and_only_it_may_have_one(self, scratch_url):
+    def test_only_a_conflicting_task_may_carry_a_reason(self, scratch_url):
         dsn = _dsn(make_url(scratch_url))
         import asyncpg
 
@@ -314,10 +314,10 @@ class TestMigration0015:
                 )
                 await conn.execute(insert, "conflicting", "the resolver gave up")
                 await conn.execute(insert, "completed", None)
-                with pytest.raises(asyncpg.CheckViolationError):
-                    await conn.execute(insert, "conflicting", None)
-                with pytest.raises(asyncpg.CheckViolationError):
-                    await conn.execute(insert, "completed", "a reason on the wrong status")
+                await conn.execute(insert, "conflicting", None)  # the pipeline's job, not the constraint's
+                for status in ("completed", "failed", "pr_opened", "queued", "running"):
+                    with pytest.raises(asyncpg.CheckViolationError):
+                        await conn.execute(insert, status, "a reason on the wrong status")
             finally:
                 await conn.close()
 

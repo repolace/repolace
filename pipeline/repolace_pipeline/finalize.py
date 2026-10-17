@@ -26,7 +26,7 @@ What `None` means is not the same for every column, and the difference is the po
 * `outcome` is `None` for a task that was never scored (a failure, or an inadmissible
   instance), which must never be recorded as `failed`: that would charge an instrument
   limitation to the agent.
-* `conflict_reason` is set exactly when the status is `conflicting`; a CHECK holds that.
+* `conflict_reason` is set exactly when the status is `conflicting`; a CHECK refuses it on any other.
 """
 
 import uuid

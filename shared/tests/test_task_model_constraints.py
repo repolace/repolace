@@ -164,12 +164,12 @@ class TestEvalInstanceRunIndexDeclaration:
 
 
 class TestConflictReasonCheck:
-    NAME = "ck_tasks_conflict_reason_iff_conflicting"
+    NAME = "ck_tasks_conflict_reason_needs_conflicting"
 
-    def test_the_model_ties_the_reason_to_the_conflicting_status(self):
+    def test_the_model_keeps_a_reason_off_every_other_status(self):
         normalised = " ".join(_declared_checks()[self.NAME].split())
 
-        assert normalised == "(status = 'conflicting') = (conflict_reason IS NOT NULL)"
+        assert normalised == "conflict_reason IS NULL OR status = 'conflicting'"
 
     def test_the_migration_creates_the_same_predicate(self, migration_0015):
         assert " ".join(migration_0015.checks[self.NAME].split()) == " ".join(

@@ -183,10 +183,10 @@ class Task(Base):
             "(eval_run_id IS NULL) = (instance_id IS NULL) AND (eval_run_id IS NULL) = (run_index IS NULL)",
             name="ck_tasks_eval_columns_together",
         ),
-        # A `conflicting` task always says why, and nothing else carries a reason (0015).
+        # Only a `conflicting` task carries a reason (0015). The pipeline always writes one for it.
         CheckConstraint(
-            "(status = 'conflicting') = (conflict_reason IS NOT NULL)",
-            name="ck_tasks_conflict_reason_iff_conflicting",
+            "conflict_reason IS NULL OR status = 'conflicting'",
+            name="ck_tasks_conflict_reason_needs_conflicting",
         ),
         # Makes the harness's enqueue idempotent: a re-run after a crash cannot
         # create a second row for one (run, instance, run_index), which would be
@@ -294,8 +294,9 @@ class Task(Base):
     #: abandoned row says whose it was.
     claimed_by: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: Why a `conflicting` task could not merge its change onto the target branch, which moved
-    #: while it ran. Host-written and short; set exactly when the status is `conflicting`
-    #: (`ck_tasks_conflict_reason_iff_conflicting`), so `error_message` keeps its one meaning.
+    #: while it ran. Host-written and short; the pipeline sets it whenever it ends a task
+    #: `conflicting`, and only then (`ck_tasks_conflict_reason_needs_conflicting`), so
+    #: `error_message` keeps its one meaning.
     conflict_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     repo: Mapped[RegisteredRepo] = relationship(back_populates="tasks")
