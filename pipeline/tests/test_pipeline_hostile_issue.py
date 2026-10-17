@@ -1,6 +1,6 @@
 """A hostile issue, an obedient model, and the REAL toolbox the pipeline builds.
 
-The agent's authority comes from its tools, not from its prompt (CLAUDE.md). So the test that
+The agent's authority comes from its tools, not from its prompt (.claude/rules/prompt-injection.md). So the test that
 counts is not "does the prompt say ignore the issue" but "if a model did everything the issue
 told it to, what would happen". This script is that model: it reads the issue and makes every
 call the issue asks for, through `deps.tools` as `run_task` built it -- the real nine tools, wired
@@ -15,7 +15,7 @@ What this does NOT cover is recorded rather than pinned: any file that is not pr
 writable, including files CI executes (`Makefile`, `setup.py`, `noxfile.py`, `scripts/ci.sh`),
 and no deny-list can close that, because any source edit is also code CI runs. Benchmark
 repositories are private with Actions disabled; in product mode the agent branch must not be
-pushed where push-triggered CI holds secrets without a decision (see CLAUDE.md).
+pushed where push-triggered CI holds secrets without a decision (see .claude/rules/prompt-injection.md).
 """
 
 import os

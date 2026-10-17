@@ -32,7 +32,7 @@ Because each task gets its own clone, two concurrent tasks on one repo are isola
 
 When the previously-indexed commit is genuinely unreachable — force-push, or an upstream `gc` — `reindex_if_stale` catches the failed diff and falls back to a full reindex rather than erroring permanently.
 
-**Settled since (this was "still open"):** Verify runs against a copy, never the checkout. Verify executes LLM-generated code and the repo's own test suite, either of which can mutate or delete files, and the copy is what omits `.git` (see "Byte-identical export" under "Verify sandbox"). The checkout also no longer contains the installation token (see the branch/PR section below).
+**Settled since (this was "still open"):** Verify runs against a copy, never the checkout. Verify executes LLM-generated code and the repo's own test suite, either of which can mutate or delete files, and the copy is what omits `.git` (see "Byte-identical export" under "Verify sandbox" in `.claude/rules/verify-sandbox.md`). The checkout also no longer contains the installation token (see "Branch and PR flow within a task" in `.claude/rules/git-and-pr-flow.md`).
 
 Implemented in `shared/repolace_shared/git/workspace.py::task_workspace`, an async context manager that clones into a temp directory and deletes it on exit. Cleanup failures are logged, never raised: losing a temp directory is a disk leak worth seeing, but it must not replace the exception explaining why the task failed. Expect that path to get exercised once the sandbox runs as root and leaves files the worker cannot delete.
 

@@ -333,7 +333,7 @@ class TaskWorkspace:
         branch does not descend from, and every diff and the squash would then
         include (or silently drop) someone else's work. Note ``baseline_files``
         then describes the *new* base, which is the tree the diff is against;
-        the sandbox baseline the scorer holds is the old one (see CLAUDE.md).
+        the sandbox baseline the scorer holds is still the old one.
         """
         if not _FULL_SHA.fullmatch(new_base_sha):
             raise ValueError(f"advance_base requires a full commit sha, got {new_base_sha!r}")

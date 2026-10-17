@@ -38,7 +38,8 @@ class EnvironmentBuildFailed(SandboxError):
     """Installing the repo's dependencies failed.
 
     Expected to be the most common failure on a new repo, and the reason
-    CLAUDE.md says dependency installation is the part that will cost the time.
+    .claude/rules/verify-sandbox.md says dependency installation is the part that will
+    cost the time.
     """
 
     def __init__(self, repo: str, exit_code: int, log: str) -> None:
