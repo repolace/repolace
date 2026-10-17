@@ -10,8 +10,10 @@ from typing import ClassVar
 
 import pytest
 from agents_support import ScriptedLLM, ScriptedVerifier, attempt_record, reply, submit_reply, suite, tool_call
+from langgraph.errors import GraphRecursionError
+from repolace_agents import roles as roles_module
 from repolace_agents.contracts import AgentLimits, AgentResult, IssueContext, StopReason
-from repolace_agents.graph import run_graph
+from repolace_agents.graph import recursion_limit_for, run_graph
 from repolace_agents.role_prompts import READ_ONLY_TOOLS, Role, role_step_caps, system_prompt
 from repolace_gateway.budget import BudgetExceeded, BudgetLimit, TaskBudget, current_scope, task_scope
 from repolace_gateway.errors import LLMCallError
@@ -532,3 +534,39 @@ class TestHostileIssuePerRole:
             opening = call.messages[1]["content"]
             assert opening.count(f"</issue-{NONCE}>") == 1
             assert opening.index("ignore previous instructions") < opening.index(f"</issue-{NONCE}>")
+
+
+class TestRecursionGuard:
+    def test_the_single_agents_limit_is_unchanged(self):
+        assert [recursion_limit_for(AgentLimits(max_attempts=n)) for n in (1, 3)] == [12, 20]
+
+    def test_the_roles_limit_grows_with_the_node_count(self):
+        assert [recursion_limit_for(AgentLimits(max_attempts=n, roles=True)) for n in (1, 3)] == [16, 28]
+
+    def test_the_roles_graph_never_needs_more_than_its_limit(self):
+        """Localize and the planner, then at most an editor or the debugger, verify and the reviewer per attempt."""
+        for n in range(1, 8):
+            assert 3 * n + 2 < recursion_limit_for(AgentLimits(max_attempts=n, roles=True))
+
+    async def test_the_longest_legitimate_run_fits(self):
+        """A review that asks for changes on every attempt: the most super-steps a real run takes."""
+        changes = review_reply("request_changes", "again")
+        llm = ScriptedLLM([plan_reply(), submit_reply(), changes, submit_reply(), changes, submit_reply()])
+
+        result = await run_roles(llm, ScriptedVerifier([clean(1), clean(2), clean(3)]))
+
+        assert result.attempts == 3
+
+    async def test_a_routing_bug_is_a_recursion_error_within_a_bounded_number_of_calls(self, monkeypatch):
+        def always_debug(state, runtime):
+            return "debugger"
+
+        monkeypatch.setattr(roles_module, "route_roles", always_debug)
+        limits = AgentLimits(max_attempts=1, max_steps_per_attempt=16, roles=True)
+        llm = ScriptedLLM([plan_reply(), *[submit_reply() for _ in range(60)]])
+        verifier = ScriptedVerifier([clean(i) for i in range(1, 61)])
+
+        with pytest.raises(GraphRecursionError):
+            await run_roles(llm, verifier, limits=limits)
+
+        assert len(llm.calls) < recursion_limit_for(limits)

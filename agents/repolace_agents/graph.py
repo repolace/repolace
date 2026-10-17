@@ -129,18 +129,31 @@ class RunContext:
     base_sha: str | None = None
 
 
-def recursion_limit_for(limits: AgentLimits) -> int:
-    """The graph's recursion limit: `4 * max_attempts + 8`.
+#: Super-steps the single-agent graph needs: `localize` once, then `agent` and `verify` per attempt.
+OPENING_NODES = 1
+NODES_PER_ATTEMPT = 2
 
-    A guard, not a constraint. The graph needs `2 * max_attempts + 1` super-steps
-    (localize, then agent and verify per attempt) and the tool loop lives inside
-    one node, so it never approaches this. LangGraph's own default is 10007 --
-    effectively unlimited -- so without an explicit value a routing bug would
-    spin through a model call per step until the budget ended it. This makes that
-    a `GraphRecursionError` within a dozen steps, which propagates: the task is
-    FAILED, because it means repolace broke.
+
+def recursion_limit_for(limits: AgentLimits) -> int:
+    """The graph's recursion limit: twice the super-steps it can need, plus six.
+
+    A guard, not a constraint. The single-agent graph needs `2 * max_attempts + 1` super-steps
+    (localize, then agent and verify per attempt) and the tool loop lives inside one node, so it
+    never approaches its limit of `4 * max_attempts + 8`. The roles graph needs at most
+    `3 * max_attempts + 2` (localize and the planner, then an editor or the debugger, verify and
+    the reviewer per attempt: `roles.OPENING_NODES`, `roles.NODES_PER_ATTEMPT`), so its limit is
+    `6 * max_attempts + 10`. LangGraph's own default is 10007 -- effectively unlimited -- so
+    without an explicit value a routing bug would spin through a model call per step until the
+    budget ended it. This makes that a `GraphRecursionError` within a few dozen steps, which
+    propagates: the task is FAILED, because it means repolace broke.
     """
-    return 4 * limits.max_attempts + 8
+    opening, per_attempt = OPENING_NODES, NODES_PER_ATTEMPT
+    if limits.roles:
+        # Imported here: `roles` builds on this module, so a top-level import would be a cycle.
+        from repolace_agents import roles
+
+        opening, per_attempt = roles.OPENING_NODES, roles.NODES_PER_ATTEMPT
+    return 2 * (per_attempt * limits.max_attempts + opening) + 6
 
 
 def overlay_mode(deps: AgentDeps) -> bool:
