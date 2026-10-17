@@ -35,6 +35,10 @@ celery_app.conf.update(
     # because a Celery soft limit raises from a signal handler into arbitrary frames.
     task_time_limit=_worker.hard_time_limit_seconds,
     broker_connection_retry_on_startup=True,
+    # A prefork child is killed if it has not reported "up" within this many seconds (default 4),
+    # and `worker_process_init` (resources, provider preflight, the embedding model and torch)
+    # runs before it does. Without this the children would be killed and respawned in a loop.
+    worker_proc_alive_timeout=300.0,
     # RabbitMQ's default `consumer_timeout` (30 min) would kill an acks_late task; it must be raised
     # above `task_time_limit` in the broker's config (infra, item 6).
     task_routes={
