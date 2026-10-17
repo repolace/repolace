@@ -437,6 +437,8 @@ async def run_queue(
         finally:
             semaphore.release()
 
+    #: The tasks this invocation has started: the provider-refusal breaker counts only these.
+    dispatched_ids: list[uuid.UUID] = []
     try:
         for task in queue:
             await semaphore.acquire()
@@ -447,7 +449,7 @@ async def run_queue(
                 if spent >= config.max_total_usd:
                     reason = f"cost cap reached: ${spent} spent of ${config.max_total_usd}"
             if reason is None and config.agent == "llm":
-                refused = await run_provider_failures(factory, config.eval_run_id)
+                refused = await run_provider_failures(factory, config.eval_run_id, dispatched_ids)
                 if refused >= PROVIDER_REFUSAL_LIMIT:
                     reason = (
                         f"the provider refused {refused} tasks (rejected key or spent quota); "
@@ -457,6 +459,7 @@ async def run_queue(
                 semaphore.release()
                 summary.stopped = reason
                 break
+            dispatched_ids.append(task.task_id)
             workers.append(asyncio.create_task(dispatch(task)))
 
         # All of them, finished or not, so an exception in one is raised here, not lost.

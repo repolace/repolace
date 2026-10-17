@@ -435,9 +435,67 @@ class TestHardening:
         assert len(wire.requests) == 1  # not retried: the same body would come back
         assert "AttributeError" not in str(raised.value) and "TypeError" not in str(raised.value)
 
-    @pytest.mark.parametrize("signature", ["x" * 5000, 12345, ["a"], ""])
+    @pytest.mark.parametrize("signature", ["x" * 40000, 12345, ["a"], ""])
     def test_a_signature_that_is_oversized_or_not_a_string_is_not_packed_into_the_id(self, signature):
         parsed = parse_response(
             ok_body([{"functionCall": {"name": "read_file", "args": {}}, "thoughtSignature": signature}])
         )
         assert parsed["choices"][0]["message"]["tool_calls"][0]["id"] == "call_0"
+
+    def test_a_signature_within_the_cap_is_packed(self):
+        parsed = parse_response(
+            ok_body([{"functionCall": {"name": "read_file", "args": {}}, "thoughtSignature": "s" * 10000}])
+        )
+        assert parsed["choices"][0]["message"]["tool_calls"][0]["id"] == "call_0~" + "s" * 10000
+
+
+class TestReviewFindings:
+    """Found by an independent review of the first version of this module."""
+
+    async def test_the_request_log_httpx_writes_at_info_does_not_carry_the_key(self, caplog, monkeypatch):
+        import logging
+
+        from repolace_gateway import vertex
+
+        # LiteLLM adds a redaction filter of its own to this logger and sets it to WARNING when it is
+        # imported. Neither is something to rely on for a secret, so the test drops LiteLLM's filter
+        # and puts the level back to INFO: only this module's filter is then between the key and the log.
+        httpx_logger = logging.getLogger("httpx")
+        monkeypatch.setattr(httpx_logger, "filters", [f for f in httpx_logger.filters if isinstance(f, vertex._RedactKeyInLogs)])
+        wire = Wire(json_response(200, ok_body([{"text": "OK"}])))
+        client, _, _ = make_vertex_client(wire)
+
+        with caplog.at_level(logging.INFO, logger="httpx"):
+            await complete(client)
+
+        assert "HTTP Request" in caplog.text  # the log line exists, so the test can see what it checks
+        assert KEY not in caplog.text and "key=[REDACTED]" in caplog.text
+
+    async def test_a_malformed_function_call_reply_is_retried(self):
+        bad = {"candidates": [{"finishReason": "MALFORMED_FUNCTION_CALL"}], "usageMetadata": {"promptTokenCount": 10}}
+        wire = Wire(json_response(200, bad), json_response(200, ok_body([{"text": "OK"}])))
+        client, _, _ = make_vertex_client(wire)
+
+        result = await complete(client)
+
+        assert result.content == "OK" and result.retries == 1
+
+    async def test_a_blocked_prompt_is_a_clean_error_not_an_empty_reply(self):
+        blocked = {"promptFeedback": {"blockReason": "SAFETY"}, "usageMetadata": {"promptTokenCount": 10}}
+        wire = Wire(json_response(200, blocked))
+        client, _, _ = make_vertex_client(wire)
+
+        with pytest.raises(LLMCallError, match="blocked the prompt"):
+            await complete(client)
+
+        assert len(wire.requests) == 1
+
+    def test_an_empty_user_message_sends_no_empty_text_part(self):
+        contents = build_request([{"role": "user", "content": ""}, {"role": "user", "content": "go"}])["contents"]
+        assert contents == [{"role": "user", "parts": [{"text": "go"}]}]
+
+    def test_an_expired_key_is_classified_as_an_auth_failure(self):
+        from repolace_gateway.client import failure_kind
+
+        error = VertexAPIError("API key expired. Please renew the API key.", status_code=400)
+        assert failure_kind(error) == "auth"

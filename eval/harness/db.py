@@ -13,7 +13,8 @@ runner is built to prevent.
 from __future__ import annotations
 
 import re
-from collections.abc import AsyncIterator
+import uuid
+from collections.abc import AsyncIterator, Collection
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from decimal import Decimal
@@ -93,22 +94,29 @@ async def run_cost_usd(factory: SessionFactory, eval_run_id: str) -> Decimal:
         return Decimal(total)
 
 
-async def run_provider_failures(factory: SessionFactory, eval_run_id: str) -> int:
+async def run_provider_failures(
+    factory: SessionFactory, eval_run_id: str, task_ids: Collection[uuid.UUID] | None = None
+) -> int:
     """Tasks of the run that FAILED because the provider refused us (a rejected key, spent quota).
 
     Recognised by the gateway's fixed message prefixes in `error_message`. Such a task is a harness
     error, not an agent failure; two of them mean the rest of the run would fail the same way.
+
+    `task_ids` limits the count to the tasks one invocation of the runner dispatched. Without it the
+    rows a *previous* invocation left behind would stop a re-run at its first dispatch, after the
+    user had fixed the key, and a task row is never re-queued, so they would never go away.
     """
+    if task_ids is not None and not task_ids:
+        return 0
+    conditions = [
+        Task.eval_run_id == eval_run_id,
+        Task.status == TaskStatus.FAILED,
+        or_(*(Task.error_message.contains(marker) for marker in PROVIDER_FAILURE_MARKERS)),
+    ]
+    if task_ids is not None:
+        conditions.append(Task.id.in_(list(task_ids)))
     async with factory() as session:
-        total = await session.scalar(
-            select(func.count())
-            .select_from(Task)
-            .where(
-                Task.eval_run_id == eval_run_id,
-                Task.status == TaskStatus.FAILED,
-                or_(*(Task.error_message.contains(marker) for marker in PROVIDER_FAILURE_MARKERS)),
-            )
-        )
+        total = await session.scalar(select(func.count()).select_from(Task).where(*conditions))
         return int(total or 0)
 
 

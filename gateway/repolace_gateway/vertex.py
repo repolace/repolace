@@ -26,11 +26,34 @@ Decisions that are easy to undo by accident:
 """
 
 import json
+import logging
 import re
 from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import Any
 
 import httpx
+
+
+class _RedactKeyInLogs(logging.Filter):
+    """httpx logs every request at INFO with its full URL, and the URL carries `?key=`."""
+
+    _PATTERN = re.compile(r"([?&]key=)[^&\s\"']+")
+
+    def _scrub(self, value: Any) -> Any:
+        if isinstance(value, (str, httpx.URL)):
+            return self._PATTERN.sub(r"\1[REDACTED]", str(value))
+        return value
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = self._scrub(record.msg)
+        if isinstance(record.args, tuple):
+            record.args = tuple(self._scrub(arg) for arg in record.args)
+        return True
+
+
+# On the loggers themselves, not a handler: whoever configures logging later cannot route around it.
+for _name in ("httpx", "httpcore"):
+    logging.getLogger(_name).addFilter(_RedactKeyInLogs())
 
 #: Fixed on purpose: see the module docstring.
 VERTEX_BASE_URL = "https://aiplatform.googleapis.com/v1/publishers/google/models"
@@ -38,9 +61,10 @@ VERTEX_BASE_URL = "https://aiplatform.googleapis.com/v1/publishers/google/models
 #: Separates the call number from the thought signature inside a tool call id.
 _SIGNATURE_SEPARATOR = "~"
 
-#: A thought signature is opaque and a few hundred characters in practice. Anything larger or not a
-#: string is not packed into the tool call id: the id is echoed in every later request and stored.
-MAX_SIGNATURE_CHARS = 4096
+#: A thought signature is opaque. Anything larger than this, or not a string, is not packed into the
+#: tool call id (the id is echoed in every later request and stored); a missing signature then makes
+#: Gemini 3 reject the next turn, which is why the cap is generous.
+MAX_SIGNATURE_CHARS = 32768
 
 #: What a Vertex model id may contain. It becomes a URL path segment, so `/`, `?`, `#` and `:` are out.
 _MODEL_ID = re.compile(r"[A-Za-z0-9._-]+")
@@ -155,7 +179,8 @@ def build_request(
                 system_parts.append({"text": text})
         elif role == "user":
             text = _text_of(message.get("content"))
-            contents.append({"role": "user", "parts": [{"text": text}]})
+            if text:  # an empty text part is rejected
+                contents.append({"role": "user", "parts": [{"text": text}]})
         elif role == "assistant":
             parts: list[dict[str, Any]] = []
             text = _text_of(message.get("content"))
@@ -343,9 +368,20 @@ def _parsed(response: httpx.Response) -> dict[str, Any]:
     if not isinstance(payload, Mapping):
         raise VertexAPIError("Vertex returned a body that is not a JSON object", status_code=200)
     try:
-        return parse_response(payload)
+        parsed = parse_response(payload)
     except (AttributeError, TypeError, KeyError, IndexError):
         raise VertexAPIError("Vertex returned a response in an unexpected shape", status_code=200) from None
+    choice = parsed["choices"][0]
+    message = choice["message"]
+    if not message["content"] and not message.get("tool_calls"):
+        feedback = payload.get("promptFeedback")
+        block = feedback.get("blockReason") if isinstance(feedback, Mapping) else None
+        if block and not payload.get("candidates"):
+            raise VertexAPIError(f"Vertex blocked the prompt ({block})", status_code=200)
+        if choice["finish_reason"] == "malformed_function_call":
+            # Gemini sometimes emits a tool call it cannot itself parse; asking again usually works.
+            raise VertexAPIError("Vertex returned MALFORMED_FUNCTION_CALL", status_code=200, transient=True)
+    return parsed
 
 
 class VertexGeminiTransport:

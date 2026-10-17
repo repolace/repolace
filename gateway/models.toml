@@ -150,8 +150,9 @@ supports_prompt_caching = false
 #     (and cache read $0.15) FROM 2027-01-01, so a later run must update these rates.
 #   * gemini-3.1-pro-preview: $2.00 / $12.00 per M for prompts up to 200k tokens, $4.00 / $18.00
 #     above. The gateway's price table has one tier. The agent caps its transcript at 400,000
-#     characters (well under 200k tokens), so the lower tier is the one that applies; a prompt
-#     over 200k tokens would be undercharged here.
+#     characters, roughly 160k tokens at the ~2.5 characters per token this code measures, plus the
+#     system prompt and tool schemas. That is under the 200k line but not by a wide margin: a prompt
+#     over 200k tokens would be undercharged here, so watch `input_tokens` in `llm_calls`.
 # Output includes thinking tokens: the transport adds them to the candidates' tokens.
 # Cache: Gemini's caching is implicit, with a per-call read discount and no per-call write charge
 # (cache_write = 0). Select one per sweep with

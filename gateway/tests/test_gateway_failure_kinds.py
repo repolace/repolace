@@ -139,6 +139,23 @@ class TestTheWallClockInsideACall:
         assert calls <= 2  # not the 3 the config allows
 
 
+class TestAnAbandonedCallIsStillRecorded:
+    async def test_a_call_cut_off_by_the_wall_clock_is_counted_and_keeps_its_row(self):
+        async def hang(**kwargs):
+            await asyncio.sleep(30)
+
+        harness = make_harness()
+        recorder = ListRecorder()
+        client = LLMClient(harness.client._config, make_settings(), recorder, acompletion=hang, jitter=lambda: 1.0)
+        budget = TaskBudget(max_wall_seconds=0.2)
+
+        with pytest.raises(BudgetExceeded), task_scope(TASK_ID, budget):
+            await client.complete("agent", MESSAGES)
+
+        assert budget.calls == 1  # the call happened, even though nothing came back to price
+        assert len(recorder.records) == 1 and recorder.records[0].error.startswith("abandoned")
+
+
 class TestVertexOddities:
     async def test_the_transport_error_for_a_missing_key_is_not_a_provider_refusal(self):
         transport = VertexGeminiTransport(transport=httpx.MockTransport(Wire(json_response(200, ok_body([])))))

@@ -49,7 +49,7 @@ os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 import litellm
 from litellm import exceptions as litellm_exceptions
 
-from repolace_gateway.budget import TaskScope, current_scope
+from repolace_gateway.budget import BudgetExceeded, TaskScope, current_scope
 from repolace_gateway.config import (
     GatewayConfig,
     GatewaySettings,
@@ -354,6 +354,7 @@ def failure_kind(cause: BaseException) -> str:
             cause.status_code in (401, 403)
             or cause.error_status in ("UNAUTHENTICATED", "PERMISSION_DENIED")
             or "api key not valid" in text
+            or "api key expired" in text
             or "api_key_invalid" in text
         ):
             return KIND_AUTH
@@ -644,6 +645,14 @@ class LLMClient:
             last = (model, kwargs, cached)
             try:
                 response, retries = await self._call_with_retries(model, kwargs)
+            except BudgetExceeded:
+                # The wall clock ended the call before any answer: no response to price, but the call
+                # happened. Count it and keep the row, so the attempt is not missing from the record.
+                await self._abandon(
+                    scope=scope, stage=stage, model=model, kwargs=kwargs, cached=cached, started=started,
+                    attempt=attempt, fallback_from=route.primary.litellm_model if position > 0 else None,
+                )
+                raise
             except _ProviderFailure as failed:
                 total_retries += failed.retries
                 failure = failed
@@ -793,6 +802,35 @@ class LLMClient:
         )
         scope.budget.raise_if_exceeded(result)
         return result
+
+    async def _abandon(
+        self,
+        *,
+        scope: TaskScope,
+        stage: str,
+        model: ModelConfig,
+        kwargs: dict[str, Any],
+        cached: bool,
+        started: float,
+        attempt: int | None,
+        fallback_from: str | None,
+    ) -> None:
+        scope.budget.charge(None)
+        await self._recorder.record(
+            CallRecord(
+                task_id=scope.task_id,
+                attempt=attempt,
+                stage=stage,
+                model=model.litellm_model,
+                provider=model.provider,
+                latency_ms=int((self._clock() - started) * 1000),
+                request=self._request_payload(
+                    kwargs, stage=stage, model=model, cached=cached, retries=0, fallback_from=fallback_from
+                ),
+                error="abandoned: the task's wall clock ran out before the provider answered",
+            )
+        )
+        log.warning("gateway.call.abandoned", stage=stage, model=model.litellm_model)
 
     async def _fail(
         self,
