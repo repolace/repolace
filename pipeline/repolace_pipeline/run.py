@@ -19,9 +19,9 @@ repo with pre-existing failures scores as a failure whatever the agent did.
 **The agent is a parameter.** `agent` is any `AgentRunner`: the LLM graph, the stub
 that keeps the plumbing smoke test, the gold runner that validates a benchmark
 instance. This module hands it an `AgentDeps` and reads back an `AgentResult`, and
-everything after that -- rewind, score, gate, squash, push, PR, and the one write that
-records the outcome -- is the same whichever it was. That is what lets the whole
-pipeline be tested end to end before a model is involved.
+everything after that -- rewind, score, gate, a moved target branch merged in (`conflicts`),
+squash, push, PR, and the one write that records the outcome -- is the same whichever it
+was. That is what lets the whole pipeline be tested end to end before a model is involved.
 
 **What `failed` means, and what it does not.** `FAILED` is reserved for "repolace itself
 broke": a clone that would not clone, a GitHub 403, a bug. An agent that ran out of
@@ -40,7 +40,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from functools import partial
 from pathlib import Path
@@ -56,6 +56,7 @@ from repolace_agents.contracts import (
     LLMClientLike,
     StopReason,
 )
+from repolace_agents.resolver import resolve_conflicts
 from repolace_agents.tools import ToolBox, build_toolbox
 from repolace_gateway.budget import BudgetExceeded, BudgetLimit, TaskBudget, task_scope
 from repolace_gateway.errors import LLMCallError
@@ -94,8 +95,9 @@ from verify.scoring import Score, Verdict, agent_verdict, expected_not_red, scor
 from verify.spec import resolve_spec, spec_from_mapping
 from verify.stage import Verifier
 
-from repolace_pipeline.agent_context import build_tool_context, make_search
+from repolace_pipeline.agent_context import build_tool_context, make_search, protected_check
 from repolace_pipeline.attempts import AttemptScorer, run_scored_suite
+from repolace_pipeline.conflicts import MergeStatus, Resolver, merge_moved_target
 from repolace_pipeline.context import RetrievedChunk, repo_overview, search_hit
 from repolace_pipeline.edit import StubEditRequest
 from repolace_pipeline.errors import (
@@ -179,6 +181,8 @@ class RunResult:
     #: The PR gate's own sentence for opening, or withholding, a pull request.
     #: None when the gate never ran -- the task failed first.
     pr_gate_reason: str | None = None
+    #: Why a `conflicting` task opened no PR (`tasks.conflict_reason`). None for any other status.
+    conflict_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -195,6 +199,7 @@ class _Seams:
     embedding_strategy: str
     max_changed_files: int | None
     max_changed_lines: int | None
+    resolver: Resolver
 
 
 @dataclass
@@ -467,6 +472,7 @@ async def _fail(
             changed_files=progress.changed_files,
             pr_number=progress.pr_number,
             pr_url=progress.pr_url,
+            conflict_reason=None,
         )
         await state.commit()
     except SQLAlchemyError as exc:
@@ -890,7 +896,8 @@ async def _run_stages(
         async with _stage("agent"):
             # The gateway scope: every model call is attributable to this task and charged to its
             # budget. A contextvar, not a parameter, so the agent cannot forget it.
-            with task_scope(task.id, _agent_budget(seams.budget)):
+            agent_budget = _agent_budget(seams.budget)
+            with task_scope(task.id, agent_budget):
                 deps = await _build_deps(
                     session_factory,
                     task,
@@ -948,7 +955,64 @@ async def _run_stages(
         )
         log.info("pipeline.gate", open=decision.open, reason=decision.reason)
 
+        # The sha of what was scored: what `patch_sha` records when no PR is opened.
+        scored_commit = target
+        conflict_reason: str | None = None
+        if decision.open:
+            # Only when a PR would open: a moved target matters because the PR would conflict, and
+            # merging for a task that opens none would spend a suite run on a tree nobody uses.
+            async with _stage("conflicts"):
+                merge = await merge_moved_target(
+                    workspace,
+                    scorer=scorer,
+                    task_id=task.id,
+                    llm=seams.llm,
+                    resolver=seams.resolver,
+                    issue=deps.issue,
+                    # The main agent's own write guard, so the resolver cannot write what it could not.
+                    is_protected=protected_check(baseline, verifier.hidden_paths),
+                    agent_budget=agent_budget,
+                )
+            if merge.status is MergeStatus.CONFLICTING:
+                # The merge was aborted, so HEAD and the base are what was scored; the outcome
+                # stays the pre-merge one and nothing is pushed.
+                conflict_reason = merge.reason
+                decision = PrDecision(False, f"no pull request: {merge.reason}")
+            elif merge.status is MergeStatus.MERGED and merge.attempt is None:
+                # The merged tree has no change against the new base: the target already holds
+                # this change. The pre-merge score is the only measurement of it, and stands.
+                decision = PrDecision(False, "the target branch moved and already contains this change")
+            elif merge.status is MergeStatus.MERGED:
+                # The old score describes a tree that no longer exists. Everything from here on
+                # (the diff, the outcome, the gate, the PR body) is the merged attempt's.
+                last = merge.attempt
+                scored_commit = last.commit_sha
+                result = replace(result, last_attempt=last)
+                async with _stage("baseline_files"):
+                    baseline_files = await workspace.baseline_files()
+                async with _stage("review"):
+                    changed = await workspace.changed_files()
+                    diff = await workspace.review_diff()
+                progress.changed_files, progress.patch_diff, progress.patch_sha = changed, diff, scored_commit
+                scored, verdict = _judge(baseline, baseline_files, instance, result, changed)
+                _log_score(scored, benchmark=instance is not None)
+                decision = pr_decision(
+                    benchmark=instance is not None,
+                    has_change=bool(changed),
+                    scored=scored,
+                    verdict=verdict,
+                    result=result,
+                    open_pr_on_failure=task.open_pr_on_failure,
+                    open_pr_allowed=seams.open_pr,
+                    changed_files=len(changed),
+                    changed_lines=count_changed_lines(diff),
+                    max_changed_files=seams.max_changed_files,
+                    max_changed_lines=seams.max_changed_lines,
+                )
+            log.info("pipeline.gate.after_merge", status=merge.status.value, open=decision.open, reason=decision.reason)
+
         # Best effort: a database blip here must not turn a finished agent run into a harness error.
+        # After the merge step, so a resolver's spend is in it.
         cost = await _best_effort_cost(session_factory, task.id)
         pull_request = None
         squashed: str | None = None
@@ -999,11 +1063,14 @@ async def _run_stages(
                 progress.pr_number, progress.pr_url = pull_request.number, pull_request.html_url
 
         # The sha of what the task produced: the squashed commit if a PR was opened (the commit
-        # on GitHub), else the scored commit at HEAD.
-        patch_sha = squashed or await workspace.repo.head_sha()
+        # on GitHub), else the scored commit.
+        patch_sha = squashed or scored_commit
         progress.patch_sha = patch_sha
 
-    status = TaskStatus.PR_OPENED if pull_request is not None else TaskStatus.COMPLETED
+    if conflict_reason is not None:
+        status = TaskStatus.CONFLICTING
+    else:
+        status = TaskStatus.PR_OPENED if pull_request is not None else TaskStatus.COMPLETED
     async with _stage("finalize"):
         await write_terminal(
             state,
@@ -1020,6 +1087,7 @@ async def _run_stages(
             changed_files=changed,
             pr_number=pull_request.number if pull_request is not None else None,
             pr_url=pull_request.html_url if pull_request is not None else None,
+            conflict_reason=conflict_reason,
         )
         await state.commit()
     log.info(
@@ -1041,6 +1109,7 @@ async def _run_stages(
         submitted=result.submitted,
         stop_reason=result.stop_reason.value,
         pr_gate_reason=decision.reason,
+        conflict_reason=conflict_reason,
     )
 
 
@@ -1102,6 +1171,7 @@ async def _complete_without_agent(
         changed_files=None,
         pr_number=None,
         pr_url=None,
+        conflict_reason=None,
     )
     await state.commit()
     log.info("pipeline.task.completed", **_score_log_fields(scored, benchmark=benchmark), gate=gate_reason)
@@ -1248,6 +1318,7 @@ async def run_task(
     max_changed_lines: int | None = None,
     claimed_by: str | None = None,
     heartbeat_interval: float = HEARTBEAT_INTERVAL_SECONDS,
+    resolver: Resolver = resolve_conflicts,
 ) -> RunResult:
     """Run one task. `backend` and `specs` are the caller's, like everything else.
 
@@ -1271,6 +1342,8 @@ async def run_task(
     * `max_changed_files`, `max_changed_lines` -- the PR scope cap (see `gate`); None is no cap.
     * `claimed_by` -- who is running the task, written to `tasks.claimed_by`; None is `<hostname>:<pid>`.
     * `heartbeat_interval` -- seconds between `tasks.heartbeat_at` bumps while the task runs.
+    * `resolver` -- the merge-conflict resolver, called only when the target branch moved and the
+      merge conflicts in plain text (see `conflicts`); a test passes a scripted one.
     """
     if isinstance(agent, GoldAgent) and open_pr:
         # In the API, not only in the CLI: a gold run validates an instance by pushing the reference
@@ -1288,6 +1361,7 @@ async def run_task(
         embedding_strategy=embedding_strategy,
         max_changed_files=max_changed_files,
         max_changed_lines=max_changed_lines,
+        resolver=resolver,
     )
     progress = _Progress()
     async with session_factory() as state:

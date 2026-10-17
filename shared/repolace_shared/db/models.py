@@ -183,6 +183,12 @@ class Task(Base):
             "(eval_run_id IS NULL) = (instance_id IS NULL) AND (eval_run_id IS NULL) = (run_index IS NULL)",
             name="ck_tasks_eval_columns_together",
         ),
+        # A conflict reason explains a `conflicting` task and nothing else, so a
+        # row can never carry one beside a status that says something different.
+        CheckConstraint(
+            "conflict_reason IS NULL OR status = 'conflicting'",
+            name="ck_tasks_conflict_reason_needs_conflicting",
+        ),
         # Makes the harness's enqueue idempotent: a re-run after a crash cannot
         # create a second row for one (run, instance, run_index), which would be
         # scored twice. Partial because every product task has a NULL
@@ -274,6 +280,11 @@ class Task(Base):
     pr_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     pr_url: Mapped[str | None] = mapped_column(String, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Why a `conflicting` task opened no PR: the target branch moved while it ran
+    #: and the merge could not be completed. Short and non-secret. Its own column
+    #: because `error_message` means only that repolace broke, and a conflict the
+    #: resolver could not settle did not break anything.
+    conflict_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     cost_usd: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

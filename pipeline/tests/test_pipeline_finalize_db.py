@@ -31,6 +31,7 @@ def columns(**overrides):
         "status": TaskStatus.COMPLETED, "outcome": TaskOutcome.FAILED, "score_reason": "because", "error_message": None,
         "agent_stop_reason": "submitted", "retry_count": 1, "cost_usd": Decimal("0.25"), "patch_sha": "a" * 40,
         "patch_diff": "diff", "changed_files": ["a.py"], "pr_number": None, "pr_url": None,
+        "conflict_reason": None,
     }
     return {**values, **overrides}
 
