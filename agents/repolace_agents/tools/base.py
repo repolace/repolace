@@ -29,7 +29,7 @@ from __future__ import annotations
 import copy
 import dataclasses
 import math
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
@@ -81,7 +81,8 @@ class ToolOutcome:
     #: The call did not do what was asked and `content` says why. Model-visible
     #: failure only: a bug in the tool raises instead.
     is_error: bool = False
-    #: Set by `submit` alone. The loop stops when it sees it.
+    #: Set by a loop's exit tool alone (`submit`; under the roles also `submit_plan` and
+    #: `submit_review`, each the only exit tool in its role's box). The loop stops when it sees it.
     submitted: bool = False
     #: The model's own summary of its work, when it submitted. Untrusted model
     #: output wherever it is later shown to a human.
@@ -517,6 +518,27 @@ class ToolBox:
     def schemas(self) -> list[dict[str, Any]]:
         """Every tool in the order given, ready for `LLMClient.complete(tools=...)`."""
         return [tool.spec.schema() for tool in self._tools.values()]
+
+    def subset(self, names: Iterable[str], *, extra: Sequence[Tool] = ()) -> ToolBox:
+        """A new box with the named tools, in this box's order, then `extra`, under the same output cap.
+
+        For the Phase 2 roles, whose tool sets are slices of the nine (`agents/PHASE2.md`). The
+        tools are the same objects, so a slice is exactly as bounded as the whole: the argument
+        checks and the output cap live in the box, the path and write guards in the tools, and
+        neither depends on which other tools sit beside them. A name this box does not hold is a
+        `ValueError`: a role asking for a tool that does not exist is repolace's bug, and quietly
+        building a smaller box would hide it. `extra` is checked like any tool, so a name that
+        collides with a chosen one is refused as a duplicate.
+        """
+        if isinstance(names, str):
+            # `set("grep")` would be four one-letter names, all unknown: refuse the call shape instead.
+            raise TypeError("subset takes an iterable of tool names, not a single string")
+        wanted = set(names)
+        unknown = sorted(wanted - set(self._tools))
+        if unknown:
+            raise ValueError(f"no tool named {', '.join(map(repr, unknown))} in this box; it has: {', '.join(self._tools)}")
+        chosen = [tool for name, tool in self._tools.items() if name in wanted]
+        return ToolBox([*chosen, *extra], max_output_chars=self.max_output_chars)
 
     async def dispatch(self, call: ToolCall) -> ToolOutcome:
         """Run one tool call and return what the model should read.

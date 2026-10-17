@@ -36,8 +36,10 @@ from collections.abc import Iterable, Sequence
 from repolace_agents.contracts import SearchHit
 
 #: Tag families this package opens. A closing tag of any of them, with any
-#: suffix, is neutralised in untrusted text -- see the module docstring.
-_FAMILIES = ("issue", "repository", "retrieved", "baseline", "feedback", "output")
+#: suffix, is neutralised in untrusted text -- see the module docstring. `plan`
+#: and `review` frame what one Phase 2 role hands the next (`role_prompts`); like
+#: every family they are neutralised everywhere, the single agent's text included.
+_FAMILIES = ("issue", "repository", "retrieved", "baseline", "feedback", "output", "plan", "review")
 
 #: Matches the tag name only -- the family, then whatever `-nonce` suffix follows --
 #: plus an optional `>`. It deliberately does not match "up to the next `>`": an
