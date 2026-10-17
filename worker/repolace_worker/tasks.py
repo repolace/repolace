@@ -126,10 +126,26 @@ def run_task_job(self: Any, task_id: str) -> str:
     )
 
 
-#: RabbitMQ closes a channel whose delivery stays unacked past `consumer_timeout`; an `acks_late`
-#: task holds its delivery for its whole run, so the broker setting must exceed the hard limit.
+#: How much longer than the hard kill the broker waits before closing a channel. A delivery is held
+#: from the moment it reaches the worker, not from the task's start, and three things can come
+#: before or after the task's own run: a child recycled just as the message arrives spends up to
+#: `worker_proc_alive_timeout` (300 s) in `worker_process_init` first; RabbitMQ evaluates the
+#: timeout on a periodic check, about a minute apart; and after the hard kill the worker still has
+#: to notice the lost child and reject the message. Half an hour covers all three several times
+#: over, and costs only slower detection of a consumer that holds a delivery and never acks, which
+#: the heartbeat reaper settles on the row long before.
+CONSUMER_TIMEOUT_MARGIN_SECONDS = 1800
+
+
 def required_consumer_timeout_ms(settings: WorkerSettings) -> int:
-    return settings.hard_time_limit_seconds * 1000
+    """The least `consumer_timeout` the broker may have, in milliseconds.
+
+    RabbitMQ closes the channel of a delivery left unacked past it, and an `acks_late` task holds
+    its delivery for its whole run, so a value equal to the hard limit would let the broker cut off
+    a task the worker is still allowed to run. `infra/rabbitmq.conf` carries the value and
+    `worker/tests/test_worker_deploy_config.py` holds it at or above this one.
+    """
+    return (settings.hard_time_limit_seconds + CONSUMER_TIMEOUT_MARGIN_SECONDS) * 1000
 
 
 @worker_init.connect

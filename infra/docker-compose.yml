@@ -67,6 +67,9 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-repolace}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-repolace}
+    volumes:
+      # consumer_timeout above the longest task; see the file for why and how it is derived.
+      - ./rabbitmq.conf:/etc/rabbitmq/conf.d/20-repolace.conf:ro
     ports:
       - "127.0.0.1:5672:5672"
       - "127.0.0.1:15672:15672"

@@ -15,10 +15,12 @@ from repolace_gateway.config import PROVIDER_KEY_FIELDS, GatewaySettings
 from repolace_pipeline.config import PipelineSettings
 from repolace_worker.celery_app import celery_app
 from repolace_worker.config import WorkerSettings
+from repolace_worker.tasks import required_consumer_timeout_ms
 
 INFRA = Path(__file__).resolve().parents[2] / "infra"
 COMPOSE_FILE = INFRA / "docker-compose.yml"
 WORKER_ENV_EXAMPLE = INFRA / "worker.env.example"
+RABBITMQ_CONF = INFRA / "rabbitmq.conf"
 
 WORKERS = ("worker", "worker-maintenance")
 #: The three URLs compose itself sets on every service; an env file must not also carry them.
@@ -190,3 +192,23 @@ class TestWorkerEnvExample:
 
     def test_every_value_is_an_empty_placeholder(self):
         assert set(read_env(WORKER_ENV_EXAMPLE).values()) == {""}
+
+
+class TestTheBrokerTimeout:
+    """RabbitMQ closes the channel of a delivery left unacked past `consumer_timeout`, and an
+    `acks_late` task holds its delivery for its whole run, so the broker's value has to outlast the
+    longest task by a margin. The function is the source of truth; the conf file is held to it."""
+
+    def configured_ms(self) -> int:
+        return int(read_env(RABBITMQ_CONF)["consumer_timeout"])
+
+    def test_the_conf_file_allows_at_least_what_the_worker_requires(self):
+        assert self.configured_ms() >= required_consumer_timeout_ms(WorkerSettings())
+
+    def test_the_requirement_leaves_a_margin_over_the_hard_kill(self):
+        settings = WorkerSettings()
+        assert required_consumer_timeout_ms(settings) - settings.hard_time_limit_seconds * 1000 >= 5 * 60 * 1000
+
+    def test_the_broker_service_mounts_the_conf_file(self, compose):
+        mounts = [volume(entry) for entry in compose["services"]["rabbitmq"]["volumes"]]
+        assert ("./rabbitmq.conf", "/etc/rabbitmq/conf.d/20-repolace.conf") in mounts
