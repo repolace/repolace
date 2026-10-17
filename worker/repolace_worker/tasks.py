@@ -20,6 +20,7 @@ import structlog
 from celery.signals import worker_init, worker_process_init, worker_process_shutdown
 from repolace_shared.logging import configure_logging
 
+from repolace_worker.bound import WorkerTimeout, bounded
 from repolace_worker.celery_app import RUN_TASK_NAME, celery_app
 from repolace_worker.config import WorkerSettings, get_worker_settings
 from repolace_worker.orphans import remove_stale_workspaces
@@ -70,10 +71,12 @@ async def run_one(
     from repolace_shared.tasks_recovery import fail_if_running, remove_task_containers
 
     options = {**task_options(resources.settings), **run_task_overrides}
-    deadline = asyncio.timeout(bound_seconds)
     try:
-        async with deadline:
-            result = await run_task(
+        # `bounded`, not `asyncio.timeout`: `run_task` settles a cancelled row itself, by the name
+        # of the exception that reaches it, so the bound has to arrive as a `WorkerTimeout` for the
+        # row to read `interrupted: WorkerTimeout` instead of `interrupted: CancelledError`.
+        result = await bounded(
+            run_task(
                 task_id,
                 resources.session_factory,
                 resources.github,
@@ -84,7 +87,9 @@ async def run_one(
                 open_pr=True,
                 claimed_by=claimed_by,
                 **options,
-            )
+            ),
+            bound_seconds,
+        )
     except TaskNotClaimable as exc:
         # A redelivered message, or a second runner that lost the race: ack and drop.
         log.warning("worker.task.not_claimable", task_id=str(task_id), status=exc.status)
@@ -92,12 +97,10 @@ async def run_one(
     except TaskNotFound:
         log.error("worker.task.not_found", task_id=str(task_id))
         return NOT_FOUND
-    except TimeoutError:
-        if not deadline.expired():
-            # A TimeoutError the task raised itself (a socket, a subprocess), not our bound.
-            log.exception("worker.task.error", task_id=str(task_id))
-            return ERRORED
+    except WorkerTimeout:
         log.error("worker.task.timeout", task_id=str(task_id), bound_seconds=bound_seconds)
+        # `run_task` normally settled the row already, so this is the backstop for one whose own
+        # failure write did not land. Conditional on `running`, so it never rewrites a terminal row.
         await asyncio.shield(fail_if_running(resources.session_factory, task_id, "worker: timeout"))
         await asyncio.shield(remove_task_containers(task_id))
         return TIMED_OUT
