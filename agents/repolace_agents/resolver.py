@@ -533,7 +533,9 @@ async def run_resolver_loop(deps: ResolverDeps, *, nonce: str) -> ResolverResult
             if exc.response is not None:
                 steps += 1  # the call happened and was paid for; it is not appended (its calls cannot run)
             return result(ResolverStop.BUDGET)
-        except LLMCallError:
+        except LLMCallError as exc:
+            if exc.provider_refused:
+                raise  # see graph.py: the provider refusing us is a harness failure, not a resolver stop
             return result(ResolverStop.LLM_ERROR)
 
         steps += 1

@@ -13,16 +13,18 @@ runner is built to prevent.
 from __future__ import annotations
 
 import re
-from collections.abc import AsyncIterator
+import uuid
+from collections.abc import AsyncIterator, Collection
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from decimal import Decimal
 
+from repolace_gateway.errors import PROVIDER_FAILURE_MARKERS
 from repolace_shared.db.models import LLMCall, Task, TaskStatus
 from repolace_shared.db.session import create_engine, create_session_factory
 from repolace_shared.tasks_recovery import TaskRef
 from repolace_shared.tasks_recovery import running_older_than as _running_older_than
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 SessionFactory = async_sessionmaker[AsyncSession]
@@ -90,6 +92,32 @@ async def run_cost_usd(factory: SessionFactory, eval_run_id: str) -> Decimal:
             .where(Task.eval_run_id == eval_run_id)
         )
         return Decimal(total)
+
+
+async def run_provider_failures(
+    factory: SessionFactory, eval_run_id: str, task_ids: Collection[uuid.UUID] | None = None
+) -> int:
+    """Tasks of the run that FAILED because the provider refused us (a rejected key, spent quota).
+
+    Recognised by the gateway's fixed message prefixes in `error_message`. Such a task is a harness
+    error, not an agent failure; two of them mean the rest of the run would fail the same way.
+
+    `task_ids` limits the count to the tasks one invocation of the runner dispatched. Without it the
+    rows a *previous* invocation left behind would stop a re-run at its first dispatch, after the
+    user had fixed the key, and a task row is never re-queued, so they would never go away.
+    """
+    if task_ids is not None and not task_ids:
+        return 0
+    conditions = [
+        Task.eval_run_id == eval_run_id,
+        Task.status == TaskStatus.FAILED,
+        or_(*(Task.error_message.contains(marker) for marker in PROVIDER_FAILURE_MARKERS)),
+    ]
+    if task_ids is not None:
+        conditions.append(Task.id.in_(list(task_ids)))
+    async with factory() as session:
+        total = await session.scalar(select(func.count()).select_from(Task).where(*conditions))
+        return int(total or 0)
 
 
 async def running_older_than(factory: SessionFactory, eval_run_id: str, age: timedelta) -> list[QueuedTask]:

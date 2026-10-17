@@ -36,15 +36,37 @@ class UnpricedModelError(GatewayError):
     """
 
 
+#: Why a provider call failed for good. `auth` and `quota` are the provider refusing *us* (a key it
+#: rejects, a billing or rate limit that is used up), which says nothing about how well the agent did.
+KIND_AUTH = "auth"
+KIND_QUOTA = "quota"
+KIND_OTHER = "other"
+
+#: Fixed text a message starts with for those two kinds, so the eval runner can recognise a run that is
+#: failing for the provider's reasons from a task's `error_message` without a new column.
+AUTH_FAILURE_PREFIX = "provider auth failure: "
+QUOTA_FAILURE_PREFIX = "provider quota exhausted: "
+PROVIDER_FAILURE_MARKERS = (AUTH_FAILURE_PREFIX.strip(), QUOTA_FAILURE_PREFIX.strip())
+
+
 class LLMCallError(GatewayError):
     """The provider call failed for good: retries exhausted, or not retryable.
 
     The message is redacted before it is built -- provider exceptions routinely
     echo parts of the request.
+
+    `kind` separates the provider refusing us (`auth`, `quota`) from every other failure. The agent
+    loop must not turn the first two into a stop reason: a task that could not talk to the provider
+    is a harness failure, not a task the agent failed.
     """
 
-    def __init__(self, message: str, *, stage: str, model: str, retries: int) -> None:
+    def __init__(self, message: str, *, stage: str, model: str, retries: int, kind: str = KIND_OTHER) -> None:
         super().__init__(message)
         self.stage = stage
         self.model = model
         self.retries = retries
+        self.kind = kind
+
+    @property
+    def provider_refused(self) -> bool:
+        return self.kind != KIND_OTHER

@@ -35,7 +35,7 @@ from eval_exec_support import (
 )
 from harness import runner
 from harness.bench_repos import TOKEN_ENV_VAR
-from harness.db import queued_tasks, run_cost_usd
+from harness.db import queued_tasks, run_cost_usd, run_provider_failures
 from harness.enqueue import (
     DEFAULT_WALL_CLOCK_SECONDS,
     ManifestInputs,
@@ -419,6 +419,63 @@ class TestCostCap:
         assert [r.task.task_id for r in summary.results] == [first.id]
         assert summary.not_dispatched == 2 and "cost cap" in summary.stopped
         assert summary.total_cost_usd == Decimal("1.5")
+
+    async def test_provider_refusals_are_counted_from_the_gateways_fixed_prefixes(self, db_session, db_session_factory):
+        repo = await add_repo(db_session, "repolace/bench-x")
+        refused = "agent: LLMCallError: provider auth failure: agent call to m failed after 0 retries"
+        await add_task(db_session, repo, instance_id="a", run_index=0, status=TaskStatus.FAILED, error_message=refused)
+        await add_task(db_session, repo, instance_id="b", run_index=0, status=TaskStatus.FAILED, error_message="provider quota exhausted: x")
+        await add_task(db_session, repo, instance_id="c", run_index=0, status=TaskStatus.FAILED, error_message="agent: RuntimeError: a bug")
+        await add_task(db_session, repo, instance_id="d", run_index=0, status=TaskStatus.COMPLETED, error_message=None)
+        await add_task(db_session, repo, instance_id="e", run_index=0, eval_run_id="other", status=TaskStatus.FAILED, error_message=refused)
+
+        assert await run_provider_failures(db_session_factory, RUN) == 2
+        assert await run_provider_failures(db_session_factory, RUN, []) == 0
+
+    async def test_refusals_left_by_an_earlier_invocation_do_not_stop_a_re_run(
+        self, db_session, db_session_factory, tmp_path, postgres_url
+    ):
+        """The user fixed the key and re-ran. A FAILED row is never re-queued, so counting the old
+        ones would stop every re-run at its first dispatch, for ever."""
+        repo = await add_repo(db_session, "repolace/bench-x")
+        for name in ("old-a", "old-b"):
+            await add_task(
+                db_session, repo, instance_id=name, run_index=0, status=TaskStatus.FAILED,
+                error_message="agent: LLMCallError: provider quota exhausted: agent call failed",
+            )
+        fresh = await add_task(db_session, repo, instance_id="fresh", run_index=0)
+        env = child_base_env(tmp_path, {str(fresh.id): {"claim": True, "finish": "completed"}}, dsn=postgres_url)
+
+        summary = await run_queue(
+            db_session_factory, config(concurrency=1), runs_dir=tmp_path / "runs",
+            child_command=child_command(), base_env=env,
+        )
+
+        assert [r.task.task_id for r in summary.results] == [fresh.id] and summary.stopped is None
+
+    async def test_two_refusals_during_this_run_stop_the_dispatch_of_the_rest(
+        self, db_session, db_session_factory, tmp_path, postgres_url
+    ):
+        repo = await add_repo(db_session, "repolace/bench-x")
+        tasks = [await add_task(db_session, repo, instance_id=name, run_index=0) for name in "abcd"]
+        refused = {"claim": True, "finish": "failed", "error": "agent: LLMCallError: provider auth failure: x"}
+        env = child_base_env(tmp_path, {str(task.id): refused for task in tasks}, dsn=postgres_url)
+
+        summary = await run_queue(
+            db_session_factory, config(concurrency=1), runs_dir=tmp_path / "runs",
+            child_command=child_command(), base_env=env,
+        )
+
+        assert len(summary.results) == 2 and summary.not_dispatched == 2
+        assert "provider refused 2 tasks" in summary.stopped
+
+    async def test_one_refusal_does_not_stop_anything(self, db_session, db_session_factory):
+        repo = await add_repo(db_session, "repolace/bench-x")
+        await add_task(
+            db_session, repo, instance_id="a", run_index=0, status=TaskStatus.FAILED,
+            error_message="provider auth failure: x",
+        )
+        assert await run_provider_failures(db_session_factory, RUN) < runner.PROVIDER_REFUSAL_LIMIT
 
     async def test_without_a_cap_everything_is_dispatched(self, db_session, db_session_factory, tmp_path):
         repo = await add_repo(db_session, "repolace/bench-x")
