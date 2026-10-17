@@ -42,7 +42,7 @@ from harness.enqueue import (
     build_manifest,
     ensure_manifest,
 )
-from harness.run_manifest import ManifestError, manifest_path
+from harness.run_manifest import ManifestError, load_manifest, manifest_path
 from harness.runner import (
     ABANDONED_GRACE_SECONDS,
     Outcome,
@@ -776,6 +776,22 @@ class TestManifestAgreement:
 
         with pytest.raises(ManifestError, match=mentions):
             check_manifest(tmp_path / "runs", config(**{"model": "claude-test", **override}))
+
+    def test_an_agent_loop_override_the_manifest_did_not_record_is_refused(self, tmp_path, monkeypatch):
+        """`enqueue` saw the defaults; a `run` started with a higher step cap would describe a sweep that never happened."""
+        monkeypatch.delenv("REPOLACE_AGENT_MAX_STEPS_PER_ATTEMPT", raising=False)
+        write_manifest(tmp_path / "runs")
+        monkeypatch.setenv("REPOLACE_AGENT_MAX_STEPS_PER_ATTEMPT", "80")
+
+        with pytest.raises(ManifestError, match="max_steps_per_attempt"):
+            check_manifest(tmp_path / "runs", config(model="claude-test"))
+
+    def test_an_override_recorded_at_enqueue_and_repeated_at_run_passes(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("REPOLACE_AGENT_MAX_STEPS_PER_ATTEMPT", "80")
+        path = write_manifest(tmp_path / "runs")
+
+        assert load_manifest(path).limits["max_steps_per_attempt"] == 80
+        assert check_manifest(tmp_path / "runs", config(model="claude-test")) is True
 
     def test_the_model_is_not_compared_for_an_agent_that_calls_none(self, tmp_path):
         write_manifest(tmp_path / "runs", agent="gold", model=None)
