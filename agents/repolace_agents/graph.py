@@ -35,7 +35,7 @@ checkpointer would persist, and an LLM client is not.
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
@@ -56,6 +56,7 @@ from repolace_agents.prompts import (
     skipped_after,
 )
 from repolace_agents.render import escape_invisible, require_nonce, sanitize_text
+from repolace_agents.role_prompts import build_briefing, role_step_caps
 from repolace_agents.state import AgentState
 from repolace_agents.tools.base import ToolBox
 
@@ -98,6 +99,21 @@ KEEP_RECENT_TOOL_RESULTS = 6
 MAX_SUMMARY_CHARS = 2000
 
 
+class RoleGit(Protocol):
+    """The three git operations the roles graph makes on the checkout, and nothing else.
+
+    `GitRepo` (`repolace_shared.git`) in production -- the same calls the pipeline's own
+    `review_diff` and `rewind_to` make, through the same pinned wrapper -- and a fake in a test.
+    The single-agent graph makes none of them.
+    """
+
+    async def head_sha(self) -> str: ...
+
+    async def diff_from(self, base_sha: str) -> str: ...
+
+    async def reset_hard(self, sha: str) -> None: ...
+
+
 @dataclass(frozen=True)
 class RunContext:
     """What every node is given besides the state. Built once per run."""
@@ -106,6 +122,11 @@ class RunContext:
     #: The per-task delimiter nonce. Random in production; fixed in a test so it
     #: can be asserted on.
     nonce: str
+    #: Roles only: the checkout's git, for the reviewer's diff and the debugger's `rewind`.
+    git: RoleGit | None = None
+    #: Roles only: HEAD when the run began, which is the base commit (the pipeline starts the
+    #: agent on a fresh branch at the base). What the reviewer's diff is taken against.
+    base_sha: str | None = None
 
 
 def recursion_limit_for(limits: AgentLimits) -> int:
@@ -356,6 +377,23 @@ async def _run_loop(
     return LoopOutcome(messages=tuple(messages), calls=calls, stop=stop, summary=summary)
 
 
+async def localize_roles(state: AgentState, runtime: Runtime[RunContext]) -> dict[str, Any]:
+    """The roles graph's opening: the briefing every role is shown first. No model call.
+
+    Here rather than in `roles` for the reason `localize` is here: the baseline reaches a
+    prompt only through `feedback.baseline_summary`, and this module is the one allowed to hand
+    it over. The briefing carries the same issue, repository and retrieval blocks as the
+    single agent's localize message (`role_prompts.build_briefing`).
+    """
+    ctx = runtime.context
+    deps = ctx.deps
+    baseline_text = baseline_summary(
+        deps.baseline, deps.hidden_paths, overlay_mode=overlay_mode(deps), nonce=ctx.nonce
+    )
+    briefing = build_briefing(deps.issue, deps.repo_overview, deps.retrieved, baseline_text, deps.limits, ctx.nonce)
+    return {"briefing": briefing}
+
+
 async def agent(state: AgentState, runtime: Runtime[RunContext]) -> dict[str, Any]:
     """Run one attempt: the bounded tool loop. See the module docstring for how it stops."""
     deps = runtime.context.deps
@@ -458,7 +496,10 @@ def build_graph(*, roles: bool = False):
     before the role split existed. `roles=True` is the Phase 2 split (`repolace_agents.roles`).
     """
     if roles:
-        raise NotImplementedError("the roles graph is not built yet")
+        # Imported here: `roles` builds on this module, so a top-level import would be a cycle.
+        from repolace_agents.roles import build_roles_graph
+
+        return build_roles_graph()
     builder = StateGraph(AgentState, context_schema=RunContext)
     builder.add_node("localize", localize)
     builder.add_node("agent", agent)
@@ -505,7 +546,7 @@ def result_from_state(state: AgentState) -> AgentResult:
     )
 
 
-async def run_graph(deps: AgentDeps, *, nonce: str) -> AgentResult:
+async def run_graph(deps: AgentDeps, *, nonce: str, git: RoleGit | None = None) -> AgentResult:
     """Run the graph for one task. `run_agent` calls this with a random nonce.
 
     **The pipeline must call `run_agent`, never this.** The nonce is what keeps an
@@ -514,17 +555,34 @@ async def run_graph(deps: AgentDeps, *, nonce: str) -> AgentResult:
     argument for it, because one a caller could choose is one an attacker could
     predict. This function exists separately only so a test can fix the nonce and
     assert on it. It refuses an empty or malformed one.
+
+    With `deps.limits.roles` it runs the Phase 2 role split instead (`repolace_agents.roles`),
+    reading the checkout's HEAD once first as the base the reviewer diffs against. `git` is a
+    test seam like the nonce: `run_agent` never passes one, so production uses the checkout's
+    own repository.
     """
     require_nonce(nonce)
     if deps.llm is None or deps.tools is None:
         raise ValueError("the LLM graph needs deps.llm and deps.tools; only the stub and gold runners run without them")
     if deps.limits.max_attempts < 1 or deps.limits.max_steps_per_attempt < 1:
         raise ValueError(f"max_attempts and max_steps_per_attempt must be at least 1, got {deps.limits}")
-    if deps.limits.roles:
-        raise NotImplementedError("the roles graph is not built yet")
-    final = await build_graph().ainvoke(
-        AgentState(),
-        config={"recursion_limit": recursion_limit_for(deps.limits)},
-        context=RunContext(deps=deps, nonce=nonce),
+    if not deps.limits.roles:
+        final = await build_graph().ainvoke(
+            AgentState(),
+            config={"recursion_limit": recursion_limit_for(deps.limits)},
+            context=RunContext(deps=deps, nonce=nonce),
+        )
+        return result_from_state(AgentState(**final))
+
+    role_step_caps(deps.limits)  # a per-attempt cap too small to split is refused before anything runs
+    if git is None:
+        # The production path (`run_agent` passes no git): the checkout's own repository, through
+        # the shared wrapper and its config pins. Imported here so the single agent never loads it.
+        from repolace_shared.git.repo import GitRepo
+
+        git = GitRepo(path=deps.checkout)
+    context = RunContext(deps=deps, nonce=nonce, git=git, base_sha=await git.head_sha())
+    final = await build_graph(roles=True).ainvoke(
+        AgentState(), config={"recursion_limit": recursion_limit_for(deps.limits)}, context=context
     )
     return result_from_state(AgentState(**final))

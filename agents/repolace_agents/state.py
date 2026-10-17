@@ -69,3 +69,18 @@ class AgentState:
     #: which is what stops the router reading a stale answer from an earlier
     #: attempt. Reset on entry to each attempt.
     feedback_clean: bool | None = None
+
+    # --- the Phase 2 roles only (`AgentLimits.roles`); the single agent leaves them at their defaults
+
+    #: What every role is shown first (the issue, the repository, retrieval, the baseline summary),
+    #: rendered once by `localize_roles`. Text, not the results it was built from.
+    briefing: str = ""
+    #: The planner's plan, or None if it never called `submit_plan`. Untrusted model output: the
+    #: editor and the reviewer read it inside a `plan` block.
+    plan: str | None = None
+    #: `request_changes` from the reviewer of the attempt just scored, until the next `verify`
+    #: has used it; None otherwise.
+    verdict: str | None = None
+    #: `(attempt, commit_sha)` for every scored attempt, in order: what `rewind` resolves a
+    #: number against. Commits only; never a result.
+    scored_commits: tuple[tuple[int, str], ...] = ()

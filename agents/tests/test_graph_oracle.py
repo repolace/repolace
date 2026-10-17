@@ -183,12 +183,14 @@ SUITE_RESULT_FIELDS = {f.name for f in dataclasses.fields(SuiteResult)}
 TOOLS = PACKAGE / "tools"
 PROBE_RENDERER = TOOLS / "sandbox.py"
 ORACLE_SCANNED_FILES = tuple(
-    PACKAGE / f"{name}.py" for name in ("graph", "prompts", "render", "state", "run", "role_prompts")
+    PACKAGE / f"{name}.py" for name in ("graph", "prompts", "render", "state", "run", "role_prompts", "roles")
 ) + tuple(
     path for path in sorted(TOOLS.glob("*.py")) if path != PROBE_RENDERER
 )
 #: The scanned files in which not even the filter calls may touch `.baseline` / `.result`.
-ORACLE_BLIND_FILES = tuple(PACKAGE / f"{name}.py" for name in ("prompts", "render", "state", "run", "role_prompts"))
+ORACLE_BLIND_FILES = tuple(
+    PACKAGE / f"{name}.py" for name in ("prompts", "render", "state", "run", "role_prompts", "roles")
+)
 
 #: Names and attributes that hold a `SuiteResult` or an `AttemptRecord` anywhere in this
 #: package, for the dump check below.
