@@ -244,6 +244,23 @@ class TestCleanMerge:
         assert row.patch_sha == runs[2].commit_sha
         assert row.conflict_reason is None
 
+    async def test_a_target_that_moved_without_changing_a_file_keeps_the_old_score(
+        self, db_session, db_session_factory, origin_url, origin, tmp_path
+    ):
+        task = await seed_task(db_session)
+        agent, saw = moving_target(tmp_path, origin_url, {})  # an empty commit
+        seen = CheckoutAtExit()
+
+        result, github = await run(  # a third suite run would fail the test
+            db_session_factory, origin_url, task, agent, FakeBackend(results=[BASELINE, AFTER]), seen=seen
+        )
+
+        row, runs = await reload(db_session_factory, task.id)
+        assert result.status is row.status is TaskStatus.PR_OPENED
+        assert [r.attempt for r in runs] == [0, 1], "the merged tree is the scored one; nothing to re-run"
+        assert seen.base_sha == saw["tip"]
+        assert git(origin, "rev-parse", f"{github.pull_requests[0]['head']}^") == saw["tip"]
+
     async def test_a_target_that_already_has_the_change_gets_no_pr(
         self, db_session, db_session_factory, origin_url, origin, tmp_path
     ):

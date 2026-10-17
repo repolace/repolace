@@ -209,7 +209,8 @@ def push_upstream(
         (work / name).unlink(missing_ok=True)
         (work / name).symlink_to(target)
     git(work, "add", "-A")
-    git(work, "commit", "-q", "-m", message)
+    # `--allow-empty`, so `files={}` moves the target without changing a file.
+    git(work, "commit", "-q", "--allow-empty", "-m", message)
     git(work, "push", "-q", "origin", "main")
     return git(work, "rev-parse", "HEAD")
 
