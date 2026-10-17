@@ -146,7 +146,12 @@ class TestRedeliveryAndFailure:
         task = await seed_task(db_session)
         bounds = []
         real_bounded = tasks.bounded
-        monkeypatch.setattr(tasks, "bounded", lambda awaitable, seconds: bounds.append(real_bounded(awaitable, seconds)) or bounds[-1])
+
+        def remember(awaitable, seconds):
+            bounds.append(real_bounded(awaitable, seconds))
+            return bounds[-1]
+
+        monkeypatch.setattr(tasks, "bounded", remember)
 
         async def hang(deps):
             bounds[0].reschedule(0.05)
