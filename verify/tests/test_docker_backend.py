@@ -64,6 +64,24 @@ def make_source(root: Path, name: str, body: str) -> Path:
     return source
 
 
+@pytest.fixture(scope="session")
+def base_image_available():
+    """The base image, pulled once per session with a few tries.
+
+    A test that builds a fresh image resolves the base image's metadata from the registry,
+    and one timed-out request there failed the build (and the test) in a stress run. Pulling
+    it up front, with retries, turns a flaky registry into a skip with a reason, rather than
+    a failure that says nothing about the code under test.
+    """
+    image = RepoSpec(key="x").base_image
+    binary = DockerConfig().docker_binary
+    for _ in range(3):
+        pulled = subprocess.run([binary, "pull", "-q", image], capture_output=True, text=True, check=False)
+        if pulled.returncode == 0:
+            return image
+    pytest.skip(f"could not pull {image} (the registry is unreachable): {pulled.stderr.strip()[-200:]}")
+
+
 @pytest.fixture
 def backend():
     # A short run timeout: these suites take under a second, and a hung daemon
@@ -238,7 +256,7 @@ class TestEnvironmentBuild:
 
     async def test_an_impossible_install_fails_as_a_build_not_as_a_run(self, backend, tmp_path):
         """`EnvironmentBuildFailed` names the repo. It is expected to be the most
-        common failure on a new repo, and CLAUDE.md says so."""
+        common failure on a new repo, and .claude/rules/verify-sandbox.md says so."""
         from verify.errors import EnvironmentBuildFailed
 
         spec = RepoSpec(
@@ -413,11 +431,12 @@ class TestScriptContainment:
         assert "NoNewPrivs:\t1" in result.stdout
 
     async def test_the_resource_caps_bind(self, backend, spec, environment, tmp_path):
-        """Read back from the cgroup, as CLAUDE.md records for `run_tests`. Rootless
+        """Read back from the cgroup, as .claude/rules/verify-sandbox.md records ("Rootless is a
+        deployment precondition"). Rootless
         Docker without cgroup v2 delegation silently ignores these flags, so a green
         run here is also the check that delegation is in place.
 
-        `memory.swap.max` is the one file CLAUDE.md never verified, so it is read
+        `memory.swap.max` is the one file that rule never verified, so it is read
         tolerantly (printed as `absent`) and checked only if it exists; the other
         three are required, and a missing one is named in the failure message rather
         than aborting the script before the later lines print.
@@ -549,7 +568,7 @@ class TestProbesAndScriptsThroughTheVerifier:
 
     # A note on every test here that runs a probe: the sandbox writes into its own export
     # (a `.hypothesis` directory, a `.coverage` file), as its subuid, and the host cannot
-    # delete entries it does not own. That is the known CLAUDE.md hazard, multiplied by
+    # delete entries it does not own. That is the known hazard in .claude/rules/verify-sandbox.md, multiplied by
     # the number of probes, which is why the workspace's parent directory has to be
     # quota-limited in production and why `discard` logs a warning for what it leaves.
     async def test_probes_and_scripts_leave_no_directories_and_no_containers(
@@ -586,7 +605,7 @@ class TestProbesAndScriptsThroughTheVerifier:
             assert not (workspace.path / "_repolace_script.py").exists()
 
     async def test_the_overlay_runs_in_scored_runs_and_is_invisible_to_probes_and_the_image(
-        self, backend, origin_url, tmp_path
+        self, backend, origin_url, tmp_path, base_image_available
     ):
         """The oracle must reach the scored runs and nothing else: not a probe, not
         a script, and not the image layer the cache shares between tasks.

@@ -8,7 +8,7 @@ The image holds the *environment*, never the tree under test. Source is copied
 in at build time because an editable install needs something to point at, and
 then bind-mounted over at run time, one export per attempt. Both live at
 ``/repo`` so the editable install keeps resolving across the swap. This is
-CLAUDE.md's "install dependencies once into an image, then start a fresh
+.claude/rules/verify-sandbox.md's "install dependencies once into an image, then start a fresh
 container per run from that image": reusing one live container across attempts
 is faster and lets a stale ``.pyc`` or a mutated fixture database leak between
 them, which corrupts the benchmark quietly.

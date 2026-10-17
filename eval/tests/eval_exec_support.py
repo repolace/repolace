@@ -328,7 +328,9 @@ if plan.get("cost"):
         "VALUES (gen_random_uuid(), $1::uuid, 'agent', 'm', 'p', " + str(plan["cost"]) + ")")
 time.sleep(plan.get("sleep", 0))
 if plan.get("finish"):
-    sql("UPDATE tasks SET status = '" + plan["finish"] + "' WHERE id = $1::uuid")
+    error = plan.get("error", "").replace("'", "''")
+    sql("UPDATE tasks SET status = '" + plan["finish"] + "', error_message = " + ("'" + error + "'" if error else "NULL")
+        + " WHERE id = $1::uuid")
 if plan.get("hang"):
     time.sleep(3600)
 with open(os.path.join(out, task + ".end"), "w") as handle:

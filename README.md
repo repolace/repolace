@@ -2,7 +2,7 @@
 
 An autonomous software-engineering agent platform. A user registers a GitHub repo, repolace fetches its open issues, the user picks one issue and a target branch, and an agent attempts a fix in an isolated sandbox, verifies it against the repo's own test suite, and opens a PR on success.
 
-The design, with the reasoning behind each decision, is in [CLAUDE.md](CLAUDE.md). This file is the status and the how-to.
+The design, with the reasoning behind each decision, is in [CLAUDE.md](CLAUDE.md) and the area files under [.claude/rules/](.claude/rules/). This file is the status and the how-to.
 
 ## Status
 
@@ -13,18 +13,18 @@ The design, with the reasoning behind each decision, is in [CLAUDE.md](CLAUDE.md
 | Monorepo scaffolding | Done — `uv` workspace, Docker Compose (Postgres + pgvector, Redis, RabbitMQ) |
 | FastAPI service | Done — health check, GitHub App webhook handler, repo registration, issue listing, task enqueue (`POST /repos/{id}/tasks`) |
 | GitHub App integration | Done — installation events, repo auto-registration, issue fetching |
-| Database schema | Done — Alembic migrations 0001–0013: installations, repos, tasks, test runs, code chunks, `llm_calls`, agent outputs and the benchmark columns |
+| Database schema | Done — Alembic migrations 0001–0014: installations, repos, tasks, test runs, code chunks, `llm_calls`, agent outputs, the benchmark columns, task stages and heartbeat |
 | RAG layer | Done — Python AST chunking via tree-sitter, 4 embedding strategies threaded through indexing and search (recorded per repo in `registered_repos.index_strategy`), pgvector HNSW + full-text hybrid retrieval |
 | Task pipeline | Done — `repolace-run-task` runs `run_task` end to end (checkout lifecycle, index, baseline, agent stage, score, PR gate, squash, push, PR, terminal write). `--agent llm` (the real agent) is the default; `stub` and `gold` remain |
 | Verify sandbox | Done — rootless locked-down Docker container from a prepared per-repo image, byte-identical tree export (no `.git`), pytest report parsing, scored runs plus unscored probes and scratch scripts, hidden-test overlay for benchmark instances |
 | Git hardening | Done — credential helper scoped to host, hooks and fsmonitor disabled, global/system git config pinned to `/dev/null`, path traversal guards, symlink refusal |
-| LiteLLM gateway | Done — stage routing, per-task budget (default $2, 150 calls, one hour), refuses an unpriced model rather than record it as free, every call recorded in `llm_calls`. The headline model is priced in `gateway/models.toml` |
+| LiteLLM gateway | Done — stage routing, per-task budget (default $2, 150 calls, one hour), refuses an unpriced model rather than record it as free, every call recorded in `llm_calls`. The Phase 1 headline model is Gemini 3.1 Pro on Vertex AI (`vertex-gemini-3-1-pro-preview`), priced in `gateway/models.toml`; Sonnet 5.5 is a later comparison column |
 | Agent | Built and wired into `repolace-run-task`, never run against a real provider — a LangGraph graph (`localize → agent → verify`, retry edge), nine tools, and a no-oracle feedback filter, in `agents/` |
 | Retry loop | Built and wired in, not yet exercised by a real run — up to 3 scored attempts inside the graph |
 | Benchmark harness | Built, not yet run — `eval/harness/` (`repolace-eval`): instance selection, private benchmark repos, gold validation, sweep runner, report, retrieval eval |
-| Celery worker dispatch | Scaffolded — `worker/` service stands up but is unused; tasks run through the `repolace-run-task` CLI until Phase 2 |
+| Celery worker dispatch | Implemented, not yet exercised by a real run — `worker/repolace_worker/tasks.py` runs `run_task` as the Celery task `repolace.run_task`, the API publishes product tasks after commit (`api/repolace_api/publisher.py`), and `worker/repolace_worker/maintenance.py` holds the maintenance jobs. The compose `worker` service is minimal: no maintenance worker or beat, no `env_file`, no docker socket. The benchmark runner still uses the `repolace-run-task` CLI |
 | Observability (OTel + Grafana) | Not started — structured JSON logging with task IDs only |
-| UI | Not started |
+| UI | Built — server-rendered Jinja2 + HTMX under `/ui` (`api/repolace_api/ui/`): task list, new-task flow, task detail with stage strip, diff and test runs. No auth until Phase 4, so localhost or a private tunnel only. Not yet viewed against the full compose stack |
 
 ## Architecture
 
@@ -53,14 +53,14 @@ User picks issue + target branch
 └──────────────┘
 ```
 
-**Phase 1 runs one task per host process, with no queue.** `POST /repos/{id}/tasks` only inserts a queued row; the pipeline runs separately through the `repolace-run-task` CLI on the host, which keeps the retrieval stack and torch out of the API image. The benchmark runner starts several of those processes at once. The Celery worker and RabbitMQ containers exist from Phase 0 but are not used for pipeline execution until Phase 2, when the worker will call the same `run_task`.
+**The pipeline runs outside the API process.** `POST /repos/{id}/tasks` inserts a queued row and publishes the task id to RabbitMQ after the commit; a Celery worker (`worker/repolace_worker/tasks.py`) claims the row and calls `run_task`. This keeps the retrieval stack and torch out of the API image. The `repolace-run-task` CLI calls the same `run_task` as one host process per task, and the benchmark runner starts several of those processes at once. The compose `worker` service is minimal today (see the status table), so the CLI remains the way to run a task end to end.
 
 ## Monorepo structure
 
 ```
 repolace/
   api/            FastAPI orchestrator
-  worker/         Celery worker (scaffolded, not yet dispatched)
+  worker/         Celery worker: runs product tasks, plus maintenance jobs
   agents/         LangGraph graph, prompts, feedback filter, the nine agent tools
   gateway/        LiteLLM wrapper: routing, budget, pricing, llm_calls recorder
   rag/            AST chunking, embedding, pgvector indexing, hybrid retrieval
@@ -80,7 +80,7 @@ Each workspace package has a distinct top-level import (`repolace_api`, `repolac
 | Language | Python 3.12+ |
 | API | FastAPI |
 | Agent orchestration | LangGraph |
-| Queue | RabbitMQ + Celery (scaffolded) |
+| Queue | RabbitMQ + Celery |
 | LLM gateway | LiteLLM |
 | Vector store | PostgreSQL + pgvector |
 | Embeddings | Local via `sentence-transformers` (`st-codesearch-distilroberta-base`, 768-dim) |
@@ -97,7 +97,7 @@ Each workspace package has a distinct top-level import (`repolace_api`, `repolac
 - Docker and Docker Compose, plus **rootless** Docker for the Verify sandbox (`docker-rootless-extras`, `systemctl --user enable --now docker`) with cgroup v2 delegation of `cpu`, `memory` and `pids` — without delegation the sandbox's resource caps are silently ignored
 - `prlimit` (util-linux) on the host. The agent's `grep` tool runs `git grep` under a memory and CPU limit, and the toolbox refuses to build without it
 - A GitHub App (for repo registration, issue fetching, and opening PRs)
-- To run the real agent: a provider key in `.env` (`ANTHROPIC_API_KEY`, plus `OPENAI_API_KEY` or `GEMINI_API_KEY` for comparison models), and a price for every model a stage routes to. To use Claude through Amazon Bedrock instead, set `GATEWAY_AWS_PROFILE` and `GATEWAY_AWS_REGION` (an AWS CLI profile that can invoke the model; no key) and select `claude-sonnet-5-5-bedrock`. `gateway/models.toml` routes the `agent` stage to `claude-sonnet-5-5` and prices it explicitly (LiteLLM's map does not have it); the gateway refuses an unpriced model before its first call, so a new model needs its rates (USD per million tokens) added there first
+- To run the real agent: a provider key in `.env` (`ANTHROPIC_API_KEY`, plus `OPENAI_API_KEY`, `GEMINI_API_KEY`, `MINIMAX_API_KEY` or `GOOGLE_API_KEY` (a Vertex AI key) for comparison models), and a price for every model a stage routes to. To use Claude through Amazon Bedrock instead, set `GATEWAY_AWS_PROFILE` and `GATEWAY_AWS_REGION` (an AWS CLI profile that can invoke the model; no key) and select `claude-sonnet-5-5-bedrock`. `gateway/models.toml` routes the `agent` stage to `claude-sonnet-5-5` and prices it explicitly (LiteLLM's map does not have it); the gateway refuses an unpriced model before its first call, so a new model needs its rates (USD per million tokens) added there first
 - To create the benchmark repositories: a **separate** GitHub token for the `repolace-eval fork` command only (see [Benchmark](#benchmark)). Never put it in `.env`
 
 ### Install dependencies
@@ -116,7 +116,7 @@ cd infra
 docker compose up -d
 ```
 
-This starts Postgres (with pgvector), Redis, and RabbitMQ.
+This starts Postgres (with pgvector), Redis, RabbitMQ, the API and the Celery worker.
 
 ### Run migrations
 
@@ -201,12 +201,12 @@ uv run --all-packages repolace-eval run --eval-run-id gold-2 --agent gold
 uv run --all-packages repolace-eval gold --runs gold-1,gold-2        # writes eval/instances/VALIDATION.md
 
 # 4. A dry run on a few instances, one run each, to see real cost and wall time first...
-uv run --all-packages repolace-eval enqueue --eval-run-id dry-1 --agent llm --model claude-sonnet-5-5 \
+uv run --all-packages repolace-eval enqueue --eval-run-id dry-1 --agent llm --model vertex-gemini-3-1-pro-preview \
   --instances <id>,<id>,<id> --runs 1
-uv run --all-packages repolace-eval run --eval-run-id dry-1 --agent llm --model claude-sonnet-5-5
+uv run --all-packages repolace-eval run --eval-run-id dry-1 --agent llm --model vertex-gemini-3-1-pro-preview
 #    ...then the sweep (3 runs per instance by default).
-uv run --all-packages repolace-eval enqueue --eval-run-id sweep-1 --agent llm --model claude-sonnet-5-5
-uv run --all-packages repolace-eval run --eval-run-id sweep-1 --agent llm --model claude-sonnet-5-5 \
+uv run --all-packages repolace-eval enqueue --eval-run-id sweep-1 --agent llm --model vertex-gemini-3-1-pro-preview
+uv run --all-packages repolace-eval run --eval-run-id sweep-1 --agent llm --model vertex-gemini-3-1-pro-preview \
   -k 3 --max-total-usd <cap>
 
 # 5. The report, from the database and the run's manifest only.
@@ -217,7 +217,7 @@ uv run --all-packages repolace-eval report --run sweep-1 --gold-run gold-1 --gol
 
 **How the number is computed:** passes over *planned* tasks, counting every task that is not a pass as a non-pass whatever the reason (a harness error, an unscoreable instance, a pass that edited tests). The rate over only the scoreable tasks is printed as a labelled secondary figure. The interval is over instances, because repeated runs of one instance are not independent.
 
-**What it will and will not show.** The instances are a filtered subset of SWE-bench Verified (pure-Python pytest repositories, gold-validated, with a simple-fix filter), a public benchmark that models have probably seen. So the figure is **not the published Verified score** and does not predict performance on unseen issues, and at 15–20 instances its 95% interval is roughly 30–40 percentage points wide. Hidden fail-to-pass tests are kept from the agent's feedback by a filter, not by the sandbox, and a deliberately adversarial agent could still signal through it. CLAUDE.md states each of these, with the reasoning.
+**What it will and will not show.** The instances are a filtered subset of SWE-bench Verified (pure-Python pytest repositories, gold-validated, with a simple-fix filter), a public benchmark that models have probably seen. So the figure is **not the published Verified score** and does not predict performance on unseen issues, and at 15–20 instances its 95% interval is roughly 30–40 percentage points wide. Hidden fail-to-pass tests are kept from the agent's feedback by a filter, not by the sandbox, and a deliberately adversarial agent could still signal through it. `.claude/rules/benchmark.md` states each of these, with the reasoning.
 
 ## Index freshness
 
@@ -246,7 +246,7 @@ When a task starts, repolace checks the repo's `indexed_commit_sha` against the 
 
 ## What comes next
 
-**Phase 1 completion:** price the headline model, then gold validation, a dry run and the sweep. Benchmark repos must contain no tracked symlinks or submodules — the export refuses both.
+**Phase 1 completion:** gold validation, a dry run and the sweep (the headline model, Gemini 3.1 Pro on Vertex AI, is already priced in `gateway/models.toml`; confirm the rates in your Cloud console first). Benchmark repos must contain no tracked symlinks or submodules — the export refuses both.
 
 **Phase 2:** Split into specialized agents (planner/editor/reviewer/debugger), async queue dispatch, merge-conflict resolution sub-loop, basic UI.
 
@@ -257,3 +257,29 @@ When a task starts, repolace checks the repo's `indexed_commit_sha` against the 
 ## License
 
 Not yet determined.
+
+### Gemini on Vertex AI
+
+The gateway can call Gemini through Google Vertex AI with a Vertex API key. LiteLLM's own `vertex_ai/` route needs Google Cloud OAuth credentials, so `repolace_gateway/vertex.py` is a small REST transport (httpx, no extra dependency) that answers in the shape the rest of the gateway already reads.
+
+1. Create a Vertex AI API key in the Google Cloud console (bound to a service account) and put it in `.env`: `GOOGLE_API_KEY=...`. It is read by the gateway's settings only and never exported or logged. `GOOGLE_CLOUD_PROJECT` is informational.
+2. Select a model for a sweep (one model serves the whole agent for now):
+
+   ```
+   GATEWAY_STAGE_MODELS='{"agent": "vertex-gemini-3-1-pro-preview"}' uv run repolace-eval run --model vertex-gemini-3-1-pro-preview ...
+   ```
+
+| Model key | Vertex model | Used for | Price (per M tokens) |
+|---|---|---|---|
+| `vertex-gemini-3-1-pro-preview` | `gemini-3.1-pro-preview` | the agent (editing, debugging); the `resolve` stage follows `agent` | $2.00 in, $12.00 out, $0.20 cached |
+| `vertex-gemini-3-8-flash` | `gemini-3.8-flash` | cheap steps (planning, review, summaries) once the role split lands; selectable for a whole-agent run today | $0.75 in, $3.75 out, $0.075 cached |
+
+Neither is a default; the shipped `agent` stage is still `claude-sonnet-5-5`. A planner/editor/reviewer/debugger role table is deliberately not built yet (Phase 1 is one agent, and the role split is on `phase-2/agents`).
+
+Prices live in `gateway/models.toml`, never in code. They were taken from Google's AI Studio pricing page, because Vertex's own page could not be read: confirm them in your Cloud console. Gemini 3.8 Flash's rates change on 2027-01-01 ($1.50 in, $7.50 out), and `gemini-3.1-pro-preview` is priced at its up-to-200k-token tier.
+
+Retries: HTTP 429 and 5xx and timeouts are retried with exponential backoff and jitter (honouring `Retry-After`) up to `max_attempts` in `models.toml`; a 400, 401, 403 or 404 is not. Quota exhaustion (`RESOURCE_EXHAUSTED`) ends in a plain error naming it, never an endless retry.
+
+Tokens per call (input, cached input, output including thinking) and cost are stored in `llm_calls`, and the sum in `tasks.cost_usd`. OpenTelemetry spans are Phase 3.
+
+Live check (spends a few cents; the key is read from `.env`): `RUN_LIVE_LLM_TESTS=1 uv run pytest gateway/tests/test_gateway_vertex_live.py -s`.

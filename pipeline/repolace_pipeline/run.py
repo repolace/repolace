@@ -10,7 +10,8 @@ edit attempt. Both go through `verify.stage.Verifier`, so nothing here knows tha
 containers exist -- swapping Docker for gVisor or a remote executor is a
 different `SandboxBackend`, not a change to this file.
 
-The ordering is load-bearing and matches CLAUDE.md's branch/PR flow: index from
+The ordering is load-bearing and matches the branch/PR flow in
+.claude/rules/git-and-pr-flow.md: index from
 the clean tree, then baseline, then branch, then the agent. Baseline before the
 branch because it is what "the tests pass" is measured against -- without it a
 repo with pre-existing failures scores as a failure whatever the agent did.
@@ -32,10 +33,13 @@ agent-caused stop that raised `StageFailed` would quietly *improve* that figure.
 """
 
 import asyncio
+import os
+import socket
 import subprocess
 import uuid
 from collections.abc import Callable, Mapping
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from decimal import Decimal
 from functools import partial
@@ -60,6 +64,7 @@ from repolace_shared.db.models import (
     RegisteredRepo,
     Task,
     TaskOutcome,
+    TaskStage,
     TaskStatus,
 )
 from repolace_shared.git import (
@@ -80,7 +85,7 @@ from retrieval.index import (
 from retrieval.query import build_query
 from retrieval.retrieve import hybrid_search
 from retrieval.strategies import DEFAULT_STRATEGY
-from sqlalchemy import func, select, update
+from sqlalchemy import func, insert, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from verify.errors import SandboxError
@@ -100,6 +105,7 @@ from repolace_pipeline.errors import (
     TaskNotFound,
 )
 from repolace_pipeline.finalize import (
+    _clean,
     first_model,
     task_cost,
     write_failure_minimal,
@@ -120,6 +126,10 @@ REQUIRED_PERMISSIONS = {"contents": "write", "pull_requests": "write"}
 #: and the longest it will wait in all. The lock is a *try*-lock, so two tasks on one repo hit
 #: it immediately -- that is the normal case for a benchmark (three runs of one instance), not
 #: an error. Twenty minutes is longer than any first index this project has seen.
+#: How often the running process bumps `tasks.heartbeat_at`. The reaper treats a `running` row
+#: as abandoned only after several missed beats (see .claude/rules/task-bookkeeping.md,
+#: "Task stages and heartbeat"), so this is not a deadline.
+HEARTBEAT_INTERVAL_SECONDS = 30.0
 INDEX_WAIT_STEP_SECONDS = 10.0
 INDEX_WAIT_CAP_SECONDS = 1200.0
 #: Indirection so a test can replace the sleep and release the lock at exactly that moment.
@@ -233,18 +243,133 @@ def _describe(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {exc}"
 
 
+@dataclass(frozen=True)
+class _StageSink:
+    """Where `_stage` writes its rows: plain data, so it is safe to read after a rollback."""
+
+    session_factory: async_sessionmaker[AsyncSession]
+    task_id: uuid.UUID
+
+
+#: Set by `run_task` for the duration of one task. A contextvar rather than a parameter so
+#: the sixteen `_stage(...)` call sites do not each have to thread a session factory through.
+_stage_sink: ContextVar[_StageSink | None] = ContextVar("repolace_stage_sink", default=None)
+
+MAX_STAGE_ERROR_CHARS = 1000
+#: Longest a stage-record write may take before it is abandoned. A write that hangs (a stalled
+#: connection pool, a lock) must not delay the stage or the task it describes.
+STAGE_WRITE_TIMEOUT_SECONDS = 5.0
+
+
+async def _write_stage_start(sink: _StageSink, name: str) -> uuid.UUID:
+    row_id = uuid.uuid4()
+    async with sink.session_factory() as session:
+        await session.execute(
+            insert(TaskStage).values(
+                id=row_id, task_id=sink.task_id, stage=name, started_at=func.now(), status="running"
+            )
+        )
+        await session.commit()
+    return row_id
+
+
+async def _write_stage_end(sink: _StageSink, row_id: uuid.UUID, status: str, error: str | None) -> None:
+    async with sink.session_factory() as session:
+        await session.execute(
+            update(TaskStage).where(TaskStage.id == row_id).values(ended_at=func.now(), status=status, error=error)
+        )
+        await session.commit()
+
+
+def _stage_error(exc: BaseException) -> str:
+    text = str(exc) if isinstance(exc, PipelineError) else _describe(exc)
+    return _clean(redact(text)[:MAX_STAGE_ERROR_CHARS])
+
+
 @asynccontextmanager
 async def _stage(name: str):
-    """Tag whatever fails inside with the stage it failed in."""
+    """Tag whatever fails inside with the stage it failed in, and record the stage.
+
+    The `task_stages` row is best-effort, on a short-lived session of its own: a database blip
+    while writing it is logged and dropped, and never fails the stage, changes its exception
+    or delays the result. A task with no sink (a caller that is not `run_task`) records nothing.
+    """
+    sink = _stage_sink.get()
+    row_id: uuid.UUID | None = None
+    if sink is not None:
+        try:
+            row_id = await asyncio.wait_for(_write_stage_start(sink, name), STAGE_WRITE_TIMEOUT_SECONDS)
+        except Exception as exc:  # noqa: BLE001 -- the record is best-effort; the stage must still run
+            log.error("pipeline.stage.record_failed", stage=name, error=_short(exc))
     try:
         yield
-    except PipelineError:
-        raise  # already tagged
-    except Exception as exc:
-        raise StageFailed(name, _describe(exc)) from exc
+    except BaseException as exc:
+        await _finish_stage(sink, row_id, name, "failed", exc)
+        if isinstance(exc, Exception) and not isinstance(exc, PipelineError):
+            raise StageFailed(name, _describe(exc)) from exc
+        raise  # already tagged, or cancellation
+    else:
+        await _finish_stage(sink, row_id, name, "ok", None)
 
 
-async def _claim(state: AsyncSession, task_id: uuid.UUID) -> tuple[Task, RegisteredRepo]:
+def _short(exc: BaseException) -> str:
+    return f"{type(exc).__name__}: {exc}"[:300]
+
+
+async def _finish_stage(
+    sink: _StageSink | None, row_id: uuid.UUID | None, name: str, status: str, failure: BaseException | None
+) -> None:
+    """Close the stage's row. Everything, including describing `failure`, is inside the guard,
+    so nothing here can replace the stage's own exception."""
+    if sink is None or row_id is None:
+        return
+    try:
+        error = _stage_error(failure) if failure is not None else None
+        await asyncio.wait_for(_write_stage_end(sink, row_id, status, error), STAGE_WRITE_TIMEOUT_SECONDS)
+    except Exception as exc:  # noqa: BLE001 -- best-effort, see `_stage`
+        log.error("pipeline.stage.record_failed", stage=name, error=_short(exc))
+
+
+def default_claimant() -> str:
+    """`<hostname>:<pid>`, what `tasks.claimed_by` says when the caller names no one else."""
+    return f"{socket.gethostname()}:{os.getpid()}"
+
+
+async def _heartbeat(session_factory, task_id: uuid.UUID, interval: float) -> None:
+    """Bump `tasks.heartbeat_at` every `interval` seconds until cancelled.
+
+    Its own session per beat, and a failed beat is logged and skipped: a database blip must
+    not end the task, and one missed beat is well inside the reaper's tolerance. Only
+    cancellation ends the loop.
+    """
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            async with session_factory() as session:
+                await session.execute(update(Task)
+                    .where(Task.id == task_id, Task.status == TaskStatus.RUNNING)
+                    .values(heartbeat_at=func.now()))
+                await session.commit()
+        except Exception as exc:  # noqa: BLE001 -- a missed beat must not fail the task
+            log.error("pipeline.heartbeat.failed", error=str(exc)[:300])
+
+
+async def _stop_heartbeat(heartbeat: asyncio.Task) -> None:
+    """Cancel the heartbeat and wait for it to be gone.
+
+    `asyncio.wait` never raises the child's outcome, and it still propagates *our own*
+    cancellation, which `suppress(CancelledError)` around `await heartbeat` would have
+    swallowed.
+    """
+    heartbeat.cancel()
+    await asyncio.wait({heartbeat})
+    if not heartbeat.cancelled() and heartbeat.exception() is not None:
+        log.error("pipeline.heartbeat.crashed", error=_short(heartbeat.exception()))
+
+
+async def _claim(
+    state: AsyncSession, task_id: uuid.UUID, claimed_by: str | None = None
+) -> tuple[Task, RegisteredRepo]:
     """Move `queued` -> `running`, but only if it is still queued.
 
     Conditional rather than a read-then-write: it makes a second CLI run against
@@ -254,7 +379,12 @@ async def _claim(state: AsyncSession, task_id: uuid.UUID) -> tuple[Task, Registe
     result = await state.execute(
         update(Task)
         .where(Task.id == task_id, Task.status == TaskStatus.QUEUED)
-        .values(status=TaskStatus.RUNNING, started_at=func.now())
+        .values(
+            status=TaskStatus.RUNNING,
+            started_at=func.now(),
+            claimed_by=claimed_by if claimed_by is not None else default_claimant(),
+            heartbeat_at=func.now(),
+        )
     )
     if result.rowcount == 0:
         existing = await state.get(Task, task_id)
@@ -548,13 +678,16 @@ def _agent_stop_from(exc: BaseException) -> StopReason | None:
     would hide that bug inside the headline's denominator, indistinguishable from a real step
     cap, and a run that had already scored a passing attempt could even open a PR. It stays
     a harness error (FAILED, `agent: GraphRecursionError`), as the graph module says.
-    `UnpricedModelError`, `MissingProviderKey` and `NoTaskScope` stay
-    harness errors: they mean the measurement itself is broken.
+    `UnpricedModelError`, `MissingProviderKey`, `NoTaskScope` and an `LLMCallError` whose kind is
+    `auth` or `quota` stay harness errors: they mean the measurement itself is broken.
     """
     if isinstance(exc, BudgetExceeded):
         return _BUDGET_STOPS[exc.limit]
     if isinstance(exc, LLMCallError):
-        return StopReason.LLM_ERROR
+        # A provider that refuses our key or has no quota left is repolace's problem, not the
+        # agent's: it stays a harness error (FAILED), carrying the gateway's fixed prefix, so the
+        # report keeps it out of the agent's failures and the eval runner can stop dispatching.
+        return None if exc.provider_refused else StopReason.LLM_ERROR
     return None
 
 
@@ -1113,6 +1246,8 @@ async def run_task(
     embedding_strategy: str = DEFAULT_STRATEGY,
     max_changed_files: int | None = None,
     max_changed_lines: int | None = None,
+    claimed_by: str | None = None,
+    heartbeat_interval: float = HEARTBEAT_INTERVAL_SECONDS,
 ) -> RunResult:
     """Run one task. `backend` and `specs` are the caller's, like everything else.
 
@@ -1134,6 +1269,8 @@ async def run_task(
     * `open_pr` -- False never opens one, whatever the gate would say. A gold run refuses True.
     * `embedding_strategy` -- how the index is built and queried.
     * `max_changed_files`, `max_changed_lines` -- the PR scope cap (see `gate`); None is no cap.
+    * `claimed_by` -- who is running the task, written to `tasks.claimed_by`; None is `<hostname>:<pid>`.
+    * `heartbeat_interval` -- seconds between `tasks.heartbeat_at` bumps while the task runs.
     """
     if isinstance(agent, GoldAgent) and open_pr:
         # In the API, not only in the CLI: a gold run validates an instance by pushing the reference
@@ -1154,23 +1291,30 @@ async def run_task(
     )
     progress = _Progress()
     async with session_factory() as state:
-        task, repo = await _claim(state, task_id)
+        task, repo = await _claim(state, task_id, claimed_by)
 
         # The context-manager form, so the binding unwinds. `bind_contextvars`
         # is never unbound anywhere in this codebase and bleeds across tasks.
-        with structlog.contextvars.bound_contextvars(
-            task_id=str(task_id), repo=repo.full_name, issue_number=task.issue_number
-        ):
-            try:
-                return await _run_stages(
-                    state, session_factory, github, task, repo, backend, specs or {}, seams, progress
-                )
-            except StageFailed as exc:
-                return await _fail(state, session_factory, task_id, exc.stage, exc.message, progress)
-            except Exception as exc:  # noqa: BLE001 -- records the task as failed; cancellation is handled below
-                return await _fail(state, session_factory, task_id, "unknown", _describe(exc), progress)
-            except BaseException as exc:
-                # Ctrl-C or cancellation would otherwise leave the task
-                # `running` forever with nothing to reap it.
-                await _fail(state, session_factory, task_id, "interrupted", type(exc).__name__, progress)
-                raise
+        sink_token = _stage_sink.set(_StageSink(session_factory, task_id))
+        heartbeat = asyncio.create_task(_heartbeat(session_factory, task_id, heartbeat_interval))
+        try:
+            with structlog.contextvars.bound_contextvars(
+                task_id=str(task_id), repo=repo.full_name, issue_number=task.issue_number
+            ):
+                try:
+                    return await _run_stages(
+                        state, session_factory, github, task, repo, backend, specs or {}, seams, progress
+                    )
+                except StageFailed as exc:
+                    return await _fail(state, session_factory, task_id, exc.stage, exc.message, progress)
+                except Exception as exc:  # noqa: BLE001 -- records the task as failed; cancellation is handled below
+                    return await _fail(state, session_factory, task_id, "unknown", _describe(exc), progress)
+                except BaseException as exc:
+                    # Ctrl-C or cancellation would otherwise leave the task
+                    # `running` forever with nothing to reap it.
+                    await _fail(state, session_factory, task_id, "interrupted", type(exc).__name__, progress)
+                    raise
+        finally:
+            # Always stopped and awaited, so it never outlives the task or raises after it.
+            await _stop_heartbeat(heartbeat)
+            _stage_sink.reset(sink_token)

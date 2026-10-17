@@ -107,6 +107,10 @@ class TaskBudget:
         return self.clock() - self.started_at
 
     @property
+    def remaining_wall_seconds(self) -> float:
+        return max(self.max_wall_seconds - self.elapsed_seconds, 0.0)
+
+    @property
     def remaining_usd(self) -> Decimal:
         return max(self.max_usd - self.spent_usd, Decimal(0))
 

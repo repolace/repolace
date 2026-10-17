@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Tasks | {{ repo.full_name }} | repolace{% endblock %}
+{% block crumbs %}
+<li><a href="/ui/repos">Repositories</a></li>
+<li>{{ repo.full_name }}</li>
+<li aria-current="page">Tasks</li>
+{% endblock %}
+{% block action %}<a class="btn btn-primary" href="/ui/repos/{{ repo.id }}/tasks/new">{{ icon("plus") }}New task</a>{% endblock %}
+{% block content %}
+<div class="pagehead"><h1>Tasks</h1><span class="mono">{{ repo.full_name }}</span><span class="muted">newest first</span></div>
+
+<div id="tasklist">
+<div class="toolbar">
+  <div class="segs" role="group" aria-label="Filter by status">
+    <a class="seg" href="?{{ filters.query(status=none) }}"{% if filters.status is none %} aria-current="true"{% endif %}>all</a>
+    {% for s in statuses %}
+    <a class="seg" href="?{{ filters.query(status=s) }}"{% if filters.status is not none and filters.status.value == s %} aria-current="true"{% endif %}>{{ s }}</a>
+    {% endfor %}
+  </div>
+  <form method="get" action="/ui/repos/{{ repo.id }}/tasks" class="toolbar" id="filters" hx-get="/ui/repos/{{ repo.id }}/tasks" hx-trigger="change" hx-target="#tasklist" hx-select="#tasklist" hx-swap="outerHTML" hx-push-url="true">
+    {% if filters.status is not none %}<input type="hidden" name="status" value="{{ filters.status.value }}">{% endif %}
+    <label class="sel"><span>Outcome</span>
+      <select id="filter-outcome" name="outcome">
+        {% for o in outcome_filters %}<option value="{{ o }}"{% if o == filters.outcome_value %} selected{% endif %}>{{ o if o != "all" else "all outcomes" }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="check"><input id="filter-benchmark" type="checkbox" name="benchmark" value="1"{% if filters.benchmark %} checked{% endif %}>include benchmark</label>
+    <noscript><button class="btn" type="submit">Apply</button></noscript>
+  </form>
+  {% if running_count %}<p class="live"><span class="dot" aria-hidden="true"></span><span>{{ running_count }} running &middot; rows refresh every 3 s</span></p>{% endif %}
+</div>
+
+  <div class="tablewrap" role="region" aria-label="Tasks" tabindex="0">
+    <table class="tasks">
+      <caption class="sr">Tasks for {{ repo.full_name }}, newest first. Status is how far the pipeline got; outcome is whether the issue was fixed.</caption>
+      <thead>
+        <tr>
+          <th scope="col">Issue</th><th scope="col">Target branch</th><th scope="col">Status</th><th scope="col">Outcome</th>
+          <th scope="col" class="num">Cost USD</th><th scope="col">Started</th><th scope="col">PR</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% include "_task_rows.html" %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

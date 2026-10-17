@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 import httpx
 import structlog
 
@@ -7,12 +9,22 @@ from repolace_shared.github.auth import (
     InstallationTokenCache,
     build_app_jwt,
 )
-from repolace_shared.github.schemas import Installation, Issue, PullRequest, Repository
+from repolace_shared.github.schemas import Branch, Installation, Issue, PullRequest, Repository
 
 log = structlog.get_logger()
 
 _PAGE_SIZE = 100
 _MAX_PAGES = 50
+
+
+class BranchList(list[Branch]):
+    """The branches seen, and whether the page cap cut the listing short.
+
+    A caller that needs to know a branch does NOT exist must not trust a
+    truncated list: it asks `get_branch` instead.
+    """
+
+    truncated: bool = False
 
 
 class GithubClient:
@@ -86,6 +98,40 @@ class GithubClient:
                 log.warning("github.pagination.max_pages_exceeded", owner=owner, repo=repo)
                 break
         return [issue for issue in issues if not issue.is_pull_request]
+
+    async def list_branches(self, installation_id: int, owner: str, repo: str) -> BranchList:
+        token = await self._token_cache.get_token(installation_id, self._http)
+        branches = BranchList()
+        page = 1
+        while True:
+            response = await self._http.get(
+                f"/repos/{owner}/{repo}/branches",
+                headers={"Authorization": f"token {token}"},
+                params={"per_page": _PAGE_SIZE, "page": page},
+            )
+            response.raise_for_status()
+            batch = response.json()
+            branches.extend(Branch.model_validate(branch) for branch in batch)
+            if len(batch) < _PAGE_SIZE:
+                break
+            page += 1
+            if page > _MAX_PAGES:
+                log.warning("github.pagination.max_pages_exceeded", owner=owner, repo=repo)
+                branches.truncated = True
+                break
+        return branches
+
+    async def branch_exists(self, installation_id: int, owner: str, repo: str, name: str) -> bool:
+        """Ask GitHub about one branch. `name` is URL-quoted (slashes kept: they are part of the name)."""
+        token = await self._token_cache.get_token(installation_id, self._http)
+        response = await self._http.get(
+            f"/repos/{owner}/{repo}/branches/{quote(name, safe='/')}",
+            headers={"Authorization": f"token {token}"},
+        )
+        if response.status_code == 404:
+            return False
+        response.raise_for_status()
+        return True
 
     async def create_pull_request(
         self,

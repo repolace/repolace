@@ -1,0 +1,116 @@
+{% from "_macros.html" import badge, chip, time, costbar, strip_node, diff_block %}
+{% from "_icons.html" import icon %}
+{% set t = v.detail %}
+{% set oc = t.outcome.value if t.outcome else none %}
+
+<div class="metaline">
+  <span hidden data-task-id="{{ t.id }}" data-issue="{{ t.issue_number }}" data-task-status="{{ t.status.value }}" data-task-stage="{{ v.running_label or '' }}"></span>
+  {{ badge(t.status.value) }}
+  {{ chip(oc, t.test_edit_approved_by, t.test_edit_approved_at) }}
+  <span>targets <span class="branch">{{ icon("branch") }}{{ t.target_branch }}</span></span>
+  <span>started {{ time(t.started_at) }}</span>
+  {% if v.ran_seconds is not none %}<span>{{ "ran" if not v.live else "running for" }} {% if v.live %}<span class="mono" aria-hidden="true">{{ v.ran }}</span>{% else %}<span class="mono">{{ v.ran }}</span>{% endif %}</span>{% endif %}
+  {% if is_https(t.pr_url) %}<a href="{{ t.pr_url }}" target="_blank" rel="noopener noreferrer" class="mono">{{ icon("pr_opened") }} PR #{{ t.pr_number }}</a>{% else %}<span class="muted">no PR</span>{% endif %}
+  {% if t.is_benchmark %}<span class="tag">benchmark</span>{% endif %}
+  {% if v.heartbeat_stale_seconds is not none %}<span class="flag">{{ icon("triangle") }}no heartbeat for {{ duration(v.heartbeat_stale_seconds) }}</span>{% endif %}
+</div>
+
+{% if t.status.value == "failed" %}
+<section class="err-block" aria-labelledby="errh" hx-disable>
+  <div class="row">{{ icon("circle-x") }}<h2 id="errh">{{ v.failure_title }}</h2></div>
+  <p>repolace itself broke while running this task. That is not a verdict on the issue, and the outcome stays <span class="mono">{{ unscored }}</span>.</p>
+  {% if t.error_message %}<pre class="msg">{{ t.error_message }}</pre>
+  {% elif t.is_benchmark %}<p class="muted">The error text of a benchmark task is withheld here.</p>
+  {% else %}<p class="muted">No error message was recorded.</p>{% endif %}
+</section>
+{% endif %}
+
+<section class="strip-wrap" aria-labelledby="plh">
+  <h2 id="plh" class="sr">Pipeline</h2>
+  <ol class="strip">
+    {% for n in v.main_nodes %}{{ strip_node(n) }}{% endfor %}
+    <li class="tailgrp"><ol class="strip" aria-label="Delivery">{% for n in v.delivery_nodes %}{{ strip_node(n) }}{% endfor %}</ol></li>
+  </ol>
+</section>
+
+<div class="layout">
+  <div class="main">
+    <section class="panel" aria-labelledby="resh">
+      <header><h2 id="resh">Result</h2></header>
+      {% if v.live %}
+      <div class="body">{% if t.status.value == "queued" %}Queued: waiting for a worker to claim this task.{% else %}Running: {{ v.running_label or "starting" }}.{% endif %}</div>
+      {% else %}
+      <dl class="result">
+        <dt>Stop reason</dt>
+        <dd>{% if v.stop_reason %}<span class="mono">{{ v.stop_reason }}</span><span class="gloss">{{ stop_gloss.get(v.stop_reason, "") }}</span>
+          {% else %}<span class="mono">&mdash;</span><span class="gloss">{% if t.status.value == "failed" %}The agent never stopped on its own; the pipeline failed first.{% else %}The agent did not run.{% endif %}</span>{% endif %}</dd>
+        <dt>Outcome</dt>
+        <dd>{{ chip(oc, t.test_edit_approved_by, t.test_edit_approved_at) }}
+          {% if t.score_reason %}<span class="gloss reason">{{ t.score_reason }}</span>
+          {% elif t.is_benchmark %}<span class="gloss">The score sentence of a benchmark task is withheld here.</span>
+          {% elif oc is none %}<span class="gloss">{% if t.status.value == "failed" %}Not scored: repolace failed before an attempt was scored.{% else %}Not scored: the task was inadmissible.{% endif %}</span>{% endif %}</dd>
+        {% if oc == "passed_with_test_edit" %}
+        <dt>Test edit</dt>
+        <dd>{% if t.test_edit_justification %}<span class="reason">{{ t.test_edit_justification }}</span>{% else %}<span class="gloss">Justification not shown.</span>{% endif %}
+          <span class="gloss">{% if t.test_edit_approved_at %}Approved by {{ t.test_edit_approved_by }} on {{ absolute(t.test_edit_approved_at) }}.{% else %}Awaiting sign-off. This does not count as a pass until a human approves it.{% endif %}</span></dd>
+        {% endif %}
+        <dt>Pull request</dt>
+        <dd>{% if is_https(t.pr_url) %}<a href="{{ t.pr_url }}" target="_blank" rel="noopener noreferrer" class="mono">{{ t.repo_full_name }}#{{ t.pr_number }}</a> {{ icon("arrow-right") }} <span class="branch">{{ icon("branch") }}{{ t.target_branch }}</span>
+          {% if t.status.value == "conflicting" %}<span class="gloss">This PR has merge conflicts; the conflicting files are not recorded.</span>{% endif %}
+          {% else %}<span class="muted">None. Nothing was pushed.</span>{% endif %}</dd>
+      </dl>
+      {% endif %}
+    </section>
+
+    {% if v.diff is not none and v.diff.files %}
+    {{ diff_block(v.diff, v.diff_open, t.pr_url is not none) }}
+    {% elif t.patch_diff is not none and not v.live %}
+    <section class="panel" aria-labelledby="dfh"><header><h2 id="dfh">Diff</h2></header><div class="body muted">No changes.</div></section>
+    {% endif %}
+
+    <section class="panel" aria-labelledby="trh">
+      <header><h2 id="trh">Test runs</h2><span class="muted">attempt 0 is the baseline, before any edit</span></header>
+      {% if t.test_runs %}
+      <div class="tablewrap" role="region" aria-label="Test runs" tabindex="0">
+        <table class="runs">
+          <caption class="sr">Test runs by attempt (counts only)</caption>
+          <thead><tr><th scope="col">Attempt</th><th scope="col" class="num">Passed</th><th scope="col" class="num">Failed</th><th scope="col" class="num">Errors</th><th scope="col" class="num">Duration</th><th scope="col">Result</th></tr></thead>
+          <tbody>
+            {% for r in t.test_runs %}
+            {% set errors = r.collect_failures + (1 if r.error else 0) %}
+            <tr>
+              <td class="mono">{{ r.attempt }}{% if r.attempt == 0 %} <span class="tag">baseline</span>{% endif %}</td>
+              {% if r.error %}<td class="num zero">&mdash;</td><td class="num zero">&mdash;</td>
+              {% else %}<td class="num{{ ' zero' if r.passed == 0 }}">{{ r.passed }}</td><td class="num{{ ' zero' if r.failed == 0 else ' nz-bad' }}">{{ r.failed }}</td>{% endif %}
+              <td class="num{{ ' zero' if errors == 0 else ' nz-bad' }}">{{ errors }}</td>
+              <td class="num">{{ duration(r.duration_seconds|float if r.duration_seconds is not none else none) }}</td>
+              <td>{% if r.error %}<span class="res warn">{{ icon("triangle") }}run aborted</span>
+                {% elif r.failed or r.collect_failures %}<span class="res bad">{{ icon("x") }}{{ r.failed + r.collect_failures }} failing</span>
+                {% else %}<span class="res ok">{{ icon("check") }}all passing</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="body muted">{% if v.live %}No test run has finished yet.{% else %}No test run was recorded.{% endif %}</div>
+      {% endif %}
+    </section>
+  </div>
+
+  <aside class="side" aria-label="Task facts">
+    <dl class="panel facts">
+      <div><dt>Status</dt><dd>{{ badge(t.status.value) }}</dd></div>
+      {% if v.failed %}<div><dt>Failed stage</dt><dd class="mono"><strong>{{ v.failed.label }}</strong></dd></div>{% endif %}
+      <div><dt>Outcome</dt><dd>{{ chip(oc, t.test_edit_approved_by, t.test_edit_approved_at) }}</dd></div>
+      <div><dt>Stop reason</dt><dd class="mono">{{ v.stop_reason or "—" }}</dd></div>
+      <div><dt>Issue</dt><dd>{% if is_https(t.issue_url) %}<a href="{{ t.issue_url }}" target="_blank" rel="noopener noreferrer" class="mono">{{ t.repo_full_name }}#{{ t.issue_number }}</a>{% else %}<span class="mono">{{ t.repo_full_name }}#{{ t.issue_number }}</span>{% endif %}</dd></div>
+      <div><dt>Target branch</dt><dd><span class="branch">{{ icon("branch") }}{{ t.target_branch }}</span></dd></div>
+      <div><dt>Pull request</dt><dd>{% if is_https(t.pr_url) %}<a href="{{ t.pr_url }}" target="_blank" rel="noopener noreferrer" class="mono">#{{ t.pr_number }}</a>{% else %}<span class="muted">none</span>{% endif %}</dd></div>
+      <div><dt>Cost</dt><dd><span class="mono">{{ money(v.cost) }}</span>{% if v.cost is not none %} of {{ money(cap) }} cap{% if v.cost_is_so_far %} <span class="subtle">so far</span>{% endif %}{{ costbar(v.cost_pct) }}{% endif %}</dd></div>
+      <div><dt>Started</dt><dd class="mono">{{ absolute(t.started_at) }}</dd></div>
+      <div><dt>Duration</dt><dd class="mono">{{ v.ran }}</dd></div>
+      <div><dt>Task</dt><dd class="mono" title="{{ t.id }}">{{ short_id(t.id) }}</dd></div>
+    </dl>
+  </aside>
+</div>

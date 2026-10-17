@@ -855,7 +855,7 @@ class TestInstancePath:
             instance_path(tmp_path, instance_id)
 
     def test_a_symlinked_instance_file_is_refused_not_followed(self, tmp_path):
-        """CLAUDE.md: a symlink is refused rather than followed. A `x.json` pointing at
+        """.claude/rules/verify-sandbox.md: a symlink is refused rather than followed. A `x.json` pointing at
         any other readable JSON file would otherwise load as instance `x`."""
         elsewhere = tmp_path / "elsewhere"
         elsewhere.mkdir()

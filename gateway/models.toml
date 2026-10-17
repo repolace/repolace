@@ -1,7 +1,7 @@
 # Stage -> model routing for the LLM gateway. Loaded by repolace_gateway.config.
 #
 # Provider API keys do NOT go here -- they come from the environment
-# (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY) or the repo-root .env.
+# (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, MINIMAX_API_KEY, GOOGLE_API_KEY) or the repo-root .env.
 #
 # Prices: LiteLLM's own price map is used unless a model has a [price] table.
 # The map is pinned to the installed LiteLLM version (LITELLM_LOCAL_MODEL_COST_MAP)
@@ -21,6 +21,10 @@ model = "claude-sonnet-5-5"
 # fallback = "..."          # optional; used only after a transient failure exhausts retries
 cache = true                # the agent loop re-sends a long, mostly stable prefix every step
 max_tokens = 8192
+
+# There is deliberately no [stages.resolve] table: the merge-conflict resolver's `resolve`
+# stage follows `agent` (repolace_gateway.config.OPTIONAL_STAGE_FALLBACKS), so a per-run
+# GATEWAY_STAGE_MODELS override of `agent` reaches it too and a sweep never mixes two models.
 
 [stages.cheap]
 model = "claude-haiku-4-5-20251001"
@@ -78,7 +82,7 @@ supports_prompt_caching = true   # priced by LiteLLM's map; no [price] needed
 # --- comparison models (WP8) -----------------------------------------------
 # Placeholders. Uncomment, fill in, and point a one-run sweep at one with
 #   GATEWAY_STAGE_MODELS='{"agent": "<key>"}'
-# The provider must be one of: anthropic, openai, gemini, and litellm_model must
+# The provider must be one of: anthropic, openai, gemini, minimax, vertex_ai, and litellm_model must
 # start with "<provider>/" (checked at load -- otherwise one vendor's key would
 # be sent to another vendor's API).
 #
@@ -91,3 +95,87 @@ supports_prompt_caching = true   # priced by LiteLLM's map; no [price] needed
 # provider = "gemini"
 # litellm_model = "gemini/CHANGE-ME"
 # supports_prompt_caching = false
+
+# --- comparison models, filled in -------------------------------------------
+# One run each against the Sonnet 5.5 baseline; never mixed with it in one sweep (the report
+# withholds the headline for a mixed run). Select per sweep with
+#   GATEWAY_STAGE_MODELS='{"agent": "gemini-3-8-flash"}'    (or `repolace-eval run --model ...`)
+# Prices were read from each provider's own pricing page on 2026-10-17 (see each entry).
+# supports_prompt_caching is false for both: the gateway sends Anthropic-style `cache_control`,
+# which neither provider is configured to honour here. That does not stop a provider caching a
+# repeated prefix on its own (Gemini does, implicitly), and a response that reports cached tokens
+# against a price with no cache_read rate is refused as unpriced. So the Gemini price below carries
+# its cache_read rate even though the flag is false.
+
+# Gemini 3.8 Flash. LiteLLM 1.98.0's pinned price map has no `gemini-3.8-flash` (the unpinned
+# upstream map does), so the price is set explicitly. ai.google.dev/gemini-api/docs/pricing,
+# Standard tier, paid: input $0.75 and output (including thinking) $3.75 per million tokens
+# THROUGH 2026-12-31. FROM 2027-01-01 THE PAGE LISTS $1.50 AND $7.50: a run after that date
+# must update these rates, or its cost is understated by half. The page also lists a free tier
+# for this model but states no rate limits; they are far below what one task makes (up to 150
+# calls), so run with `-k 1`, expect throttling, and confirm the limits in AI Studio. Outside
+# the EEA, UK and Switzerland the free tier may use prompts for training: fine for the public
+# benchmark repositories, not for private product repositories.
+[models.gemini-3-8-flash]
+provider = "gemini"
+litellm_model = "gemini/gemini-3.8-flash"
+supports_prompt_caching = false
+[models.gemini-3-8-flash.price]
+input = 0.75
+output = 3.75
+cache_read = 0.075   # context cache read, same page and dates as above ($0.15 from 2027-01-01)
+
+# MiniMax M2.5 over MiniMax's OpenAI-compatible API, international endpoint
+# (https://api.minimax.io/v1 by default; a key issued for the China platform, api.minimaxi.com,
+# will not work there, and `MINIMAX_API_BASE` in the process environment redirects it).
+# platform.minimax.io/docs/guides/pricing-paygo lists it under "Legacy Models": input $0.30
+# and output $1.20 per million tokens (cache read $0.03, write $0.375, unused here), the
+# same as LiteLLM's map, which supplies the price. The page mentions no free tier or credits.
+[models.minimax-m2-5]
+provider = "minimax"
+litellm_model = "minimax/MiniMax-M2.5"
+supports_prompt_caching = false
+
+# --- Gemini on Google Vertex AI ----------------------------------------------
+# A Vertex API key (GOOGLE_API_KEY), called over REST by repolace_gateway.vertex: LiteLLM's own
+# `vertex_ai/` route needs Google Cloud OAuth credentials, and its `gemini/` route is AI Studio
+# (the entries above), a different key and billing account. The `vertex_ai/` prefix on
+# litellm_model is only the provider marker the config check requires; LiteLLM is not called.
+#
+# PRICES: read from ai.google.dev/gemini-api/docs/pricing (Standard tier, paid) on 2026-10-17.
+# Vertex's own pricing page is JavaScript-rendered and could not be read, so these are the AI
+# Studio rates, which third-party calculators also list for Vertex's gemini-3.1-pro-preview.
+# CONFIRM THEM AGAINST YOUR CLOUD CONSOLE BEFORE QUOTING A COST: a wrong price is a wrong benchmark.
+#   * gemini-3.8-flash: $0.75 in / $3.75 out per M THROUGH 2026-12-31; the page lists $1.50 / $7.50
+#     (and cache read $0.15) FROM 2027-01-01, so a later run must update these rates.
+#   * gemini-3.1-pro-preview: $2.00 / $12.00 per M for prompts up to 200k tokens, $4.00 / $18.00
+#     above. The gateway's price table has one tier. The agent caps its transcript at 400,000
+#     characters, roughly 160k tokens at the ~2.5 characters per token this code measures, plus the
+#     system prompt and tool schemas. That is under the 200k line but not by a wide margin: a prompt
+#     over 200k tokens would be undercharged here, so watch `input_tokens` in `llm_calls`.
+# Output includes thinking tokens: the transport adds them to the candidates' tokens.
+# Cache: Gemini's caching is implicit, with a per-call read discount and no per-call write charge
+# (cache_write = 0). Select one per sweep with
+#   GATEWAY_STAGE_MODELS='{"agent": "vertex-gemini-3-1-pro-preview"}'
+# One model serves the whole agent for now; neither is a default stage.
+# A Vertex model must not have a non-Vertex `fallback`: a Gemini 3 thought signature travels inside
+# the tool call id (`call_<n>~<signature>`), and another vendor rejects such an id in the history.
+[models.vertex-gemini-3-8-flash]
+provider = "vertex_ai"
+litellm_model = "vertex_ai/gemini-3.8-flash"
+supports_prompt_caching = true
+[models.vertex-gemini-3-8-flash.price]
+input = 0.75
+output = 3.75
+cache_read = 0.075
+cache_write = 0.0
+
+[models.vertex-gemini-3-1-pro-preview]
+provider = "vertex_ai"
+litellm_model = "vertex_ai/gemini-3.1-pro-preview"
+supports_prompt_caching = true
+[models.vertex-gemini-3-1-pro-preview.price]
+input = 2.00
+output = 12.00
+cache_read = 0.20
+cache_write = 0.0

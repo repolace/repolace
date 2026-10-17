@@ -2512,7 +2512,10 @@ version = "0.0.1"
 source = { editable = "api" }
 dependencies = [
     { name = "alembic" },
+    { name = "celery" },
     { name = "fastapi" },
+    { name = "jinja2" },
+    { name = "pygments" },
     { name = "repolace-shared" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -2520,7 +2523,10 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
+    { name = "celery", specifier = ">=5.4" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "jinja2", specifier = ">=3.1" },
+    { name = "pygments", specifier = ">=2.17" },
     { name = "repolace-shared", editable = "shared" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
@@ -2558,6 +2564,7 @@ version = "0.0.1"
 source = { editable = "gateway" }
 dependencies = [
     { name = "boto3" },
+    { name = "httpx" },
     { name = "litellm" },
     { name = "pydantic-settings" },
     { name = "repolace-shared" },
@@ -2568,6 +2575,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", specifier = ">=1.43" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "litellm", specifier = ">=1.50" },
     { name = "pydantic-settings", specifier = ">=2.5" },
     { name = "repolace-shared", editable = "shared" },
@@ -2674,14 +2682,24 @@ source = { editable = "worker" }
 dependencies = [
     { name = "celery", extra = ["redis"] },
     { name = "docker" },
+    { name = "pydantic-settings" },
+    { name = "repolace-pipeline" },
+    { name = "repolace-rag" },
     { name = "repolace-shared" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "structlog" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "celery", extras = ["redis"], specifier = ">=5.4" },
     { name = "docker", specifier = ">=7.1" },
+    { name = "pydantic-settings", specifier = ">=2.5" },
+    { name = "repolace-pipeline", editable = "pipeline" },
+    { name = "repolace-rag", editable = "rag" },
     { name = "repolace-shared", editable = "shared" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
+    { name = "structlog", specifier = ">=24.1" },
 ]
 
 [[package]]

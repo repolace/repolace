@@ -272,7 +272,8 @@ def _git(repo_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
     `CalledProcessError` handling is load-bearing (`reindex_if_stale` falls back
     to a full reindex on it), and converting to the async `run_git` would change
     the exception type across that boundary. Unifying the two wrappers is a
-    known duplication and a deliberate deferral, recorded in CLAUDE.md.
+    known duplication and a deliberate deferral, recorded in
+    .claude/rules/git-and-pr-flow.md.
     """
     return subprocess.run(
         ["git", *UNTRUSTED_TREE_CONFIG_ARGS, *args],

@@ -20,7 +20,8 @@ as delimited untrusted data like any other issue body.
 
 **An id that came from a database row goes through `load_instance_by_id`.**
 `tasks.instance_id` is a DB value, and `directory / f"{id}.json"` built by hand is
-exactly the "path from a database row" pattern CLAUDE.md requires
+exactly the "path from a database row" pattern that
+.claude/rules/verify-sandbox.md ("A third route into the same class") requires
 `resolve_within` for: a row holding `../../x` would point `load_instance` at any
 JSON file on the host. `instance_path` validates the id with the same rule the
 files are held to and confines the result; `load_instance(path)` is for a path

@@ -7,8 +7,11 @@ from repolace_shared.github.client import GithubClient
 from repolace_shared.logging import configure_logging
 
 from repolace_api.config import get_settings
+from repolace_api.publisher import CeleryTaskPublisher
 from repolace_api.routes.github import router as github_router
 from repolace_api.routes.repos import router as repos_router
+from repolace_api.routes.tasks import router as tasks_router
+from repolace_api.ui import mount_ui
 
 
 @asynccontextmanager
@@ -20,7 +23,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.session_factory = create_session_factory(engine)
     app.state.github_client = GithubClient(settings.github_app_id, settings.github_app_private_key)
 
+    app.state.publisher = CeleryTaskPublisher(settings.celery_broker_url)
+
     yield
+
+    app.state.publisher.close()
 
     await app.state.github_client.aclose()
     await engine.dispose()
@@ -29,6 +36,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="repolace", lifespan=lifespan)
 app.include_router(github_router)
 app.include_router(repos_router)
+app.include_router(tasks_router)
+mount_ui(app)
 
 
 @app.get("/healthz")

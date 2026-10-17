@@ -29,6 +29,7 @@ from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from repolace_gateway.errors import ConfigError, MissingProviderKey, UnpricedModelError
+from repolace_gateway.vertex import is_valid_model_id
 
 _REPO_ROOT_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 DEFAULT_MODELS_PATH = Path(__file__).resolve().parents[1] / "models.toml"
@@ -40,6 +41,9 @@ PROVIDER_KEY_FIELDS: Mapping[str, str] = {
     "anthropic": "anthropic_api_key",
     "openai": "openai_api_key",
     "gemini": "gemini_api_key",
+    "minimax": "minimax_api_key",
+    #: A Vertex AI API key (not an AI Studio one): see `repolace_gateway.vertex`.
+    "vertex_ai": "google_api_key",
 }
 
 #: Providers that authenticate with the AWS credential chain rather than one API key.
@@ -55,6 +59,13 @@ KNOWN_PROVIDERS = tuple(sorted({*PROVIDER_KEY_FIELDS, *AWS_PROVIDERS}))
 #: Stages the pipeline calls by name. A config missing either is wrong at load.
 REQUIRED_STAGES = ("agent", "cheap")
 
+#: Stages a config may omit, and the stage whose route a missing one takes. Resolved at
+#: `route()` time, not copied at load, so a per-run `GATEWAY_STAGE_MODELS` override of the
+#: `agent` stage carries over to a stage that follows it. The shipped `models.toml` leaves
+#: `resolve` out on purpose, so a sweep's `--model` reaches the resolver too. An explicit
+#: override naming the optional stage (`{"resolve": "<model>"}`) is accepted while it is absent.
+OPTIONAL_STAGE_FALLBACKS = {"resolve": "agent"}
+
 _MILLION = Decimal(1_000_000)
 #: Anything shorter is not a credential, and replacing it everywhere in a stored
 #: prompt would corrupt the record instead of protecting it.
@@ -69,6 +80,8 @@ class GatewaySettings(BaseSettings):
     anthropic_api_key: SecretStr | None = None
     openai_api_key: SecretStr | None = None
     gemini_api_key: SecretStr | None = None
+    minimax_api_key: SecretStr | None = None
+    google_api_key: SecretStr | None = None
     #: Aliased so the environment names carry a `GATEWAY_` prefix: bare
     #: `MODELS_PATH` and `STAGE_MODELS` are too generic to claim in a shared `.env`.
     #: (The provider keys keep their standard names, which other tooling expects.)
@@ -222,6 +235,8 @@ class GatewayConfig:
 
     def route(self, stage: str) -> Route:
         stage_config = self.stages.get(stage)
+        if stage_config is None and stage in OPTIONAL_STAGE_FALLBACKS:
+            stage_config = self.stages.get(OPTIONAL_STAGE_FALLBACKS[stage])
         if stage_config is None:
             raise ConfigError(f"unknown stage {stage!r}; configured: {sorted(self.stages)}")
         return Route(
@@ -234,6 +249,9 @@ class GatewayConfig:
         """The same config with some stages pointed at other models."""
         stages = dict(self.stages)
         for stage, model_key in overrides.items():
+            if stage not in stages and stage in OPTIONAL_STAGE_FALLBACKS:
+                # An absent optional stage is overridable: it starts from its fallback's settings.
+                stages[stage] = stages[OPTIONAL_STAGE_FALLBACKS[stage]]
             if stage not in stages:
                 raise ConfigError(f"cannot override unknown stage {stage!r}; configured: {sorted(stages)}")
             if model_key not in self.models:
@@ -316,6 +334,8 @@ def _parse_model(key: str, table: Mapping[str, Any]) -> ModelConfig:
             f"{where}.litellm_model: {litellm_model!r} does not start with {provider + '/'!r}; the "
             "provider's key would be sent to a different vendor"
         )
+    if provider == "vertex_ai" and not is_valid_model_id(litellm_model.split("/", 1)[1]):
+        raise ConfigError(f"{where}.litellm_model: {litellm_model!r} is not a plain Vertex model id")
     price_table = table.get("price")
     if price_table is not None and not isinstance(price_table, dict):
         raise ConfigError(f"{where}.price: expected a table")

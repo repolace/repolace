@@ -8,7 +8,7 @@ and no global mock.
 
 import pytest
 from api_support import FakeGithub, client_for, raw_issue, seed_repo
-from repolace_shared.db.models import Task
+from repolace_shared.db.models import Task, TaskStatus
 from sqlalchemy import select
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db]
@@ -78,3 +78,44 @@ class TestResponseShapeIsUnchanged:
 
         assert response.status_code == 404
         assert await stored_bodies(db_session) == []
+
+
+class TestOneTaskInFlightPerIssue:
+    async def two_posts(self, db_session, db_session_factory, *, first_status=None, second_branch=None):
+        repo = await seed_repo(db_session)
+        async with client_for(db_session_factory, FakeGithub(raw_issue(7))) as client:
+            first = await client.post(f"/repos/{repo.id}/tasks", json={"issue_number": 7})
+            if first_status is not None:
+                task = (await db_session.execute(select(Task))).scalar_one()
+                task.status = first_status
+                await db_session.commit()
+            body = {"issue_number": 7} if second_branch is None else {"issue_number": 7, "target_branch": second_branch}
+            second = await client.post(f"/repos/{repo.id}/tasks", json=body)
+        return first, second
+
+    async def test_a_second_post_while_the_first_is_queued_is_refused_and_creates_nothing(
+        self, db_session, db_session_factory
+    ):
+        first, second = await self.two_posts(db_session, db_session_factory)
+
+        assert first.status_code == 201
+        assert second.status_code == 409
+        assert len(await stored_bodies(db_session)) == 1
+
+    async def test_a_running_task_also_blocks(self, db_session, db_session_factory):
+        _, second = await self.two_posts(db_session, db_session_factory, first_status=TaskStatus.RUNNING)
+
+        assert second.status_code == 409
+
+    async def test_a_finished_task_does_not_block_a_retry(self, db_session, db_session_factory):
+        _, second = await self.two_posts(db_session, db_session_factory, first_status=TaskStatus.FAILED)
+
+        assert second.status_code == 201
+
+    async def test_another_target_branch_is_a_different_task(self, db_session, db_session_factory):
+        repo = await seed_repo(db_session)
+        async with client_for(db_session_factory, FakeGithub(raw_issue(7))) as client:
+            await client.post(f"/repos/{repo.id}/tasks", json={"issue_number": 7})
+            other = await client.post(f"/repos/{repo.id}/tasks", json={"issue_number": 7, "target_branch": "develop"})
+
+        assert other.status_code == 201

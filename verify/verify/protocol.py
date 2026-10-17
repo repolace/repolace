@@ -5,8 +5,8 @@ swapping Docker for gVisor, a microVM, or a remote executor is a new
 implementation of one Protocol rather than a change to the pipeline -- which is
 what CLAUDE.md's Phase 5 replacement order assumes.
 
-Note `run_tests` takes a *directory*, not a patch. CLAUDE.md puts patch
-application on the host; handing a patch to the sandbox would mean the sandbox
+Note `run_tests` takes a *directory*, not a patch. .claude/rules/verify-sandbox.md
+("Where the boundary falls") puts patch application on the host; handing a patch to the sandbox would mean the sandbox
 needs git and a tree to reason about, which is the coupling this design exists
 to avoid.
 """

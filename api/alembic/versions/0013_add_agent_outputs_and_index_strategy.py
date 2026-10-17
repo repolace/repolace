@@ -27,8 +27,8 @@ tests), so adding it cannot fail on existing data.
   because without it "submitted clean" and "ran out of attempts still red" both
   read `submitted`, and a report that cannot tell them apart is the one
   distribution the benchmark most needs. The reason is a separate column from
-  `error_message` because CLAUDE.md reserves `error_message` for FAILED
-  ("exactly one meaning") -- an agent that ran out of budget did not break
+  `error_message` because .claude/rules/task-bookkeeping.md reserves
+  `error_message` for FAILED ("exactly one meaning") -- an agent that ran out of budget did not break
   repolace, so its reason cannot live there.
 * `registered_repos.index_strategy` is the embedding strategy the repo's index
   was built with; NULL means the legacy `truncate`. Without it, changing the
