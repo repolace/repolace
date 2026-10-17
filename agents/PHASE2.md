@@ -1,50 +1,85 @@
-# Phase 2: splitting the agent into roles
+# Phase 2: the agent split into roles
 
 Lives on `phase-2/agents` and is **not merged** until the Phase 1 benchmark has run on `main`.
 Only the role split is here; every other Phase 2 item (worker, queue, UI, merge-conflict handling
 and its pipeline hooks) is ordinary work on `main`.
 
 The split exists to answer one question with the same instances: does it beat the single agent?
-So `roles=False` must reproduce today's graph byte for byte.
+So it is **off by default everywhere**, and with it off the graph is the single agent's, byte for
+byte. Nothing below has run against a real model, so nothing here says the split helps.
 
-## The contract that does not change
-- `AgentRunner`: `async (AgentDeps) -> AgentResult` (`contracts.py`). `AgentDeps`, `AgentResult` and
-  the eight `StopReason` values stay as they are; the stop reasons are mirrored behind
-  `ck_tasks_agent_stop_reason`, so a new one needs a migration. Map role failures onto the existing eight.
-- `AgentResult.attempts` counts only `verify_attempt` records. `run._check_against_scorer` fails the
-  task if it disagrees with the scorer, and the review stage rewinds to `last_attempt.commit_sha`.
-- The pipeline calls `run_agent`, never `run_graph`. Roles inherit the task's `task_scope` and budget
-  (150 calls, $2, 3600 s) and cannot bypass it.
+## What exists
 
-## Graph with roles on
-`localize -> plan -> edit -> verify -> route`, where `route` sends a red result to `debug` (then back to
-`verify`) and a clean one to `review`; a `request_changes` verdict becomes one more edit attempt, within
-`max_attempts`. With `roles=False`, `build_graph` returns the current `localize -> agent -> verify -> route`.
+**The switch.** `AgentLimits.roles: bool = False`. The pipeline and the worker build
+`AgentLimits()`, so they run the single agent. Only the runner turns it on: `LLMAgent(roles=True)`
+replaces `deps.limits` with `roles=True` and still calls `run_agent`. `repolace-run-task --roles`
+(only with `--agent llm`) builds that runner; `repolace-eval enqueue --roles` records it in the run
+manifest, and `repolace-eval run --roles` passes it to every task and refuses to start if the
+manifest disagrees. `AgentDeps`, `AgentResult`, `AgentRunner` and the eight `StopReason` values are
+unchanged (no migration).
 
-| role | tools | notes |
-|---|---|---|
-| planner | `search_code`, `read_file`, `grep`, `list_dir`, `submit_plan` | read-only; its plan reaches the editor framed as `data_block("plan", nonce, ...)`, because it is derived from untrusted issue text |
-| editor | all nine | today's agent, with the plan in its first message |
-| debugger | editor tools plus `rewind(attempt)` | feedback only from `render_feedback`; `rewind` accepts only scorer-recorded commits |
-| reviewer | read-only plus `submit_review` | reads `review_diff` against the plan as a data block; its verdict can add a retry, never read the oracle |
+**The graph** (`repolace_agents/roles.py`, built by `graph.build_graph(roles=True)`):
 
-## Implementation steps
-1. Extract the inlined tool loop in `graph.py:245-330` into `_run_loop(ctx, messages, toolbox, stage, step_cap, exit_tool)`; the current `agent` node becomes its first caller with no behaviour change (tests stay green).
-2. `ToolBox.subset(names)` and per-role schemas; the system prompt becomes a pure function of `(role, limits, nonce)`, and the "hostile issue leaves the prompt identical" test runs per role.
-3. `roles: bool = False` as a runner/`AgentLimits` option, **not** a field of `AgentDeps`.
-4. Planner, then reviewer, then debugger, each with tests; add `plan` to the closer-neutralised tag families in `render.py`.
-5. Raise `recursion_limit_for` with the node count.
+```
+localize -> planner -> editor -> verify -> route_roles
+               |                            |-- red, attempts left   -> debugger -> verify
+               `-- budget / LLM stop: END   |-- clean, attempts left -> reviewer -> editor | END
+                                            `-- anything else        -> END
+```
 
-## Invariants the split must keep
-- `verify` is the only node that reads `deps.baseline` or an attempt's `result`. Add every new module to `ORACLE_SCANNED_FILES` and `ORACLE_BLIND_FILES` in `tests/test_graph_oracle.py`, and extend the metamorphic and graph-differential tests so role routing is not a function of hidden outcomes.
-- Each role loop gets its own step cap, splitting the 40 steps per attempt rather than multiplying them; the gateway's call cap still bounds the total.
+| role | stage | tools | first input |
+|---|---|---|---|
+| planner | `plan` | `search_code`, `read_file`, `grep`, `list_dir`, `submit_plan` | the briefing: the issue, repository and retrieval blocks of the single agent's localize message plus the filtered baseline summary |
+| editor | `agent` | the nine | the briefing and the plan in a `plan` block (or "no plan") |
+| debugger | `agent` | the nine plus `rewind(attempt)` | the editor's conversation, earlier tool outputs elided, ending in the feedback filter's message |
+| reviewer | `review` | the four read-only tools plus `submit_review` | the briefing, the plan, and `git diff <base>...HEAD` in an `output` block |
 
-## Gateway and reporting
-- `gateway/models.toml` has only the `agent` and `cheap` stages (both required). `cheap` has `max_tokens=1024` and no cache, which a tool-loop planner cannot use; add `plan` and `review` stages. `llm_calls.stage` is a free string, so no migration.
-- For a sweep, new stages must default to the agent's model, or the comparison mixes models. The eval manifest sets only `{"agent": model}` today.
-- `finalize.first_model` takes the earliest call, so a planner on a cheaper model would make the PR body and report name that model; pick the editor's.
-- The CLI preflights only the agent stage (`cli.py`); preflight every stage the roles use, or a missing key fails mid-run.
-- Record `roles` in the run manifest (`eval/harness/run_manifest.py`) and pass it through enqueue and the runner.
+- Every model-calling node goes through `graph._run_loop`, the single agent's loop extracted
+  unchanged, so every bound holds for every role: 8 tool calls per reply, the budget checked
+  between calls, mid-attempt elision, malformed arguments replayed as `{}`, every call answered.
+- `verify` is the single agent's node, still the only reader of `deps.baseline` and of a result,
+  wrapped only to remember `(attempt, commit_sha)` for `rewind`. `route_roles` reads exactly what
+  `route` reads. So hidden tests steer a roles run by the same one bit as the single agent.
+- The editor and the debugger share one transcript (the single agent's conversation, the system
+  message swapped to the role running); the planner and the reviewer each get a fresh one.
+- A request for changes adds exactly one editing attempt within `max_attempts`, with the comments
+  in a `review` block; the last attempt is never reviewed.
+- `rewind` takes a number and resolves it only against commits the scorer recorded, through
+  `GitRepo.reset_hard`. The reviewer's diff is `GitRepo.diff_from(base)`, with `base` the HEAD read
+  once before the planner. Both are the calls the pipeline's `rewind_to` and `review_diff` make.
+- Step caps split the 40 steps per attempt: planner a quarter, reviewer an eighth, editor and
+  debugger the rest (10/5/25); at least 3 steps per attempt. One gateway `task_scope` and budget
+  for all roles. Recursion limit `6 * max_attempts + 10`.
+- Role failures map onto the eight stop reasons: a budget or provider failure in the planner or the
+  reviewer is that `BUDGET_*` or `LLM_ERROR` (a provider refusal still propagates); a planner that
+  never submits leaves the editor without a plan; a reviewer with no verdict leaves the change
+  standing; an editor that changes nothing after a review keeps its own stop reason.
+- Prompts (`role_prompts.py`): each system prompt is a pure function of `(role, limits, nonce)`;
+  `Role.AGENT` is the single agent's prompt unchanged. Role tools are in `tools/role_tools.py`.
+- `render.py` neutralises `plan` and `review` closers along with the six other families.
 
-## Open question
-The merge-conflict resolver is not part of this branch. If it needs a tool set or graph node inside `agents/`, decide then which side it lands on.
+**Gateway and reporting.** `plan` and `review` are optional stages in
+`OPTIONAL_STAGE_FALLBACKS`, deliberately without a table in `gateway/models.toml`, so they follow
+`agent` (and a sweep's `--model`) unless a config names them. With `--roles` the CLI preflights
+`agent`, `resolve`, `plan` and `review`; without it, `agent` and `resolve` as before.
+`finalize.first_model` names the first `agent`-stage call, the editor's. The manifest's `roles` key is
+written only when true, so a single-agent manifest is unchanged.
+
+**Tests.** `test_roles_differential.py` (sixteen scenarios through `run_graph` and through a verbatim
+copy of the pre-split agent node: identical requests, results and spend), `test_roles_graph.py`
+(routing, caps, budget, per-role hostile issue, recursion guard), `test_roles_oracle.py` (sentinels
+and hidden-only differences under the roles), `test_roles_rewind.py` (real git),
+`test_roles_prompts.py`; `pipeline/tests/test_pipeline_roles*.py` (CLI, preflight, and a real
+`run_task` through the roles with real git and the real gateway client over a scripted provider);
+`gateway/tests/test_gateway_role_stages.py`; `eval/tests/test_eval_roles.py`.
+
+## What does not exist
+
+- **Any measurement.** No roles run against a real provider, no benchmark comparison. The step-cap
+  proportions are a starting point, not a measured optimum.
+- **Roles in the worker.** The Celery worker always runs the single agent; nothing there sets
+  `roles`. Its preflight therefore stays `agent` and `resolve`.
+- **The report naming the editor's model.** `eval/harness/report.py` takes a task's first call of any
+  stage as its model; with the default config every role uses one model, so this only matters for a
+  config that points `plan` elsewhere. Not changed here (the report belongs to the Phase 1 benchmark).
+- **The merge-conflict resolver** is not part of this branch and does not share the roles' graph.
