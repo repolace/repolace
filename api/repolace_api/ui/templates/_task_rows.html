@@ -1,0 +1,21 @@
+{% from "_macros.html" import task_row %}
+{% from "_icons.html" import icon %}
+{% for row in rows %}
+{{ task_row(row) }}
+{% else %}
+{% if next_cursor is none %}
+<tr><td colspan="7" class="empty">
+  {% if filters.active %}
+  <p>No tasks match {% if filters.status is not none %}<code class="mono">status={{ filters.status.value }}</code>{% endif %}{% if filters.status is not none and filters.outcome_value != "all" %} and {% endif %}{% if filters.outcome_value != "all" %}<code class="mono">outcome={{ filters.outcome_value }}</code>{% endif %}.</p>
+  <a class="btn" href="/ui/repos/{{ repo.id }}/tasks{{ '?benchmark=1' if filters.benchmark else '' }}">Clear filters</a>
+  {% else %}
+  <p>No tasks yet.</p>
+  <p class="muted">{% if not filters.benchmark %}Benchmark tasks are hidden. {% endif %}Pick an open issue to start one.</p>
+  <a class="btn btn-primary" href="/ui/repos/{{ repo.id }}/tasks/new">{{ icon("plus") }}New task</a>
+  {% endif %}
+</td></tr>
+{% endif %}
+{% endfor %}
+{% if next_cursor %}
+<tr class="loadmore"><td colspan="7"><button type="button" class="btn" hx-get="/ui/repos/{{ repo.id }}/tasks/more?{{ filters.query(cursor=next_cursor) }}" hx-target="closest .loadmore" hx-swap="outerHTML">Load more</button></td></tr>
+{% endif %}

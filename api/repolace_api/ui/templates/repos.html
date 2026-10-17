@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Repositories | repolace{% endblock %}
+{% block crumbs %}<li aria-current="page">Repositories</li>{% endblock %}
+{% block content %}
+<div class="pagehead"><h1>Repositories</h1><span class="muted">{{ repos|length }} registered</span></div>
+{% if repos %}
+<ul class="repolist" aria-label="Registered repositories">
+  {% for r in repos %}
+  <li class="panel repo">
+    <a class="name" href="/ui/repos/{{ r.id }}/tasks">{{ r.full_name }}</a>
+    {% if r.private %}<span class="tag">private</span>{% endif %}
+    <span class="branch">{{ icon("branch") }}{{ r.default_branch }}</span>
+    <span class="spacer"></span>
+    <a class="btn" href="/ui/repos/{{ r.id }}/tasks">Tasks</a>
+    <a class="btn btn-primary" href="/ui/repos/{{ r.id }}/tasks/new">{{ icon("plus") }}New task</a>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="panel empty">
+  <p>No repositories yet.</p>
+  <p class="muted">Install the GitHub App on a repository and it appears here.</p>
+</div>
+{% endif %}
+{% endblock %}

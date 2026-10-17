@@ -1,0 +1,21 @@
+{% from "_macros.html" import estimate_panel %}
+{% from "_icons.html" import icon %}
+{% if picked %}
+<dl class="sum">
+  <dt>Issue</dt>
+  <dd><span class="mono">#{{ picked.number }}</span> {% if is_https(picked.html_url) %}<a href="{{ picked.html_url }}" target="_blank" rel="noopener noreferrer">{{ picked.title }}</a>{% else %}{{ picked.title }}{% endif %}</dd>
+  <dt>Repository</dt>
+  <dd class="mono">{{ repo.full_name }}</dd>
+</dl>
+<div class="target">The pull request will target <span class="branch">{{ icon("branch") }}{{ chosen_branch }}</span></div>
+{% elif issue_number is not none %}
+<p class="hint" id="pick-hint">Issue #{{ issue_number }} is not in the current list of open issues. Search again, or pick another.</p>
+{% else %}
+<p class="hint" id="pick-hint">Pick an issue in step 1 to see where the PR will go and what it should cost.</p>
+{% endif %}
+{{ estimate_panel(estimate) }}
+<div class="actions">
+  <button type="submit" class="btn btn-primary" aria-describedby="{{ 'cap-hint' if picked else 'pick-hint' }}"{% if not picked %} disabled{% endif %}>Start task</button>
+  <a class="btn btn-ghost" href="/ui/repos/{{ repo.id }}/tasks">Cancel</a>
+  <span class="hint" id="cap-hint">Hard stop at {{ money(cap) }} (<code class="mono">budget_usd</code>)</span>
+</div>

@@ -22,7 +22,7 @@ Area-specific design lives in `.claude/rules/`, one file per area, each loaded b
 - `.claude/rules/prompt-injection.md`: Prompt-injection posture (paths: `agents/**`, `pipeline/**`)
 - `.claude/rules/benchmark.md`: The benchmark: instances, bench repos, sweep, report (paths: `eval/**`, `shared/repolace_shared/instances.py`, `verify/specs.toml`)
 - `.claude/rules/task-bookkeeping.md`: Task bookkeeping: migrations 0012-0014, stages, heartbeat (paths: `shared/repolace_shared/db/**`, `api/alembic/**`, `pipeline/**`, `worker/**`)
-- `.claude/rules/api-and-ui.md`: API and the mocked UI (paths: `api/**`, `ui/**`)
+- `.claude/rules/api-and-ui.md`: API and the server-rendered UI (paths: `api/**`, `ui/**`)
 - `.claude/rules/later-visions.md`: Later product visions: PR conversation handling, live workspace view (paths: `api/**`, `ui/**`, `worker/**`)
 - `.claude/rules/open-questions.md`: Open questions and not yet decided (paths: `rag/**`, `eval/**`, `api/**`)
 

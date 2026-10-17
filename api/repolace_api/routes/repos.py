@@ -61,7 +61,7 @@ def github_errors(repo_id: UUID) -> Iterator[None]:
         raise HTTPException(status_code=502, detail="GitHub API returned an unexpected payload") from exc
 
 
-async def _active_repo(db: AsyncSession, repo_id: UUID) -> RegisteredRepo:
+async def active_repo(db: AsyncSession, repo_id: UUID) -> RegisteredRepo:
     repo = await db.get(RegisteredRepo, repo_id)
     if repo is None or not repo.is_active:
         raise HTTPException(status_code=404, detail="repo not found")
@@ -70,6 +70,10 @@ async def _active_repo(db: AsyncSession, repo_id: UUID) -> RegisteredRepo:
 
 @router.get("", response_model=list[RepoOut])
 async def list_repos(db: AsyncSession = Depends(get_db)) -> list[RepoOut]:
+    return await list_active_repos(db)
+
+
+async def list_active_repos(db: AsyncSession) -> list[RepoOut]:
     rows = (await db.execute(select(RegisteredRepo).where(RegisteredRepo.is_active.is_(True)))).scalars().all()
     return [RepoOut.model_validate(row, from_attributes=True) for row in rows]
 
@@ -80,7 +84,11 @@ async def list_repo_issues(
     db: AsyncSession = Depends(get_db),
     github: GithubClient = Depends(get_github_client),
 ) -> list[IssueOut]:
-    repo = await _active_repo(db, repo_id)
+    return await fetch_issues(db, github, repo_id)
+
+
+async def fetch_issues(db: AsyncSession, github: GithubClient, repo_id: UUID) -> list[IssueOut]:
+    repo = await active_repo(db, repo_id)
     with github_errors(repo_id):
         issues = await github.list_repo_open_issues(repo.installation_id, repo.owner, repo.name)
 
@@ -104,7 +112,11 @@ async def list_repo_branches(
     db: AsyncSession = Depends(get_db),
     github: GithubClient = Depends(get_github_client),
 ) -> list[BranchOut]:
-    repo = await _active_repo(db, repo_id)
+    return await fetch_branches(db, github, repo_id)
+
+
+async def fetch_branches(db: AsyncSession, github: GithubClient, repo_id: UUID) -> list[BranchOut]:
+    repo = await active_repo(db, repo_id)
     with github_errors(repo_id):
         branches = await github.list_branches(repo.installation_id, repo.owner, repo.name)
     return [BranchOut(name=b.name, default=b.name == repo.default_branch) for b in branches]
@@ -132,6 +144,16 @@ async def create_task(
     github: GithubClient = Depends(get_github_client),
     publisher: TaskPublisher = Depends(get_publisher),
 ) -> TaskCreated:
+    return await enqueue_task(db, github, repo_id, body, publisher)
+
+
+async def enqueue_task(
+    db: AsyncSession,
+    github: GithubClient,
+    repo_id: UUID,
+    body: CreateTaskRequest,
+    publisher: TaskPublisher,
+) -> TaskCreated:
     """Queue a task. Does not run it.
 
     The pipeline runs in a Celery worker (or `repolace-run-task`); this endpoint
@@ -139,7 +161,7 @@ async def create_task(
     needing the retrieval stack and torch -- see CLAUDE.md, "Build phases"
     ("One host process per task").
     """
-    repo = await _active_repo(db, repo_id)
+    repo = await active_repo(db, repo_id)
 
     target_branch = body.target_branch if body.target_branch is not None else repo.default_branch
     if not target_branch.strip():
@@ -165,6 +187,26 @@ async def create_task(
     issue = next((i for i in issues if i.number == body.issue_number), None)
     if issue is None:
         raise HTTPException(status_code=404, detail="issue not found or not open")
+
+    # A double click or a client retry would otherwise queue a second task, open a second PR and
+    # spend a second budget on the same issue. A finished task does not block: running again after
+    # a failure is the normal way to retry.
+    in_flight = await db.scalar(
+        select(Task.id)
+        .where(
+            Task.repo_id == repo.id,
+            Task.issue_number == issue.number,
+            Task.target_branch == target_branch,
+            Task.status.in_((TaskStatus.QUEUED, TaskStatus.RUNNING)),
+            Task.eval_run_id.is_(None),
+        )
+        .limit(1)
+    )
+    if in_flight is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"issue #{issue.number} already has a task queued or running for {target_branch!r}",
+        )
 
     task = Task(
         repo_id=repo.id,
@@ -226,6 +268,10 @@ def _usd(value: float | None) -> Decimal | None:
 
 @router.get("/{repo_id}/tasks/estimate", response_model=CostEstimate)
 async def estimate_task_cost(repo_id: UUID, db: AsyncSession = Depends(get_db)) -> CostEstimate:
+    return await compute_estimate(db, repo_id)
+
+
+async def compute_estimate(db: AsyncSession, repo_id: UUID) -> CostEstimate:
     """p50 and p90 of what a task on this repo has cost, with the basis named.
 
     1. `repo`: the last 30 priced, non-benchmark tasks of this repo, if there
@@ -235,7 +281,7 @@ async def estimate_task_cost(repo_id: UUID, db: AsyncSession = Depends(get_db)) 
        recent task that has one.
     3. `none`: otherwise no numbers, only the per-task cap as an upper bound.
     """
-    await _active_repo(db, repo_id)
+    await active_repo(db, repo_id)
 
     async def percentiles(where: list, limit: int | None) -> tuple[int, Decimal | None, Decimal | None]:
         costs = select(Task.cost_usd).where(Task.cost_usd.is_not(None), Task.eval_run_id.is_(None), *where)
@@ -302,16 +348,50 @@ async def list_repo_tasks(
     pipeline got, outcome is whether the issue was actually fixed. Benchmark
     rows are hidden unless asked for.
     """
-    await _active_repo(db, repo_id)
+    return await query_task_page(
+        db,
+        repo_id,
+        status=status,
+        outcome=outcome,
+        limit=limit,
+        cursor=cursor,
+        include_benchmark=include_benchmark,
+    )
+
+
+#: What `TaskListItem` is built from. `is_benchmark` is derived from `eval_run_id`.
+_LIST_COLUMNS = [name for name in TaskListItem.model_fields if name != "is_benchmark"] + ["eval_run_id"]
+
+
+async def query_task_page(
+    db: AsyncSession,
+    repo_id: UUID,
+    *,
+    status: TaskStatus | None = None,
+    outcome: TaskOutcome | None = None,
+    unscored: bool = False,
+    limit: int = 50,
+    cursor: str | None = None,
+    include_benchmark: bool = False,
+) -> TaskPage:
+    """The list query behind both the JSON route and the HTML pages.
+
+    `unscored` selects `outcome IS NULL` (the UI's filter; the JSON route does
+    not expose it). A benchmark row's `error_message` is nulled here, because it
+    can carry sandbox output, and `include_benchmark=true` is the way to see it.
+    """
+    await active_repo(db, repo_id)
     position = decode_cursor(cursor) if cursor is not None else None
 
     # Not the whole row: patch_diff and issue_body can be large and the list shows neither.
-    columns = [getattr(Task, name) for name in TaskListItem.model_fields]
+    columns = [getattr(Task, name) for name in _LIST_COLUMNS]
     query = select(Task).options(load_only(*columns)).where(Task.repo_id == repo_id)
     if status is not None:
         query = query.where(Task.status == status)
     if outcome is not None:
         query = query.where(Task.outcome == outcome)
+    elif unscored:
+        query = query.where(Task.outcome.is_(None))
     if not include_benchmark:
         query = query.where(Task.eval_run_id.is_(None))
     if position is not None:
@@ -321,4 +401,23 @@ async def list_repo_tasks(
 
     page = rows[:limit]
     next_cursor = encode_cursor(page[-1].created_at, page[-1].id) if len(rows) > limit else None
-    return TaskPage(items=[TaskListItem.model_validate(r, from_attributes=True) for r in page], next_cursor=next_cursor)
+    return TaskPage(items=[list_item(r) for r in page], next_cursor=next_cursor)
+
+
+def list_item(row: Task) -> TaskListItem:
+    """A list item from a (possibly `load_only`) task row, scrubbed if it is a benchmark task."""
+    values = {name: getattr(row, name) for name in TaskListItem.model_fields if name != "is_benchmark"}
+    is_benchmark = row.eval_run_id is not None
+    if is_benchmark:
+        values["error_message"] = None
+    return TaskListItem(**values, is_benchmark=is_benchmark)
+
+
+async def running_costs(db: AsyncSession, task_ids: list[UUID]) -> dict[UUID, Decimal]:
+    """`SUM(llm_calls.cost_usd)` per task, for the rows that show "so far". One query for all of them."""
+    if not task_ids:
+        return {}
+    rows = await db.execute(
+        select(LLMCall.task_id, func.sum(LLMCall.cost_usd)).where(LLMCall.task_id.in_(task_ids)).group_by(LLMCall.task_id)
+    )
+    return {task_id: total for task_id, total in rows if total is not None}

@@ -23,6 +23,9 @@ eval/cache/
 .ruff_cache/
 .mypy_cache/
 
+# design-hook scratch output
+.impeccable/
+
 # Claude Code: commit the path-scoped rules, nothing else (settings.local.json, worktrees/).
 .claude/*
 !.claude/rules/

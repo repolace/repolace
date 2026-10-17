@@ -1,0 +1,37 @@
+{% from "_icons.html" import icon %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  {# allowEval off: htmx never calls new Function. includeIndicatorStyles off: no injected <style>, which the CSP blocks. #}
+  <meta name="htmx-config" content='{"allowEval": false, "allowScriptTags": false, "selfRequestsOnly": true, "includeIndicatorStyles": false}'>
+  <title>{% block title %}repolace{% endblock %}</title>
+  <link rel="preload" href="/ui/static/fonts/ibm-plex-sans-latin-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/ui/static/fonts/ibm-plex-sans-latin-500.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/ui/static/fonts/ibm-plex-mono-latin-500.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/ui/static/app.css">
+  <script src="/ui/static/theme.js"></script>
+  <script src="/ui/static/vendor/htmx.min.js" defer></script>
+  <script src="/ui/static/ui.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="topbar">
+    <div class="wrap">
+      <a class="brand" href="/ui/repos">{{ icon("logo") }}repolace</a>
+      <nav aria-label="Breadcrumb"><ol class="crumbs">{% block crumbs %}{% endblock %}</ol></nav>
+      <span class="spacer"></span>
+      <button type="button" id="theme-toggle" class="btn themebtn" hidden>Theme: system</button>
+      {% block action %}{% endblock %}
+    </div>
+  </header>
+  {# Live regions live here, outside every swapped region: only ui.js writes into them, and only on a real change. #}
+  <div id="announcer" class="sr" role="status"></div>
+  <p id="htmx-error" class="formerr wrap" role="alert" hidden></p>
+  <main id="main" class="wrap">
+{% block content %}{% endblock %}
+  </main>
+</body>
+</html>
