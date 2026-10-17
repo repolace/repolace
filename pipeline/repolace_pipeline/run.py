@@ -678,13 +678,16 @@ def _agent_stop_from(exc: BaseException) -> StopReason | None:
     would hide that bug inside the headline's denominator, indistinguishable from a real step
     cap, and a run that had already scored a passing attempt could even open a PR. It stays
     a harness error (FAILED, `agent: GraphRecursionError`), as the graph module says.
-    `UnpricedModelError`, `MissingProviderKey` and `NoTaskScope` stay
-    harness errors: they mean the measurement itself is broken.
+    `UnpricedModelError`, `MissingProviderKey`, `NoTaskScope` and an `LLMCallError` whose kind is
+    `auth` or `quota` stay harness errors: they mean the measurement itself is broken.
     """
     if isinstance(exc, BudgetExceeded):
         return _BUDGET_STOPS[exc.limit]
     if isinstance(exc, LLMCallError):
-        return StopReason.LLM_ERROR
+        # A provider that refuses our key or has no quota left is repolace's problem, not the
+        # agent's: it stays a harness error (FAILED), carrying the gateway's fixed prefix, so the
+        # report keeps it out of the agent's failures and the eval runner can stop dispatching.
+        return None if exc.provider_refused else StopReason.LLM_ERROR
     return None
 
 

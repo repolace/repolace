@@ -239,6 +239,11 @@ class TestStops:
         result, _ = await run(checkout, [LLMCallError("down", stage="resolve", model="m", retries=2)])
         assert result.stop is ResolverStop.LLM_ERROR
 
+    async def test_a_provider_that_refuses_us_propagates_rather_than_becoming_a_stop(self, checkout):
+        refusal = LLMCallError("no quota", stage="resolve", model="m", retries=2, kind="quota")
+        with pytest.raises(LLMCallError):
+            await run(checkout, [refusal])
+
     async def test_misconfiguration_propagates_rather_than_becoming_a_stop(self, checkout):
         with pytest.raises(MissingProviderKey):
             await run(checkout, [MissingProviderKey("no key")])

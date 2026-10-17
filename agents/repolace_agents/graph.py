@@ -272,7 +272,11 @@ async def agent(state: AgentState, runtime: Runtime[RunContext]) -> dict[str, An
                 attempt_steps += 1
             stop = _BUDGET_STOPS[exc.limit]
             break
-        except LLMCallError:
+        except LLMCallError as exc:
+            if exc.provider_refused:
+                # The provider rejected our key or our quota is spent: that says nothing about the
+                # agent, so it is not a stop reason. It propagates and fails the task (a harness error).
+                raise
             stop = StopReason.LLM_ERROR
             break
 

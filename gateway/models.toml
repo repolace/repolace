@@ -1,7 +1,7 @@
 # Stage -> model routing for the LLM gateway. Loaded by repolace_gateway.config.
 #
 # Provider API keys do NOT go here -- they come from the environment
-# (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, MINIMAX_API_KEY) or the repo-root .env.
+# (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, MINIMAX_API_KEY, GOOGLE_API_KEY) or the repo-root .env.
 #
 # Prices: LiteLLM's own price map is used unless a model has a [price] table.
 # The map is pinned to the installed LiteLLM version (LITELLM_LOCAL_MODEL_COST_MAP)
@@ -82,7 +82,7 @@ supports_prompt_caching = true   # priced by LiteLLM's map; no [price] needed
 # --- comparison models (WP8) -----------------------------------------------
 # Placeholders. Uncomment, fill in, and point a one-run sweep at one with
 #   GATEWAY_STAGE_MODELS='{"agent": "<key>"}'
-# The provider must be one of: anthropic, openai, gemini, minimax, and litellm_model must
+# The provider must be one of: anthropic, openai, gemini, minimax, vertex_ai, and litellm_model must
 # start with "<provider>/" (checked at load -- otherwise one vendor's key would
 # be sent to another vendor's API).
 #
@@ -132,3 +132,46 @@ output = 3.75
 provider = "minimax"
 litellm_model = "minimax/MiniMax-M2.5"
 supports_prompt_caching = false
+
+# --- Gemini on Google Vertex AI ----------------------------------------------
+# A Vertex API key (GOOGLE_API_KEY), called over REST by repolace_gateway.vertex: LiteLLM's own
+# `vertex_ai/` route needs Google Cloud OAuth credentials, and its `gemini/` route is AI Studio
+# (the entries above), a different key and billing account. The `vertex_ai/` prefix on
+# litellm_model is only the provider marker the config check requires; LiteLLM is not called.
+#
+# PRICES: read from ai.google.dev/gemini-api/docs/pricing (Standard tier, paid) on 2026-10-17.
+# Vertex's own pricing page is JavaScript-rendered and could not be read, so these are the AI
+# Studio rates, which third-party calculators also list for Vertex's gemini-3.1-pro-preview.
+# CONFIRM THEM AGAINST YOUR CLOUD CONSOLE BEFORE QUOTING A COST: a wrong price is a wrong benchmark.
+#   * gemini-3.8-flash: $0.75 in / $3.75 out per M THROUGH 2026-12-31; the page lists $1.50 / $7.50
+#     (and cache read $0.15) FROM 2027-01-01, so a later run must update these rates.
+#   * gemini-3.1-pro-preview: $2.00 / $12.00 per M for prompts up to 200k tokens, $4.00 / $18.00
+#     above. The gateway's price table has one tier. The agent caps its transcript at 400,000
+#     characters (well under 200k tokens), so the lower tier is the one that applies; a prompt
+#     over 200k tokens would be undercharged here.
+# Output includes thinking tokens: the transport adds them to the candidates' tokens.
+# Cache: Gemini's caching is implicit, with a per-call read discount and no per-call write charge
+# (cache_write = 0). Select one per sweep with
+#   GATEWAY_STAGE_MODELS='{"agent": "vertex-gemini-3-1-pro-preview"}'
+# One model serves the whole agent for now; neither is a default stage.
+# A Vertex model must not have a non-Vertex `fallback`: a Gemini 3 thought signature travels inside
+# the tool call id (`call_<n>~<signature>`), and another vendor rejects such an id in the history.
+[models.vertex-gemini-3-8-flash]
+provider = "vertex_ai"
+litellm_model = "vertex_ai/gemini-3.8-flash"
+supports_prompt_caching = true
+[models.vertex-gemini-3-8-flash.price]
+input = 0.75
+output = 3.75
+cache_read = 0.075
+cache_write = 0.0
+
+[models.vertex-gemini-3-1-pro-preview]
+provider = "vertex_ai"
+litellm_model = "vertex_ai/gemini-3.1-pro-preview"
+supports_prompt_caching = true
+[models.vertex-gemini-3-1-pro-preview.price]
+input = 2.00
+output = 12.00
+cache_read = 0.20
+cache_write = 0.0

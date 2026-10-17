@@ -35,7 +35,7 @@ from eval_exec_support import (
 )
 from harness import runner
 from harness.bench_repos import TOKEN_ENV_VAR
-from harness.db import queued_tasks, run_cost_usd
+from harness.db import queued_tasks, run_cost_usd, run_provider_failures
 from harness.enqueue import (
     DEFAULT_WALL_CLOCK_SECONDS,
     ManifestInputs,
@@ -419,6 +419,44 @@ class TestCostCap:
         assert [r.task.task_id for r in summary.results] == [first.id]
         assert summary.not_dispatched == 2 and "cost cap" in summary.stopped
         assert summary.total_cost_usd == Decimal("1.5")
+
+    async def test_provider_refusals_are_counted_from_the_gateways_fixed_prefixes(self, db_session, db_session_factory):
+        repo = await add_repo(db_session, "repolace/bench-x")
+        refused = "agent: LLMCallError: provider auth failure: agent call to m failed after 0 retries"
+        await add_task(db_session, repo, instance_id="a", run_index=0, status=TaskStatus.FAILED, error_message=refused)
+        await add_task(db_session, repo, instance_id="b", run_index=0, status=TaskStatus.FAILED, error_message="provider quota exhausted: x")
+        await add_task(db_session, repo, instance_id="c", run_index=0, status=TaskStatus.FAILED, error_message="agent: RuntimeError: a bug")
+        await add_task(db_session, repo, instance_id="d", run_index=0, status=TaskStatus.COMPLETED, error_message=None)
+        await add_task(db_session, repo, instance_id="e", run_index=0, eval_run_id="other", status=TaskStatus.FAILED, error_message=refused)
+
+        assert await run_provider_failures(db_session_factory, RUN) == 2
+
+    async def test_two_provider_refusals_stop_the_dispatch_of_the_rest(self, db_session, db_session_factory, tmp_path):
+        repo = await add_repo(db_session, "repolace/bench-x")
+        for name in ("a", "b"):
+            await add_task(
+                db_session, repo, instance_id=name, run_index=0, status=TaskStatus.FAILED,
+                error_message="agent: LLMCallError: provider quota exhausted: agent call failed",
+            )
+        await add_task(db_session, repo, instance_id="c", run_index=0)
+        await add_task(db_session, repo, instance_id="d", run_index=0)
+
+        summary = await run_queue(
+            db_session_factory, config(), runs_dir=tmp_path / "runs",
+            child_command=child_command(), base_env=child_base_env(tmp_path),
+        )
+
+        assert summary.results == [] and summary.not_dispatched == 2
+        assert "provider refused 2 tasks" in summary.stopped
+        assert len(await queued_tasks(db_session_factory, RUN)) == 2
+
+    async def test_one_refusal_does_not_stop_anything(self, db_session, db_session_factory):
+        repo = await add_repo(db_session, "repolace/bench-x")
+        await add_task(
+            db_session, repo, instance_id="a", run_index=0, status=TaskStatus.FAILED,
+            error_message="provider auth failure: x",
+        )
+        assert await run_provider_failures(db_session_factory, RUN) < runner.PROVIDER_REFUSAL_LIMIT
 
     async def test_without_a_cap_everything_is_dispatched(self, db_session, db_session_factory, tmp_path):
         repo = await add_repo(db_session, "repolace/bench-x")

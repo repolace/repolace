@@ -790,6 +790,16 @@ class TestBudgetAndProviderStops:
         assert result.stop_reason is StopReason.LLM_ERROR and verifier.calls == []
         assert result.last_attempt is None and result.steps == 1
 
+    @pytest.mark.parametrize("kind", ["auth", "quota"])
+    async def test_a_provider_that_refuses_us_fails_the_task_instead_of_stopping_the_agent(self, kind):
+        refusal = LLMCallError("provider says no", stage="agent", model="m", retries=0, kind=kind)
+        llm = ScriptedLLM([read(), refusal])
+
+        with pytest.raises(LLMCallError) as raised:
+            await run(llm, ScriptedVerifier([]))
+
+        assert raised.value.provider_refused
+
     async def test_a_provider_failure_in_a_later_attempt_keeps_the_previous_last_attempt(self):
         llm = ScriptedLLM([submit_reply("one"), LLMCallError("x", stage="agent", model="m", retries=0)])
 

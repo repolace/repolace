@@ -248,6 +248,10 @@ class TestWhichExceptionsAreTheAgentsFault:
             # Only a routing bug in repolace can reach the graph's recursion limit; see `_agent_stop_from`.
             GraphRecursionError("limit"),
             ValueError("LLMAgent needs a model client"),
+            # The provider refusing us says nothing about the agent: a rejected key or spent quota
+            # fails the task (a harness error) rather than scoring it as `llm_error`.
+            LLMCallError("no", stage="agent", model="m", retries=0, kind="auth"),
+            LLMCallError("no", stage="agent", model="m", retries=3, kind="quota"),
         ],
     )
     def test_everything_that_means_the_measurement_or_repolace_is_broken_is_not_a_stop(self, exc):

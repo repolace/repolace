@@ -29,6 +29,7 @@ from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from repolace_gateway.errors import ConfigError, MissingProviderKey, UnpricedModelError
+from repolace_gateway.vertex import is_valid_model_id
 
 _REPO_ROOT_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 DEFAULT_MODELS_PATH = Path(__file__).resolve().parents[1] / "models.toml"
@@ -41,6 +42,8 @@ PROVIDER_KEY_FIELDS: Mapping[str, str] = {
     "openai": "openai_api_key",
     "gemini": "gemini_api_key",
     "minimax": "minimax_api_key",
+    #: A Vertex AI API key (not an AI Studio one): see `repolace_gateway.vertex`.
+    "vertex_ai": "google_api_key",
 }
 
 #: Providers that authenticate with the AWS credential chain rather than one API key.
@@ -78,6 +81,7 @@ class GatewaySettings(BaseSettings):
     openai_api_key: SecretStr | None = None
     gemini_api_key: SecretStr | None = None
     minimax_api_key: SecretStr | None = None
+    google_api_key: SecretStr | None = None
     #: Aliased so the environment names carry a `GATEWAY_` prefix: bare
     #: `MODELS_PATH` and `STAGE_MODELS` are too generic to claim in a shared `.env`.
     #: (The provider keys keep their standard names, which other tooling expects.)
@@ -330,6 +334,8 @@ def _parse_model(key: str, table: Mapping[str, Any]) -> ModelConfig:
             f"{where}.litellm_model: {litellm_model!r} does not start with {provider + '/'!r}; the "
             "provider's key would be sent to a different vendor"
         )
+    if provider == "vertex_ai" and not is_valid_model_id(litellm_model.split("/", 1)[1]):
+        raise ConfigError(f"{where}.litellm_model: {litellm_model!r} is not a plain Vertex model id")
     price_table = table.get("price")
     if price_table is not None and not isinstance(price_table, dict):
         raise ConfigError(f"{where}.price: expected a table")

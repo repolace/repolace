@@ -57,9 +57,18 @@ from repolace_gateway.config import (
     Route,
     load_config,
 )
-from repolace_gateway.errors import LLMCallError, UnpricedModelError
+from repolace_gateway.errors import (
+    AUTH_FAILURE_PREFIX,
+    KIND_AUTH,
+    KIND_OTHER,
+    KIND_QUOTA,
+    QUOTA_FAILURE_PREFIX,
+    LLMCallError,
+    UnpricedModelError,
+)
 from repolace_gateway.recorder import CallRecord, Recorder
 from repolace_gateway.redaction import Redactor
+from repolace_gateway.vertex import VertexAPIError, VertexGeminiTransport
 
 # LiteLLM prints a "Give Feedback / Get Help" banner to stdout on errors, which
 # lands in the middle of a stream of JSON log lines.
@@ -327,12 +336,38 @@ def _assistant_message(content: str | None, tool_calls: Sequence[ToolCall]) -> d
 
 
 def _is_transient(exc: Exception) -> bool:
+    if isinstance(exc, VertexAPIError):
+        return exc.transient
     if isinstance(exc, _TRANSIENT_TYPES):
         return True
     # A provider status LiteLLM did not map to a specific class (Anthropic's 529
     # "overloaded" arrives this way) is still a server-side failure.
     status = getattr(exc, "status_code", None)
     return isinstance(exc, litellm_exceptions.APIError) and isinstance(status, int) and status >= 500
+
+
+def failure_kind(cause: BaseException) -> str:
+    """Whether `cause` is the provider refusing us (`auth`, `quota`) or anything else."""
+    if isinstance(cause, VertexAPIError):
+        text = str(cause).lower()
+        if (
+            cause.status_code in (401, 403)
+            or cause.error_status in ("UNAUTHENTICATED", "PERMISSION_DENIED")
+            or "api key not valid" in text
+            or "api_key_invalid" in text
+        ):
+            return KIND_AUTH
+        if cause.status_code == 429 or cause.error_status == "RESOURCE_EXHAUSTED":
+            return KIND_QUOTA
+        return KIND_OTHER
+    names = {cls.__name__ for cls in type(cause).__mro__}
+    if names & {"AuthenticationError", "PermissionDeniedError"}:
+        return KIND_AUTH
+    if "RateLimitError" in names:
+        return KIND_QUOTA
+    if "credit balance" in str(cause).lower():  # Anthropic reports an empty balance as a 400
+        return KIND_AUTH
+    return KIND_OTHER
 
 
 def _usd(value: float) -> Decimal:
@@ -377,6 +412,10 @@ class LLMClient:
         self._recorder = recorder
         self._redactor = recorder.redactor
         self._acompletion = acompletion or litellm.acompletion
+        # An injected `acompletion` (a test) serves every model. Otherwise a Vertex model goes to
+        # the REST transport, because LiteLLM's `vertex_ai/` route cannot use a Vertex API key.
+        self._injected_acompletion = acompletion is not None
+        self._vertex = VertexGeminiTransport()
         self._cost_fn = cost_fn or litellm.completion_cost
         self._model_info_fn = model_info_fn or litellm.get_model_info
         self._sleep = sleep
@@ -464,17 +503,35 @@ class LLMClient:
         # rate-limited together does not come back together.
         return delay * (0.5 + self._jitter() / 2)
 
+    def _completion_for(self, model: ModelConfig) -> Callable[..., Awaitable[Any]]:
+        if model.provider == "vertex_ai" and not self._injected_acompletion:
+            return self._vertex.acompletion
+        return self._acompletion
+
     async def _call_with_retries(self, model: ModelConfig, kwargs: dict[str, Any]) -> tuple[Any, int]:
         policy = self._config.retry
+        budget = current_scope().budget
         retries = 0
         for tries in range(1, policy.max_attempts + 1):
+            if tries > 1:
+                # A retry is a new call: the wall clock may have run out while we waited.
+                budget.raise_if_reached()
             try:
-                return await self._acompletion(**kwargs), retries
+                # Bounded by what is left of the task's wall clock, so a response that trickles in
+                # cannot run past it. A little above the provider's own timeout, which fires first.
+                async with asyncio.timeout(min(policy.request_timeout_seconds + 5, budget.remaining_wall_seconds)):
+                    return await self._completion_for(model)(**kwargs), retries
             except Exception as exc:  # CancelledError is a BaseException and passes through
-                transient = _is_transient(exc)
+                if isinstance(exc, TimeoutError):
+                    budget.raise_if_reached()  # the wall clock was the reason: a budget stop, not a failure
+                transient = _is_transient(exc) or isinstance(exc, TimeoutError)
                 if not transient or tries >= policy.max_attempts:
                     raise _ProviderFailure(cause=exc, retries=retries, transient=transient) from exc
                 delay = self._backoff(tries)
+                # A provider that says when to come back is believed, up to the policy's ceiling.
+                retry_after = getattr(exc, "retry_after", None)
+                if isinstance(retry_after, (int, float)):
+                    delay = max(delay, min(float(retry_after), policy.max_delay_seconds))
                 log.warning(
                     "gateway.retry",
                     model=model.litellm_model,
@@ -769,9 +826,12 @@ class LLMClient:
             )
         )
         log.error("gateway.call.failed", stage=stage, model=model.litellm_model, retries=retries, error=message)
+        kind = failure_kind(failure.cause)
+        prefix = {KIND_AUTH: AUTH_FAILURE_PREFIX, KIND_QUOTA: QUOTA_FAILURE_PREFIX}.get(kind, "")
         raise LLMCallError(
-            f"{stage} call to {model.litellm_model} failed after {retries} retries: {message}",
+            f"{prefix}{stage} call to {model.litellm_model} failed after {retries} retries: {message}",
             stage=stage,
             model=model.litellm_model,
             retries=retries,
+            kind=kind,
         ) from failure.cause

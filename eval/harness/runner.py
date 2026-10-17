@@ -89,6 +89,7 @@ from harness.db import (
     open_session_factory,
     queued_tasks,
     run_cost_usd,
+    run_provider_failures,
     running_older_than,
 )
 from harness.enqueue import DEFAULT_RUNS_DIR, DEFAULT_WALL_CLOCK_SECONDS
@@ -130,6 +131,10 @@ def classify(returncode: int) -> Outcome:
         EXIT_NOT_FOUND: Outcome.NOT_FOUND,
         EXIT_NOT_CLAIMABLE: Outcome.NOT_CLAIMABLE,
     }.get(returncode, Outcome.CRASHED)
+
+
+#: Failed tasks carrying the provider-refusal prefix after which no further task is dispatched.
+PROVIDER_REFUSAL_LIMIT = 2
 
 
 @dataclass(frozen=True)
@@ -441,6 +446,13 @@ async def run_queue(
                 spent = await run_cost_usd(factory, config.eval_run_id)
                 if spent >= config.max_total_usd:
                     reason = f"cost cap reached: ${spent} spent of ${config.max_total_usd}"
+            if reason is None and config.agent == "llm":
+                refused = await run_provider_failures(factory, config.eval_run_id)
+                if refused >= PROVIDER_REFUSAL_LIMIT:
+                    reason = (
+                        f"the provider refused {refused} tasks (rejected key or spent quota); "
+                        "every further task would fail the same way. Fix the key or quota, then re-run"
+                    )
             if reason is not None:
                 semaphore.release()
                 summary.stopped = reason

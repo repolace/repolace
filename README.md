@@ -97,7 +97,7 @@ Each workspace package has a distinct top-level import (`repolace_api`, `repolac
 - Docker and Docker Compose, plus **rootless** Docker for the Verify sandbox (`docker-rootless-extras`, `systemctl --user enable --now docker`) with cgroup v2 delegation of `cpu`, `memory` and `pids` — without delegation the sandbox's resource caps are silently ignored
 - `prlimit` (util-linux) on the host. The agent's `grep` tool runs `git grep` under a memory and CPU limit, and the toolbox refuses to build without it
 - A GitHub App (for repo registration, issue fetching, and opening PRs)
-- To run the real agent: a provider key in `.env` (`ANTHROPIC_API_KEY`, plus `OPENAI_API_KEY`, `GEMINI_API_KEY` or `MINIMAX_API_KEY` for comparison models), and a price for every model a stage routes to. To use Claude through Amazon Bedrock instead, set `GATEWAY_AWS_PROFILE` and `GATEWAY_AWS_REGION` (an AWS CLI profile that can invoke the model; no key) and select `claude-sonnet-5-5-bedrock`. `gateway/models.toml` routes the `agent` stage to `claude-sonnet-5-5` and prices it explicitly (LiteLLM's map does not have it); the gateway refuses an unpriced model before its first call, so a new model needs its rates (USD per million tokens) added there first
+- To run the real agent: a provider key in `.env` (`ANTHROPIC_API_KEY`, plus `OPENAI_API_KEY`, `GEMINI_API_KEY`, `MINIMAX_API_KEY` or `GOOGLE_API_KEY` (a Vertex AI key) for comparison models), and a price for every model a stage routes to. To use Claude through Amazon Bedrock instead, set `GATEWAY_AWS_PROFILE` and `GATEWAY_AWS_REGION` (an AWS CLI profile that can invoke the model; no key) and select `claude-sonnet-5-5-bedrock`. `gateway/models.toml` routes the `agent` stage to `claude-sonnet-5-5` and prices it explicitly (LiteLLM's map does not have it); the gateway refuses an unpriced model before its first call, so a new model needs its rates (USD per million tokens) added there first
 - To create the benchmark repositories: a **separate** GitHub token for the `repolace-eval fork` command only (see [Benchmark](#benchmark)). Never put it in `.env`
 
 ### Install dependencies
@@ -257,3 +257,29 @@ When a task starts, repolace checks the repo's `indexed_commit_sha` against the 
 ## License
 
 Not yet determined.
+
+### Gemini on Vertex AI
+
+The gateway can call Gemini through Google Vertex AI with a Vertex API key. LiteLLM's own `vertex_ai/` route needs Google Cloud OAuth credentials, so `repolace_gateway/vertex.py` is a small REST transport (httpx, no extra dependency) that answers in the shape the rest of the gateway already reads.
+
+1. Create a Vertex AI API key in the Google Cloud console (bound to a service account) and put it in `.env`: `GOOGLE_API_KEY=...`. It is read by the gateway's settings only and never exported or logged. `GOOGLE_CLOUD_PROJECT` is informational.
+2. Select a model for a sweep (one model serves the whole agent for now):
+
+   ```
+   GATEWAY_STAGE_MODELS='{"agent": "vertex-gemini-3-1-pro-preview"}' uv run repolace-eval run --model vertex-gemini-3-1-pro-preview ...
+   ```
+
+| Model key | Vertex model | Used for | Price (per M tokens) |
+|---|---|---|---|
+| `vertex-gemini-3-1-pro-preview` | `gemini-3.1-pro-preview` | the agent (editing, debugging); the `resolve` stage follows `agent` | $2.00 in, $12.00 out, $0.20 cached |
+| `vertex-gemini-3-8-flash` | `gemini-3.8-flash` | cheap steps (planning, review, summaries) once the role split lands; selectable for a whole-agent run today | $0.75 in, $3.75 out, $0.075 cached |
+
+Neither is a default; the shipped `agent` stage is still `claude-sonnet-5-5`. A planner/editor/reviewer/debugger role table is deliberately not built yet (Phase 1 is one agent, and the role split is on `phase-2/agents`).
+
+Prices live in `gateway/models.toml`, never in code. They were taken from Google's AI Studio pricing page, because Vertex's own page could not be read: confirm them in your Cloud console. Gemini 3.8 Flash's rates change on 2027-01-01 ($1.50 in, $7.50 out), and `gemini-3.1-pro-preview` is priced at its up-to-200k-token tier.
+
+Retries: HTTP 429 and 5xx and timeouts are retried with exponential backoff and jitter (honouring `Retry-After`) up to `max_attempts` in `models.toml`; a 400, 401, 403 or 404 is not. Quota exhaustion (`RESOURCE_EXHAUSTED`) ends in a plain error naming it, never an endless retry.
+
+Tokens per call (input, cached input, output including thinking) and cost are stored in `llm_calls`, and the sum in `tasks.cost_usd`. OpenTelemetry spans are Phase 3.
+
+Live check (spends a few cents; the key is read from `.env`): `RUN_LIVE_LLM_TESTS=1 uv run pytest gateway/tests/test_gateway_vertex_live.py -s`.
