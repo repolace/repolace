@@ -378,9 +378,10 @@ def _parsed(response: httpx.Response) -> dict[str, Any]:
         block = feedback.get("blockReason") if isinstance(feedback, Mapping) else None
         if block and not payload.get("candidates"):
             raise VertexAPIError(f"Vertex blocked the prompt ({block})", status_code=200)
-        if choice["finish_reason"] == "malformed_function_call":
-            # Gemini sometimes emits a tool call it cannot itself parse; asking again usually works.
-            raise VertexAPIError("Vertex returned MALFORMED_FUNCTION_CALL", status_code=200, transient=True)
+        # A MALFORMED_FUNCTION_CALL (Gemini emitted a tool call it cannot itself parse) is returned as
+        # an empty turn, not retried here: Vertex has billed its tokens, and a response thrown away
+        # inside the transport would be spend that no `llm_calls` row records. The agent loop sees a
+        # reply with no tool call, nudges, and asks again, with the call priced and counted.
     return parsed
 
 

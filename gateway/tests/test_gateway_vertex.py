@@ -471,14 +471,21 @@ class TestReviewFindings:
         assert "HTTP Request" in caplog.text  # the log line exists, so the test can see what it checks
         assert KEY not in caplog.text and "key=[REDACTED]" in caplog.text
 
-    async def test_a_malformed_function_call_reply_is_retried(self):
-        bad = {"candidates": [{"finishReason": "MALFORMED_FUNCTION_CALL"}], "usageMetadata": {"promptTokenCount": 10}}
-        wire = Wire(json_response(200, bad), json_response(200, ok_body([{"text": "OK"}])))
-        client, _, _ = make_vertex_client(wire)
+    async def test_a_malformed_function_call_reply_is_returned_priced_not_discarded(self):
+        """Vertex bills the tokens of such a reply, so it must reach `llm_calls` rather than be retried away."""
+        bad = {
+            "candidates": [{"finishReason": "MALFORMED_FUNCTION_CALL"}],
+            "usageMetadata": {"promptTokenCount": 1000, "candidatesTokenCount": 30},
+        }
+        wire = Wire(json_response(200, bad))
+        client, recorder, _ = make_vertex_client(wire)
 
         result = await complete(client)
 
-        assert result.content == "OK" and result.retries == 1
+        assert result.content is None and result.tool_calls == () and result.retries == 0
+        assert result.finish_reason == "malformed_function_call"
+        assert len(wire.requests) == 1 and len(recorder.records) == 1
+        assert recorder.records[0].cost_usd == (Decimal(1000) * 1 + Decimal(30) * 10) / 1_000_000
 
     async def test_a_blocked_prompt_is_a_clean_error_not_an_empty_reply(self):
         blocked = {"promptFeedback": {"blockReason": "SAFETY"}, "usageMetadata": {"promptTokenCount": 10}}
