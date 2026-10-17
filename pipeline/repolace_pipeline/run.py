@@ -1271,7 +1271,7 @@ async def _build_deps(
     index_strategy: str,
 ) -> AgentDeps:
     """Everything the agent is given. The model client is the caller's; the rest is built here."""
-    limits = AgentLimits()
+    limits = AgentLimits.from_env()
     # From the clean tree, before the agent has edited anything.
     hits = await asyncio.to_thread(
         lambda: tuple(search_hit(chunk, workspace.path, limits.max_context_snippet_lines) for chunk in retrieved)

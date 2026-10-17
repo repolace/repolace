@@ -92,6 +92,13 @@ class IssueContext:
     instance_id: str | None
 
 
+#: Environment variables that override the loop bounds for one run (see `AgentLimits.from_env`).
+ENV_MAX_STEPS = "REPOLACE_AGENT_MAX_STEPS_PER_ATTEMPT"
+ENV_MAX_ATTEMPTS = "REPOLACE_AGENT_MAX_ATTEMPTS"
+#: A typo such as 4000 should not be able to turn a bounded loop into an open-ended one.
+LIMIT_CEILING = 200
+
+
 @dataclass(frozen=True)
 class AgentLimits:
     """The bounds on one agent run, apart from the gateway's cost budget."""
@@ -102,6 +109,32 @@ class AgentLimits:
     max_issue_chars: int = 12_000
     #: How many lines of a retrieved chunk the prompt shows.
     max_context_snippet_lines: int = 60
+
+    @classmethod
+    def from_env(cls, environ: Mapping[str, str] | None = None) -> AgentLimits:
+        """The defaults, with the two loop bounds overridable per run from the environment.
+
+        For experiments such as a higher step cap. `enqueue` records the effective values in the run's
+        manifest and `run` refuses to start if its own environment disagrees, so an override can neither
+        be forgotten nor silently differ between the two. Anything that is not a whole number between 1
+        and `LIMIT_CEILING` is an error, not a fallback to the default.
+        """
+        import os
+
+        source = os.environ if environ is None else environ
+        values: dict[str, int] = {}
+        for field, name in (("max_steps_per_attempt", ENV_MAX_STEPS), ("max_attempts", ENV_MAX_ATTEMPTS)):
+            raw = source.get(name)
+            if raw is None or raw == "":
+                continue
+            try:
+                number = int(raw)
+            except ValueError:
+                raise ValueError(f"{name} must be a whole number, got {raw!r}") from None
+            if not 1 <= number <= LIMIT_CEILING:
+                raise ValueError(f"{name} must be between 1 and {LIMIT_CEILING}, got {number}")
+            values[field] = number
+        return cls(**values)
 
 
 @dataclass(frozen=True)
