@@ -102,6 +102,12 @@ class AgentLimits:
     max_issue_chars: int = 12_000
     #: How many lines of a retrieved chunk the prompt shows.
     max_context_snippet_lines: int = 60
+    #: Run the Phase 2 role split (planner, editor, debugger, reviewer: `repolace_agents.roles`)
+    #: instead of the single agent. **Off by default and unbenchmarked**: the pipeline builds
+    #: `AgentLimits()` and only `LLMAgent(roles=True)` (`repolace-run-task --roles`) turns it on.
+    #: A limit rather than an `AgentDeps` field, so the contract every runner is built against
+    #: does not change, and the run's step caps (split between the roles) sit beside it.
+    roles: bool = False
 
 
 @dataclass(frozen=True)

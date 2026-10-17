@@ -450,8 +450,15 @@ def route(state: AgentState, runtime: Runtime[RunContext]) -> Literal["agent", "
     return "agent"
 
 
-def build_graph():
-    """The compiled graph. Cheap; built per run so nothing is shared between tasks."""
+def build_graph(*, roles: bool = False):
+    """The compiled graph. Cheap; built per run so nothing is shared between tasks.
+
+    With `roles` off -- the default, and the only graph the pipeline runs unless the runner
+    asks -- this is the single agent, `localize -> agent -> verify -> route`, exactly as it was
+    before the role split existed. `roles=True` is the Phase 2 split (`repolace_agents.roles`).
+    """
+    if roles:
+        raise NotImplementedError("the roles graph is not built yet")
     builder = StateGraph(AgentState, context_schema=RunContext)
     builder.add_node("localize", localize)
     builder.add_node("agent", agent)
@@ -513,6 +520,8 @@ async def run_graph(deps: AgentDeps, *, nonce: str) -> AgentResult:
         raise ValueError("the LLM graph needs deps.llm and deps.tools; only the stub and gold runners run without them")
     if deps.limits.max_attempts < 1 or deps.limits.max_steps_per_attempt < 1:
         raise ValueError(f"max_attempts and max_steps_per_attempt must be at least 1, got {deps.limits}")
+    if deps.limits.roles:
+        raise NotImplementedError("the roles graph is not built yet")
     final = await build_graph().ainvoke(
         AgentState(),
         config={"recursion_limit": recursion_limit_for(deps.limits)},
