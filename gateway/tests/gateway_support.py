@@ -141,6 +141,7 @@ def make_settings(**overrides: Any) -> GatewaySettings:
         "anthropic_api_key": ANTHROPIC_KEY,
         "openai_api_key": OPENAI_KEY,
         "gemini_api_key": None,
+        "minimax_api_key": None,
         "aws_profile_name": None,
         "aws_region_name": None,
     }

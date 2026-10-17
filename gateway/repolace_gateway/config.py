@@ -40,6 +40,7 @@ PROVIDER_KEY_FIELDS: Mapping[str, str] = {
     "anthropic": "anthropic_api_key",
     "openai": "openai_api_key",
     "gemini": "gemini_api_key",
+    "minimax": "minimax_api_key",
 }
 
 #: Providers that authenticate with the AWS credential chain rather than one API key.
@@ -76,6 +77,7 @@ class GatewaySettings(BaseSettings):
     anthropic_api_key: SecretStr | None = None
     openai_api_key: SecretStr | None = None
     gemini_api_key: SecretStr | None = None
+    minimax_api_key: SecretStr | None = None
     #: Aliased so the environment names carry a `GATEWAY_` prefix: bare
     #: `MODELS_PATH` and `STAGE_MODELS` are too generic to claim in a shared `.env`.
     #: (The provider keys keep their standard names, which other tooling expects.)

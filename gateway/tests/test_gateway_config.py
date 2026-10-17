@@ -46,6 +46,36 @@ class TestTheShippedFile:
             assert model.litellm_model.startswith(f"{model.provider}/")
             assert model.provider in KNOWN_PROVIDERS
 
+    @pytest.mark.parametrize(
+        ("key", "provider", "litellm_model"),
+        [
+            ("gemini-3-8-flash", "gemini", "gemini/gemini-3.8-flash"),
+            ("minimax-m2-5", "minimax", "minimax/MiniMax-M2.5"),
+        ],
+    )
+    def test_the_comparison_models_are_declared_and_priced_by_litellm(self, key, provider, litellm_model):
+        """Selecting one with `GATEWAY_STAGE_MODELS` must not fail at the pre-spend price check."""
+        import litellm
+
+        model = load_config(DEFAULT_MODELS_PATH).models[key]
+        assert (model.provider, model.litellm_model) == (provider, litellm_model)
+        if model.price is None:  # LiteLLM's pinned map must then supply it
+            info = litellm.get_model_info(model=model.litellm_model)
+            assert info["input_cost_per_token"] and info["output_cost_per_token"]
+        else:
+            assert model.price.input > 0 and model.price.output > 0
+
+    def test_gemini_is_priced_explicitly_because_the_pinned_map_lacks_it(self):
+        """The 2026-10-17 Standard paid rates; they change on 2027-01-01 (see models.toml)."""
+        price = load_config(DEFAULT_MODELS_PATH).models["gemini-3-8-flash"].price
+        assert price is not None
+        assert (price.input, price.output) == (Decimal("0.00000075"), Decimal("0.00000375"))
+
+    def test_the_comparison_models_can_be_routed_to_the_agent_stage(self):
+        for key in ("gemini-3-8-flash", "minimax-m2-5"):
+            config = load_config(DEFAULT_MODELS_PATH, stage_models={"agent": key})
+            assert config.route("agent").primary.key == key
+
     def test_the_agent_stage_caches_and_the_cheap_stage_does_not(self):
         config = load_config(DEFAULT_MODELS_PATH)
         assert config.route("agent").stage.cache is True
@@ -232,6 +262,11 @@ class TestSettings:
         settings = make_settings(gemini_api_key=None)
         with pytest.raises(MissingProviderKey, match="GEMINI_API_KEY"):
             settings.api_key_for("gemini")
+
+    def test_minimax_has_its_own_key_and_the_error_names_it(self):
+        assert make_settings(minimax_api_key="mm-key").api_key_for("minimax") == "mm-key"
+        with pytest.raises(MissingProviderKey, match="MINIMAX_API_KEY"):
+            make_settings(minimax_api_key=None).api_key_for("minimax")
 
     def test_an_empty_key_counts_as_missing(self):
         with pytest.raises(MissingProviderKey):
