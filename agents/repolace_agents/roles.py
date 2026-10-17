@@ -49,19 +49,23 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 
 from repolace_agents import graph
+from repolace_agents.contracts import StopReason
 from repolace_agents.prompts import SUBMIT
 from repolace_agents.role_prompts import (
     READ_ONLY_TOOLS,
     SUBMIT_PLAN,
+    SUBMIT_REVIEW,
     Role,
+    changes_requested_message,
     editor_message,
     planner_message,
+    review_message,
     role_step_caps,
     system_prompt,
 )
 from repolace_agents.state import AgentState
 from repolace_agents.tools.base import ToolBox
-from repolace_agents.tools.role_tools import SubmitPlan
+from repolace_agents.tools.role_tools import REQUEST_CHANGES, SubmitPlan, SubmitReview
 
 #: The gateway stage each role calls. The editor and the debugger are today's agent and use its
 #: stage; `plan` and `review` are optional stages that follow `agent` unless a config names them
@@ -145,19 +149,24 @@ async def score(state: AgentState, runtime: Runtime[graph.RunContext]) -> dict[s
     """`graph.verify`, plus the bookkeeping the roles need. Reads nothing of the oracle itself.
 
     Records `(attempt, commit)` for a fresh scored attempt, so `rewind` can resolve a number to
-    the commit the scorer ran.
+    the commit the scorer ran. And an editor that changed nothing after a requested review keeps
+    its own stop reason rather than NO_CHANGE: the reviewed attempt is what stands, it was clean,
+    and NO_CHANGE would read as "nothing was done" in the report and withhold a product PR.
     """
     update = await graph.verify(state, runtime)
     scored = update.get("last_attempt")
     if scored is not None:
         update = {**update, "scored_commits": (*state.scored_commits, (scored.attempt, scored.commit_sha))}
-    return update
+    if update.get("stop_reason") is StopReason.NO_CHANGE and state.verdict == REQUEST_CHANGES:
+        update = {**update, "stop_reason": state.stop_reason}
+    return {**update, "verdict": None}
 
 
-def route_roles(state: AgentState, runtime: Runtime[graph.RunContext]) -> Literal["editor", "__end__"]:
-    """Back to the editor on a fresh, red verification with attempts left; otherwise the end.
+def route_roles(state: AgentState, runtime: Runtime[graph.RunContext]) -> Literal["editor", "reviewer", "__end__"]:
+    """Red back to the editor, clean to the reviewer, only on a fresh verification with attempts left.
 
-    The same inputs `graph.route` decides on, and nothing else: see the module docstring.
+    The same inputs `graph.route` decides on, and nothing else: see the module docstring. A clean
+    attempt with no attempt left is not reviewed, because a review could only ask for one.
     """
     limits = runtime.context.deps.limits
     if state.stop_reason in graph._NO_RETRY:
@@ -166,9 +175,39 @@ def route_roles(state: AgentState, runtime: Runtime[graph.RunContext]) -> Litera
         return END
     if state.last_attempt is None or state.last_attempt.infrastructure_error:
         return END
-    if state.attempt >= limits.max_attempts or state.feedback_clean:
+    if state.attempt >= limits.max_attempts:
         return END
-    return EDITOR
+    return REVIEWER if state.feedback_clean else EDITOR
+
+
+async def reviewer(state: AgentState, runtime: Runtime[graph.RunContext]) -> dict[str, Any]:
+    """Read the change against the issue and the plan, read-only, and approve it or ask for changes."""
+    ctx = runtime.context
+    assert ctx.git is not None and ctx.base_sha is not None  # run_graph supplies both whenever roles is on
+    caps = role_step_caps(ctx.deps.limits)
+    # What the pipeline's review stage and the pull request show: the scored commit against the base.
+    diff = await ctx.git.diff_from(ctx.base_sha)
+    verdict = SubmitReview()
+    toolbox = _tools(ctx).subset(READ_ONLY_TOOLS, extra=(verdict,))
+    messages = (_system(Role.REVIEWER, ctx), _user(review_message(state.briefing, state.plan, diff, ctx.nonce)))
+    loop = await graph._run_loop(ctx, messages, toolbox, REVIEW_STAGE, caps.review, SUBMIT_REVIEW, attempt=state.attempt)
+    update: dict[str, Any] = {"steps": state.steps + loop.calls}
+    if loop.stop in graph._SKIP_VERIFY:
+        # The run ends on the budget or the provider, as it would have in the next model call.
+        update["stop_reason"] = loop.stop
+    elif verdict.verdict == REQUEST_CHANGES:
+        update["verdict"] = REQUEST_CHANGES
+        update["messages"] = (*state.messages, _user(changes_requested_message(verdict.comments, ctx.nonce)))
+    return update
+
+
+def after_reviewer(state: AgentState, runtime: Runtime[graph.RunContext]) -> Literal["editor", "__end__"]:
+    """One more editing attempt for a request for changes, within `max_attempts`; otherwise the end."""
+    if state.stop_reason in graph._SKIP_VERIFY:
+        return END
+    if state.verdict == REQUEST_CHANGES and state.attempt < runtime.context.deps.limits.max_attempts:
+        return EDITOR
+    return END
 
 
 def build_roles_graph():
@@ -177,10 +216,12 @@ def build_roles_graph():
     builder.add_node("localize", graph.localize_roles)
     builder.add_node(PLANNER, planner)
     builder.add_node(EDITOR, editor)
+    builder.add_node(REVIEWER, reviewer)
     builder.add_node("verify", score)
     builder.add_edge(START, "localize")
     builder.add_edge("localize", PLANNER)
     builder.add_conditional_edges(PLANNER, after_planner, {EDITOR: EDITOR, END: END})
     builder.add_edge(EDITOR, "verify")
-    builder.add_conditional_edges("verify", route_roles, {EDITOR: EDITOR, END: END})
+    builder.add_conditional_edges("verify", route_roles, {EDITOR: EDITOR, REVIEWER: REVIEWER, END: END})
+    builder.add_conditional_edges(REVIEWER, after_reviewer, {EDITOR: EDITOR, END: END})
     return builder.compile()
