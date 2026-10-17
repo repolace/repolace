@@ -65,7 +65,7 @@ from repolace_agents.role_prompts import (
 )
 from repolace_agents.state import AgentState
 from repolace_agents.tools.base import ToolBox
-from repolace_agents.tools.role_tools import REQUEST_CHANGES, SubmitPlan, SubmitReview
+from repolace_agents.tools.role_tools import REQUEST_CHANGES, Rewind, SubmitPlan, SubmitReview
 
 #: The gateway stage each role calls. The editor and the debugger are today's agent and use its
 #: stage; `plan` and `review` are optional stages that follow `agent` unless a config names them
@@ -145,6 +145,15 @@ async def editor(state: AgentState, runtime: Runtime[graph.RunContext]) -> dict[
     return await _work(state, runtime, Role.EDITOR, _tools(runtime.context))
 
 
+async def debugger(state: AgentState, runtime: Runtime[graph.RunContext]) -> dict[str, Any]:
+    """An attempt after a red one: the nine tools plus `rewind` to an attempt the scorer recorded."""
+    ctx = runtime.context
+    assert ctx.git is not None  # run_graph supplies it whenever roles is on
+    tools = _tools(ctx)
+    toolbox = tools.subset(tools.names, extra=(Rewind(dict(state.scored_commits), ctx.git.reset_hard),))
+    return await _work(state, runtime, Role.DEBUGGER, toolbox)
+
+
 async def score(state: AgentState, runtime: Runtime[graph.RunContext]) -> dict[str, Any]:
     """`graph.verify`, plus the bookkeeping the roles need. Reads nothing of the oracle itself.
 
@@ -162,8 +171,8 @@ async def score(state: AgentState, runtime: Runtime[graph.RunContext]) -> dict[s
     return {**update, "verdict": None}
 
 
-def route_roles(state: AgentState, runtime: Runtime[graph.RunContext]) -> Literal["editor", "reviewer", "__end__"]:
-    """Red back to the editor, clean to the reviewer, only on a fresh verification with attempts left.
+def route_roles(state: AgentState, runtime: Runtime[graph.RunContext]) -> Literal["debugger", "reviewer", "__end__"]:
+    """Red to the debugger, clean to the reviewer, only on a fresh verification with attempts left.
 
     The same inputs `graph.route` decides on, and nothing else: see the module docstring. A clean
     attempt with no attempt left is not reviewed, because a review could only ask for one.
@@ -177,7 +186,7 @@ def route_roles(state: AgentState, runtime: Runtime[graph.RunContext]) -> Litera
         return END
     if state.attempt >= limits.max_attempts:
         return END
-    return REVIEWER if state.feedback_clean else EDITOR
+    return REVIEWER if state.feedback_clean else DEBUGGER
 
 
 async def reviewer(state: AgentState, runtime: Runtime[graph.RunContext]) -> dict[str, Any]:
@@ -216,12 +225,14 @@ def build_roles_graph():
     builder.add_node("localize", graph.localize_roles)
     builder.add_node(PLANNER, planner)
     builder.add_node(EDITOR, editor)
+    builder.add_node(DEBUGGER, debugger)
     builder.add_node(REVIEWER, reviewer)
     builder.add_node("verify", score)
     builder.add_edge(START, "localize")
     builder.add_edge("localize", PLANNER)
     builder.add_conditional_edges(PLANNER, after_planner, {EDITOR: EDITOR, END: END})
     builder.add_edge(EDITOR, "verify")
-    builder.add_conditional_edges("verify", route_roles, {EDITOR: EDITOR, REVIEWER: REVIEWER, END: END})
+    builder.add_edge(DEBUGGER, "verify")
+    builder.add_conditional_edges("verify", route_roles, {DEBUGGER: DEBUGGER, REVIEWER: REVIEWER, END: END})
     builder.add_conditional_edges(REVIEWER, after_reviewer, {EDITOR: EDITOR, END: END})
     return builder.compile()
