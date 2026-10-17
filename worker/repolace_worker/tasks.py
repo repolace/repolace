@@ -31,6 +31,7 @@ log = structlog.get_logger()
 DONE = "done"
 NOT_CLAIMABLE = "not_claimable"
 NOT_FOUND = "not_found"
+BENCHMARK_REFUSED = "benchmark_refused"
 TIMED_OUT = "timed_out"
 ERRORED = "errored"
 
@@ -61,6 +62,8 @@ async def run_one(
 ) -> str:
     """Run one task against `resources`, never raising for anything about the task itself.
 
+    A benchmark row (`eval_run_id` set) is refused untouched: the eval runner owns those.
+
     `agent` and `run_task_overrides` are test seams (a scripted agent, a local workspace
     factory); the worker never passes them. Imports are local so the module stays light.
     """
@@ -68,10 +71,22 @@ async def run_one(
     from repolace_pipeline.errors import TaskNotClaimable, TaskNotFound
     from repolace_pipeline.resources import task_options
     from repolace_pipeline.run import run_task
+    from repolace_shared.db.models import Task
     from repolace_shared.tasks_recovery import fail_if_running, remove_task_containers
+    from sqlalchemy import select
 
     options = {**task_options(resources.settings), **run_task_overrides}
     try:
+        # Benchmark rows belong to the eval runner, which owns the run manifest, the instance
+        # selection and the report's denominator. The API and the sweeper never publish one, so a
+        # message for one was published by hand, and running it here would score it outside the
+        # manifest. Refused before the claim, so the row stays exactly as the runner left it.
+        # (`eval_run_id` is set at insert and never changes, so checking before the claim is safe.)
+        async with resources.session_factory() as session:
+            found = (await session.execute(select(Task.eval_run_id).where(Task.id == task_id))).first()
+        if found is not None and found.eval_run_id is not None:
+            log.error("worker.task.benchmark_refused", task_id=str(task_id), eval_run_id=found.eval_run_id)
+            return BENCHMARK_REFUSED
         # `bounded`, not `asyncio.timeout`: `run_task` settles a cancelled row itself, by the name
         # of the exception that reaches it, so the bound has to arrive as a `WorkerTimeout` for the
         # row to read `interrupted: WorkerTimeout` instead of `interrupted: CancelledError`.

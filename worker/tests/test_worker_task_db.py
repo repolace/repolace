@@ -96,6 +96,19 @@ class TestRedeliveryAndFailure:
         assert (first, second) == (tasks.DONE, tasks.NOT_CLAIMABLE)
         assert len(agent.calls) == 1
 
+    async def test_a_benchmark_row_is_refused_and_left_untouched(self, db_session, db_session_factory, origin_url):
+        """The API and the sweeper never publish a benchmark row; a hand-published message must not
+        get one past the eval runner, which owns the run manifest, the budget and the report."""
+        task = await seed_task(db_session, eval_run_id="run-1", instance_id="inst-1", run_index=0)
+        agent = fixing_agent()
+
+        outcome = await run(db_session_factory, origin_url, task.id, agent)
+
+        row, _ = await reload(db_session_factory, task.id)
+        assert outcome == tasks.BENCHMARK_REFUSED
+        assert agent.calls == []
+        assert (row.status, row.claimed_by, row.started_at) == (TaskStatus.QUEUED, None, None)
+
     async def test_an_unknown_task_is_dropped(self, db_session_factory, origin_url):
         assert await run(db_session_factory, origin_url, uuid.uuid4(), fixing_agent()) == tasks.NOT_FOUND
 
