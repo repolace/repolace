@@ -56,6 +56,13 @@ def _clean[Text: (str, list, None)](value: Text) -> Text:
     return value
 
 
+# `clock_timestamp()`, not `now()`, in both terminal writes below. Postgres's `now()` is the start time of the
+# *transaction*, and the task's own session opens one right after the claim and holds it for the whole run (it
+# has loaded the row). `now()` would stamp `completed_at` with the moment of the claim, a few milliseconds
+# after `started_at`, so the report's claim-to-completion latency would read about zero for every task.
+# Found by the first real smoke run: an 18-minute task recorded a 43 ms duration.
+
+
 async def write_terminal(
     state: AsyncSession,
     task_id: uuid.UUID,
@@ -102,7 +109,8 @@ async def write_terminal(
             changed_files=_clean(changed_files),
             pr_number=pr_number,
             pr_url=_clean(pr_url),
-            completed_at=func.now(),
+            completed_at=func.clock_timestamp(),
+            updated_at=func.clock_timestamp(),
         )
     )
     return _written(result.rowcount, task_id, status)
@@ -131,7 +139,8 @@ async def write_failure_minimal(
             error_message=_clean(error_message),
             pr_number=pr_number,
             pr_url=_clean(pr_url),
-            completed_at=func.now(),
+            completed_at=func.clock_timestamp(),
+            updated_at=func.clock_timestamp(),
         )
     )
     return _written(result.rowcount, task_id, TaskStatus.FAILED)
