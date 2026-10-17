@@ -187,6 +187,26 @@ async def enqueue_task(
     if issue is None:
         raise HTTPException(status_code=404, detail="issue not found or not open")
 
+    # A double click or a client retry would otherwise queue a second task, open a second PR and
+    # spend a second budget on the same issue. A finished task does not block: running again after
+    # a failure is the normal way to retry.
+    in_flight = await db.scalar(
+        select(Task.id)
+        .where(
+            Task.repo_id == repo.id,
+            Task.issue_number == issue.number,
+            Task.target_branch == target_branch,
+            Task.status.in_((TaskStatus.QUEUED, TaskStatus.RUNNING)),
+            Task.eval_run_id.is_(None),
+        )
+        .limit(1)
+    )
+    if in_flight is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"issue #{issue.number} already has a task queued or running for {target_branch!r}",
+        )
+
     task = Task(
         repo_id=repo.id,
         issue_number=issue.number,

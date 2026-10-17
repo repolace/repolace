@@ -17,6 +17,7 @@ removed line that reads `-- foo` is not mistaken for a `--- a/file` header.
 import re
 import time
 from dataclasses import dataclass, field
+from functools import cache
 from pathlib import PurePosixPath
 
 from markupsafe import Markup, escape
@@ -86,15 +87,24 @@ def _token_class(ttype: _TokenType) -> str | None:
     return None
 
 
+@cache
+def _lexer(name: str):
+    """One lexer per allowlisted name (there are 16 extensions). Building one per line spent the
+    whole highlighting budget on construction for a long diff."""
+    try:
+        return get_lexer_by_name(name, stripnl=False, ensurenl=False)
+    except ClassNotFound:
+        return None
+
+
 def highlight_line(text: str, filename: str, deadline: float | None = None) -> Markup:
     """One line of code as escaped markup; highlighted only for an allowlisted extension and inside the budget."""
     ext = PurePosixPath(filename).suffix.lower()
     name = LEXERS.get(ext)
     if name is None or len(text) > MAX_HIGHLIGHT_LINE or (deadline is not None and time.monotonic() > deadline):
         return Markup(escape(text))
-    try:
-        lexer = get_lexer_by_name(name, stripnl=False, ensurenl=False)
-    except ClassNotFound:
+    lexer = _lexer(name)
+    if lexer is None:
         return Markup(escape(text))
     parts: list[Markup] = []
     for ttype, value in lex(text, lexer):

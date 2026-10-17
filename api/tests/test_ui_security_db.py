@@ -4,14 +4,16 @@ import hashlib
 import re
 from typing import ClassVar
 
+import httpx
 import pytest
 from api_support import FakeGithub, raw_issue, seed_repo, seed_task
+from repolace_api.routes.github import router as github_router
 from repolace_api.routes.tasks import BENCHMARK_SCRUBBED_FIELDS
 from repolace_api.ui import STATIC_DIR
 from repolace_api.ui.security import CSP
 from repolace_shared.db.models import Task, TaskOutcome, TaskStatus
 from sqlalchemy import func, select
-from ui_support import SAME_ORIGIN, at, seed_run, seed_stage, ui_client
+from ui_support import SAME_ORIGIN, at, seed_run, seed_stage, ui_app, ui_client
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db]
 
@@ -319,3 +321,26 @@ class TestBenchmarkOracle:
             await self.seed_benchmark(db_session, repo, issue_number=i + 1, cost_usd=1.5, run_index=i)
         html = (await get(db_session_factory, f"/ui/repos/{repo.id}/tasks/new/confirm")).text
         assert "No estimate yet" in html
+
+
+class TestHostCheck:
+    """The allowlist is for the UI and API; the signed webhook must be reachable on the public name."""
+
+    def client(self, session_factory) -> httpx.AsyncClient:
+        app = ui_app(session_factory)
+        app.include_router(github_router)
+        return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://tunnel.example")
+
+    async def test_the_webhook_is_reached_on_a_host_off_the_allowlist_and_still_needs_its_signature(
+        self, db_session_factory
+    ):
+        async with self.client(db_session_factory) as client:
+            response = await client.post("/github/webhook", content=b"{}")
+        assert response.status_code == 401  # the handler's missing-signature refusal, not the Host 400
+
+    @pytest.mark.parametrize("path", ["/ui/repos", "/repos", "/github/webhook/extra", "/github"])
+    async def test_every_other_path_still_refuses_a_host_off_the_allowlist(self, db_session_factory, path):
+        async with self.client(db_session_factory) as client:
+            response = await client.get(path)
+        assert response.status_code == 400
+        assert response.text == "Invalid host header"

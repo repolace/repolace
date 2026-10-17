@@ -61,6 +61,12 @@ def is_ui_path(path: str) -> bool:
 
 DEFAULT_ALLOWED_HOSTS = ("localhost", "127.0.0.1", "[::1]")
 
+#: Paths that skip the Host allowlist. GitHub calls the webhook with `Host: <the public name>`,
+#: so requiring that name on the allowlist would put the whole unauthenticated UI and JSON API on
+#: the same public name. The webhook authenticates itself (HMAC over the body); `/healthz` carries
+#: nothing. Exact paths only: a prefix here would exempt routes added later without a decision.
+HOST_CHECK_EXEMPT_PATHS = frozenset({"/github/webhook", "/healthz"})
+
 
 def normalise_host(value: str) -> str:
     """`Host`-style value to a bare lowercase host: no port, no IPv6 brackets."""
@@ -123,7 +129,7 @@ class UiSecurityMiddleware:
             await self.app(scope, receive, send)
             return
         headers = Headers(scope=scope)
-        if normalise_host(headers.get("host", "")) not in self.hosts:
+        if scope["path"] not in HOST_CHECK_EXEMPT_PATHS and normalise_host(headers.get("host", "")) not in self.hosts:
             response = PlainTextResponse("Invalid host header", status_code=400)
             await response(scope, receive, send)
             return

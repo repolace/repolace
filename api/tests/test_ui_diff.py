@@ -132,3 +132,18 @@ class TestEscaping:
 
         macros = (Path(env.loader.searchpath[0]) / "_macros.html").read_text()  # type: ignore[union-attr]
         assert "|safe" not in macros and "| safe" not in macros
+
+
+class TestLexerReuse:
+    def test_a_long_diff_builds_one_lexer_per_language_not_one_per_line(self, monkeypatch):
+        from repolace_api.ui import diffview
+
+        built = []
+        real = diffview.get_lexer_by_name
+        monkeypatch.setattr(diffview, "get_lexer_by_name", lambda *a, **k: built.append(a) or real(*a, **k))
+        diffview._lexer.cache_clear()
+
+        for i in range(200):
+            highlight_line(f"x = {i}", "a.py")
+
+        assert len(built) == 1
