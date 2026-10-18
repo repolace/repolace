@@ -130,7 +130,7 @@ Monorepo setup, Docker Compose (Postgres + Redis + RabbitMQ), FastAPI skeleton, 
 **Phase 2 — Real product (~60–80h)**
 - Split into specialized agents (planner/editor/reviewer/debugger)
 - Async queue (RabbitMQ/Celery), worker pool
-- Merge-conflict resolution sub-loop (own agent role, bounded retries)
+- Merge-conflict resolution sub-loop (own agent role, bounded retries): wired, as the `merge_target` stage (`pipeline/repolace_pipeline/conflicts.py`; product tasks whose gate would open a PR, never benchmark tasks)
 - UI: task list with status badges, enqueue flow (issue → branch → confirm), pipeline view (log-backed, not full traces yet)
 
 **Phase 3 — Observability and testing rigor (~55–70h)**

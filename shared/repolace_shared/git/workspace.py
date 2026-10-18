@@ -390,17 +390,18 @@ class TaskWorkspace:
         if extra:
             raise RuntimeError(
                 f"{len(extra)} path(s) are not unmerged and may not be committed as a resolution: "
-                + ", ".join(os.fsdecode(p) for p in extra[:5])
+                + ", ".join(_printable(os.fsdecode(p)) for p in extra[:5])
             )
         missing = sorted(unmerged_paths - wanted)
         if missing:
             raise RuntimeError(
                 f"{len(missing)} unmerged path(s) are not in the resolved set: "
-                + ", ".join(os.fsdecode(p) for p in missing[:5])
+                + ", ".join(_printable(os.fsdecode(p)) for p in missing[:5])
             )
 
         for rel in relative:
-            _refuse_markers(root / rel, rel)
+            # Off the loop: up to _MAX_RESOLVED_BYTES of line splitting per file, and the heartbeat shares it.
+            await asyncio.to_thread(_refuse_markers, root / rel, _printable(rel))
 
         await self.repo.stage_paths(relative)
         if await self.repo.unmerged_files():
@@ -409,7 +410,7 @@ class TaskWorkspace:
         if stray:
             raise RuntimeError(
                 "files outside the resolved set were modified: "
-                + ", ".join(os.fsdecode(p) for p in stray[:5])
+                + ", ".join(_printable(os.fsdecode(p)) for p in stray[:5])
             )
         sha = await self.repo.commit_merge(message)
         log.info("workspace.resolution_committed", sha=sha, paths=len(relative))
@@ -442,22 +443,42 @@ MAX_RESOLUTION_PATHS = 500
 
 _FULL_SHA = re.compile(r"[0-9a-f]{40}")
 
-#: A conflict marker line, as git writes them (also zdiff3's `|||||||` base line).
-_MARKER_LINE = re.compile(rb"^(<{7}|>{7}|\|{7})( .*)?$|^={7}$")
+#: A conflict marker line, as git writes them (also zdiff3's `|||||||` base line). `{7,}` because a
+#: `conflict-marker-size` attribute lengthens them; such paths are refused earlier, this is the backstop.
+CONFLICT_MARKER_LINE = re.compile(rb"^(<{7,}|>{7,}|\|{7,})( .*)?$|^={7,}$")
 
 #: A resolved file this large is not a source file a resolver edited.
 _MAX_RESOLVED_BYTES = 10_000_000
 
 
+def _printable(path: str) -> str:
+    """A repository path made safe to put in a message: printable characters only, bounded."""
+    return "".join(c if c.isprintable() else "?" for c in path)[:200]
+
+
+def file_has_marker(path: Path) -> int | None:
+    """The 1-based number of the first conflict marker line in ``path``, or None. Sync: run on a thread.
+
+    Raises ``RuntimeError`` for a file too large to scan. A missing file has none.
+    """
+    if not path.exists():
+        return None
+    if path.stat().st_size > _MAX_RESOLVED_BYTES:
+        raise RuntimeError("too large to check for conflict markers")
+    for number, line in enumerate(path.read_bytes().split(b"\n"), start=1):
+        if CONFLICT_MARKER_LINE.match(line.rstrip(b"\r")):
+            return number
+    return None
+
+
 def _refuse_markers(path: Path, display: str) -> None:
     """Raise if ``path`` still holds a conflict marker line. A deleted file has none."""
-    if not path.exists():
-        return
-    if path.stat().st_size > _MAX_RESOLVED_BYTES:
-        raise RuntimeError(f"{display} is too large to check for conflict markers")
-    for number, line in enumerate(path.read_bytes().split(b"\n"), start=1):
-        if _MARKER_LINE.match(line.rstrip(b"\r")):
-            raise RuntimeError(f"{display}:{number} still holds a conflict marker")
+    try:
+        number = file_has_marker(path)
+    except RuntimeError as exc:
+        raise RuntimeError(f"{display} is {exc}") from exc
+    if number is not None:
+        raise RuntimeError(f"{display}:{number} still holds a conflict marker")
 
 
 def _force_writable(func, path, exc: BaseException) -> None:

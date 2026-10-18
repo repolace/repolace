@@ -565,7 +565,14 @@ CONFLICT_OTHER = "other"
 #: Upper bound on unmerged paths `unmerged_files` will return.
 MAX_UNMERGED_PATHS = 500
 
+#: Attributes that change how git writes or stores the text a conflict is resolved in.
+_MARKER_ATTRIBUTES = ("conflict-marker-size", "working-tree-encoding", "merge", "filter", "ident")
+
 _git_version_cache: tuple[int, int] | None = None
+
+
+class TooManyConflicts(GitError):
+    """More unmerged paths than a resolution may cover. A conflict outcome, not a broken repolace."""
 
 
 class UntrustedConfigError(GitError):
@@ -1173,8 +1180,36 @@ class GitRepo:
         raw = await run_git_bytes("ls-files", "-u", "-z", cwd=self.path, credential_host=self.credential_host)
         entries = parse_unmerged(raw)
         if len(entries) > MAX_UNMERGED_PATHS:
-            raise GitError(f"{len(entries)} unmerged paths; refusing more than {MAX_UNMERGED_PATHS}")
+            raise TooManyConflicts(f"{len(entries)} unmerged paths; refusing more than {MAX_UNMERGED_PATHS}")
         return entries
+
+    async def marker_attribute_overrides(self, paths: Sequence[str]) -> list[bytes]:
+        """The paths whose `.gitattributes` change how git writes or stores conflict text.
+
+        `conflict-marker-size` other than 7 writes markers the host's seven-character scan would not
+        match; `working-tree-encoding` writes the file in an encoding the scan cannot read; a `merge`
+        attribute other than `text` (`-merge`, `binary`, a driver) leaves no markers at all; `filter`
+        and `ident` rewrite content on the way in. A path with any of them is not one the host can
+        verify, so the caller refuses it. Only attributes read from the tree (no command runs).
+        """
+        if not paths:
+            return []
+        raw = await run_git_bytes(
+            "check-attr", "-z", *_MARKER_ATTRIBUTES, "--", *paths,
+            cwd=self.path, credential_host=self.credential_host,
+        )
+        fields = raw.split(b"\0")
+        flagged: dict[bytes, None] = {}
+        for i in range(0, len(fields) - 2, 3):
+            path, attr, value = fields[i], fields[i + 1].decode("ascii", "replace"), fields[i + 2]
+            if value == b"unspecified":
+                continue
+            if attr == "conflict-marker-size" and value == b"7":
+                continue
+            if attr == "merge" and value == b"text":
+                continue
+            flagged[path] = None
+        return list(flagged)
 
     async def worktree_changes(self) -> list[bytes]:
         """Paths with a working-tree change or that are untracked (ignored files excluded).

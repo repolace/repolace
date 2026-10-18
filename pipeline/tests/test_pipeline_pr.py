@@ -407,6 +407,14 @@ class TestProductBody:
         assert "| cost | not measured |" in body
         assert "| stopped because | - |" in body
 
+    def test_a_target_that_did_not_move_adds_no_row(self):
+        assert "target branch" not in render_pr_body(pr_facts())
+
+    def test_a_merged_target_is_disclosed_in_the_run_table(self):
+        body = render_pr_body(pr_facts(target_merge="moved while the task ran; merged cleanly"))
+
+        assert "| target branch | moved while the task ran; merged cleanly |" in body
+
     def test_only_the_top_five_retrieved_locations_are_shown(self):
         retrieved = tuple(chunk(file_path=f"src/m{i}.py", symbol_name=f"fn{i}") for i in range(9))
 
