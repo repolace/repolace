@@ -769,3 +769,65 @@ class TestRunGitBytes:
 
         assert raw == "café\n".encode()
         assert isinstance(raw, bytes)
+
+
+class TestRetryTransientGit:
+    """`push` and `fetch` get the retry `clone` has: a blip after a passing task must not erase the pass."""
+
+    @pytest.fixture(autouse=True)
+    def instant(self, monkeypatch):
+        from repolace_shared.git import repo as repo_module
+
+        monkeypatch.setattr(repo_module, "CLONE_RETRY_DELAYS_SECONDS", (0.0, 0.0))
+
+    @staticmethod
+    def failing(times: int, message: str):
+        calls = {"n": 0}
+
+        async def operation():
+            calls["n"] += 1
+            if calls["n"] <= times:
+                raise GitCommandError(["git", "push"], 128, message)
+            return "done"
+
+        return operation, calls
+
+    async def test_a_transient_failure_is_retried(self):
+        from repolace_shared.git.repo import retry_transient_git
+
+        operation, calls = self.failing(2, "fatal: unable to access: Could not resolve host: github.com")
+
+        assert await retry_transient_git(operation, what="push") == "done"
+        assert calls["n"] == 3
+
+    async def test_it_gives_up_after_three_attempts(self):
+        from repolace_shared.git.repo import retry_transient_git
+
+        operation, calls = self.failing(99, "fatal: early EOF")
+
+        with pytest.raises(GitCommandError):
+            await retry_transient_git(operation, what="fetch")
+        assert calls["n"] == 3
+
+    async def test_a_refusal_is_not_retried(self):
+        from repolace_shared.git.repo import retry_transient_git
+
+        operation, calls = self.failing(99, "remote: Permission to x denied\nfatal: unable to access: 403")
+
+        with pytest.raises(GitCommandError):
+            await retry_transient_git(operation, what="push")
+        assert calls["n"] == 1
+
+
+class TestRpcFailedMarkerIsNarrow:
+    def test_a_server_rejection_is_not_transient(self):
+        from repolace_shared.git.repo import is_transient_clone_failure
+
+        refused = GitCommandError(["git", "push"], 128, "error: RPC failed; HTTP 403 curl 22 The requested URL returned error: 403")
+        assert not is_transient_clone_failure(refused)
+
+    def test_a_transport_failure_still_is(self):
+        from repolace_shared.git.repo import is_transient_clone_failure
+
+        assert is_transient_clone_failure(GitCommandError(["git", "push"], 128, "error: RPC failed; curl 92 HTTP/2 stream 7 reset"))
+        assert is_transient_clone_failure(GitCommandError(["git", "push"], 128, "error: RPC failed; HTTP 502 curl 22"))

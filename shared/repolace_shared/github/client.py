@@ -10,6 +10,7 @@ from repolace_shared.github.auth import (
     build_app_jwt,
 )
 from repolace_shared.github.schemas import Branch, Installation, Issue, PullRequest, Repository
+from repolace_shared.github.transport import RetryingTransport
 
 log = structlog.get_logger()
 
@@ -28,11 +29,19 @@ class BranchList(list[Branch]):
 
 
 class GithubClient:
-    def __init__(self, app_id: str, private_key: str) -> None:
+    def __init__(
+        self, app_id: str, private_key: str, *, transport: httpx.AsyncBaseTransport | None = None
+    ) -> None:
         self._app_id = app_id
         self._private_key = private_key
         self._token_cache = InstallationTokenCache(app_id, private_key)
-        self._http = httpx.AsyncClient(base_url=GITHUB_API_BASE, headers={"Accept": "application/vnd.github+json"})
+        self._http = httpx.AsyncClient(
+            base_url=GITHUB_API_BASE,
+            headers={"Accept": "application/vnd.github+json"},
+            # Generous: the connection these run over is not always a good one.
+            timeout=httpx.Timeout(30.0, connect=15.0),
+            transport=RetryingTransport(transport),
+        )
 
     async def aclose(self) -> None:
         await self._http.aclose()

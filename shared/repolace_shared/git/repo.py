@@ -39,7 +39,8 @@ CLONE_ATTEMPTS = 3
 CLONE_RETRY_DELAYS_SECONDS = (5.0, 20.0)
 _TRANSIENT_CLONE_MARKERS = (
     "early eof",
-    "rpc failed",
+    "rpc failed; curl",
+    "rpc failed; http 5",
     "unexpected disconnect",
     "connection reset",
     "connection timed out",
@@ -967,13 +968,16 @@ class GitRepo:
                 kill_process_tree(pgid, ("cat-file", "--batch"))
 
     async def push_branch(self, branch: str, remote: str = "origin") -> None:
-        await self._run(
-            "push",
-            "--set-upstream",
-            remote,
-            f"{branch}:{branch}",
-            authenticated=True,
-            timeout=PUSH_TIMEOUT_SECONDS,
+        await retry_transient_git(
+            lambda: self._run(
+                "push",
+                "--set-upstream",
+                remote,
+                f"{branch}:{branch}",
+                authenticated=True,
+                timeout=PUSH_TIMEOUT_SECONDS,
+            ),
+            what="push",
         )
         log.info("git.push", path=str(self.path), branch=branch, remote=remote)
 
@@ -1099,12 +1103,15 @@ class GitRepo:
         branch = await self._validated_branch(branch)
         await self.require_trusted_config()
         refspec = f"+refs/heads/{branch}:refs/remotes/origin/{branch}"
-        await self._run(
-            "-c", "transfer.fsckObjects=true",
-            "fetch", "--no-tags", "--no-recurse-submodules", "--no-write-fetch-head",
-            "origin", "--", refspec,
-            authenticated=True,
-            timeout=PUSH_TIMEOUT_SECONDS,
+        await retry_transient_git(
+            lambda: self._run(
+                "-c", "transfer.fsckObjects=true",
+                "fetch", "--no-tags", "--no-recurse-submodules", "--no-write-fetch-head",
+                "origin", "--", refspec,
+                authenticated=True,
+                timeout=PUSH_TIMEOUT_SECONDS,
+            ),
+            what="fetch",
         )
         if await self.is_shallow():
             raise GitError("clone became shallow after fetch; incremental indexing requires full history")
@@ -1209,6 +1216,24 @@ class GitRepo:
         await self.require_trusted_config()
         await self._run("commit", "--no-verify", "--message", message)
         return await self.head_sha()
+
+
+async def retry_transient_git(operation, *, what: str):
+    """Run ``operation()`` (an awaitable factory), retrying a transport failure a bounded number of times.
+
+    For `push` and `fetch`: re-running either is safe. A push whose first attempt reached the server but
+    lost the reply finds "Everything up-to-date" the second time and succeeds.
+    """
+    for attempt in range(1, CLONE_ATTEMPTS + 1):
+        try:
+            return await operation()
+        except GitCommandError as exc:
+            if attempt == CLONE_ATTEMPTS or not is_transient_clone_failure(exc):
+                raise
+            delay = CLONE_RETRY_DELAYS_SECONDS[min(attempt - 1, len(CLONE_RETRY_DELAYS_SECONDS) - 1)]
+            log.warning("git.retry", what=what, attempt=attempt, delay_seconds=delay, error=str(exc)[:300])
+            await asyncio.sleep(delay)
+    raise AssertionError("unreachable: the loop returns or raises")  # pragma: no cover
 
 
 async def clone(

@@ -237,7 +237,8 @@ def _describe(exc: BaseException) -> str:
         # missing installation permission, not a bad request.
         return f"github {exc.response.status_code}: {exc.response.text[:500]}"
     if isinstance(exc, httpx.RequestError):
-        return f"github unreachable: {exc}"
+        detail = str(exc)
+        return f"github unreachable: {type(exc).__name__}" + (f": {detail}" if detail else "")
     if isinstance(exc, subprocess.CalledProcessError):
         return f"git precondition failed: {(exc.stderr or '').strip()[:500]}"
     return f"{type(exc).__name__}: {exc}"
