@@ -39,8 +39,8 @@ celery_app.conf.update(
     # and `worker_process_init` (resources, provider preflight, the embedding model and torch)
     # runs before it does. Without this the children would be killed and respawned in a loop.
     worker_proc_alive_timeout=300.0,
-    # RabbitMQ's default `consumer_timeout` (30 min) would kill an acks_late task; it must be raised
-    # above `task_time_limit` in the broker's config (infra, item 6).
+    # RabbitMQ's default `consumer_timeout` (30 min) would kill an acks_late task; infra/rabbitmq.conf
+    # raises it above `task_time_limit` (see `tasks.required_consumer_timeout_ms`).
     task_routes={
         SWEEP_TASK_NAME: {"queue": _worker.maintenance_queue},
         REAP_TASK_NAME: {"queue": _worker.maintenance_queue},

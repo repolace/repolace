@@ -12,6 +12,10 @@ build/
 # silently use the fallback password while the services use the real one.
 !infra/.env
 
+# Per-service compose env files (the committed copies are the *.env.example files).
+infra/api.env
+infra/worker.env
+
 node_modules/
 .DS_Store
 
