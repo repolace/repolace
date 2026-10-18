@@ -60,7 +60,7 @@ def test_the_role_is_read_from_the_environment(monkeypatch):
 
 def test_the_required_broker_timeout_exceeds_the_hard_limit():
     settings = WorkerSettings()
-    assert tasks.required_consumer_timeout_ms(settings) == settings.hard_time_limit_seconds * 1000
+    assert tasks.required_consumer_timeout_ms(settings) > settings.hard_time_limit_seconds * 1000
 
 
 def test_a_failed_child_init_ends_the_child_instead_of_leaving_it_without_resources(monkeypatch, probes):

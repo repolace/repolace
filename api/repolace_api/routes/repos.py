@@ -276,17 +276,24 @@ async def compute_estimate(db: AsyncSession, repo_id: UUID) -> CostEstimate:
 
     1. `repo`: the last 30 priced, non-benchmark tasks of this repo, if there
        are at least 5.
-    2. `model`: otherwise every priced, non-benchmark task, on any repo, whose
-       most recent `llm_calls` row used the same model as this repo's most
-       recent task that has one.
+    2. `model`: otherwise the last 30 priced, non-benchmark tasks, on any repo,
+       whose most recent `llm_calls` row used the same model as this repo's most
+       recent task that has one, if there are at least 5. The same window as
+       `repo`: the pool grows with the whole system's history, and the figure
+       should describe how tasks cost now, not the average of all time.
     3. `none`: otherwise no numbers, only the per-task cap as an upper bound.
     """
     await active_repo(db, repo_id)
 
-    async def percentiles(where: list, limit: int | None) -> tuple[int, Decimal | None, Decimal | None]:
-        costs = select(Task.cost_usd).where(Task.cost_usd.is_not(None), Task.eval_run_id.is_(None), *where)
-        if limit is not None:
-            costs = costs.order_by(Task.created_at.desc()).limit(limit)
+    async def percentiles(where: list) -> tuple[int, Decimal | None, Decimal | None]:
+        # `id` breaks ties between tasks created in the same instant, so "the latest 30" is one set, and it
+        # matches the order of `ix_tasks_repo_created_id`.
+        costs = (
+            select(Task.cost_usd)
+            .where(Task.cost_usd.is_not(None), Task.eval_run_id.is_(None), *where)
+            .order_by(Task.created_at.desc(), Task.id.desc())
+            .limit(ESTIMATE_WINDOW)
+        )
         sub = costs.subquery()
         row = (
             await db.execute(
@@ -299,7 +306,7 @@ async def compute_estimate(db: AsyncSession, repo_id: UUID) -> CostEstimate:
         ).one()
         return row[0], _usd(row[1]), _usd(row[2])
 
-    n, p50, p90 = await percentiles([Task.repo_id == repo_id], ESTIMATE_WINDOW)
+    n, p50, p90 = await percentiles([Task.repo_id == repo_id])
     if n >= ESTIMATE_MIN_TASKS:
         return CostEstimate(basis="repo", n=n, p50_usd=p50, p90_usd=p90, upper_bound_usd=TASK_COST_CAP_USD)
 
@@ -325,7 +332,7 @@ async def compute_estimate(db: AsyncSession, repo_id: UUID) -> CostEstimate:
     ).scalar_one_or_none()
     if model is not None:
         same_model = select(latest_call.c.task_id).where(latest_call.c.model == model)
-        n, p50, p90 = await percentiles([Task.id.in_(same_model)], None)
+        n, p50, p90 = await percentiles([Task.id.in_(same_model)])
         if n >= ESTIMATE_MIN_TASKS:
             return CostEstimate(basis="model", n=n, p50_usd=p50, p90_usd=p90, upper_bound_usd=TASK_COST_CAP_USD)
 

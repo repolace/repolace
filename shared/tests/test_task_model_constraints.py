@@ -25,7 +25,7 @@ MIGRATION_0013 = (
     / "versions"
     / "0013_add_agent_outputs_and_index_strategy.py"
 )
-MIGRATION_0015 = MIGRATION_0013.with_name("0015_add_task_conflict_reason.py")
+MIGRATION_0016 = MIGRATION_0013.with_name("0016_add_task_conflict_reason.py")
 
 
 def _declared_checks() -> dict[str, str]:
@@ -75,9 +75,9 @@ def migration_0013():
 
 
 @pytest.fixture(scope="module")
-def migration_0015():
-    """What 0015's `upgrade()` asks Alembic to create, recorded rather than executed."""
-    return _record_upgrade(MIGRATION_0015, "migration_0015_under_test")
+def migration_0016():
+    """What 0016's `upgrade()` asks Alembic to create, recorded rather than executed."""
+    return _record_upgrade(MIGRATION_0016, "migration_0016_under_test")
 
 
 class TestStopReasonConstant:
@@ -171,7 +171,7 @@ class TestConflictReasonCheck:
 
         assert normalised == "conflict_reason IS NULL OR status = 'conflicting'"
 
-    def test_the_migration_creates_the_same_predicate(self, migration_0015):
-        assert " ".join(migration_0015.checks[self.NAME].split()) == " ".join(
+    def test_the_migration_creates_the_same_predicate(self, migration_0016):
+        assert " ".join(migration_0016.checks[self.NAME].split()) == " ".join(
             _declared_checks()[self.NAME].split()
         )

@@ -36,7 +36,6 @@ re-check below. It never touches git; the host stages and commits through
 
 import asyncio
 import os
-import re
 import uuid
 from collections.abc import Awaitable, Callable, Collection, Sequence
 from dataclasses import dataclass
@@ -50,8 +49,8 @@ from repolace_agents.resolver import ResolverDeps, ResolverLimits, ResolverResul
 from repolace_gateway.budget import BudgetExceeded, TaskBudget, task_scope
 from repolace_gateway.errors import LLMCallError
 from repolace_shared.git import GitError, TaskWorkspace, redact
-from repolace_shared.git.repo import CONFLICT_BOTH_ADDED, CONFLICT_BOTH_MODIFIED, conflict_kind
-from repolace_shared.git.workspace import MAX_RESOLUTION_PATHS
+from repolace_shared.git.repo import CONFLICT_BOTH_ADDED, CONFLICT_BOTH_MODIFIED, TooManyConflicts, conflict_kind
+from repolace_shared.git.workspace import MAX_RESOLUTION_PATHS, file_has_marker
 from repolace_shared.paths import resolve_within
 from verify.protocol import SuiteResult
 
@@ -69,13 +68,6 @@ RESOLVER_MAX_CALLS = 2 * ResolverLimits().max_steps
 
 #: The only conflict kinds a text resolver can edit: both sides changed, or both added, a plain file.
 TEXT_CONFLICTS = frozenset({CONFLICT_BOTH_MODIFIED, CONFLICT_BOTH_ADDED})
-
-#: A conflict marker line, as git writes them (zdiff3's `|||||||` base line included). Restated from
-#: `repolace_shared.git.workspace` rather than imported, because it is private there; a test holds the
-#: two equal, so the resolver's check and `commit_resolution` cannot disagree about what a marker is.
-_MARKER_LINE = re.compile(rb"^(<{7}|>{7}|\|{7})( .*)?$|^={7}$")
-#: A resolved file this large is not a source file a resolver edited (`commit_resolution`'s own cap).
-_MAX_CHECKED_BYTES = 10_000_000
 
 MAX_REASON_CHARS = 1000
 MAX_REASON_PATHS = 5
@@ -140,9 +132,13 @@ def resolver_budget(agent: TaskBudget) -> TaskBudget:
 # --- the host's check --------------------------------------------------------
 
 
+def _clean(text: str, limit: int) -> str:
+    return "".join(c if c.isprintable() else "?" for c in text)[:limit]
+
+
 def _display(path: str) -> str:
     """A repository path made safe to put in a sentence: printable characters only, bounded."""
-    return "".join(c if c.isprintable() else "?" for c in path)[:PATH_CHARS]
+    return _clean(path, PATH_CHARS)
 
 
 def _listed(paths: Sequence[str]) -> str:
@@ -160,12 +156,24 @@ def _file_problems(root: Path, path: str) -> list[str]:
         return [f"{shown}: not a file inside the checkout"]
     if resolved.is_symlink() or not resolved.is_file():
         return [f"{shown}: missing, or not a regular file"]
-    if resolved.stat().st_size > _MAX_CHECKED_BYTES:
+    try:
+        number = file_has_marker(resolved)
+    except RuntimeError:
         return [f"{shown}: too large to check for conflict markers"]
-    for number, line in enumerate(resolved.read_bytes().split(b"\n"), start=1):
-        if _MARKER_LINE.match(line.rstrip(b"\r")):
-            return [f"{shown}:{number} still holds a conflict marker line"]
+    if number is not None:
+        return [f"{shown}:{number} still holds a conflict marker line"]
     return []
+
+
+def _has_no_marker(root: Path, path: str) -> bool:
+    """True when the conflicted file git wrote holds no marker line (or cannot be scanned). Sync."""
+    try:
+        resolved = resolve_within(root, path)
+        if resolved.is_symlink() or not resolved.is_file():
+            return True
+        return file_has_marker(resolved) is None
+    except (ValueError, OSError, RuntimeError):
+        return True
 
 
 def host_check(workspace: TaskWorkspace, conflicts: Collection[str]) -> Callable[[Sequence[str]], Awaitable[list[str]]]:
@@ -224,6 +232,8 @@ async def merge_target(
     HEAD must be the last scored commit on entry (the pipeline's review stage rewinds to it).
     """
     repo = workspace.repo
+    # A fetch failure (target deleted, network down) raises `GitError` and fails a task whose work is
+    # done; the push would fail the same way, so it is left to.
     moved, tip = await workspace.target_moved()
     if not moved:
         log.info("pipeline.merge_target.not_moved", tip=tip)
@@ -328,9 +338,14 @@ async def _resolve(
     A string means the caller must abort the merge. Exceptions that mean repolace broke propagate
     with the merge still in progress; the checkout is about to be deleted with the failed task.
     """
-    entries = await workspace.repo.unmerged_files()
+    try:
+        entries = await workspace.repo.unmerged_files()
+    except TooManyConflicts as exc:
+        return f"the merge leaves more unmerged files than one resolution may cover ({_clean(str(exc), 120)})"
     if not entries:
-        raise GitError("git reported a conflicted merge but left no unmerged files")
+        # A rename-directory or similar conflict git reports but leaves no index entries for: nothing
+        # a text resolver can edit, and nothing the host could stage honestly.
+        return "git reported a conflicted merge but left no unmerged files for a resolver to edit"
     kinds = {entry.path: conflict_kind(entry.stages) for entry in entries}
     other = sorted(path for path, kind in kinds.items() if kind not in TEXT_CONFLICTS)
     if other:
@@ -343,6 +358,22 @@ async def _resolve(
         paths = sorted(path.decode("utf-8") for path in kinds)
     except UnicodeDecodeError:
         return "a conflicted path is not valid UTF-8, which the resolver's tools cannot address"
+    # Whatever changes how git writes or stores conflict text puts the file beyond the host's check: a
+    # longer marker, another encoding, a `-merge` that leaves no markers at all.
+    overridden = await workspace.repo.marker_attribute_overrides(paths)
+    if overridden:
+        return (
+            f".gitattributes changes how git writes conflict text in {len(overridden)} file(s), "
+            f"which the host cannot check: {_listed([os.fsdecode(p) for p in overridden])}"
+        )
+    # And a conflicted file git left no marker in (binary content, a driver) has nothing to reconcile:
+    # an unedited submission would stage our side and silently drop the target's change.
+    unmarked = [p for p in paths if await asyncio.to_thread(_has_no_marker, workspace.path, p)]
+    if unmarked:
+        return (
+            f"{len(unmarked)} conflicted file(s) hold no conflict markers (binary or generated "
+            f"content), so a text resolver has nothing to reconcile: {_listed(unmarked)}"
+        )
     if llm is None:
         return f"no model client to run the conflict resolver ({len(paths)} conflicted file(s): {_listed(paths)})"
 
@@ -377,5 +408,5 @@ async def _resolve(
         raise
     except (RuntimeError, ValueError) as exc:
         # The resolver said it was done and the host's own check disagrees: its resolution is refused.
-        return f"the host refused the resolver's resolution: {exc}"
+        return f"the host refused the resolver's resolution: {_clean(str(exc), 300)}"
     return len(paths)

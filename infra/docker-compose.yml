@@ -1,5 +1,36 @@
 name: repolace
 
+# Shared by the two worker services. They are one image started two ways (see `worker` and
+# `worker-maintenance`), so a change to what a worker needs is made once, here.
+x-worker-common: &worker-common
+  build:
+    context: ..
+    dockerfile: worker/Dockerfile
+  image: repolace-worker
+  restart: unless-stopped
+  # Container root, on purpose. This whole stack must run on the *rootless* daemon (CLAUDE.md,
+  # "Deployment requirements for the sandbox host"), where container uid 0 is the unprivileged
+  # host user that owns the docker socket and the workspace below. Any other uid maps to a subuid
+  # that can reach neither, and the worker could not talk to the daemon at all.
+  user: "0:0"
+  # A reaper for the git, docker-client and pytest children a killed process group leaves behind.
+  init: true
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    rabbitmq:
+      condition: service_healthy
+
+x-worker-environment: &worker-environment
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-repolace}:${POSTGRES_PASSWORD:-repolace}@postgres:5432/${POSTGRES_DB:-repolace}
+  REDIS_URL: redis://:${REDIS_PASSWORD:-repolace}@redis:6379/0
+  CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-repolace}:${RABBITMQ_PASSWORD:-repolace}@rabbitmq:5672//
+  # The docker CLI must find the mounted rootless socket. A real environment variable, not a line
+  # in an env file: the sandbox builds the CLI's environment from `os.environ`.
+  DOCKER_HOST: unix:///run/repolace/docker.sock
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -36,6 +67,9 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-repolace}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-repolace}
+    volumes:
+      # consumer_timeout above the longest task; see the file for why and how it is derived.
+      - ./rabbitmq.conf:/etc/rabbitmq/conf.d/20-repolace.conf:ro
     ports:
       - "127.0.0.1:5672:5672"
       - "127.0.0.1:15672:15672"
@@ -50,8 +84,10 @@ services:
       context: ..
       dockerfile: api/Dockerfile
     restart: unless-stopped
+    # Its own env file, not the repository .env: that one also holds the provider keys, which must
+    # never be in the environment of the process that serves the web. See infra/api.env.example.
     env_file:
-      - path: ../.env
+      - path: api.env
         required: false
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-repolace}:${POSTGRES_PASSWORD:-repolace}@postgres:5432/${POSTGRES_DB:-repolace}
@@ -73,28 +109,98 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  # Runs tasks: the default queue, `WORKER_CONCURRENCY` prefork children (default 3). The only
+  # service with provider keys and the GitHub App key (infra/worker.env).
   worker:
-    build:
-      context: ..
-      dockerfile: worker/Dockerfile
-    restart: unless-stopped
+    <<: *worker-common
+    command:
+      - uv
+      - run
+      - --no-sync
+      - --project
+      - worker
+      - celery
+      - -A
+      - repolace_worker.celery_app
+      - worker
+      - --loglevel=info
+      - -n
+      - task@%h
+      # Named so this worker can never also consume the maintenance queue.
+      - -Q
+      - celery
+    env_file:
+      - path: worker.env
+        required: false
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-repolace}:${POSTGRES_PASSWORD:-repolace}@postgres:5432/${POSTGRES_DB:-repolace}
-      REDIS_URL: redis://:${REDIS_PASSWORD:-repolace}@redis:6379/0
-      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-repolace}:${RABBITMQ_PASSWORD:-repolace}@rabbitmq:5672//
+      <<: *worker-environment
+      WORKER_ROLE: task
+      # Task clones, exports and results live under this directory, and the sandbox bind-mounts
+      # paths inside it (`-v <path>:/repo`). The daemon resolves those paths on the *host*, so the
+      # directory is mounted at the same path in the container and on the host: a named volume or
+      # a different container path would give every Verify run an empty /repo. Put it on a size-
+      # and inode-limited filesystem (CLAUDE.md, "Deployment requirements for the sandbox host").
+      WORKSPACE_PARENT_DIR: ${WORKSPACE_PARENT_DIR:-/var/tmp/repolace-workspaces}
+    volumes:
+      # NEVER mount the rootful /var/run/docker.sock here, nor add the user to the `docker` group
+      # to reach it: that socket is root-equivalent on the host, so the LLM-generated code this
+      # worker supervises would be one container escape from owning the machine, and the sandbox
+      # (.claude/rules/verify-sandbox.md) would defend nothing. Mount the *rootless* daemon's
+      # socket only; DOCKER_SOCKET overrides the default for a uid other than 1000.
+      - ${DOCKER_SOCKET:-/run/user/1000/docker.sock}:/run/repolace/docker.sock
+      - ${WORKSPACE_PARENT_DIR:-/var/tmp/repolace-workspaces}:${WORKSPACE_PARENT_DIR:-/var/tmp/repolace-workspaces}
     healthcheck:
-      test: ["CMD-SHELL", "uv run --project worker celery -A repolace_worker.celery_app inspect ping || exit 1"]
-      interval: 15s
-      timeout: 10s
+      test: ["CMD-SHELL", "uv run --no-sync --project worker celery -A repolace_worker.celery_app inspect ping -d task@$$HOSTNAME --timeout 10 || exit 1"]
+      interval: 30s
+      timeout: 20s
       retries: 5
-      start_period: 15s
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
+      # The main process answers a ping at once, but each child loads torch and the embedding model
+      # before it reports up (`worker_proc_alive_timeout` allows it 300 s); this only keeps a slow
+      # first start from being counted as failed checks.
+      start_period: 120s
+
+  # Runs the two beat jobs (the sweeper and the reaper) on their own queue, so a task worker whose
+  # every child is busy on a multi-hour task cannot starve them. Needs the database, Redis, the
+  # broker and the docker CLI (the reaper removes a dead task's containers), and **no provider
+  # keys**: no env_file, and no model client is ever built in this role.
+  worker-maintenance:
+    <<: *worker-common
+    command:
+      - uv
+      - run
+      - --no-sync
+      - --project
+      - worker
+      - celery
+      - -A
+      - repolace_worker.celery_app
+      - worker
+      - --loglevel=info
+      - -n
+      - maintenance@%h
+      - -Q
+      - repolace.maintenance
+      - --concurrency
+      - "1"
+      # Beat runs inside this worker, so this service must stay at exactly one replica: a second
+      # one would publish every tick twice. A lost schedule file only delays a tick (the messages
+      # expire), so it lives in the container.
+      - -B
+      - -s
+      - /tmp/celerybeat-schedule
+    environment:
+      <<: *worker-environment
+      WORKER_ROLE: maintenance
+    volumes:
+      # The reaper must reach the *same* daemon the task workers use, and the same warning applies:
+      # never the rootful /var/run/docker.sock.
+      - ${DOCKER_SOCKET:-/run/user/1000/docker.sock}:/run/repolace/docker.sock
+    healthcheck:
+      test: ["CMD-SHELL", "uv run --no-sync --project worker celery -A repolace_worker.celery_app inspect ping -d maintenance@$$HOSTNAME --timeout 10 || exit 1"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      start_period: 30s
 
 volumes:
   postgres_data:

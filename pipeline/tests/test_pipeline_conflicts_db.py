@@ -511,7 +511,7 @@ class TestHarnessFailure:
 
 
 class TestWhenTheStageDoesNotRun:
-    async def test_a_task_that_would_open_no_pr_never_fetches(
+    async def test_a_task_that_would_open_no_pr_skips_the_merge_stage(
         self, db_session, db_session_factory, origin_url, tmp_path
     ):
         task = await seed_task(db_session)

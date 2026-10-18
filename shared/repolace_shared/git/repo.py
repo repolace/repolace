@@ -15,6 +15,7 @@ Credentials are never written to disk or passed on the command line. See
 import asyncio
 import os
 import re
+import shutil
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,6 +30,43 @@ TokenProvider = Callable[[], Awaitable[str]]
 
 DEFAULT_TIMEOUT_SECONDS = 120.0
 CLONE_TIMEOUT_SECONDS = 900.0
+
+#: A clone is the one network read at the start of every task, and a task that loses it fails for good (a
+#: FAILED row is never re-queued). GitHub resets a stream or drops a connection now and then: the first
+#: real benchmark run lost a task to `HTTP/2 stream reset ... early EOF` after five minutes. A transient
+#: transport failure is retried a bounded number of times; an authentication or "not found" error is not.
+CLONE_ATTEMPTS = 3
+CLONE_RETRY_DELAYS_SECONDS = (5.0, 20.0)
+_TRANSIENT_CLONE_MARKERS = (
+    "early eof",
+    "rpc failed; curl",
+    "rpc failed; http 5",
+    "unexpected disconnect",
+    "connection reset",
+    "connection timed out",
+    "could not resolve host",
+    "failed to connect",
+    "http/2 stream",
+    "remote end hung up unexpectedly",
+    "the requested url returned error: 5",
+    "tls connection",
+    "ssl_read",
+    "ssl_connect",
+    "gnutls_handshake",
+    "operation timed out",
+)
+
+
+def is_transient_clone_failure(exc: BaseException) -> bool:
+    """Whether a failed `git clone` looks like a transport hiccup worth another try.
+
+    Matched on git's own message. A command timeout (`GitTimeoutError`) is deliberately not retried: it
+    already cost `CLONE_TIMEOUT_SECONDS`, and three of those would outlast the stage.
+    """
+    if not isinstance(exc, GitCommandError):
+        return False
+    text = str(exc).lower()
+    return any(marker in text for marker in _TRANSIENT_CLONE_MARKERS)
 PUSH_TIMEOUT_SECONDS = 300.0
 
 COMMITTER_NAME = "repolace"
@@ -527,7 +565,14 @@ CONFLICT_OTHER = "other"
 #: Upper bound on unmerged paths `unmerged_files` will return.
 MAX_UNMERGED_PATHS = 500
 
+#: Attributes that change how git writes or stores the text a conflict is resolved in.
+_MARKER_ATTRIBUTES = ("conflict-marker-size", "working-tree-encoding", "merge", "filter", "ident")
+
 _git_version_cache: tuple[int, int] | None = None
+
+
+class TooManyConflicts(GitError):
+    """More unmerged paths than a resolution may cover. A conflict outcome, not a broken repolace."""
 
 
 class UntrustedConfigError(GitError):
@@ -930,13 +975,16 @@ class GitRepo:
                 kill_process_tree(pgid, ("cat-file", "--batch"))
 
     async def push_branch(self, branch: str, remote: str = "origin") -> None:
-        await self._run(
-            "push",
-            "--set-upstream",
-            remote,
-            f"{branch}:{branch}",
-            authenticated=True,
-            timeout=PUSH_TIMEOUT_SECONDS,
+        await retry_transient_git(
+            lambda: self._run(
+                "push",
+                "--set-upstream",
+                remote,
+                f"{branch}:{branch}",
+                authenticated=True,
+                timeout=PUSH_TIMEOUT_SECONDS,
+            ),
+            what="push",
         )
         log.info("git.push", path=str(self.path), branch=branch, remote=remote)
 
@@ -1062,12 +1110,15 @@ class GitRepo:
         branch = await self._validated_branch(branch)
         await self.require_trusted_config()
         refspec = f"+refs/heads/{branch}:refs/remotes/origin/{branch}"
-        await self._run(
-            "-c", "transfer.fsckObjects=true",
-            "fetch", "--no-tags", "--no-recurse-submodules", "--no-write-fetch-head",
-            "origin", "--", refspec,
-            authenticated=True,
-            timeout=PUSH_TIMEOUT_SECONDS,
+        await retry_transient_git(
+            lambda: self._run(
+                "-c", "transfer.fsckObjects=true",
+                "fetch", "--no-tags", "--no-recurse-submodules", "--no-write-fetch-head",
+                "origin", "--", refspec,
+                authenticated=True,
+                timeout=PUSH_TIMEOUT_SECONDS,
+            ),
+            what="fetch",
         )
         if await self.is_shallow():
             raise GitError("clone became shallow after fetch; incremental indexing requires full history")
@@ -1129,8 +1180,36 @@ class GitRepo:
         raw = await run_git_bytes("ls-files", "-u", "-z", cwd=self.path, credential_host=self.credential_host)
         entries = parse_unmerged(raw)
         if len(entries) > MAX_UNMERGED_PATHS:
-            raise GitError(f"{len(entries)} unmerged paths; refusing more than {MAX_UNMERGED_PATHS}")
+            raise TooManyConflicts(f"{len(entries)} unmerged paths; refusing more than {MAX_UNMERGED_PATHS}")
         return entries
+
+    async def marker_attribute_overrides(self, paths: Sequence[str]) -> list[bytes]:
+        """The paths whose `.gitattributes` change how git writes or stores conflict text.
+
+        `conflict-marker-size` other than 7 writes markers the host's seven-character scan would not
+        match; `working-tree-encoding` writes the file in an encoding the scan cannot read; a `merge`
+        attribute other than `text` (`-merge`, `binary`, a driver) leaves no markers at all; `filter`
+        and `ident` rewrite content on the way in. A path with any of them is not one the host can
+        verify, so the caller refuses it. Only attributes read from the tree (no command runs).
+        """
+        if not paths:
+            return []
+        raw = await run_git_bytes(
+            "check-attr", "-z", *_MARKER_ATTRIBUTES, "--", *paths,
+            cwd=self.path, credential_host=self.credential_host,
+        )
+        fields = raw.split(b"\0")
+        flagged: dict[bytes, None] = {}
+        for i in range(0, len(fields) - 2, 3):
+            path, attr, value = fields[i], fields[i + 1].decode("ascii", "replace"), fields[i + 2]
+            if value == b"unspecified":
+                continue
+            if attr == "conflict-marker-size" and value == b"7":
+                continue
+            if attr == "merge" and value == b"text":
+                continue
+            flagged[path] = None
+        return list(flagged)
 
     async def worktree_changes(self) -> list[bytes]:
         """Paths with a working-tree change or that are untracked (ignored files excluded).
@@ -1174,6 +1253,24 @@ class GitRepo:
         return await self.head_sha()
 
 
+async def retry_transient_git(operation, *, what: str):
+    """Run ``operation()`` (an awaitable factory), retrying a transport failure a bounded number of times.
+
+    For `push` and `fetch`: re-running either is safe. A push whose first attempt reached the server but
+    lost the reply finds "Everything up-to-date" the second time and succeeds.
+    """
+    for attempt in range(1, CLONE_ATTEMPTS + 1):
+        try:
+            return await operation()
+        except GitCommandError as exc:
+            if attempt == CLONE_ATTEMPTS or not is_transient_clone_failure(exc):
+                raise
+            delay = CLONE_RETRY_DELAYS_SECONDS[min(attempt - 1, len(CLONE_RETRY_DELAYS_SECONDS) - 1)]
+            log.warning("git.retry", what=what, attempt=attempt, delay_seconds=delay, error=str(exc)[:300])
+            await asyncio.sleep(delay)
+    raise AssertionError("unreachable: the loop returns or raises")  # pragma: no cover
+
+
 async def clone(
     url: str,
     destination: Path,
@@ -1195,15 +1292,29 @@ async def clone(
     token = await token_provider() if token_provider is not None else None
     log.info("git.clone.started", url=redact(url), branch=branch, destination=str(destination))
 
-    await run_git(
-        "clone",
-        "--branch",
-        branch,
-        url,
-        str(destination),
-        token=token,
-        timeout=CLONE_TIMEOUT_SECONDS,
-    )
+    for attempt in range(1, CLONE_ATTEMPTS + 1):
+        try:
+            await run_git(
+                "clone",
+                "--branch",
+                branch,
+                url,
+                str(destination),
+                token=token,
+                timeout=CLONE_TIMEOUT_SECONDS,
+            )
+            break
+        except GitCommandError as exc:
+            if attempt == CLONE_ATTEMPTS or not is_transient_clone_failure(exc):
+                raise
+            delay = CLONE_RETRY_DELAYS_SECONDS[min(attempt - 1, len(CLONE_RETRY_DELAYS_SECONDS) - 1)]
+            log.warning(
+                "git.clone.retry", url=redact(url), attempt=attempt, delay_seconds=delay, error=str(exc)[:300]
+            )
+            # git removes what it created when a clone fails, but a half-written destination would make
+            # the next attempt fail on "already exists" and hide the real error.
+            await asyncio.to_thread(shutil.rmtree, destination, True)
+            await asyncio.sleep(delay)
 
     repo = GitRepo(path=destination, token_provider=token_provider, expected_remote_url=url)
     if await repo.is_shallow():

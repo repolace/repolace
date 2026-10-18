@@ -139,10 +139,88 @@ class TestHostCheck:
             assert "1 unmerged file(s) outside the conflicted set: src/app.py" in problems
 
 
-def test_the_marker_rule_is_the_one_commit_resolution_applies():
-    """Two copies of one rule: the resolver's check and the host's commit must agree on what a marker is."""
-    assert conflicts._MARKER_LINE.pattern == workspace_module._MARKER_LINE.pattern
-    assert conflicts._MAX_CHECKED_BYTES == workspace_module._MAX_RESOLVED_BYTES
+def test_the_marker_rule_has_one_definition():
+    """The resolver's check and `commit_resolution` must agree on what a marker is: they share one function."""
+    assert conflicts.file_has_marker is workspace_module.file_has_marker
+    assert not hasattr(conflicts, "_MARKER_LINE")
+
+
+class Recorder:
+    """A resolver that must not be reached; remembers if it was."""
+
+    def __init__(self) -> None:
+        self.called = False
+
+    async def __call__(self, deps):
+        self.called = True
+        raise AssertionError("the resolver was called")
+
+
+async def run_resolve(workspace, resolver):
+    _, tip = await workspace.target_moved()
+    return await conflicts._resolve(
+        task_id=TASK_ID,
+        workspace=workspace,
+        issue=None,
+        baseline=None,
+        hidden_paths=(),
+        llm=object(),
+        resolver=resolver,
+        agent_budget=TaskBudget(),
+        old_base=workspace.base_sha,
+        tip=tip,
+        message="merge",
+    )
+
+
+class TestUnverifiableConflictsAreRefused:
+    async def test_attributes_that_change_the_markers_end_conflicting(self, origin_url, tmp_path):
+        async with mid_merge(origin_url, tmp_path) as workspace:
+            write(workspace.path / ".gitattributes", "src/app.py conflict-marker-size=9\n")
+            resolver = Recorder()
+
+            result = await run_resolve(workspace, resolver)
+
+            assert isinstance(result, str) and "gitattributes" in result
+            assert not resolver.called
+
+    async def test_a_conflicted_file_with_no_markers_ends_conflicting(self, origin_url, tmp_path):
+        """A binary or `-merge` conflict leaves our side in the file; submitting it unedited would drop theirs."""
+        async with mid_merge(origin_url, tmp_path) as workspace:
+            write(workspace.path / "src" / "app.py", OURS)
+            resolver = Recorder()
+
+            result = await run_resolve(workspace, resolver)
+
+            assert isinstance(result, str) and "hold no conflict markers" in result
+            assert not resolver.called
+
+    async def test_too_many_unmerged_files_end_conflicting(self, origin_url, tmp_path, monkeypatch):
+        from repolace_shared.git import repo as repo_module
+
+        async with mid_merge(origin_url, tmp_path) as workspace:
+            monkeypatch.setattr(repo_module, "MAX_UNMERGED_PATHS", 0)
+
+            result = await run_resolve(workspace, Recorder())
+
+            assert isinstance(result, str) and "more unmerged files" in result
+
+    async def test_a_conflict_with_no_unmerged_entries_ends_conflicting(self, origin_url, tmp_path, monkeypatch):
+        async with mid_merge(origin_url, tmp_path) as workspace:
+
+            async def none(self):
+                return []
+
+            monkeypatch.setattr(type(workspace.repo), "unmerged_files", none)
+
+            result = await run_resolve(workspace, Recorder())
+
+            assert isinstance(result, str) and "no unmerged files" in result
+
+
+def test_a_reason_cannot_carry_control_characters():
+    assert conflicts._clean("a\x1b[31mb\nc\u202ed", 100) == "a?[31mb?c?d"
+    assert len(conflicts._clean("x" * 500, 300)) == 300
 
 
 class TestNote:

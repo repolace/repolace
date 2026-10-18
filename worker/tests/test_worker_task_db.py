@@ -24,8 +24,9 @@ from pipeline_support import (
     seed_task,
 )
 from repolace_agents.contracts import StopReason
-from repolace_shared.db.models import TaskStatus
+from repolace_shared.db.models import TaskStage, TaskStatus
 from repolace_worker import tasks
+from sqlalchemy import select
 from verify.testing import FakeBackend
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db, pytest.mark.usefixtures("embedder")]
@@ -95,6 +96,19 @@ class TestRedeliveryAndFailure:
         assert (first, second) == (tasks.DONE, tasks.NOT_CLAIMABLE)
         assert len(agent.calls) == 1
 
+    async def test_a_benchmark_row_is_refused_and_left_untouched(self, db_session, db_session_factory, origin_url):
+        """The API and the sweeper never publish a benchmark row; a hand-published message must not
+        get one past the eval runner, which owns the run manifest, the budget and the report."""
+        task = await seed_task(db_session, eval_run_id="run-1", instance_id="inst-1", run_index=0)
+        agent = fixing_agent()
+
+        outcome = await run(db_session_factory, origin_url, task.id, agent)
+
+        row, _ = await reload(db_session_factory, task.id)
+        assert outcome == tasks.BENCHMARK_REFUSED
+        assert agent.calls == []
+        assert (row.status, row.claimed_by, row.started_at) == (TaskStatus.QUEUED, None, None)
+
     async def test_an_unknown_task_is_dropped(self, db_session_factory, origin_url):
         assert await run(db_session_factory, origin_url, uuid.uuid4(), fixing_agent()) == tasks.NOT_FOUND
 
@@ -120,9 +134,57 @@ class TestRedeliveryAndFailure:
 
         row, _ = await reload(db_session_factory, task.id)
         assert outcome == tasks.TIMED_OUT
-        # `run_task` settles a cancelled row itself ("interrupted"); `worker: timeout` is the backstop.
+        # `run_task` settles a cancelled row itself, by the name of what reached it: the timeout is
+        # the visible reason, not the bare `CancelledError` an `asyncio.timeout` would have left.
         assert row.status is TaskStatus.FAILED
-        assert row.error_message in ("worker: timeout", "interrupted: CancelledError")
+        assert row.error_message == "interrupted: WorkerTimeout"
+
+    async def test_the_stage_that_was_running_records_the_timeout_too(
+        self, db_session, db_session_factory, origin_url, monkeypatch
+    ):
+        """The bound is pulled in once the agent is running, so the stage in flight is known."""
+        task = await seed_task(db_session)
+        bounds = []
+        real_bounded = tasks.bounded
+
+        def remember(awaitable, seconds):
+            bounds.append(real_bounded(awaitable, seconds))
+            return bounds[-1]
+
+        monkeypatch.setattr(tasks, "bounded", remember)
+
+        async def hang(deps):
+            bounds[0].reschedule(0.05)
+            await asyncio.sleep(30)
+
+        outcome = await run(db_session_factory, origin_url, task.id, ScriptedAgent(hang), bound=600.0)
+
+        async with db_session_factory() as session:
+            stages = (await session.execute(select(TaskStage.stage, TaskStage.status, TaskStage.error)
+                                            .where(TaskStage.task_id == task.id))).all()
+        row, _ = await reload(db_session_factory, task.id)
+        assert outcome == tasks.TIMED_OUT
+        assert row.error_message == "interrupted: WorkerTimeout"
+        failed = [(stage, error) for stage, status, error in stages if status == "failed"]
+        assert [stage for stage, _ in failed] == ["agent"]
+        assert failed[0][1].startswith("WorkerTimeout")
+
+    async def test_a_row_the_pipeline_did_not_settle_is_failed_by_the_worker(
+        self, db_session, db_session_factory, monkeypatch
+    ):
+        """The backstop: if `run_task` could not write its own reason, `worker: timeout` still lands."""
+        task = await seed_task(db_session, status=TaskStatus.RUNNING)
+
+        async def silent_run_task(*args, **kwargs):
+            await asyncio.sleep(30)  # no handler of its own, like a pipeline whose failure write failed
+
+        monkeypatch.setattr("repolace_pipeline.run.run_task", silent_run_task)
+
+        outcome = await tasks.run_one(task.id, make_resources(db_session_factory), claimed_by=CLAIMANT, bound_seconds=0.05)
+
+        row, _ = await reload(db_session_factory, task.id)
+        assert outcome == tasks.TIMED_OUT
+        assert (row.status, row.error_message) == (TaskStatus.FAILED, "worker: timeout")
 
 
 class TestTheCeleryCallPath:
