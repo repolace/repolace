@@ -82,8 +82,16 @@ def render_dockerfile(spec: RepoSpec, install: Sequence[str]) -> str:
         # failed. PYTHONDONTWRITEBYTECODE so the run leaves no `__pycache__`
         # owned by the sandbox uid in the export -- the host has to delete that
         # tree afterwards and cannot chmod files it does not own.
+        #
+        # PIP_DEFAULT_TIMEOUT and PIP_RETRIES because pip's defaults (15 s, 5
+        # tries) give up on a slow or flaky link: a large wheel stalled mid-
+        # download and failed the build, which scores the instance
+        # unscoreable and loses its row for good. Neither changes what gets
+        # installed, only how long the build is willing to wait for it.
         "ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \\",
         "    PIP_ROOT_USER_ACTION=ignore \\",
+        "    PIP_DEFAULT_TIMEOUT=120 \\",
+        "    PIP_RETRIES=10 \\",
         "    PYTHONUNBUFFERED=1 \\",
         "    PYTHONDONTWRITEBYTECODE=1",
     ]
