@@ -8,6 +8,8 @@ accident of `sys.path`.
 """
 
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import httpx
@@ -18,6 +20,8 @@ from repolace_api.routes.tasks import router as tasks_router
 from repolace_shared.db.models import GithubInstallation, RegisteredRepo, Task, TaskStatus
 from repolace_shared.github.client import BranchList
 from repolace_shared.github.schemas import Branch, Issue
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 INSTALLATION_ID = 4242
 
@@ -123,3 +127,23 @@ def client_for(session_factory, github: FakeGithub) -> httpx.AsyncClient:
     app.state.session_factory = session_factory
     app.dependency_overrides[get_github_client] = lambda: github
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+
+
+@contextmanager
+def capture_sql(engine: AsyncEngine) -> Iterator[list[tuple[str, tuple]]]:
+    """Every statement the engine sends, as `(sql, parameters)`, while the block runs.
+
+    Records at `before_cursor_execute`, so it sees exactly what reaches the driver:
+    the column list an ORM load chose, and the `$n` placeholders with their values,
+    which is what the plan tests replay under EXPLAIN.
+    """
+    seen: list[tuple[str, tuple]] = []
+
+    def record(conn, cursor, statement, parameters, context, executemany) -> None:
+        seen.append((statement, tuple(parameters) if isinstance(parameters, (tuple, list)) else parameters))
+
+    event.listen(engine.sync_engine, "before_cursor_execute", record)
+    try:
+        yield seen
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", record)
