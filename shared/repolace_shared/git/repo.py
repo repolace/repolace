@@ -15,6 +15,7 @@ Credentials are never written to disk or passed on the command line. See
 import asyncio
 import os
 import re
+import shutil
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,6 +30,42 @@ TokenProvider = Callable[[], Awaitable[str]]
 
 DEFAULT_TIMEOUT_SECONDS = 120.0
 CLONE_TIMEOUT_SECONDS = 900.0
+
+#: A clone is the one network read at the start of every task, and a task that loses it fails for good (a
+#: FAILED row is never re-queued). GitHub resets a stream or drops a connection now and then: the first
+#: real benchmark run lost a task to `HTTP/2 stream reset ... early EOF` after five minutes. A transient
+#: transport failure is retried a bounded number of times; an authentication or "not found" error is not.
+CLONE_ATTEMPTS = 3
+CLONE_RETRY_DELAYS_SECONDS = (5.0, 20.0)
+_TRANSIENT_CLONE_MARKERS = (
+    "early eof",
+    "rpc failed",
+    "unexpected disconnect",
+    "connection reset",
+    "connection timed out",
+    "could not resolve host",
+    "failed to connect",
+    "http/2 stream",
+    "remote end hung up unexpectedly",
+    "the requested url returned error: 5",
+    "tls connection",
+    "ssl_read",
+    "ssl_connect",
+    "gnutls_handshake",
+    "operation timed out",
+)
+
+
+def is_transient_clone_failure(exc: BaseException) -> bool:
+    """Whether a failed `git clone` looks like a transport hiccup worth another try.
+
+    Matched on git's own message. A command timeout (`GitTimeoutError`) is deliberately not retried: it
+    already cost `CLONE_TIMEOUT_SECONDS`, and three of those would outlast the stage.
+    """
+    if not isinstance(exc, GitCommandError):
+        return False
+    text = str(exc).lower()
+    return any(marker in text for marker in _TRANSIENT_CLONE_MARKERS)
 PUSH_TIMEOUT_SECONDS = 300.0
 
 COMMITTER_NAME = "repolace"
@@ -1195,15 +1232,29 @@ async def clone(
     token = await token_provider() if token_provider is not None else None
     log.info("git.clone.started", url=redact(url), branch=branch, destination=str(destination))
 
-    await run_git(
-        "clone",
-        "--branch",
-        branch,
-        url,
-        str(destination),
-        token=token,
-        timeout=CLONE_TIMEOUT_SECONDS,
-    )
+    for attempt in range(1, CLONE_ATTEMPTS + 1):
+        try:
+            await run_git(
+                "clone",
+                "--branch",
+                branch,
+                url,
+                str(destination),
+                token=token,
+                timeout=CLONE_TIMEOUT_SECONDS,
+            )
+            break
+        except GitCommandError as exc:
+            if attempt == CLONE_ATTEMPTS or not is_transient_clone_failure(exc):
+                raise
+            delay = CLONE_RETRY_DELAYS_SECONDS[min(attempt - 1, len(CLONE_RETRY_DELAYS_SECONDS) - 1)]
+            log.warning(
+                "git.clone.retry", url=redact(url), attempt=attempt, delay_seconds=delay, error=str(exc)[:300]
+            )
+            # git removes what it created when a clone fails, but a half-written destination would make
+            # the next attempt fail on "already exists" and hide the real error.
+            await asyncio.to_thread(shutil.rmtree, destination, True)
+            await asyncio.sleep(delay)
 
     repo = GitRepo(path=destination, token_provider=token_provider, expected_remote_url=url)
     if await repo.is_shallow():
