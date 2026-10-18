@@ -817,3 +817,17 @@ class TestRetryTransientGit:
         with pytest.raises(GitCommandError):
             await retry_transient_git(operation, what="push")
         assert calls["n"] == 1
+
+
+class TestRpcFailedMarkerIsNarrow:
+    def test_a_server_rejection_is_not_transient(self):
+        from repolace_shared.git.repo import is_transient_clone_failure
+
+        refused = GitCommandError(["git", "push"], 128, "error: RPC failed; HTTP 403 curl 22 The requested URL returned error: 403")
+        assert not is_transient_clone_failure(refused)
+
+    def test_a_transport_failure_still_is(self):
+        from repolace_shared.git.repo import is_transient_clone_failure
+
+        assert is_transient_clone_failure(GitCommandError(["git", "push"], 128, "error: RPC failed; curl 92 HTTP/2 stream 7 reset"))
+        assert is_transient_clone_failure(GitCommandError(["git", "push"], 128, "error: RPC failed; HTTP 502 curl 22"))

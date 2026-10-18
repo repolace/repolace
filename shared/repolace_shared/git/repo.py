@@ -39,7 +39,8 @@ CLONE_ATTEMPTS = 3
 CLONE_RETRY_DELAYS_SECONDS = (5.0, 20.0)
 _TRANSIENT_CLONE_MARKERS = (
     "early eof",
-    "rpc failed",
+    "rpc failed; curl",
+    "rpc failed; http 5",
     "unexpected disconnect",
     "connection reset",
     "connection timed out",

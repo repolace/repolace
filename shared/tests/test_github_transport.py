@@ -72,3 +72,83 @@ async def test_a_client_error_is_returned_at_once():
     inner = Scripted(404, 200)
     assert (await send(inner)).status_code == 404
     assert inner.calls == 1
+
+
+async def test_connect_timeout_is_retried_for_post():
+    inner = Scripted(httpx.ConnectTimeout(""), 201)
+    assert (await send(inner, "POST")).status_code == 201
+
+
+@pytest.mark.parametrize("error", [httpx.RemoteProtocolError(""), httpx.ReadError("")])
+async def test_other_read_failures_are_retried_for_get(error):
+    inner = Scripted(error, 200)
+    assert (await send(inner)).status_code == 200
+
+
+@pytest.mark.parametrize("status", [503, 504])
+async def test_other_gateway_statuses_are_retried_for_get(status):
+    assert (await send(Scripted(status, 200))).status_code == 200
+
+
+async def test_the_last_attempt_returns_a_bad_gateway_instead_of_raising():
+    inner = Scripted(502)
+    assert (await send(inner)).status_code == 502
+    assert inner.calls == 3
+
+
+async def test_a_request_can_opt_in_to_retrying_a_post():
+    inner = Scripted(httpx.ReadTimeout(""), 201)
+    async with httpx.AsyncClient(transport=RetryingTransport(inner)) as client:
+        response = await client.post("https://api.github.com/x", extensions={transport.RETRY_EXTENSION: True})
+    assert response.status_code == 201
+    assert inner.calls == 2
+
+
+async def test_cancellation_during_the_pause_propagates(monkeypatch):
+    import asyncio
+
+    async def cancelled(_):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(transport.asyncio, "sleep", cancelled)
+    with pytest.raises(asyncio.CancelledError):
+        await send(Scripted(httpx.ConnectError(""), 200))
+
+
+async def test_a_502_response_is_closed_before_the_retry():
+    closed = []
+
+    class Body(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b""
+
+        async def aclose(self):
+            closed.append(True)
+
+    class Inner(Scripted):
+        async def handle_async_request(self, request):
+            self.calls += 1
+            if self.calls == 1:
+                return httpx.Response(502, stream=Body(), request=request)
+            return httpx.Response(200, request=request)
+
+    assert (await send(Inner(200))).status_code == 200
+    assert closed == [True]
+
+
+def test_the_environment_proxy_is_still_used(monkeypatch):
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example:3128")
+    assert transport._environment_proxy() == "http://proxy.example:3128"
+    monkeypatch.delenv("HTTPS_PROXY")
+    monkeypatch.delenv("https_proxy", raising=False)
+    assert transport._environment_proxy() is None
+
+
+async def test_the_client_goes_through_the_retrying_transport():
+    from repolace_shared.github.client import GithubClient
+
+    inner = Scripted(httpx.ConnectError(""), 200)
+    client = GithubClient("1", "unused", transport=inner)
+    assert (await client._http.get("/x")).status_code == 200
+    assert inner.calls == 2
+    await client._http.aclose()

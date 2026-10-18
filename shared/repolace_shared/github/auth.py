@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 import httpx
 import jwt
 
+from repolace_shared.github.transport import RETRY_EXTENSION
+
 GITHUB_API_BASE = "https://api.github.com"
 
 #: Default freshness margin: enough for one API call to complete.
@@ -50,6 +52,8 @@ class InstallationTokenCache:
         response = await client.post(
             f"{GITHUB_API_BASE}/app/installations/{installation_id}/access_tokens",
             headers={"Authorization": f"Bearer {app_jwt}", "Accept": "application/vnd.github+json"},
+            # Minting twice is harmless, so this POST may be retried like a GET.
+            extensions={RETRY_EXTENSION: True},
         )
         response.raise_for_status()
         data = response.json()
