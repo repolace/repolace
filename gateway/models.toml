@@ -11,9 +11,12 @@
 # supports_prompt_caching, its [price] must also give cache_read and cache_write.
 
 [gateway]
-max_attempts = 5            # total tries per model, the first included
+# Sized for Vertex's Dynamic Shared Quota: a 429 there means the shared pool was congested,
+# and sweep-2 lost three tasks to calls that gave up after ~15-30 s. These waits (2, 4, 8, 16,
+# 32, 64, 120, 120 s, with jitter) ride out a spell of a few minutes. A 429 is not billed.
+max_attempts = 9            # total tries per model, the first included
 base_delay_seconds = 2.0    # backoff doubles from here, with jitter
-max_delay_seconds = 60.0
+max_delay_seconds = 120.0
 request_timeout_seconds = 180.0
 
 [stages.agent]
