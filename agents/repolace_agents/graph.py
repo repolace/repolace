@@ -51,6 +51,7 @@ from repolace_agents.prompts import (
     TOO_MANY_CALLS,
     build_localize_message,
     build_system_prompt,
+    early_edit_reminder,
     elided,
 )
 from repolace_agents.render import escape_invisible, require_nonce, sanitize_text
@@ -130,6 +131,20 @@ def overlay_mode(deps: AgentDeps) -> bool:
 
 
 # --- message helpers ---------------------------------------------------------
+
+
+_EDIT_TOOLS = frozenset({"edit_file", "create_file"})
+
+
+def _has_edited(messages: Sequence[Mapping[str, Any]]) -> bool:
+    """Whether any assistant turn so far called a file-writing tool (a call, not a success)."""
+    for message in messages:
+        if message.get("role") != "assistant":
+            continue
+        for call in message.get("tool_calls") or ():
+            if (call.get("function") or {}).get("name") in _EDIT_TOOLS:
+                return True
+    return False
 
 
 def _assistant_turn(response: Any) -> dict[str, Any]:
@@ -254,11 +269,23 @@ async def agent(state: AgentState, runtime: Runtime[RunContext]) -> dict[str, An
     steps = state.steps
     attempt_steps = 0
     summary: str | None = None
+    reminded = False
 
     while True:
         if attempt_steps >= deps.limits.max_steps_per_attempt:
             stop = StopReason.STEP_CAP
             break
+        if (
+            not reminded
+            and attempt_no == 1
+            and deps.limits.early_edit_step
+            and attempt_steps == deps.limits.early_edit_step
+            and not _has_edited(messages)
+        ):
+            # Once, in the first attempt, and only from what the agent itself has done: no result
+            # is read, so this cannot tell it anything about the hidden tests.
+            reminded = True
+            messages.append({"role": "user", "content": early_edit_reminder(attempt_steps, deps.limits.max_steps_per_attempt)})
         if _transcript_chars(messages) > MAX_TRANSCRIPT_CHARS:
             messages = list(_elide_tool_outputs(messages, attempt_no, keep_last=KEEP_RECENT_TOOL_RESULTS))
         try:

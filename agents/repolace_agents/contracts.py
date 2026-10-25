@@ -109,6 +109,10 @@ class AgentLimits:
     max_issue_chars: int = 12_000
     #: How many lines of a retrieved chunk the prompt shows.
     max_context_snippet_lines: int = 60
+    #: Experimental (branch `exp/early-edit`): the step, in the first attempt, by which the agent is
+    #: asked to have made its first edit. The system prompt says so, and a reminder is added once if
+    #: no edit has been made by then. None or 0 turns both off and restores today's transcript.
+    early_edit_step: int | None = 12
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> AgentLimits:
