@@ -58,6 +58,7 @@ from repolace_agents.role_prompts import (
     Role,
     changes_requested_message,
     editor_message,
+    plan_wrapup_message,
     planner_message,
     review_message,
     role_step_caps,
@@ -103,8 +104,20 @@ async def planner(state: AgentState, runtime: Runtime[graph.RunContext]) -> dict
     caps = role_step_caps(ctx.deps.limits)
     toolbox = _tools(ctx).subset(READ_ONLY_TOOLS, extra=(SubmitPlan(),))
     messages = (_system(Role.PLANNER, ctx), _user(planner_message(state.briefing)))
-    loop = await graph._run_loop(ctx, messages, toolbox, PLAN_STAGE, caps.plan, SUBMIT_PLAN, attempt=1)
-    update: dict[str, Any] = {"steps": state.steps + loop.calls, "plan": loop.summary}
+    # The last of the planner's steps is held back for the hand-over: sweep-r1 showed a planner that
+    # explores to its cap and never calls `submit_plan` (0 of 7), which leaves the editor with no plan
+    # and a quarter fewer steps. The cap is still `caps.plan` model calls in all.
+    loop = await graph._run_loop(ctx, messages, toolbox, PLAN_STAGE, max(caps.plan - 1, 0), SUBMIT_PLAN, attempt=1)
+    calls = loop.calls
+    plan = loop.summary
+    if plan is None and loop.stop is StopReason.STEP_CAP:
+        wrap_up = (*loop.messages, _user(plan_wrapup_message()))
+        only_submit = _tools(ctx).subset((), extra=(SubmitPlan(),))
+        final = await graph._run_loop(ctx, wrap_up, only_submit, PLAN_STAGE, 1, SUBMIT_PLAN, attempt=1)
+        calls += final.calls
+        plan = final.summary
+        loop = final if final.stop in graph._SKIP_VERIFY else loop
+    update: dict[str, Any] = {"steps": state.steps + calls, "plan": plan}
     if loop.stop in graph._SKIP_VERIFY:
         # The budget or the provider ended the run before any edit: nothing to score.
         update["stop_reason"] = loop.stop

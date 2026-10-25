@@ -54,6 +54,7 @@ localize -> planner -> editor -> verify -> route_roles
   reviewer is that `BUDGET_*` or `LLM_ERROR` (a provider refusal still propagates); a planner that
   never submits leaves the editor without a plan; a reviewer with no verdict leaves the change
   standing; an editor that changes nothing after a review keeps its own stop reason.
+- **Planner hand-over.** The first sweep of the split (`sweep-r1`, stopped at 10 of 54 rows) showed the planner exploring to its 10-step cap and never calling `submit_plan` (0 of 7), so 4 of 7 tasks ended `no_change` with the editor starting cold and 25 steps. `roles.planner` now explores for `plan - 1` steps and, if it has not submitted, spends its last step on a hand-over call that offers only `submit_plan`. The step split (10/25/5) and every other prompt are unchanged, so `sweep-r2` isolates that one change.
 - Prompts (`role_prompts.py`): each system prompt is a pure function of `(role, limits, nonce)`;
   `Role.AGENT` is the single agent's prompt unchanged. Role tools are in `tools/role_tools.py`.
 - `render.py` neutralises `plan` and `review` closers along with the six other families.

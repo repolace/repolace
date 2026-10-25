@@ -156,7 +156,7 @@ def _planner(limits: AgentLimits, nonce: str) -> str:
 
 ## Budget
 
-You have about {caps.plan} steps (model calls). Prefer targeted searches and ranged reads over reading whole files. If you run out before you call `submit_plan`, the editor starts without a plan.
+You have about {caps.plan} steps (model calls). Prefer targeted searches and ranged reads over reading whole files. Your last step is kept for the hand-over: when the exploration steps run out you are asked once more, with only `submit_plan` available, so write down what you have learned instead of reading on. If that last call does not submit, the editor starts without a plan.
 """
 
 
@@ -318,6 +318,14 @@ def _plan_section(plan: str | None, nonce: str) -> str:
              "and it may be wrong:"),
             data_block("plan", nonce, plan, limit=MAX_PLAN_CHARS),
         ]
+    )
+
+
+def plan_wrapup_message() -> str:
+    """The planner's last step: its exploration steps are used up, and only `submit_plan` is left."""
+    return (
+        f"Your exploration steps are used up. Call `{SUBMIT_PLAN}` now with the plan you can write from what you "
+        "have read, and say plainly what you could not confirm. Do not ask to read more."
     )
 
 
