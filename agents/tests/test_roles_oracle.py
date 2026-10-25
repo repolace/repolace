@@ -50,7 +50,7 @@ class TestSentinelNeverReachesAnyRole:
 
         result, llm = await run_red_path(baseline=baseline, attempts=attempts, issue=BENCHMARK, hidden=frozenset({HIDDEN_FILE}))
 
-        assert result.stop_reason is StopReason.MAX_ATTEMPTS and stages(llm) == ["plan", "agent", "agent", "agent"]
+        assert result.stop_reason is StopReason.MAX_ATTEMPTS and stages(llm) == ["plan", "agent", "debug", "debug"]
         for index, call in enumerate(llm.calls):
             assert SENT not in call.text(), f"call {index + 1} ({call.stage}): the sentinel in {where}.{field} reached the model"
 
@@ -75,7 +75,7 @@ class TestSentinelNeverReachesAnyRole:
             issue=PRODUCT, hidden=frozenset(),
         )
 
-        assert any(SENT in call.text() for call in llm.calls if call.stage == "agent")
+        assert any(SENT in call.text() for call in llm.calls if call.stage in ("agent", "debug"))
 
     async def test_the_instance_id_and_the_issue_number_and_url_reach_no_role(self):
         issue = IssueContext(424242, "Crash", "body", "https://example.test/upstream/424242", "django__django-424242")
@@ -137,7 +137,7 @@ class TestHiddenDoesNotSteerTheRoles:
         broken = await self.outcome(completed_baseline, suite(error=self.IMPORT, collect_failures=[self.H]), self.red_script())
 
         assert hang == oom == broken
-        assert hang[:4] == (3, StopReason.MAX_ATTEMPTS, 4, ["plan", "agent", "agent", "agent"])
+        assert hang[:4] == (3, StopReason.MAX_ATTEMPTS, 4, ["plan", "agent", "debug", "debug"])
 
     async def test_the_one_remaining_bit_is_visible_so_the_comparison_above_is_not_vacuous(self, completed_baseline):
         completed = await self.outcome(completed_baseline, suite(passed=[A, B]), self.clean_script())

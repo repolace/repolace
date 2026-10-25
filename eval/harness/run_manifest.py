@@ -41,7 +41,7 @@ import json
 import os
 import re
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -104,6 +104,39 @@ def manifest_path(runs_dir: Path, eval_run_id: str) -> Path:
         return resolve_within(Path(runs_dir), f"{eval_run_id}/{MANIFEST_FILENAME}")
     except PathEscapesRoot as exc:
         raise ManifestError(f"{runs_dir}: {exc}") from exc
+
+
+#: The stages `--stage-model` may name. `agent` is `--model`'s, so it is not one of them: a second way to
+#: say it could disagree with the first.
+EXTRA_STAGES = ("plan", "review", "debug", "resolve")
+
+
+def parse_stage_models(values: Sequence[str] | None) -> dict[str, str]:
+    """`STAGE=MODEL_KEY` flags to a map, sorted by stage; `ManifestError` on anything else.
+
+    Strict on purpose: the map becomes the manifest's `stage_models` and the child's
+    `GATEWAY_STAGE_MODELS`, so a typo that was tolerated would run a different
+    configuration from the one the report describes.
+    """
+    parsed: dict[str, str] = {}
+    for value in values or ():
+        stage, sep, model = value.partition("=")
+        stage, model = stage.strip(), model.strip()
+        if not sep or not stage or not model:
+            raise ManifestError(f"--stage-model {value!r} is not STAGE=MODEL_KEY")
+        if stage == "agent":
+            raise ManifestError("--stage-model cannot name the agent stage: use --model")
+        if stage not in EXTRA_STAGES:
+            raise ManifestError(f"--stage-model stage {stage!r} is not one of {', '.join(EXTRA_STAGES)}")
+        if stage in parsed:
+            raise ManifestError(f"--stage-model names stage {stage!r} twice")
+        parsed[stage] = model
+    return dict(sorted(parsed.items()))
+
+
+def extra_stage_models(stage_models: Mapping[str, str]) -> dict[str, str]:
+    """The map without the `agent` entry: what `--stage-model` flags added."""
+    return {stage: model for stage, model in sorted(stage_models.items()) if stage != "agent"}
 
 
 def _string_map(value: object, name: str, where: str) -> dict[str, str]:

@@ -337,7 +337,7 @@ class TestTheDebugger:
 
         result = await run_roles(llm, verifier)
 
-        assert stages(llm) == ["plan", "agent", "agent", "review"]
+        assert stages(llm) == ["plan", "agent", "debug", "review"]
         debug = llm.calls[2]
         assert debug.attempt == 2
         assert system_of(debug) == system_prompt(Role.DEBUGGER, ROLE_LIMITS, NONCE)
@@ -380,7 +380,7 @@ class TestTheDebugger:
 
         result = await run_roles(llm, ScriptedVerifier([red(1), clean(2)]))
 
-        assert stages(llm) == ["plan", "agent", *["agent"] * CAPS.edit, "review"]
+        assert stages(llm) == ["plan", "agent", *["debug"] * CAPS.edit, "review"]
         assert result.stop_reason is StopReason.STEP_CAP and result.attempts == 2
 
     async def test_a_red_debug_attempt_goes_to_the_debugger_again_until_attempts_run_out(self):
@@ -390,7 +390,7 @@ class TestTheDebugger:
 
         result = await run_roles(llm, verifier)
 
-        assert stages(llm) == ["plan", "agent", "agent", "agent"]
+        assert stages(llm) == ["plan", "agent", "debug", "debug"]
         assert verifier.calls == [1, 2, 3]
         assert (result.attempts, result.last_attempt, result.stop_reason) == (3, red(3), StopReason.MAX_ATTEMPTS)
 
@@ -403,9 +403,9 @@ class TestTheDebugger:
 
 
 class TestStepCaps:
-    def test_the_split_is_ten_twenty_five_five_at_the_default(self):
+    def test_the_split_is_fifteen_twenty_five_at_the_default(self):
         caps = role_step_caps(AgentLimits(roles=True))
-        assert (caps.plan, caps.edit, caps.review) == (10, 25, 5)
+        assert (caps.plan, caps.edit, caps.review) == (15, 20, 5)
 
     def test_the_roles_inside_one_attempt_never_exceed_the_single_agents_cap(self):
         for n in range(3, 200):

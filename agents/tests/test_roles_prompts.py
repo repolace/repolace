@@ -67,7 +67,7 @@ class TestSystemPrompts:
 
     @pytest.mark.parametrize(
         "role, tool, cap",
-        [(Role.PLANNER, "submit_plan", 10), (Role.EDITOR, "submit", 25), (Role.DEBUGGER, "submit", 25), (Role.REVIEWER, "submit_review", 5)],
+        [(Role.PLANNER, "submit_plan", 15), (Role.EDITOR, "submit", 20), (Role.DEBUGGER, "submit", 20), (Role.REVIEWER, "submit_review", 5)],
         ids=lambda v: getattr(v, "value", str(v)),
     )
     def test_each_role_is_told_its_exit_tool_and_its_own_share_of_the_steps(self, role, tool, cap):

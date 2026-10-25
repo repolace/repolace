@@ -52,10 +52,10 @@ async def mark(factory, task_id, status: TaskStatus) -> None:
         await session.commit()
 
 
-async def call(factory, task_id, cost: str | None, model: str = "claude-sonnet-5-5") -> None:
+async def call(factory, task_id, cost: str | None, model: str = "claude-sonnet-5-5", stage: str = "agent") -> None:
     await Recorder(factory, Redactor()).record(
         CallRecord(
-            task_id=task_id, stage="agent", model=model, provider="anthropic",
+            task_id=task_id, stage=stage, model=model, provider="anthropic",
             cost_usd=None if cost is None else Decimal(cost),
         )
     )
@@ -209,6 +209,20 @@ class TestFirstModel:
         await call(db_session_factory, task.id, "0.1", model="second-model")
 
         assert await first_model(db_session_factory, task.id) == "first-model"
+
+    async def test_the_editing_stage_wins_over_an_earlier_planner_call(self, db_session, db_session_factory):
+        task = await seed_task(db_session)
+        await call(db_session_factory, task.id, "0.1", model="planner-model", stage="plan")
+        await call(db_session_factory, task.id, "0.1", model="editor-model", stage="agent")
+
+        assert await first_model(db_session_factory, task.id) == "editor-model"
+
+    async def test_a_task_with_no_agent_call_falls_back_to_its_first_call(self, db_session, db_session_factory):
+        task = await seed_task(db_session)
+        await call(db_session_factory, task.id, "0.1", model="planner-model", stage="plan")
+        await call(db_session_factory, task.id, "0.1", model="reviewer-model", stage="review")
+
+        assert await first_model(db_session_factory, task.id) == "planner-model"
 
     async def test_none_when_no_model_was_called(self, db_session, db_session_factory):
         task = await seed_task(db_session)

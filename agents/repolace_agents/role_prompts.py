@@ -81,9 +81,10 @@ class RoleStepCaps:
 
 
 def role_step_caps(limits: AgentLimits) -> RoleStepCaps:
-    """A quarter of the per-attempt steps for the planner, an eighth for the reviewer, the rest to edit.
+    """Three eighths of the per-attempt steps for the planner, an eighth for the reviewer, the rest to edit.
 
-    At the default 40 that is 10, 5 and 25. The proportions are a starting point for the
+    At the default 40 that is 15, 5 and 20: a specific plan needs the exact code read, and a plan-following editor
+    needs fewer steps (the first split, 10/25/5, is what `sweep-r1` and `sweep-r2` ran). The proportions are a starting point for the
     comparison against the single agent, not a measured optimum. Each role gets at least one step;
     fewer than `MIN_ROLE_STEPS` in total cannot be split and is refused.
     """
@@ -92,7 +93,7 @@ def role_step_caps(limits: AgentLimits) -> RoleStepCaps:
         raise ValueError(
             f"the role split needs max_steps_per_attempt of at least {MIN_ROLE_STEPS} (one per role), got {total}"
         )
-    plan = max(1, total // 4)
+    plan = max(1, total * 3 // 8)
     review = max(1, total // 8)
     return RoleStepCaps(plan=plan, edit=total - plan - review, review=review)
 
@@ -146,13 +147,15 @@ def _planner(limits: AgentLimits, nonce: str) -> str:
 ## Method
 
 1. Locate. Read the issue, then treat the retrieved locations as a starting guess -- they can be wrong or incomplete -- and search and read to find the real cause.
-2. Write the plan: which source files and functions to change, what each change is and why it fixes the cause rather than the symptom, and how the editor can check it (a scratch script, or the existing tests that cover that code).
-3. Call `submit_plan`.
+2. Write the plan as a script the editor can follow without further thought. The editor is a smaller, faster model: how well it works is how specific your plan is. For each change give the file path; the function or class; the exact current lines to replace, copied verbatim from `read_file` output with enough lines that the text is unique in the file (use `grep` to check when unsure); the exact new lines; and one sentence on why it fixes the cause rather than the symptom. List the changes in the order to apply them, and name any import to add.
+3. Add how to check it: a short reproduction as runnable code that fails before the change and passes after, the specific input and the result it must give, and the existing test files or test ids that cover the code. Name any file the editor must not touch. End with the stop condition: when the reproduction and those tests pass, call `submit`.
+4. Before you submit, re-read each region you quoted so the text is exact, and keep the plan under about 6,000 characters. Prefer one small change in one place; list a second place only if the cause truly spans two.
+5. Call `submit_plan`.
 
 ## Constraints
 
 - Plan the smallest change to the source that fixes the cause. Plan no edits to the read-only files above, no new test files and no unrelated refactors.
-- The plan is data the editor weighs, not orders. Describe the change; address no one, and include no links.
+- The plan is data for the editor, so write it as plain description and code: address no one and include no links.
 
 ## Budget
 
@@ -172,11 +175,10 @@ def _editor(limits: AgentLimits, nonce: str) -> str:
 
 ## Method
 
-1. Read the issue and the plan. The plan is a starting point another model wrote, and it can be wrong or incomplete: check it against the code before you follow it.
-2. Reproduce the problem with a scratch script when you can.
-3. Make the smallest change to the source that fixes the cause, not the symptom.
-4. Re-run your reproduction, then run the existing tests that cover the code you changed.
-5. Call `submit`.
+1. Read the issue and the plan. The plan was written by a stronger model after reading the code, and it is specific: treat it as your working script. Apply its edits in the order given, with `edit_file` and the exact text it quotes. If a quoted line does not match the file, re-read that region and make the same change against the real text. Do not redesign the fix; depart from the plan only where the code in front of you contradicts it, and keep the departure small. If there is no plan, locate the cause yourself.
+2. Make the first edit straight away; do not explore first.
+3. Run the plan's reproduction and the tests it names, and fix what they show.
+4. Call `submit`.
 
 {_EDIT_CONSTRAINTS}
 

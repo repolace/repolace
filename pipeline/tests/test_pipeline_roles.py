@@ -120,7 +120,7 @@ class TestTheRolesPreflight:
 
         assert await cli._run(uuid.UUID(TASK), agent="llm", no_pr=False, roles=True) == 0
 
-        assert client.stages == ["agent", "resolve", "plan", "review"]
+        assert client.stages == ["agent", "resolve", "plan", "review", "debug"]
         assert recorder.run_task_kwargs["agent"] == LLMAgent(roles=True)
 
     def test_without_roles_only_agent_and_resolve_are_checked(self):
@@ -130,7 +130,7 @@ class TestTheRolesPreflight:
 
         assert client.stages == ["agent", "resolve"]
 
-    @pytest.mark.parametrize("stage", ["plan", "review"])
+    @pytest.mark.parametrize("stage", ["plan", "review", "debug"])
     def test_a_role_stage_that_cannot_be_priced_is_a_usage_error_before_any_claim(self, stage, monkeypatch):
         monkeypatch.setattr(LLMClient, "from_settings", staticmethod(lambda *a, **k: FakeClient(refuse=stage)))
         monkeypatch.setattr("repolace_gateway.config.GatewaySettings", object)
@@ -138,7 +138,7 @@ class TestTheRolesPreflight:
         with pytest.raises(resources.UsageError, match="gateway/models.toml"):
             resources.build_llm_client("factory", roles=True)
 
-    @pytest.mark.parametrize("stage", ["plan", "review"])
+    @pytest.mark.parametrize("stage", ["plan", "review", "debug"])
     def test_without_roles_an_unpriced_role_stage_does_not_stop_a_single_agent_run(self, stage, monkeypatch):
         monkeypatch.setattr(LLMClient, "from_settings", staticmethod(lambda *a, **k: FakeClient(refuse=stage)))
         monkeypatch.setattr("repolace_gateway.config.GatewaySettings", object)

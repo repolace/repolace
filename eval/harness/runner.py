@@ -30,7 +30,7 @@ touched: 3 can mean another runner is running it right now.
 **The run manifest.** `enqueue` writes `eval/runs/<run>/manifest.json` naming the
 agent, the model, the wall-clock cap and whether the Phase 2 roles run (`--roles`) that
 the sweep is meant to use. The runner refuses to start (exit 2) when its own `--agent`,
-`--model`, `--timeout-seconds` or `--roles` disagree with it, because the report describes the sweep from that file and a
+`--model`, `--timeout-seconds`, `--roles` or `--stage-model` disagree with it, because the report describes the sweep from that file and a
 mismatch would make it describe something that did not run. A run with no manifest
 is allowed through with a warning. Transient provider errors are retried only by
 the gateway inside each task; the runner never retries or re-runs a task.
@@ -93,7 +93,7 @@ from harness.db import (
     running_older_than,
 )
 from harness.enqueue import DEFAULT_RUNS_DIR, DEFAULT_WALL_CLOCK_SECONDS, code_limits
-from harness.run_manifest import ManifestError, load_manifest, manifest_path
+from harness.run_manifest import ManifestError, extra_stage_models, load_manifest, manifest_path, parse_stage_models
 
 log = structlog.get_logger()
 
@@ -149,6 +149,9 @@ class RunnerConfig:
     limit: int | None = None
     #: Run the Phase 2 role split (`repolace-run-task --roles`); must match the manifest.
     roles: bool = False
+    #: `--stage-model` extras (plan, review, debug, resolve); must match the manifest's `stage_models`
+    #: without its `agent` entry.
+    stage_models: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -222,10 +225,17 @@ def allowlisted_env(base: Mapping[str, str]) -> dict[str, str]:
     }
 
 
-def child_env(base: Mapping[str, str], model: str | None) -> dict[str, str]:
+def child_env(
+    base: Mapping[str, str], model: str | None, stage_models: Mapping[str, str] | None = None
+) -> dict[str, str]:
+    """The child's environment: the allowlist, plus the whole stage map when `--model` is given.
+
+    The extras without `--model` are not sent: the gateway would route the stages named and
+    leave the editor on its default, a configuration the manifest could not describe.
+    """
     env = allowlisted_env(base)
     if model is not None:
-        env[GATEWAY_STAGE_MODELS_VAR] = json.dumps({"agent": model})
+        env[GATEWAY_STAGE_MODELS_VAR] = json.dumps({"agent": model, **(stage_models or {})})
     return env
 
 
@@ -380,6 +390,13 @@ def check_manifest(runs_dir: Path, config: RunnerConfig) -> bool:
         problems.append(f"model: the manifest says {manifest.model!r}, this run was given {config.model!r}")
     if manifest.roles != config.roles:
         problems.append(f"roles: the manifest says {manifest.roles!r}, this run was given {config.roles!r}")
+    recorded_stages = extra_stage_models(manifest.stage_models)
+    given_stages = dict(sorted(config.stage_models.items()))
+    if recorded_stages != given_stages:
+        problems.append(
+            f"stage models: the manifest says {recorded_stages!r}, this run was given {given_stages!r} "
+            f"(--stage-model STAGE=MODEL_KEY must be the same flags `enqueue` got)"
+        )
     recorded = manifest.limits.get("runner_wall_clock_seconds")
     if recorded != config.timeout_seconds:
         problems.append(
@@ -426,7 +443,7 @@ async def run_queue(
     manifest_found = check_manifest(runs_dir, config)
 
     command = tuple(child_command) if child_command is not None else default_child_command()
-    env = child_env(os.environ if base_env is None else base_env, config.model)
+    env = child_env(os.environ if base_env is None else base_env, config.model, getattr(config, "stage_models", None))
     queue = await queued_tasks(factory, config.eval_run_id)
     queued_total = len(queue)
     if config.limit is not None:
@@ -593,6 +610,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--roles", action="store_true",
         help="run the Phase 2 role split (passes --roles to each task; --agent llm only, must match the manifest)",
     )
+    parser.add_argument(
+        "--stage-model", action="append", default=[], metavar="STAGE=MODEL_KEY",
+        help="route one role stage (plan, review, debug or resolve) to another model than --model; repeatable; "
+        "--agent llm with --model only, must match the manifest",
+    )
     parser.add_argument("--max-total-usd", type=_positive_usd, default=None, help="stop dispatching once the run has spent this")
     parser.add_argument("--limit", type=_positive_int, default=None, help="dispatch at most this many tasks")
     parser.add_argument(
@@ -663,6 +685,15 @@ def main(
         print("repolace-eval run: --roles needs --agent llm", file=sys.stderr)
         return 2
 
+    try:
+        stage_models = parse_stage_models(args.stage_model)
+    except ManifestError as exc:
+        print(f"repolace-eval run: {exc}", file=sys.stderr)
+        return 2
+    if stage_models and (args.agent != "llm" or not args.model):
+        print("repolace-eval run: --stage-model needs --agent llm and --model", file=sys.stderr)
+        return 2
+
     if args.agent == "llm" and not args.mark_abandoned and args.max_total_usd is None:
         print(
             "repolace-eval run: --max-total-usd is required for --agent llm: a sweep spends real money "
@@ -698,6 +729,7 @@ def main(
                 max_total_usd=args.max_total_usd,
                 limit=args.limit,
                 roles=args.roles,
+                stage_models=stage_models,
             )
             summary = await run_queue(
                 factory, config, runs_dir=args.runs_dir, child_command=child_command, process_runner=process_runner

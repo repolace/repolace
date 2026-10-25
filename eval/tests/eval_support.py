@@ -346,9 +346,9 @@ async def add_eval_task(session, repo: RegisteredRepo, *, instance_id: str = "ps
 
 def add_call(session, task: Task, *, model: str = "anthropic/test-main", cost: str | None = "0.10",
              input_tokens: int | None = 100, cached: int | None = 40, output: int | None = 10,
-             created_at: datetime | None = None) -> None:
+             created_at: datetime | None = None, stage: str = "agent") -> None:
     session.add(LLMCall(
-        task_id=task.id, stage="agent", model=model, provider=model.split("/", maxsplit=1)[0],
+        task_id=task.id, stage=stage, model=model, provider=model.split("/", maxsplit=1)[0],
         input_tokens=input_tokens, cached_input_tokens=cached, output_tokens=output,
         cost_usd=Decimal(cost) if cost is not None else None, created_at=created_at or T0,
     ))
@@ -367,6 +367,7 @@ def run_manifest(
     agent: str = "llm",
     git_sha: str = "c0ffee" + "0" * 34,
     prefix: str = "inst",
+    stage_models: dict[str, str] | None = None,
 ) -> RunManifest:
     """A manifest for `prefix-0 .. prefix-(n-1)` (or the given ids), `runs` runs each."""
     from harness.run_manifest import RunManifest
@@ -374,6 +375,6 @@ def run_manifest(
     ids = tuple(f"{prefix}-{i}" for i in range(instance_ids)) if isinstance(instance_ids, int) else tuple(instance_ids)
     return RunManifest(
         eval_run_id=run_id, created_at="2026-10-03T12:00:00+00:00", git_sha=git_sha, model=model,
-        stage_models={"agent": model}, limits={"max_usd": 2.0}, runs_per_instance=runs,
+        stage_models=stage_models or {"agent": model}, limits={"max_usd": 2.0}, runs_per_instance=runs,
         instance_ids=ids, agent=agent,
     )

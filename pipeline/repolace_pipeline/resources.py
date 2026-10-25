@@ -39,6 +39,7 @@ RESOLVE_STAGE = "resolve"
 #: call `agent` itself.
 PLAN_STAGE = "plan"
 REVIEW_STAGE = "review"
+DEBUG_STAGE = "debug"
 
 
 class UsageError(Exception):
@@ -54,14 +55,15 @@ def preflight_agent_models(client: "LLMClient", *, roles: bool = False) -> None:
     belongs where nothing has happened yet. It runs `LLMClient.preflight`, the gateway's own
     pre-spend check (what `complete` runs), so the two cannot disagree about what "priced" means.
 
-    The `agent` and the `resolve` stage are always checked; with `roles`, so are `plan` and
-    `review`, so a role stage that cannot be priced or keyed fails here and not mid-run.
+    The `agent` and the `resolve` stage are always checked; with `roles`, so are `plan`,
+    `review` and `debug`, so a role stage that cannot be priced or keyed fails here and not mid-run.
     """
     client.preflight(AGENT_STAGE)
     client.preflight(RESOLVE_STAGE)
     if roles:
         client.preflight(PLAN_STAGE)
         client.preflight(REVIEW_STAGE)
+        client.preflight(DEBUG_STAGE)
 
 
 def build_llm_client(

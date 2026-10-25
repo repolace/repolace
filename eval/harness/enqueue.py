@@ -76,6 +76,7 @@ from harness.run_manifest import (
     dump_manifest,
     load_manifest,
     manifest_path,
+    parse_stage_models,
 )
 
 #: Benchmark tasks target `main` of the benchmark repository: `fork` pushes the
@@ -188,6 +189,9 @@ class ManifestInputs:
     clock: Callable[[], datetime] = field(default=_utc_now)
     #: Run the Phase 2 role split (`repolace-run-task --roles`); `llm` only. Recorded in the manifest.
     roles: bool = False
+    #: `--stage-model` extras (plan, review, debug, resolve), stage -> model key; `llm` only. The `agent`
+    #: stage is `model`. Recorded in the manifest's `stage_models`.
+    stage_models: Mapping[str, str] = field(default_factory=dict)
 
 
 # --- the manifest ---------------------------------------------------------------
@@ -238,13 +242,16 @@ def build_manifest(
         raise ManifestError("--model is required for the llm agent: the manifest must name the model that ran")
     if inputs.roles and inputs.agent != "llm":
         raise ManifestError("--roles needs --agent llm: the stub and gold runners call no model")
+    extras = parse_stage_models([f"{stage}={name}" for stage, name in inputs.stage_models.items()])
+    if extras and inputs.agent != "llm":
+        raise ManifestError("--stage-model needs --agent llm: the stub and gold runners call no model")
     return RunManifest(
         eval_run_id=eval_run_id,
         created_at=created_at.astimezone(UTC).replace(microsecond=0).isoformat(),
         git_sha=git_sha,
         model=model if inputs.agent == "llm" else NO_MODEL,
-        # Exactly what the runner puts in GATEWAY_STAGE_MODELS for `--model`.
-        stage_models={"agent": model} if inputs.agent == "llm" else {},
+        # Exactly what the runner puts in GATEWAY_STAGE_MODELS for `--model` and `--stage-model`.
+        stage_models={"agent": model, **extras} if inputs.agent == "llm" else {},
         limits={**code_limits(), "runner_wall_clock_seconds": float(inputs.timeout_seconds)},
         runs_per_instance=runs,
         instance_ids=tuple(sorted(set(instance_ids))),
@@ -445,6 +452,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--roles", action="store_true",
         help="the Phase 2 role split instead of the single agent (--agent llm only); recorded in the manifest, `run` must match",
     )
+    parser.add_argument(
+        "--stage-model", action="append", default=[], metavar="STAGE=MODEL_KEY",
+        help="route one role stage (plan, review, debug or resolve) to another model than --model; repeatable; "
+        "recorded in the manifest, `run` must be given the same flags",
+    )
     parser.add_argument("--instances-dir", type=Path, default=DEFAULT_INSTANCES_DIR)
     parser.add_argument("--bench-repos-file", type=Path, default=None, help=f"default: <instances-dir>/{MAPPING_FILENAME}")
     parser.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
@@ -468,6 +480,9 @@ def main(
             raise ValueError("--model is required for the llm agent: the manifest must name the model that ran")
         if args.roles and args.agent != "llm":
             raise ValueError("--roles needs --agent llm: the stub and gold runners call no model")
+        stage_models = parse_stage_models(args.stage_model)
+        if stage_models and args.agent != "llm":
+            raise ValueError("--stage-model needs --agent llm: the stub and gold runners call no model")
         instances = load_instances(args.instances_dir)
         bench_repos = load_bench_repos(args.bench_repos_file or args.instances_dir / MAPPING_FILENAME)
     except (ValueError, InstanceError, BenchRepoError) as exc:
@@ -482,6 +497,7 @@ def main(
     inputs = ManifestInputs(
         runs_dir=args.runs_dir, agent=args.agent, model=args.model, timeout_seconds=args.timeout_seconds,
         repo_root=repo_root, allow_dirty_tree=args.allow_dirty_tree, roles=args.roles,
+        stage_models=stage_models,
     )
 
     async def run() -> EnqueueResult:

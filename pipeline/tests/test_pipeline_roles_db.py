@@ -156,7 +156,7 @@ class TestARolesRunThroughThePipeline:
         assert "now exactly as it was at scored attempt 1" in provider.result_of(rewind)
         assert row.outcome is TaskOutcome.PASSED and FIXED in row.patch_diff and BROKEN not in row.patch_diff
         calls = await llm_rows(db_session_factory, task.id)
-        assert [c.stage for c in calls] == ["plan", "agent", "agent", "agent", "agent", "agent", "review"]
+        assert [c.stage for c in calls] == ["plan", "agent", "agent", "debug", "debug", "debug", "review"]
         assert "rewind" in provider.request_text(3) and "rewind" not in provider.request_text(1)
 
     async def test_the_pr_names_the_editors_model_when_the_planner_runs_on_another(

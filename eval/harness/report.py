@@ -72,7 +72,7 @@ from repolace_shared.db.models import (
     TaskTestRun,
 )
 from repolace_shared.instances import InstanceError, InstanceSpec, load_instances
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from harness.metrics import (
@@ -105,6 +105,10 @@ _BUCKETS = (PASSED, FAILED, PASSED_WITH_TEST_EDIT, INADMISSIBLE, HARNESS_ERROR, 
 
 #: `agent_stop_reason` of a run the model provider failed. Counted, never excluded.
 LLM_ERROR = "llm_error"
+#: The stage the editing model is called on: the single agent's, and the roles' editor's. A task is
+#: labelled by its first call here (the planner, which calls first under the roles, must not name a
+#: run). The same value as `repolace_pipeline.finalize.EDITOR_STAGE`, which this package does not import.
+EDITOR_STAGE = "agent"
 #: What `verify.scoring.score` writes into the reason of a PASSED task scored without
 #: a curated fail-to-pass list: "some baseline failure went green", which is not
 #: evidence about THIS issue.
@@ -351,10 +355,22 @@ class Headline:
     #: Min and max of the per-run rates. A spread with the instances held fixed, not an interval.
     run_range: tuple[float, float] | None
     secondary: SecondaryRate | None
+    #: The manifest's `stage_models`, sorted, when it routes more than the `agent` stage; else empty.
+    stage_models: tuple[tuple[str, str], ...] = ()
+
+
+def _stage_models_text(stage_models: Sequence[tuple[str, str]]) -> str:
+    return "Stage models: " + ", ".join(f"{stage}={model}" for stage, model in stage_models)
 
 
 def _pair_label(instance_id: str, run_index: int) -> str:
     return f"{instance_id}#{run_index}"
+
+
+def _mixed_stage_map(manifest: RunManifest | None) -> tuple[tuple[str, str], ...]:
+    if manifest is None or set(manifest.stage_models) <= {"agent"}:
+        return ()
+    return tuple(sorted(manifest.stage_models.items(), key=lambda item: (item[0] != "agent", item[0])))
 
 
 def _headline(
@@ -409,6 +425,7 @@ def _headline(
         "run_id": run_id, "model": model, "git_sha": manifest.git_sha if manifest is not None else None,
         "anchored": manifest is not None, "instances": len(instance_ids), "instance_ids": tuple(instance_ids), "repos": len(repos),
         "runs_per_instance": runs_per_instance, "planned": len(planned),
+        "stage_models": _mixed_stage_map(manifest),
         "missing": tuple(missing), "unfinished": tuple(unfinished), "unplanned": unplanned,
     }
 
@@ -923,6 +940,12 @@ def aggregate(
                 f"No run manifest for {headline.run_id}: the expected grid is unknown, so its headline is "
                 f"computed over the rows that exist and is marked UNANCHORED."
             )
+        if headline.stage_models:
+            warnings.append(
+                f"{headline.run_id}: {_stage_models_text(headline.stage_models)}. A mixed-stage run is a "
+                f"different configuration from a single-model run and is labelled by its `agent` (editing) "
+                f"stage's model; do not pool it with a single-model run of that model."
+            )
         if headline.withheld:
             warnings.append(f"{headline.run_id}: {headline.withheld}.")
         if headline.unplanned:
@@ -1096,6 +1119,8 @@ _GROUP_HEADER = (
 def _headline_lines(h: Headline) -> list[str]:
     title = f"### Run {h.run_id}" + (f", model {h.model}" if h.model else "")
     out = [title, ""]
+    if h.stage_models:
+        out += [f"{_stage_models_text(h.stage_models)}. The run is labelled by its `agent` (editing) stage.", ""]
     if h.withheld:
         out += [f"**{h.withheld[0].upper()}{h.withheld[1:]}.**", ""]
         for label, items in (("Missing", h.missing), ("Unfinished", h.unfinished)):
@@ -1393,7 +1418,7 @@ async def load_rows(session: AsyncSession, eval_run_ids: Sequence[str]) -> list[
         select(LLMCall.task_id, LLMCall.model)
         .where(LLMCall.task_id.in_(task_ids))
         .distinct(LLMCall.task_id)
-        .order_by(LLMCall.task_id, LLMCall.created_at, LLMCall.id)
+        .order_by(LLMCall.task_id, case((LLMCall.stage == EDITOR_STAGE, 0), else_=1), LLMCall.created_at, LLMCall.id)
     )
     # `.all()` first: a Result has `.keys()`, so `dict(result)` would read it as a mapping.
     first_model = dict(first_models.all())

@@ -55,8 +55,10 @@ class SubmitPlan:
         self.spec = ToolSpec(
             name=SUBMIT_PLAN,
             description=(
-                "Call this when you have found the cause, with the plan the editor should follow: which source "
-                "files and functions to change, what to change and why, and how to check it. It ends your work."
+                "Call this when you have found the cause, with the plan the editor should follow. Make it specific enough "
+                "for a smaller model to apply without more thought: for each change the file, the exact current lines to "
+                "replace (copied verbatim) and the exact new lines, in the order to apply them; then a reproduction script "
+                "and the tests to run. It ends your work."
             ),
             parameters={
                 "type": "object",

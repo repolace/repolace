@@ -73,6 +73,9 @@ from repolace_agents.tools.role_tools import REQUEST_CHANGES, Rewind, SubmitPlan
 #: (`repolace_gateway.config.OPTIONAL_STAGE_FALLBACKS`), so a sweep's `--model` reaches every role.
 PLAN_STAGE = "plan"
 EDIT_STAGE = "agent"
+#: The debugger's own stage, so a run can put the editor on a cheap model and the debugger on a strong one.
+#: Optional like `plan` and `review`: it follows `agent` unless a config or `GATEWAY_STAGE_MODELS` names it.
+DEBUG_STAGE = "debug"
 REVIEW_STAGE = "review"
 
 #: The node names. Distinct from every state field: LangGraph refuses a node named like a channel.
@@ -128,7 +131,9 @@ def after_planner(state: AgentState, runtime: Runtime[graph.RunContext]) -> Lite
     return END if state.stop_reason in graph._SKIP_VERIFY else EDITOR
 
 
-async def _work(state: AgentState, runtime: Runtime[graph.RunContext], role: Role, toolbox: ToolBox) -> dict[str, Any]:
+async def _work(
+    state: AgentState, runtime: Runtime[graph.RunContext], role: Role, toolbox: ToolBox, stage: str = EDIT_STAGE
+) -> dict[str, Any]:
     """One editing attempt, by the editor or the debugger, on the shared work transcript.
 
     The work transcript is the single agent's conversation: the editor opens it with the briefing
@@ -142,7 +147,7 @@ async def _work(state: AgentState, runtime: Runtime[graph.RunContext], role: Rol
         messages = (_system(role, ctx), *earlier[1:])
     else:
         messages = (_system(role, ctx), _user(editor_message(state.briefing, state.plan, ctx.nonce)))
-    loop = await graph._run_loop(ctx, messages, toolbox, EDIT_STAGE, caps.edit, SUBMIT, attempt=state.attempt + 1)
+    loop = await graph._run_loop(ctx, messages, toolbox, stage, caps.edit, SUBMIT, attempt=state.attempt + 1)
     return {
         "messages": loop.messages,
         "steps": state.steps + loop.calls,
@@ -164,7 +169,7 @@ async def debugger(state: AgentState, runtime: Runtime[graph.RunContext]) -> dic
     assert ctx.git is not None  # run_graph supplies it whenever roles is on
     tools = _tools(ctx)
     toolbox = tools.subset(tools.names, extra=(Rewind(dict(state.scored_commits), ctx.git.reset_hard),))
-    return await _work(state, runtime, Role.DEBUGGER, toolbox)
+    return await _work(state, runtime, Role.DEBUGGER, toolbox, DEBUG_STAGE)
 
 
 async def score(state: AgentState, runtime: Runtime[graph.RunContext]) -> dict[str, Any]:
