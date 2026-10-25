@@ -1,0 +1,46 @@
+{
+  "agent": "llm",
+  "created_at": "2026-10-24T16:41:37+00:00",
+  "eval_run_id": "sweep-4b",
+  "git_sha": "f02ccb3c57be22c4d487776c3fa259457154b1d1",
+  "instance_ids": [
+    "mwaskom__seaborn-3069",
+    "mwaskom__seaborn-3187",
+    "pallets__flask-5014",
+    "pylint-dev__pylint-4551",
+    "pylint-dev__pylint-4604",
+    "pylint-dev__pylint-4970",
+    "sphinx-doc__sphinx-7590",
+    "sphinx-doc__sphinx-9230",
+    "sphinx-doc__sphinx-9320",
+    "sphinx-doc__sphinx-9367",
+    "sphinx-doc__sphinx-9602"
+  ],
+  "limits": {
+    "budget_wall_clock_seconds": 3600.0,
+    "max_attempts": 3,
+    "max_steps_per_attempt": 40,
+    "runner_wall_clock_seconds": 11700.0,
+    "task_call_cap": 150,
+    "task_cost_cap_usd": 2.0
+  },
+  "model": "vertex-gemini-3-1-pro-preview",
+  "rows": [
+    "mwaskom__seaborn-3069#1",
+    "mwaskom__seaborn-3187#1",
+    "pallets__flask-5014#1",
+    "pylint-dev__pylint-4551#1",
+    "pylint-dev__pylint-4604#1",
+    "pylint-dev__pylint-4970#1",
+    "sphinx-doc__sphinx-7590#2",
+    "sphinx-doc__sphinx-9230#2",
+    "sphinx-doc__sphinx-9320#2",
+    "sphinx-doc__sphinx-9367#2",
+    "sphinx-doc__sphinx-9602#0",
+    "sphinx-doc__sphinx-9602#2"
+  ],
+  "runs_per_instance": 3,
+  "stage_models": {
+    "agent": "vertex-gemini-3-1-pro-preview"
+  }
+}

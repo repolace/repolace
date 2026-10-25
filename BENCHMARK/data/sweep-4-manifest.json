@@ -1,0 +1,39 @@
+{
+  "agent": "llm",
+  "created_at": "2026-10-23T19:51:50+00:00",
+  "eval_run_id": "sweep-4",
+  "git_sha": "f02ccb3c57be22c4d487776c3fa259457154b1d1",
+  "instance_ids": [
+    "mwaskom__seaborn-3069",
+    "mwaskom__seaborn-3187",
+    "pallets__flask-5014",
+    "pylint-dev__pylint-4551",
+    "pylint-dev__pylint-4604",
+    "pylint-dev__pylint-4970",
+    "pytest-dev__pytest-5631",
+    "pytest-dev__pytest-6202",
+    "pytest-dev__pytest-7236",
+    "pytest-dev__pytest-7432",
+    "pytest-dev__pytest-7571",
+    "pytest-dev__pytest-7982",
+    "sphinx-doc__sphinx-7462",
+    "sphinx-doc__sphinx-7590",
+    "sphinx-doc__sphinx-9230",
+    "sphinx-doc__sphinx-9320",
+    "sphinx-doc__sphinx-9367",
+    "sphinx-doc__sphinx-9602"
+  ],
+  "limits": {
+    "budget_wall_clock_seconds": 3600.0,
+    "max_attempts": 3,
+    "max_steps_per_attempt": 40,
+    "runner_wall_clock_seconds": 11700.0,
+    "task_call_cap": 150,
+    "task_cost_cap_usd": 2.0
+  },
+  "model": "vertex-gemini-3-1-pro-preview",
+  "runs_per_instance": 3,
+  "stage_models": {
+    "agent": "vertex-gemini-3-1-pro-preview"
+  }
+}

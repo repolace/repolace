@@ -6,7 +6,7 @@ The design, with the reasoning behind each decision, is in [CLAUDE.md](CLAUDE.md
 
 ## Status
 
-**Phase 0–1 (active development).** Every piece of the pipeline exists on `main`: clone, index, baseline test run, an LLM agent (graph, tools, feedback filter), verify, score, gate, open PR, and a benchmark harness. The real agent is wired into `repolace-run-task` (`--agent llm` is the default; `stub` and `gold` remain), but **no real run has happened yet**. **No benchmark number has been measured yet.**
+**Phase 0–1 (active development).** Every piece of the pipeline exists on `main`: clone, index, baseline test run, an LLM agent (graph, tools, feedback filter), verify, score, gate, open PR, and a benchmark harness. The real agent is wired into `repolace-run-task` (`--agent llm` is the default; `stub` and `gold` remain), and a first real benchmark run has happened: **29/54 (53.7%) on sweep-4, 35/54 (64.8%) after re-running 12 rows lost to provider rate limits**, single agent, Gemini 3.1 Pro, 18 instances x 3 runs. Data, analysis and caveats are in [BENCHMARK/](BENCHMARK/).
 
 | Layer | State |
 |---|---|
@@ -177,7 +177,35 @@ The database tests TRUNCATE every table, so two runs against one database corrup
 
 ## Benchmark
 
-The claim Phase 1 is built to support: *an autonomous agent takes a GitHub issue, retrieves relevant code, patches it, verifies via the test suite and opens a PR, benchmarked at X% on N real issues, with cost and latency.* **X is not yet measured.** The harness exists and has unit tests; no gold validation, dry run or sweep has been run, so there is no number, no cost per task and no suite wall time to report. Any figure you see elsewhere is not from this repository.
+The claim Phase 1 is built to support: *an autonomous agent takes a GitHub issue, retrieves relevant code, patches it, verifies via the test suite and opens a PR, benchmarked at X% on N real issues, with cost and latency.*
+
+**First measured result** (full write-up with statistics: [BENCHMARK/REPORT.md](BENCHMARK/REPORT.md)): single agent, Gemini 3.1 Pro on Vertex AI, 18 instances x 3 runs, `--no-pr`.
+
+| Definition | Result |
+|---|---|
+| sweep-4, official (passed / planned; 12 rows lost to Vertex 429s count as failures) | **29/54 = 53.7%**, 95% interval over instances 35 to 72% |
+| sweep-4 over rows that finished (secondary) | 29/42 = 69.0% |
+| sweep-4b, the 12 lost rows re-run | 6/12 |
+| **combined**: each lost row replaced by its re-run (a hand-stated substitution, not a `repolace-eval report` output) | **35/54 = 64.8%**, interval over instances 44 to 83% |
+
+Cost per task about $0.75 (mean), $1.16 per pass; median 1,106 s per task; 52% of tasks hit the 40-step cap. Passing tasks make their first edit at median call 9, failing ones at call 24. The intervals are 35 to 40 points wide, the instances are public SWE-bench Verified (probably seen by the model), and 6 of 18 are pytest (all pass), so read this as a first measurement, not a score.
+
+### The BENCHMARK directory
+
+| Path | Contents |
+|---|---|
+| [`BENCHMARK/REPORT.md`](BENCHMARK/REPORT.md) | The report: headline and how each number is defined, the 12 lost rows (Fisher test vs the re-run), per-instance and per-repository results, ICC and effective sample size, pass@k, stop-reason analysis, first-edit analysis, cost and latency with permutation tests, a sensitivity table, power and limits |
+| [`BENCHMARK/README.md`](BENCHMARK/README.md) | File index and the one rule to remember: 29/54 is official, 35/54 is a substitution |
+| `BENCHMARK/data/tasks.csv` | One row per task (66 rows across both sweeps): outcome, stop reason, latency, calls, tokens, cost |
+| `BENCHMARK/data/tool_use.csv` | Per-task tool-call counts and the call number of the first edit |
+| `BENCHMARK/data/sweep-4*-report.md`, `sweep-4*-manifest.json` | The reports and run manifests the harness wrote (the sweep-4 report is a mid-run snapshot) |
+| `BENCHMARK/analysis/analyze.py` | Standard-library-only analysis: bootstrap over instances, Wilson intervals, pass@k, ICC, Cochran's Q, Fisher exact, permutation tests; seeded |
+| `BENCHMARK/analysis/results.json` | Every number in the report, machine-readable |
+| `BENCHMARK/figures/*.svg` | Charts used in the report |
+
+Regenerate the statistics and figures with `python3 -I BENCHMARK/analysis/analyze.py`.
+
+Variants (early-edit nudge, role split, mixed models) are not part of this result and have their own run ids; none is merged to `main`.
 
 What produces the number, in order (the `repolace-eval` subcommands are `select`, `fork`, `gold`, `enqueue`, `run`, `report` and `retrieval`):
 

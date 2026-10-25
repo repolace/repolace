@@ -1,0 +1,67 @@
+task_id,run,instance_id,run_index,status,outcome,stop_reason,latency_s,error_head,calls,input_tokens,cached_input_tokens,output_tokens,cost_usd,scored_attempts
+5bf22d90-6c99-4ff8-bfad-aa70ccc555ef,sweep-4,mwaskom__seaborn-3069,0,completed,failed,step_cap,1750.2,"",40,1419175,987241,9789,1.1788,1
+fd9dbd53-e832-4190-904f-88de4f0c38ca,sweep-4,mwaskom__seaborn-3069,1,failed,"","",1659.0,agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-prev,31,906427,680574,12498,0.7378,0
+e1b71638-5953-4148-989b-77d6011851c9,sweep-4,mwaskom__seaborn-3069,2,completed,failed,step_cap,1683.0,"",40,1068932,793058,12506,0.8604,1
+1b6e68a0-93b1-4e56-9f88-92d555cb40f8,sweep-4,mwaskom__seaborn-3187,0,completed,failed,step_cap,2350.0,"",40,816479,0,13793,1.7985,1
+439f7894-ac4a-4b02-833f-4eb75b28d8aa,sweep-4,mwaskom__seaborn-3187,1,failed,"","",1080.5,agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-prev,3,15619,5765,503,0.0269,0
+6995c591-d4cf-43c7-be51-74114556e16b,sweep-4,mwaskom__seaborn-3187,2,completed,failed,step_cap,1765.2,"",40,825337,679512,15502,0.6136,1
+0bfb94f1-1482-4707-af90-add280538051,sweep-4,pallets__flask-5014,0,completed,passed,submitted,730.7,"",23,377665,0,5104,0.8166,1
+7fba639f-d261-4bfa-94e6-edb7720946e2,sweep-4,pallets__flask-5014,1,failed,"","",762.4,agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-prev,12,114386,57736,1678,0.1450,0
+5d489c07-02d3-4eee-b82e-d66b71095844,sweep-4,pallets__flask-5014,2,completed,passed,step_cap,309.7,"",40,665400,513531,10665,0.5344,1
+1f945956-5b4e-45cd-abf1-6596381c3c05,sweep-4,pylint-dev__pylint-4551,0,completed,failed,step_cap,1743.5,"",40,760721,574921,12011,0.6307,1
+741f5fb4-d911-4bbb-afba-0c5c5e2dd005,sweep-4,pylint-dev__pylint-4551,1,failed,"","",1023.3,agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-prev,2,7134,0,235,0.0171,0
+f53defb3-9cc4-4165-a4b8-90d7b3c8a7b4,sweep-4,pylint-dev__pylint-4551,2,completed,failed,step_cap,1754.2,"",40,766192,619658,13150,0.5748,1
+8b73193e-7f13-4ebd-b253-913f9e39209f,sweep-4,pylint-dev__pylint-4604,0,completed,failed,step_cap,2031.0,"",40,701566,484384,10358,0.6555,1
+bcd6101a-a67e-4f11-bb9c-86e80b035b2e,sweep-4,pylint-dev__pylint-4604,1,failed,"","",892.8,agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-prev,1,0,0,0,0.0000,0
+15e331df-ba73-4aae-873c-e14fa265c976,sweep-4,pylint-dev__pylint-4604,2,completed,failed,step_cap,1788.0,"",40,694100,0,9155,1.4981,1
+b4a00005-cd09-4dac-8775-202bd7034836,sweep-4,pylint-dev__pylint-4970,0,completed,passed,step_cap,1548.1,"",40,853310,652832,11918,0.6745,1
+8aad5f5c-62ca-487b-b77b-36885791ad8e,sweep-4,pylint-dev__pylint-4970,1,failed,"","",760.3,agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-prev,1,0,0,0,0.0000,0
+29a58006-819b-44d1-9059-8b895a91221b,sweep-4,pylint-dev__pylint-4970,2,completed,passed,step_cap,1588.5,"",40,1042960,881353,9266,0.6107,1
+40e1606a-3032-4b54-b4ca-75892bd090c3,sweep-4,pytest-dev__pytest-5631,0,completed,passed,submitted,729.2,"",15,214070,175426,5050,0.1730,1
+944844cb-dcd7-409d-9201-e9978d8bfb7a,sweep-4,pytest-dev__pytest-5631,1,completed,passed,submitted,869.8,"",20,296608,210084,4656,0.2709,1
+69490cfc-04e5-42f8-bf8f-09e274e34c2c,sweep-4,pytest-dev__pytest-5631,2,completed,passed,submitted,1073.4,"",20,269264,166368,5125,0.3006,1
+668ccc1f-ff9d-48a4-84c1-fa00c4a8dc11,sweep-4,pytest-dev__pytest-6202,0,completed,passed,submitted,1390.0,"",35,562931,371051,6125,0.5315,1
+82164ed8-c37f-4faa-a447-9bdaf5a613e8,sweep-4,pytest-dev__pytest-6202,1,completed,passed,submitted,1312.5,"",37,702093,557153,10383,0.5259,1
+18f0694a-e10d-4826-bb32-f4a2fae40119,sweep-4,pytest-dev__pytest-6202,2,completed,passed,step_cap,1677.0,"",40,751230,643671,8993,0.4518,1
+f4de2301-f636-4640-b1d0-3448d0576a87,sweep-4,pytest-dev__pytest-7236,0,completed,passed,submitted,1232.2,"",34,756680,498847,14000,0.7834,1
+18e957e0-085d-4694-bfa6-3e304c436920,sweep-4,pytest-dev__pytest-7236,1,completed,passed,submitted,1105.8,"",33,730939,507207,12727,0.7016,1
+25af352f-56a0-427a-93f0-36286c6ded16,sweep-4,pytest-dev__pytest-7236,2,completed,passed,step_cap,1258.9,"",40,904290,698240,13791,0.7172,1
+a8d3c6e4-3b6b-4e25-8e2d-96176f2018ac,sweep-4,pytest-dev__pytest-7432,0,completed,passed,step_cap,1116.0,"",40,806127,573747,11144,0.7132,1
+ebe519c5-5de9-4e84-ba3e-3ecc12f99a33,sweep-4,pytest-dev__pytest-7432,1,completed,passed,submitted,1136.5,"",31,664016,569858,14957,0.4818,1
+e07859b1-6f1b-4ff3-9e6e-a2b4b136a37c,sweep-4,pytest-dev__pytest-7432,2,completed,passed,step_cap,1159.7,"",40,839116,695596,13796,0.5917,1
+1639e8b8-7e33-4951-b8c3-e491649f1ff4,sweep-4,pytest-dev__pytest-7571,0,completed,passed,submitted,984.5,"",30,422229,341436,6060,0.3026,1
+4ec4efe6-b043-4fc3-9410-4e5f713db7ee,sweep-4,pytest-dev__pytest-7571,1,completed,passed,submitted,962.6,"",23,434860,0,9195,0.9801,1
+fcbd7840-093e-4acc-8a85-5b84852b4da8,sweep-4,pytest-dev__pytest-7571,2,completed,passed,submitted,1482.0,"",34,855828,656102,15348,0.7148,1
+5d3946fb-75f8-4541-91b3-a209c40878fd,sweep-4,pytest-dev__pytest-7982,0,completed,passed,submitted,1316.0,"",33,457827,288126,9357,0.5093,1
+fe7cd6e3-1190-4672-bf51-5b01ecc8952b,sweep-4,pytest-dev__pytest-7982,1,completed,passed,step_cap,1035.2,"",40,644910,0,11047,1.4224,1
+0f0b05ff-c6c2-4c90-9004-b2b0b3e55712,sweep-4,pytest-dev__pytest-7982,2,completed,passed,submitted,1105.4,"",40,889915,717382,10500,0.6145,1
+5cb08e7f-4729-4a59-8854-70922694bb88,sweep-4,sphinx-doc__sphinx-7462,0,completed,passed,step_cap,799.4,"",40,929572,745700,11038,0.6493,1
+323d4141-56b2-40db-a1c3-b153d4d4f734,sweep-4,sphinx-doc__sphinx-7462,1,completed,failed,submitted,671.7,"",27,536207,400361,7887,0.4464,1
+89a0b30f-9048-435a-82dc-a4bdc8882395,sweep-4,sphinx-doc__sphinx-7462,2,completed,failed,submitted,789.1,"",37,748952,539406,9512,0.6411,1
+6386a4cf-882f-4edf-8642-f164ad078dd2,sweep-4,sphinx-doc__sphinx-7590,0,completed,failed,step_cap,997.0,"",40,1031000,740139,11061,0.8625,1
+8a9802c3-5eb6-4144-bb04-363a608d906f,sweep-4,sphinx-doc__sphinx-7590,1,completed,failed,step_cap,973.9,"",40,989387,821923,11795,0.6409,1
+600855e5-d1d2-4f51-8d3f-52e9dcd3d793,sweep-4,sphinx-doc__sphinx-7590,2,failed,"","",926.6,agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-prev,37,696943,522898,14380,0.6252,0
+81712590-7c3f-4de8-8415-fcea264ad913,sweep-4,sphinx-doc__sphinx-9230,0,completed,passed,submitted,1057.4,"",30,697242,457072,13124,0.7292,1
+cc34b78e-0776-4564-ab27-698eba1b79b3,sweep-4,sphinx-doc__sphinx-9230,1,completed,passed,step_cap,1249.8,"",40,1046300,839865,24087,0.8699,1
+3328bf10-e241-4a51-a581-11e13e9bfc65,sweep-4,sphinx-doc__sphinx-9230,2,failed,"","",824.6,agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-prev,32,617007,0,11737,1.3749,0
+62ec8b00-3799-4fa4-8262-e7d97e2763d9,sweep-4,sphinx-doc__sphinx-9320,0,completed,passed,submitted,1013.7,"",19,346922,224108,5899,0.3612,1
+474340f6-4771-4ca5-85e6-2c8747670961,sweep-4,sphinx-doc__sphinx-9320,1,completed,passed,submitted,672.3,"",30,598494,482170,9465,0.4427,1
+a9acfbcc-baaf-44ee-a992-2a2379277b41,sweep-4,sphinx-doc__sphinx-9320,2,failed,"","",477.0,agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-prev,1,0,0,0,0.0000,0
+a7c0b659-07b1-45c3-aa24-a1c8cfbdf2e5,sweep-4,sphinx-doc__sphinx-9367,0,completed,passed,submitted,1102.6,"",34,481812,396697,8511,0.3517,1
+ee927d85-99c4-44e2-a45d-772e8d3f74dd,sweep-4,sphinx-doc__sphinx-9367,1,completed,passed,submitted,782.0,"",40,776897,545157,11880,0.7151,1
+b4948931-6465-4031-bf38-050799460746,sweep-4,sphinx-doc__sphinx-9367,2,failed,"","",424.2,agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-prev,1,0,0,0,0.0000,0
+5f76ce95-375f-4cb4-9c46-f60859e96ca9,sweep-4,sphinx-doc__sphinx-9602,0,failed,"","",1297.1,agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-prev,24,316439,0,6278,0.7082,0
+fd5adeb4-f573-4c8f-906b-7654c3e58f73,sweep-4,sphinx-doc__sphinx-9602,1,completed,failed,step_cap,937.8,"",40,1018878,827613,15048,0.7286,1
+703bdeb9-75ed-4bf8-8da5-778d67acd38c,sweep-4,sphinx-doc__sphinx-9602,2,failed,"","",493.7,agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-prev,1,0,0,0,0.0000,0
+01116e0d-e0e0-488b-a7fd-f59f32e1bd9f,sweep-4b,mwaskom__seaborn-3069,1,completed,passed,step_cap,1944.7,"",40,1302914,732053,12732,1.4409,1
+bbb8f539-ff19-4fa1-8914-711a514f7efc,sweep-4b,mwaskom__seaborn-3187,1,completed,failed,step_cap,2153.0,"",40,1078642,356930,14203,1.6852,1
+726c6f6a-280b-4fda-bd80-59bbf1486dbe,sweep-4b,pallets__flask-5014,1,completed,passed,submitted,177.1,"",20,296509,273505,6050,0.1733,1
+68bc1a13-54eb-4f0d-af1f-300105f7dc97,sweep-4b,pylint-dev__pylint-4551,1,completed,failed,step_cap,1654.4,"",40,1209581,579133,13993,1.5446,1
+e4fcf066-ad5a-4a50-8c01-883eb0dcec50,sweep-4b,pylint-dev__pylint-4604,1,completed,failed,step_cap,1860.4,"",40,943341,94428,8735,1.8215,1
+49e2b825-82ce-4df6-8cc7-11ce9971f0a6,sweep-4b,pylint-dev__pylint-4970,1,completed,failed,step_cap,1319.9,"",40,926839,595287,12108,0.9275,1
+5648412e-d88b-4bc0-87a5-f414d3913769,sweep-4b,sphinx-doc__sphinx-7590,2,completed,failed,step_cap,741.1,"",40,978719,871553,19660,0.6246,1
+83421df4-fb22-45bf-a1f1-971cd4a43cb4,sweep-4b,sphinx-doc__sphinx-9230,2,completed,passed,submitted,834.4,"",26,556740,122277,9800,1.0110,1
+896d7687-4df2-487b-ae57-ae9fad76d50f,sweep-4b,sphinx-doc__sphinx-9320,2,completed,passed,submitted,645.4,"",24,473677,381326,9260,0.3721,1
+f0705133-1b69-4def-81ac-2a1f560a7a5a,sweep-4b,sphinx-doc__sphinx-9367,2,completed,passed,submitted,709.4,"",36,538645,396727,9466,0.4768,1
+f08905c8-5848-45f3-bc6c-572459f46762,sweep-4b,sphinx-doc__sphinx-9602,0,completed,failed,step_cap,641.1,"",40,878157,700537,10953,0.6268,1
+28c49bc4-02aa-4bcb-b71c-c07b11a5d08e,sweep-4b,sphinx-doc__sphinx-9602,2,completed,passed,submitted,910.1,"",34,854895,397896,14175,1.1637,1
