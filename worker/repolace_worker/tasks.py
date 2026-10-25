@@ -20,6 +20,7 @@ import structlog
 from celery.signals import worker_init, worker_process_init, worker_process_shutdown
 from repolace_shared.logging import configure_logging
 
+from repolace_worker.bound import WorkerTimeout, bounded
 from repolace_worker.celery_app import RUN_TASK_NAME, celery_app
 from repolace_worker.config import WorkerSettings, get_worker_settings
 from repolace_worker.orphans import remove_stale_workspaces
@@ -30,6 +31,7 @@ log = structlog.get_logger()
 DONE = "done"
 NOT_CLAIMABLE = "not_claimable"
 NOT_FOUND = "not_found"
+BENCHMARK_REFUSED = "benchmark_refused"
 TIMED_OUT = "timed_out"
 ERRORED = "errored"
 
@@ -60,6 +62,8 @@ async def run_one(
 ) -> str:
     """Run one task against `resources`, never raising for anything about the task itself.
 
+    A benchmark row (`eval_run_id` set) is refused untouched: the eval runner owns those.
+
     `agent` and `run_task_overrides` are test seams (a scripted agent, a local workspace
     factory); the worker never passes them. Imports are local so the module stays light.
     """
@@ -67,13 +71,27 @@ async def run_one(
     from repolace_pipeline.errors import TaskNotClaimable, TaskNotFound
     from repolace_pipeline.resources import task_options
     from repolace_pipeline.run import run_task
+    from repolace_shared.db.models import Task
     from repolace_shared.tasks_recovery import fail_if_running, remove_task_containers
+    from sqlalchemy import select
 
     options = {**task_options(resources.settings), **run_task_overrides}
-    deadline = asyncio.timeout(bound_seconds)
     try:
-        async with deadline:
-            result = await run_task(
+        # Benchmark rows belong to the eval runner, which owns the run manifest, the instance
+        # selection and the report's denominator. The API and the sweeper never publish one, so a
+        # message for one was published by hand, and running it here would score it outside the
+        # manifest. Refused before the claim, so the row stays exactly as the runner left it.
+        # (`eval_run_id` is set at insert and never changes, so checking before the claim is safe.)
+        async with resources.session_factory() as session:
+            found = (await session.execute(select(Task.eval_run_id).where(Task.id == task_id))).first()
+        if found is not None and found.eval_run_id is not None:
+            log.error("worker.task.benchmark_refused", task_id=str(task_id), eval_run_id=found.eval_run_id)
+            return BENCHMARK_REFUSED
+        # `bounded`, not `asyncio.timeout`: `run_task` settles a cancelled row itself, by the name
+        # of the exception that reaches it, so the bound has to arrive as a `WorkerTimeout` for the
+        # row to read `interrupted: WorkerTimeout` instead of `interrupted: CancelledError`.
+        result = await bounded(
+            run_task(
                 task_id,
                 resources.session_factory,
                 resources.github,
@@ -84,7 +102,9 @@ async def run_one(
                 open_pr=True,
                 claimed_by=claimed_by,
                 **options,
-            )
+            ),
+            bound_seconds,
+        )
     except TaskNotClaimable as exc:
         # A redelivered message, or a second runner that lost the race: ack and drop.
         log.warning("worker.task.not_claimable", task_id=str(task_id), status=exc.status)
@@ -92,12 +112,10 @@ async def run_one(
     except TaskNotFound:
         log.error("worker.task.not_found", task_id=str(task_id))
         return NOT_FOUND
-    except TimeoutError:
-        if not deadline.expired():
-            # A TimeoutError the task raised itself (a socket, a subprocess), not our bound.
-            log.exception("worker.task.error", task_id=str(task_id))
-            return ERRORED
+    except WorkerTimeout:
         log.error("worker.task.timeout", task_id=str(task_id), bound_seconds=bound_seconds)
+        # `run_task` normally settled the row already, so this is the backstop for one whose own
+        # failure write did not land. Conditional on `running`, so it never rewrites a terminal row.
         await asyncio.shield(fail_if_running(resources.session_factory, task_id, "worker: timeout"))
         await asyncio.shield(remove_task_containers(task_id))
         return TIMED_OUT
@@ -126,10 +144,26 @@ def run_task_job(self: Any, task_id: str) -> str:
     )
 
 
-#: RabbitMQ closes a channel whose delivery stays unacked past `consumer_timeout`; an `acks_late`
-#: task holds its delivery for its whole run, so the broker setting must exceed the hard limit.
+#: How much longer than the hard kill the broker waits before closing a channel. A delivery is held
+#: from the moment it reaches the worker, not from the task's start, and three things can come
+#: before or after the task's own run: a child recycled just as the message arrives spends up to
+#: `worker_proc_alive_timeout` (300 s) in `worker_process_init` first; RabbitMQ evaluates the
+#: timeout on a periodic check, about a minute apart; and after the hard kill the worker still has
+#: to notice the lost child and reject the message. Half an hour covers all three several times
+#: over, and costs only slower detection of a consumer that holds a delivery and never acks, which
+#: the heartbeat reaper settles on the row long before.
+CONSUMER_TIMEOUT_MARGIN_SECONDS = 1800
+
+
 def required_consumer_timeout_ms(settings: WorkerSettings) -> int:
-    return settings.hard_time_limit_seconds * 1000
+    """The least `consumer_timeout` the broker may have, in milliseconds.
+
+    RabbitMQ closes the channel of a delivery left unacked past it, and an `acks_late` task holds
+    its delivery for its whole run, so a value equal to the hard limit would let the broker cut off
+    a task the worker is still allowed to run. `infra/rabbitmq.conf` carries the value and
+    `worker/tests/test_worker_deploy_config.py` holds it at or above this one.
+    """
+    return (settings.hard_time_limit_seconds + CONSUMER_TIMEOUT_MARGIN_SECONDS) * 1000
 
 
 @worker_init.connect

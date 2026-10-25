@@ -16,6 +16,7 @@ from typing import ClassVar
 
 import pytest
 from repolace_shared.git import repo as repo_module
+from repolace_shared.git import workspace as workspace_module
 from repolace_shared.git.repo import (
     CONFLICT_BOTH_ADDED,
     CONFLICT_BOTH_MODIFIED,
@@ -26,6 +27,7 @@ from repolace_shared.git.repo import (
     MAX_UNMERGED_PATHS,
     GitError,
     GitVersionError,
+    TooManyConflicts,
     UntrustedConfigError,
     conflict_kind,
     parse_merge_tree,
@@ -33,7 +35,7 @@ from repolace_shared.git.repo import (
     require_git_version,
     run_git_checked,
 )
-from repolace_shared.git.workspace import MAX_RESOLUTION_PATHS, task_workspace
+from repolace_shared.git.workspace import MAX_RESOLUTION_PATHS, file_has_marker, task_workspace
 from shared_support import git, write
 
 pytestmark = pytest.mark.anyio
@@ -722,3 +724,77 @@ class TestFetchIntegrity:
             await workspace.repo.fetch_branch("main")
             (fetch,) = [c for c in calls if "fetch" in c]
             assert "transfer.fsckObjects=true" in fetch
+
+
+class TestMarkersThatAttributesHide:
+    """`.gitattributes` can change how git writes a conflict, so the host's scan must not trust the default."""
+
+    async def _in_conflict(self, workspace, push_upstream):
+        await workspace.start_agent_branch(1, TASK_ID)
+        write(workspace.path / "src" / "app.py", APP_AGENT)
+        await workspace.record_attempt("fix")
+        push_upstream({"src/app.py": APP_UPSTREAM})
+        _, tip = await workspace.target_moved()
+        await workspace.repo.merge_no_commit(tip)
+
+    @pytest.mark.parametrize(
+        ("attributes", "flagged"),
+        [
+            ("src/app.py conflict-marker-size=9", True),
+            ("src/app.py conflict-marker-size=7", False),
+            ("src/app.py working-tree-encoding=UTF-16LE", True),
+            ("src/app.py -merge", True),
+            ("src/app.py merge=text", False),
+            ("src/app.py merge=ours", True),
+            ("src/app.py filter=lfs", True),
+            ("src/app.py ident", True),
+            ("README.md conflict-marker-size=9", False),
+            ("", False),
+        ],
+    )
+    async def test_which_attributes_are_flagged(self, origin_url, attributes, flagged):
+        async with workspace_for(origin_url) as workspace:
+            write(workspace.path / ".gitattributes", attributes + "\n")
+            result = await workspace.repo.marker_attribute_overrides(["src/app.py"])
+            assert result == ([b"src/app.py"] if flagged else [])
+
+    async def test_a_longer_marker_is_still_a_marker(self, tmp_path):
+        target = tmp_path / "f.txt"
+        target.write_bytes(b"a\n<<<<<<<<< HEAD\nb\n=========\nc\n>>>>>>>>> theirs\n")
+        assert file_has_marker(target) == 2
+        target.write_bytes(b"a\r\n=======\r\n")
+        assert file_has_marker(target) == 2
+        target.write_bytes(b"no markers\n<<<<<< six\n")
+        assert file_has_marker(target) is None
+
+    async def test_nine_character_markers_are_refused_at_commit_time(self, origin_url, push_upstream):
+        async with workspace_for(origin_url) as workspace:
+            await self._in_conflict(workspace, push_upstream)
+            write(workspace.path / "src" / "app.py", "def add(a, b):\n<<<<<<<<< HEAD\n    return a + b\n")
+            with pytest.raises(RuntimeError, match="conflict marker"):
+                await workspace.commit_resolution(["src/app.py"], "merge")
+
+    async def test_the_marker_scan_runs_off_the_event_loop(self, origin_url, push_upstream, monkeypatch):
+        import threading
+
+        seen: list[str] = []
+        real = workspace_module._refuse_markers
+
+        def recording(path, display):
+            seen.append(threading.current_thread().name)
+            return real(path, display)
+
+        monkeypatch.setattr(workspace_module, "_refuse_markers", recording)
+        async with workspace_for(origin_url) as workspace:
+            await self._in_conflict(workspace, push_upstream)
+            write(workspace.path / "src" / "app.py", "def add(a, b):\n    return a + b\n")
+            await workspace.commit_resolution(["src/app.py"], "merge")
+        assert seen and all(name != threading.main_thread().name for name in seen)
+
+    async def test_too_many_conflicts_is_its_own_error(self, origin_url, push_upstream, monkeypatch):
+        async with workspace_for(origin_url) as workspace:
+            await self._in_conflict(workspace, push_upstream)
+            monkeypatch.setattr(repo_module, "MAX_UNMERGED_PATHS", 0)
+            with pytest.raises(TooManyConflicts):
+                await workspace.repo.unmerged_files()
+            assert issubclass(TooManyConflicts, GitError)

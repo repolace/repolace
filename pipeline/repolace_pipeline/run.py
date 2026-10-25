@@ -40,7 +40,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from functools import partial
 from pathlib import Path
@@ -56,6 +56,7 @@ from repolace_agents.contracts import (
     LLMClientLike,
     StopReason,
 )
+from repolace_agents.resolver import resolve_conflicts
 from repolace_agents.tools import ToolBox, build_toolbox
 from repolace_gateway.budget import BudgetExceeded, BudgetLimit, TaskBudget, task_scope
 from repolace_gateway.errors import LLMCallError
@@ -96,6 +97,7 @@ from verify.stage import Verifier
 
 from repolace_pipeline.agent_context import build_tool_context, make_search
 from repolace_pipeline.attempts import AttemptScorer, run_scored_suite
+from repolace_pipeline.conflicts import MergeOutcome, Resolver, TargetMerge, merge_target
 from repolace_pipeline.context import RetrievedChunk, repo_overview, search_hit
 from repolace_pipeline.edit import StubEditRequest
 from repolace_pipeline.errors import (
@@ -179,6 +181,9 @@ class RunResult:
     #: The PR gate's own sentence for opening, or withholding, a pull request.
     #: None when the gate never ran -- the task failed first.
     pr_gate_reason: str | None = None
+    #: Why a `CONFLICTING` task could not merge its change onto the moved target branch, as stored
+    #: in `tasks.conflict_reason`. None for every other status.
+    conflict_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -195,6 +200,7 @@ class _Seams:
     embedding_strategy: str
     max_changed_files: int | None
     max_changed_lines: int | None
+    resolver: Resolver
 
 
 @dataclass
@@ -237,7 +243,8 @@ def _describe(exc: BaseException) -> str:
         # missing installation permission, not a bad request.
         return f"github {exc.response.status_code}: {exc.response.text[:500]}"
     if isinstance(exc, httpx.RequestError):
-        return f"github unreachable: {exc}"
+        detail = str(exc)
+        return f"github unreachable: {type(exc).__name__}" + (f": {detail}" if detail else "")
     if isinstance(exc, subprocess.CalledProcessError):
         return f"git precondition failed: {(exc.stderr or '').strip()[:500]}"
     return f"{type(exc).__name__}: {exc}"
@@ -467,6 +474,7 @@ async def _fail(
             changed_files=progress.changed_files,
             pr_number=progress.pr_number,
             pr_url=progress.pr_url,
+            conflict_reason=None,
         )
         await state.commit()
     except SQLAlchemyError as exc:
@@ -887,10 +895,12 @@ async def _run_stages(
         )
         progress.scorer = scorer
 
+        # Kept, not only passed: the conflict resolver's own budget is cut from what this one has left.
+        agent_budget = _agent_budget(seams.budget)
         async with _stage("agent"):
             # The gateway scope: every model call is attributable to this task and charged to its
             # budget. A contextvar, not a parameter, so the agent cannot forget it.
-            with task_scope(task.id, _agent_budget(seams.budget)):
+            with task_scope(task.id, agent_budget):
                 deps = await _build_deps(
                     session_factory,
                     task,
@@ -933,22 +943,57 @@ async def _run_stages(
         scored, verdict = _judge(baseline, baseline_files, instance, result, changed)
         _log_score(scored, benchmark=instance is not None)
 
-        decision = pr_decision(
-            benchmark=instance is not None,
-            has_change=bool(changed),
-            scored=scored,
-            verdict=verdict,
-            result=result,
-            open_pr_on_failure=task.open_pr_on_failure,
-            open_pr_allowed=seams.open_pr,
-            changed_files=len(changed),
-            changed_lines=count_changed_lines(diff),
-            max_changed_files=seams.max_changed_files,
-            max_changed_lines=seams.max_changed_lines,
-        )
+        decision = _decide(task, seams, instance, scored, verdict, result, changed, diff)
         log.info("pipeline.gate", open=decision.open, reason=decision.reason)
 
+        merge: TargetMerge | None = None
+        if decision.open and instance is None:
+            # Only a PR is affected by a target branch that moved while the task ran, so only a task
+            # about to open one pays for the fetch, the merge and perhaps a resolver and a suite run.
+            # Never a benchmark task: its score must stay on the instance's curated tree, which is why
+            # the clone stage refuses a moved base. See `conflicts.py`.
+            async with _stage("merge_target"):
+                merge = await merge_target(
+                    task_id=task.id,
+                    workspace=workspace,
+                    scorer=scorer,
+                    issue=deps.issue,
+                    baseline=baseline,
+                    hidden_paths=verifier.hidden_paths,
+                    llm=seams.llm,
+                    resolver=seams.resolver,
+                    agent_budget=agent_budget,
+                )
+                if merge.outcome is MergeOutcome.MERGED:
+                    # Relative to the new base now, so the diff, the squash and the PR are the agent's
+                    # change alone; the target's commits are the base, not part of the proposal.
+                    changed = await workspace.changed_files()
+                    diff = await workspace.review_diff()
+                    baseline_files = await workspace.baseline_files()
+            if merge.outcome is MergeOutcome.MERGED:
+                # The pre-merge score describes a tree that is no longer the one proposed, so the
+                # attempt on the merged tree is judged and gated instead. With no new attempt the
+                # merged tree is the one already scored, and that score still holds.
+                if merge.record is not None:
+                    last = merge.record
+                progress.changed_files, progress.patch_diff = changed, diff
+                progress.patch_sha = await workspace.repo.head_sha()
+                scored, verdict = _judge(
+                    baseline, baseline_files, instance, replace(result, last_attempt=last), changed
+                )
+                _log_score(scored, benchmark=False)
+                decision = _decide(task, seams, instance, scored, verdict, result, changed, diff)
+            elif merge.outcome is MergeOutcome.ALREADY_CONTAINED:
+                decision = PrDecision(False, merge.reason or "")
+            elif merge.outcome is MergeOutcome.CONFLICTING:
+                decision = PrDecision(
+                    False, f"the target branch moved and the change could not be merged onto it: {merge.reason}"
+                )
+            if merge.outcome is not MergeOutcome.NOT_MOVED:
+                log.info("pipeline.gate.after_merge", open=decision.open, reason=decision.reason)
+
         # Best effort: a database blip here must not turn a finished agent run into a harness error.
+        # After the merge stage, so the resolver's calls are in it.
         cost = await _best_effort_cost(session_factory, task.id)
         pull_request = None
         squashed: str | None = None
@@ -971,6 +1016,7 @@ async def _run_stages(
                 model=await first_model(session_factory, task.id),
                 cost_usd=cost,
                 retrieved=retrieved,
+                target_merge=merge.note if merge is not None else None,
             )
             async with _stage("squash"):
                 squashed = await workspace.squash(commit_message(facts))
@@ -1003,7 +1049,15 @@ async def _run_stages(
         patch_sha = squashed or await workspace.repo.head_sha()
         progress.patch_sha = patch_sha
 
-    status = TaskStatus.PR_OPENED if pull_request is not None else TaskStatus.COMPLETED
+    if pull_request is not None:
+        status = TaskStatus.PR_OPENED
+    elif merge is not None and merge.outcome is MergeOutcome.CONFLICTING:
+        # Not FAILED: nothing broke, the change could not be merged onto the target as it now is. The
+        # outcome stays the one the pre-merge attempt scored.
+        status = TaskStatus.CONFLICTING
+    else:
+        status = TaskStatus.COMPLETED
+    conflict_reason = merge.reason if status is TaskStatus.CONFLICTING and merge is not None else None
     async with _stage("finalize"):
         await write_terminal(
             state,
@@ -1020,10 +1074,11 @@ async def _run_stages(
             changed_files=changed,
             pr_number=pull_request.number if pull_request is not None else None,
             pr_url=pull_request.html_url if pull_request is not None else None,
+            conflict_reason=conflict_reason,
         )
         await state.commit()
     log.info(
-        "pipeline.task.pr_opened" if pull_request is not None else "pipeline.task.completed",
+        _TERMINAL_EVENTS[status],
         **_score_log_fields(scored, benchmark=instance is not None),
         stop_reason=result.stop_reason.value,
         pr_number=pull_request.number if pull_request is not None else None,
@@ -1041,7 +1096,42 @@ async def _run_stages(
         submitted=result.submitted,
         stop_reason=result.stop_reason.value,
         pr_gate_reason=decision.reason,
+        conflict_reason=conflict_reason,
     )
+
+
+def _decide(
+    task: Task,
+    seams: _Seams,
+    instance: InstanceSpec | None,
+    scored: Score,
+    verdict: Verdict,
+    result: AgentResult,
+    changed: list[str],
+    diff: str,
+) -> PrDecision:
+    """The PR gate over one judged state. Asked twice when the target moved: before and after the merge."""
+    return pr_decision(
+        benchmark=instance is not None,
+        has_change=bool(changed),
+        scored=scored,
+        verdict=verdict,
+        result=result,
+        open_pr_on_failure=task.open_pr_on_failure,
+        open_pr_allowed=seams.open_pr,
+        changed_files=len(changed),
+        changed_lines=count_changed_lines(diff),
+        max_changed_files=seams.max_changed_files,
+        max_changed_lines=seams.max_changed_lines,
+    )
+
+
+#: The log event a task that ran to the end finishes with, by its status.
+_TERMINAL_EVENTS = {
+    TaskStatus.PR_OPENED: "pipeline.task.pr_opened",
+    TaskStatus.CONFLICTING: "pipeline.task.conflicting",
+    TaskStatus.COMPLETED: "pipeline.task.completed",
+}
 
 
 def _inadmissible_instance(baseline: SuiteResult, instance: InstanceSpec | None) -> tuple[Score, str] | None:
@@ -1102,6 +1192,7 @@ async def _complete_without_agent(
         changed_files=None,
         pr_number=None,
         pr_url=None,
+        conflict_reason=None,
     )
     await state.commit()
     log.info("pipeline.task.completed", **_score_log_fields(scored, benchmark=benchmark), gate=gate_reason)
@@ -1181,7 +1272,7 @@ async def _build_deps(
     index_strategy: str,
 ) -> AgentDeps:
     """Everything the agent is given. The model client is the caller's; the rest is built here."""
-    limits = AgentLimits()
+    limits = AgentLimits.from_env()
     # From the clean tree, before the agent has edited anything.
     hits = await asyncio.to_thread(
         lambda: tuple(search_hit(chunk, workspace.path, limits.max_context_snippet_lines) for chunk in retrieved)
@@ -1248,6 +1339,7 @@ async def run_task(
     max_changed_lines: int | None = None,
     claimed_by: str | None = None,
     heartbeat_interval: float = HEARTBEAT_INTERVAL_SECONDS,
+    resolver: Resolver = resolve_conflicts,
 ) -> RunResult:
     """Run one task. `backend` and `specs` are the caller's, like everything else.
 
@@ -1271,6 +1363,8 @@ async def run_task(
     * `max_changed_files`, `max_changed_lines` -- the PR scope cap (see `gate`); None is no cap.
     * `claimed_by` -- who is running the task, written to `tasks.claimed_by`; None is `<hostname>:<pid>`.
     * `heartbeat_interval` -- seconds between `tasks.heartbeat_at` bumps while the task runs.
+    * `resolver` -- what reconciles conflicts when the target branch moved (`conflicts.py`); a test
+      passes a scripted one.
     """
     if isinstance(agent, GoldAgent) and open_pr:
         # In the API, not only in the CLI: a gold run validates an instance by pushing the reference
@@ -1288,6 +1382,7 @@ async def run_task(
         embedding_strategy=embedding_strategy,
         max_changed_files=max_changed_files,
         max_changed_lines=max_changed_lines,
+        resolver=resolver,
     )
     progress = _Progress()
     async with session_factory() as state:

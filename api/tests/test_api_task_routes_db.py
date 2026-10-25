@@ -395,6 +395,24 @@ class TestEstimate:
         assert (body["basis"], body["n"]) == ("model", 5)
         assert Decimal(str(body["p50_usd"])) == Decimal("0.1")
 
+    async def test_the_model_fallback_uses_only_the_latest_30_tasks(self, db_session, db_session_factory):
+        mine = await seed_repo(db_session)
+        other = await seed_repo(db_session, id=uuid.uuid4(), github_repo_id=100, name="other", full_name="acme/other")
+        await self.costed(db_session, mine, [Decimal("0.50")], model="m1")  # the oldest task of all
+        # 34 more on the same model: the 4 oldest are expensive, the newest 30 are cheap.
+        for i in range(34):
+            cost = Decimal("9.00") if i < 4 else Decimal("0.10")
+            task = await seed_task(db_session, other, issue_number=i + 1, cost_usd=cost, created_at=at(i + 1))
+            db_session.add(LLMCall(task_id=task.id, stage="agent", model="m1", provider="p", created_at=at(i + 1)))
+        await db_session.commit()
+
+        body = await self.estimate(db_session_factory, mine)
+
+        # 35 tasks qualify; only the latest 30 are summarised, as on the `repo` basis.
+        assert (body["basis"], body["n"]) == ("model", 30)
+        assert Decimal(str(body["p50_usd"])) == Decimal("0.1")
+        assert Decimal(str(body["p90_usd"])) == Decimal("0.1")
+
     async def test_basis_none_below_five_even_with_a_model(self, db_session, db_session_factory):
         repo = await seed_repo(db_session)
         await self.costed(db_session, repo, [Decimal("0.50")] * 4, model="m1")

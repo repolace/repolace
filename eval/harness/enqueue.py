@@ -201,8 +201,9 @@ def code_limits() -> dict[str, object]:
 
     Imported lazily from the two light modules that own them (neither pulls torch
     or LiteLLM), so `--help` and every other subcommand do not pay for them. These
-    are the *defaults in code*: if the pipeline ever overrides a budget from its
-    settings, this function is the one to teach about it.
+    are the *defaults in code*, plus the two agent-loop overrides read from the environment
+    (`AgentLimits.from_env`). If the pipeline ever overrides a budget from its settings, this
+    function is the one to teach about it.
     """
     from repolace_agents.contracts import AgentLimits
     from repolace_gateway.budget import (
@@ -211,7 +212,7 @@ def code_limits() -> dict[str, object]:
         DEFAULT_MAX_WALL_SECONDS,
     )
 
-    agent = AgentLimits()
+    agent = AgentLimits.from_env()
     return {
         "task_cost_cap_usd": float(DEFAULT_MAX_USD),
         "task_call_cap": DEFAULT_MAX_CALLS,

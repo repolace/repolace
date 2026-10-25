@@ -8,6 +8,9 @@ _REPO_ROOT_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 
 class ApiSettings(BaseSettings):
+    # In compose the `api` container loads infra/api.env, not the repository .env, so its
+    # environment holds only what is read here and in `UiSettings`. Add a field here and add it to
+    # infra/api.env.example too; `api/tests/test_api_env_example.py` holds the two equal.
     model_config = SettingsConfigDict(env_file=_REPO_ROOT_ENV_FILE, extra="ignore")
 
     database_url: str

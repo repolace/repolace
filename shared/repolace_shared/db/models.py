@@ -149,7 +149,18 @@ class RegisteredRepo(Base):
 class Task(Base):
     __tablename__ = "tasks"
     __table_args__ = (
-        Index("ix_tasks_repo_id_created_at", "repo_id", text("created_at DESC")),
+        # The keyset list pages on `(created_at, id) < (:c, :i)` newest first. All three columns after
+        # `repo_id` agree in direction because Postgres only makes a row comparison an index condition
+        # when they do; the old `(repo_id, created_at DESC)` index could bound `created_at` alone.
+        Index("ix_tasks_repo_created_id", "repo_id", text("created_at DESC"), text("id DESC")),
+        # What the worker's sweeper and reaper scan every minute. Partial: the live rows are a tiny share of
+        # the table whatever its age. `heartbeat_at` is deliberately not indexed, so a beat stays a cheap update.
+        Index(
+            "ix_tasks_active",
+            "created_at",
+            "id",
+            postgresql_where=text("status IN ('queued', 'running')"),
+        ),
         # The escape hatch has to be structurally impossible to use silently.
         # An unexplained `passed_with_test_edit` would be indistinguishable
         # from a pass, which is exactly the loophole that would hollow out the
@@ -182,6 +193,11 @@ class Task(Base):
         CheckConstraint(
             "(eval_run_id IS NULL) = (instance_id IS NULL) AND (eval_run_id IS NULL) = (run_index IS NULL)",
             name="ck_tasks_eval_columns_together",
+        ),
+        # Only a `conflicting` task carries a reason (0016). The pipeline always writes one for it.
+        CheckConstraint(
+            "conflict_reason IS NULL OR status = 'conflicting'",
+            name="ck_tasks_conflict_reason_needs_conflicting",
         ),
         # Makes the harness's enqueue idempotent: a re-run after a crash cannot
         # create a second row for one (run, instance, run_index), which would be
@@ -288,6 +304,11 @@ class Task(Base):
     #: Which process claimed the task (`<hostname>:<pid>` by default), so an
     #: abandoned row says whose it was.
     claimed_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Why a `conflicting` task could not merge its change onto the target branch, which moved
+    #: while it ran. Host-written and short; the pipeline sets it whenever it ends a task
+    #: `conflicting`, and only then (`ck_tasks_conflict_reason_needs_conflicting`), so
+    #: `error_message` keeps its one meaning.
+    conflict_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     repo: Mapped[RegisteredRepo] = relationship(back_populates="tasks")
     test_runs: Mapped[list["TaskTestRun"]] = relationship(
@@ -442,6 +463,9 @@ class LLMCall(Base):
     __tablename__ = "llm_calls"
     __table_args__ = (
         Index("ix_llm_calls_task_id_created_at", "task_id", "created_at"),
+        # `DISTINCT ON (task_id) ... ORDER BY task_id, created_at DESC` (the estimate's latest call per
+        # task) needs the newest call first inside each task, which the ascending index above cannot give.
+        Index("ix_llm_calls_task_created_desc", "task_id", text("created_at DESC")),
         CheckConstraint("attempt IS NULL OR attempt >= 0", name="ck_llm_calls_attempt_non_negative"),
     )
 

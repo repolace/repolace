@@ -97,6 +97,22 @@ class TestSweeper:
 
         assert sent == [tasks[0].id, tasks[1].id]
 
+    async def test_a_tick_reads_only_the_oldest_rows_up_to_the_scan_limit(self, db_session, db_session_factory):
+        """The query must not load every old queued id: with a backlog that is the whole table each minute.
+        The two oldest rows are already claimed, so a scan of two finds nothing to send even though
+        three more rows could have been."""
+        tasks = [await add_task(db_session) for _ in range(5)]
+        for i, task in enumerate(tasks):
+            await backdate(db_session, task, created_at=OLD + timedelta(seconds=i))
+        claims = FakeClaims()
+        claims.keys = {tasks[0].id, tasks[1].id}
+        sent: list[uuid.UUID] = []
+
+        assert await sweep(db_session_factory, sent.append, claims, scan_limit=2) == []
+        assert sent == []
+
+        assert await sweep(db_session_factory, sent.append, claims, scan_limit=3) == [tasks[2].id]
+
     async def test_a_broker_error_aborts_the_tick_without_raising_and_frees_the_key(
         self, db_session, db_session_factory
     ):

@@ -39,6 +39,13 @@ class TestRendering:
         assert "RUN pip install -e ." in text
         assert "RUN pip install pytest" in text
 
+    def test_pip_waits_longer_and_retries_more_than_its_defaults(self):
+        """A large wheel stalling on a slow link failed an environment build, which cost the instance its row."""
+        text = render_dockerfile(RepoSpec(key="a/b"), INSTALL)
+
+        assert "PIP_DEFAULT_TIMEOUT=120" in text
+        assert "PIP_RETRIES=10" in text
+
     def test_no_apt_layer_when_no_system_packages(self):
         """An unconditional `apt-get update` doubles the build time of every repo
         that does not need one."""

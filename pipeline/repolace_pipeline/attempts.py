@@ -81,6 +81,16 @@ class AttemptScorer:
         return self._count
 
     @property
+    def next_attempt(self) -> int:
+        """The lowest attempt number `verify_attempt` would accept now.
+
+        For a scored run the pipeline makes after the agent has finished (the merged tree, when the
+        target branch moved). Numbers only ever increase, and an attempt that scored nothing left no
+        row, so this is the last *recorded* number plus one.
+        """
+        return self._last_number + 1
+
+    @property
     def last_record(self) -> AttemptRecord | None:
         """The last scored attempt, or None. Only ever replaced by a record, never cleared."""
         return self._last_record

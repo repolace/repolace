@@ -92,7 +92,7 @@ from harness.db import (
     run_provider_failures,
     running_older_than,
 )
-from harness.enqueue import DEFAULT_RUNS_DIR, DEFAULT_WALL_CLOCK_SECONDS
+from harness.enqueue import DEFAULT_RUNS_DIR, DEFAULT_WALL_CLOCK_SECONDS, code_limits
 from harness.run_manifest import ManifestError, load_manifest, manifest_path
 
 log = structlog.get_logger()
@@ -385,6 +385,14 @@ def check_manifest(runs_dir: Path, config: RunnerConfig) -> bool:
         problems.append(
             f"timeout: the manifest says {recorded!r} seconds, this run was given {config.timeout_seconds!r}"
         )
+    if config.agent == "llm":
+        effective = code_limits()
+        for name in ("max_steps_per_attempt", "max_attempts"):
+            if manifest.limits.get(name) != effective[name]:
+                problems.append(
+                    f"{name}: the manifest says {manifest.limits.get(name)!r}, this environment gives "
+                    f"{effective[name]!r} (REPOLACE_AGENT_* variables must match what `enqueue` saw)"
+                )
     if problems:
         raise ManifestError(
             f"{path} does not match this invocation of `run`:\n  " + "\n  ".join(problems)

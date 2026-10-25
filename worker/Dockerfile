@@ -1,6 +1,24 @@
+# The docker *client* only: the worker talks to the host's rootless daemon through a mounted
+# socket (see infra/docker-compose.yml) and never runs a daemon of its own. A client older than
+# the daemon is fine; the daemon accepts every API version back to its minimum.
+ARG DOCKER_CLI_TAG=28-cli
+FROM docker:${DOCKER_CLI_TAG} AS docker-cli
+
 FROM python:3.12-slim
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+
+# What a task shells out to. git: the clone, merge-tree and the credential helper need >= 2.38
+# (`merge-tree --write-tree`), and the build fails here rather than on the first conflicting
+# task if the base image ever ships an older one. util-linux: the agent's `grep` tool runs git
+# under `prlimit`, and `build_toolbox` refuses to start without it.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git util-linux ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && dpkg --compare-versions "$(git --version | awk '{print $3}')" ge 2.38 \
+    && prlimit --version > /dev/null \
+    && docker --version
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy

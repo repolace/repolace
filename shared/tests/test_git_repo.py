@@ -11,6 +11,7 @@ recorded decisions the rest of the system quietly depends on:
 
 import asyncio
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -99,6 +100,96 @@ def fake_git(tmp_path: Path, monkeypatch):
         monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
 
     return install
+
+
+class TestCloneRetriesTransientFailures:
+    """The first real benchmark run lost a task to `HTTP/2 stream reset ... early EOF` on a clone."""
+
+    EARLY_EOF = (
+        "error: RPC failed; curl 92 HTTP/2 stream 7 reset by server (error 0x8 CANCEL)\\n"
+        "fatal: early EOF\\nfatal: fetch-pack: invalid index-pack output"
+    )
+
+    @pytest.fixture(autouse=True)
+    def instant(self, monkeypatch):
+        from repolace_shared.git import repo as repo_module
+
+        monkeypatch.setattr(repo_module, "CLONE_RETRY_DELAYS_SECONDS", (0.0, 0.0))
+
+    @staticmethod
+    def install_failing_clones(fake_git, tmp_path: Path, how_many: int, message: str) -> Path:
+        """A `git` that fails its first `how_many` clones with `message` (exit 128), then is the real one."""
+        import shutil as _shutil
+
+        real = _shutil.which("git")
+        counter = tmp_path / "clone-count"
+        fake_git(
+            f'''case " $* " in
+  *" clone "*)
+    n=$(cat "{counter}" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "{counter}"
+    if [ "$n" -le {how_many} ]; then printf '%s\\n' "{message}" >&2; exit 128; fi ;;
+esac
+exec "{real}" "$@"'''
+        )
+        return counter
+
+    async def test_a_transient_failure_is_retried_and_the_clone_then_succeeds(self, origin_url, tmp_path, fake_git):
+        counter = self.install_failing_clones(fake_git, tmp_path, 2, "fatal: early EOF")
+
+        repo = await clone_into(origin_url, tmp_path / "work")
+
+        assert (repo.path / "src").exists()
+        assert counter.read_text().strip() == "3"
+
+    async def test_it_gives_up_after_three_attempts_and_raises_the_last_error(self, origin_url, tmp_path, fake_git):
+        counter = self.install_failing_clones(fake_git, tmp_path, 99, "fatal: early EOF")
+
+        with pytest.raises(GitCommandError, match="early EOF"):
+            await clone_into(origin_url, tmp_path / "work")
+
+        assert counter.read_text().strip() == "3"
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "remote: Repository not found.\\nfatal: repository 'https://github.com/x/y.git/' not found",
+            "fatal: Authentication failed for 'https://github.com/x/y.git/'",
+            "fatal: Remote branch nope not found in upstream origin",
+        ],
+    )
+    async def test_an_error_retrying_cannot_fix_fails_at_once(self, origin_url, tmp_path, fake_git, message):
+        counter = self.install_failing_clones(fake_git, tmp_path, 99, message)
+
+        with pytest.raises(GitCommandError):
+            await clone_into(origin_url, tmp_path / "work")
+
+        assert counter.read_text().strip() == "1"
+
+    async def test_a_half_written_destination_is_cleared_before_the_next_attempt(self, origin_url, tmp_path, fake_git):
+        work = tmp_path / "work"
+        real = shutil.which("git")
+        counter = tmp_path / "clone-count"
+        fake_git(
+            f'''case " $* " in
+  *" clone "*)
+    n=$(cat "{counter}" 2>/dev/null || echo 0); n=$((n+1)); echo $n > "{counter}"
+    if [ "$n" -eq 1 ]; then mkdir -p "{work}/.git"; echo "fatal: early EOF" >&2; exit 128; fi ;;
+esac
+exec "{real}" "$@"'''
+        )
+
+        repo = await clone_into(origin_url, work)
+
+        assert (repo.path / "src").exists() and counter.read_text().strip() == "2"
+
+    def test_the_failures_that_are_worth_retrying_are_recognised_by_git_s_own_words(self):
+        from repolace_shared.git.repo import GitCommandError as Error
+        from repolace_shared.git.repo import is_transient_clone_failure
+
+        assert is_transient_clone_failure(Error(["clone"], 128, self.EARLY_EOF.replace("\\n", "\n")))
+        assert is_transient_clone_failure(Error(["clone"], 128, "fatal: unable to access 'x': Connection reset by peer"))
+        assert not is_transient_clone_failure(Error(["clone"], 128, "fatal: Authentication failed"))
+        assert not is_transient_clone_failure(GitTimeoutError(["clone"], 900.0))
 
 
 class TestClone:
@@ -678,3 +769,65 @@ class TestRunGitBytes:
 
         assert raw == "café\n".encode()
         assert isinstance(raw, bytes)
+
+
+class TestRetryTransientGit:
+    """`push` and `fetch` get the retry `clone` has: a blip after a passing task must not erase the pass."""
+
+    @pytest.fixture(autouse=True)
+    def instant(self, monkeypatch):
+        from repolace_shared.git import repo as repo_module
+
+        monkeypatch.setattr(repo_module, "CLONE_RETRY_DELAYS_SECONDS", (0.0, 0.0))
+
+    @staticmethod
+    def failing(times: int, message: str):
+        calls = {"n": 0}
+
+        async def operation():
+            calls["n"] += 1
+            if calls["n"] <= times:
+                raise GitCommandError(["git", "push"], 128, message)
+            return "done"
+
+        return operation, calls
+
+    async def test_a_transient_failure_is_retried(self):
+        from repolace_shared.git.repo import retry_transient_git
+
+        operation, calls = self.failing(2, "fatal: unable to access: Could not resolve host: github.com")
+
+        assert await retry_transient_git(operation, what="push") == "done"
+        assert calls["n"] == 3
+
+    async def test_it_gives_up_after_three_attempts(self):
+        from repolace_shared.git.repo import retry_transient_git
+
+        operation, calls = self.failing(99, "fatal: early EOF")
+
+        with pytest.raises(GitCommandError):
+            await retry_transient_git(operation, what="fetch")
+        assert calls["n"] == 3
+
+    async def test_a_refusal_is_not_retried(self):
+        from repolace_shared.git.repo import retry_transient_git
+
+        operation, calls = self.failing(99, "remote: Permission to x denied\nfatal: unable to access: 403")
+
+        with pytest.raises(GitCommandError):
+            await retry_transient_git(operation, what="push")
+        assert calls["n"] == 1
+
+
+class TestRpcFailedMarkerIsNarrow:
+    def test_a_server_rejection_is_not_transient(self):
+        from repolace_shared.git.repo import is_transient_clone_failure
+
+        refused = GitCommandError(["git", "push"], 128, "error: RPC failed; HTTP 403 curl 22 The requested URL returned error: 403")
+        assert not is_transient_clone_failure(refused)
+
+    def test_a_transport_failure_still_is(self):
+        from repolace_shared.git.repo import is_transient_clone_failure
+
+        assert is_transient_clone_failure(GitCommandError(["git", "push"], 128, "error: RPC failed; curl 92 HTTP/2 stream 7 reset"))
+        assert is_transient_clone_failure(GitCommandError(["git", "push"], 128, "error: RPC failed; HTTP 502 curl 22"))

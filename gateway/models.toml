@@ -11,9 +11,12 @@
 # supports_prompt_caching, its [price] must also give cache_read and cache_write.
 
 [gateway]
-max_attempts = 5            # total tries per model, the first included
+# Sized for Vertex's Dynamic Shared Quota: a 429 there means the shared pool was congested,
+# and sweep-2 lost three tasks to calls that gave up after ~15-30 s. These waits (2, 4, 8, 16,
+# 32, 64, 120, 120 s, with jitter) ride out a spell of a few minutes. A 429 is not billed.
+max_attempts = 9            # total tries per model, the first included
 base_delay_seconds = 2.0    # backoff doubles from here, with jitter
-max_delay_seconds = 60.0
+max_delay_seconds = 120.0
 request_timeout_seconds = 180.0
 
 [stages.agent]
@@ -42,11 +45,13 @@ provider = "anthropic"
 litellm_model = "anthropic/claude-sonnet-5-5"
 supports_prompt_caching = true
 [models.claude-sonnet-5-5.price]
-# From Anthropic's pricing page, supplied by the maintainer 2026-10-05.
-# cache_write is the 5-minute rate: the gateway sends cache_control without a ttl.
+# From Anthropic's pricing page (platform.claude.com/docs/en/about-claude/pricing, checked
+# 2026-10-20). cache_write is the 5-minute rate: the gateway sends cache_control without a ttl.
+# cache_read is $0.10 (0.05x the base input price): the $0.20 this entry carried until then is
+# the rate of the older Claude Sonnet 5, and overstated the cache-read cost of every cached call.
 input = 2.00
 output = 10.00
-cache_read = 0.20
+cache_read = 0.10
 cache_write = 2.50
 
 # --- the headline model, through Amazon Bedrock ----------------------------
@@ -72,7 +77,7 @@ supports_prompt_caching = true
 [models.claude-sonnet-5-5-bedrock.price]
 input = 2.00
 output = 10.00
-cache_read = 0.20
+cache_read = 0.20   # AWS rate card as read on 2026-10-06; Anthropic's own page lists $0.10 for the direct API: confirm against AWS before a Bedrock run
 cache_write = 2.50
 
 # --- cheap model -----------------------------------------------------------
