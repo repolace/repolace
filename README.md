@@ -13,16 +13,16 @@ The design, with the reasoning behind each decision, is in [CLAUDE.md](CLAUDE.md
 | Monorepo scaffolding | Done — `uv` workspace, Docker Compose (Postgres + pgvector, Redis, RabbitMQ) |
 | FastAPI service | Done — health check, GitHub App webhook handler, repo registration, issue listing, task enqueue (`POST /repos/{id}/tasks`) |
 | GitHub App integration | Done — installation events, repo auto-registration, issue fetching |
-| Database schema | Done — Alembic migrations 0001–0014: installations, repos, tasks, test runs, code chunks, `llm_calls`, agent outputs, the benchmark columns, task stages and heartbeat |
+| Database schema | Done — Alembic migrations 0001–0016: installations, repos, tasks, test runs, code chunks, `llm_calls`, agent outputs, the benchmark columns, task stages and heartbeat, task query indexes, conflict reason |
 | RAG layer | Done — Python AST chunking via tree-sitter, 4 embedding strategies threaded through indexing and search (recorded per repo in `registered_repos.index_strategy`), pgvector HNSW + full-text hybrid retrieval |
 | Task pipeline | Done — `repolace-run-task` runs `run_task` end to end (checkout lifecycle, index, baseline, agent stage, score, PR gate, squash, push, PR, terminal write). `--agent llm` (the real agent) is the default; `stub` and `gold` remain |
 | Verify sandbox | Done — rootless locked-down Docker container from a prepared per-repo image, byte-identical tree export (no `.git`), pytest report parsing, scored runs plus unscored probes and scratch scripts, hidden-test overlay for benchmark instances |
 | Git hardening | Done — credential helper scoped to host, hooks and fsmonitor disabled, global/system git config pinned to `/dev/null`, path traversal guards, symlink refusal |
 | LiteLLM gateway | Done — stage routing, per-task budget (default $2, 150 calls, one hour), refuses an unpriced model rather than record it as free, every call recorded in `llm_calls`. The Phase 1 headline model is Gemini 3.1 Pro on Vertex AI (`vertex-gemini-3-1-pro-preview`), priced in `gateway/models.toml`; Sonnet 5.5 is a later comparison column |
-| Agent | Built and wired into `repolace-run-task`, never run against a real provider — a LangGraph graph (`localize → agent → verify`, retry edge), nine tools, and a no-oracle feedback filter, in `agents/` |
+| Agent | Built and wired into `repolace-run-task`; run against Gemini 3.1 Pro on Vertex AI in the benchmark ([BENCHMARK/](BENCHMARK/)) — a LangGraph graph (`localize → agent → verify`, retry edge), nine tools, and a no-oracle feedback filter, in `agents/` |
 | Retry loop | Built and wired in, not yet exercised by a real run — up to 3 scored attempts inside the graph |
-| Benchmark harness | Built, not yet run — `eval/harness/` (`repolace-eval`): instance selection, private benchmark repos, gold validation, sweep runner, report, retrieval eval |
-| Celery worker dispatch | Implemented, not yet exercised by a real run — `worker/repolace_worker/tasks.py` runs `run_task` as the Celery task `repolace.run_task`, the API publishes product tasks after commit (`api/repolace_api/publisher.py`), and `worker/repolace_worker/maintenance.py` holds the maintenance jobs. The compose `worker` service is minimal: no maintenance worker or beat, no `env_file`, no docker socket. The benchmark runner still uses the `repolace-run-task` CLI |
+| Benchmark harness | Built and used — `eval/harness/` (`repolace-eval`): instance selection, private benchmark repos, gold validation, sweep runner, report, retrieval eval. Sweeps 4 and 4b are written up in [BENCHMARK/](BENCHMARK/); the retrieval grid is still running |
+| Celery worker dispatch | Implemented, not yet exercised by a real run — `worker/repolace_worker/tasks.py` runs `run_task` as the Celery task `repolace.run_task`, the API publishes product tasks after commit (`api/repolace_api/publisher.py`), and `worker/repolace_worker/maintenance.py` holds the maintenance jobs. `infra/docker-compose.yml` defines a `worker` (task role, `env_file`, rootless docker socket) and a `worker-maintenance` (beat), checked with `docker compose config` only, not run. The benchmark runner still uses the `repolace-run-task` CLI |
 | Observability (OTel + Grafana) | Not started — structured JSON logging with task IDs only |
 | UI | Built — server-rendered Jinja2 + HTMX under `/ui` (`api/repolace_api/ui/`): task list, new-task flow, task detail with stage strip, diff and test runs. No auth until Phase 4, so localhost or a private tunnel only. Not yet viewed against the full compose stack |
 
@@ -274,7 +274,7 @@ When a task starts, repolace checks the repo's `indexed_commit_sha` against the 
 
 ## What comes next
 
-**Phase 1 completion:** gold validation, a dry run and the sweep (the headline model, Gemini 3.1 Pro on Vertex AI, is already priced in `gateway/models.toml`; confirm the rates in your Cloud console first). Benchmark repos must contain no tracked symlinks or submodules — the export refuses both.
+**Phase 1 completion:** gold validation, a dry run and sweeps 4 and 4b are done ([BENCHMARK/](BENCHMARK/)). Left: the retrieval grid result, confirming Vertex prices in the Cloud console (`gateway/models.toml` uses AI Studio rates), a run that opens real PRs, and deciding whether any variant (early-edit nudge, role split, mixed models) earns a place on `main`. Benchmark repos must contain no tracked symlinks or submodules — the export refuses both.
 
 **Phase 2:** Split into specialized agents (planner/editor/reviewer/debugger), async queue dispatch, merge-conflict resolution sub-loop, basic UI.
 

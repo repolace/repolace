@@ -6,8 +6,9 @@ provider key**. A cloud session cannot do it (no Docker, no database, no secrets
 the code packages in `docs/cloud-work/` instead.
 
 The headline model for this run is **Gemini 3.1 Pro on Vertex AI**, key `vertex-gemini-3-1-pro-preview`.
-Nothing here has been run against a real task yet: every figure for cost, wall time and memory below is an
-estimate to be replaced by what the smoke test and dry run measure.
+The smoke test, dry run and sweeps 4 and 4b have since been run; measured cost, wall time and results are in
+`BENCHMARK/REPORT.md` (about $0.75 and 1,106 s median per task). Per-step estimates below that were not
+re-measured (memory, suite wall times) remain estimates.
 
 ## 0. Before anything
 
@@ -17,8 +18,8 @@ cd infra && docker compose up -d postgres && cd ..           # Phase 1 needs Pos
 scripts/phase1_preflight.sh                                  # read-only; must end "preflight passed"
 ```
 
-Do **not** start the compose `api` or `worker` services for this: the worker cannot run a task as deployed
-yet (package A), and the `api` container loads the whole `.env`. The benchmark runs `repolace-run-task`
+Do **not** start the compose `api` or `worker` services for this: the compose `worker` is written but has not
+been run end to end (see `CLAUDE.md` "Deployment requirements"), and the `api` container loads the whole `.env`. The benchmark runs `repolace-run-task`
 subprocesses on the host.
 
 The preflight checks git, `prlimit`, `uv`, the rootless socket and cgroup delegation, that `.env` has a
@@ -135,6 +136,5 @@ UI, the agent role split (`phase-2/agents`), conflict-resolver wiring, OpenTelem
 
 ## Afterwards
 
-Put the measured numbers (the headline, mean cost and wall time per task, suite wall times, stop-reason counts)
-into `CLAUDE.md` "Phase 1 status" and remove the "not yet measured" wording the run has replaced. If the run
+The headline, cost, wall time and stop-reason counts are in `CLAUDE.md` "Phase 1 status" and `BENCHMARK/`; suite wall times are not yet recorded there. If the run
 tells you the agent overloads in a specific way, that is the input for deciding about the role split.
