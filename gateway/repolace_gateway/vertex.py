@@ -412,11 +412,18 @@ class VertexGeminiTransport:
         params = {"key": str(api_key)}
         return url, body, params, float(kwargs.get("timeout") or 180.0)
 
+    @staticmethod
+    def _headers(kwargs: Mapping[str, Any]) -> dict[str, str]:
+        """Priority PayGo is chosen by these two headers (Google's docs); standard traffic sends none."""
+        if kwargs.get("vertex_request_type") == "priority":
+            return {"X-Vertex-AI-LLM-Request-Type": "shared", "X-Vertex-AI-LLM-Shared-Request-Type": "priority"}
+        return {}
+
     async def acompletion(self, **kwargs: Any) -> dict[str, Any]:
         url, body, params, timeout = self._prepare(kwargs, "generateContent")
         try:
             async with httpx.AsyncClient(timeout=timeout, transport=self._transport) as client:
-                response = await client.post(url, params=params, json=body)
+                response = await client.post(url, params=params, json=body, headers=self._headers(kwargs))
         except httpx.TimeoutException:
             raise VertexAPIError("Vertex request timed out", transient=True) from None
         except httpx.HTTPError as exc:
@@ -437,7 +444,7 @@ class VertexGeminiTransport:
         try:
             async with (
                 httpx.AsyncClient(timeout=timeout, transport=self._transport) as client,
-                client.stream("POST", url, params=params, json=body) as response,
+                client.stream("POST", url, params=params, json=body, headers=self._headers(kwargs)) as response,
             ):
                 if response.status_code != 200:
                     await response.aread()

@@ -199,6 +199,9 @@ class ModelConfig:
     supports_prompt_caching: bool
     #: None means LiteLLM's own price map must cover the model.
     price: Price | None = None
+    #: Set only for `vertex_ai`: "priority" sends Vertex's Priority PayGo headers, which bill at a
+    #: higher rate and are throttled after standard traffic, so the entry carries its own price.
+    request_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -318,7 +321,9 @@ def _parse_price(table: Mapping[str, Any], supports_caching: bool, where: str) -
 
 def _parse_model(key: str, table: Mapping[str, Any]) -> ModelConfig:
     where = f"models.{key}"
-    _reject_unknown(table, {"provider", "litellm_model", "supports_prompt_caching", "price"}, where)
+    _reject_unknown(
+        table, {"provider", "litellm_model", "supports_prompt_caching", "price", "request_type"}, where
+    )
     provider = _require(table, "provider", str, where)
     litellm_model = _require(table, "litellm_model", str, where)
     supports_caching = _require(table, "supports_prompt_caching", bool, where)
@@ -336,6 +341,9 @@ def _parse_model(key: str, table: Mapping[str, Any]) -> ModelConfig:
         )
     if provider == "vertex_ai" and not is_valid_model_id(litellm_model.split("/", 1)[1]):
         raise ConfigError(f"{where}.litellm_model: {litellm_model!r} is not a plain Vertex model id")
+    request_type = table.get("request_type")
+    if request_type is not None and (provider != "vertex_ai" or request_type != "priority"):
+        raise ConfigError(f"{where}.request_type: only \"priority\" is accepted, and only for provider \"vertex_ai\"")
     price_table = table.get("price")
     if price_table is not None and not isinstance(price_table, dict):
         raise ConfigError(f"{where}.price: expected a table")
@@ -346,6 +354,7 @@ def _parse_model(key: str, table: Mapping[str, Any]) -> ModelConfig:
         litellm_model=litellm_model,
         supports_prompt_caching=supports_caching,
         price=price,
+        request_type=request_type,
     )
 
 

@@ -58,7 +58,7 @@ from repolace_agents.contracts import (
 )
 from repolace_agents.resolver import resolve_conflicts
 from repolace_agents.tools import ToolBox, build_toolbox
-from repolace_gateway.budget import BudgetExceeded, BudgetLimit, TaskBudget, task_scope
+from repolace_gateway.budget import BudgetExceeded, BudgetLimit, TaskBudget, default_max_usd, task_scope
 from repolace_gateway.errors import LLMCallError
 from repolace_shared.db.models import (
     BASELINE_ATTEMPT,
@@ -760,7 +760,7 @@ def _agent_budget(supplied: TaskBudget | None) -> TaskBudget:
     restarted here, because a caller builds it before the task runs and cannot know how long the
     stages before the agent will take.
     """
-    budget = supplied if supplied is not None else TaskBudget()
+    budget = supplied if supplied is not None else TaskBudget(max_usd=default_max_usd())
     budget.started_at = budget.clock()
     return budget
 

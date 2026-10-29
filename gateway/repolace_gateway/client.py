@@ -114,6 +114,7 @@ _RESERVED_KWARGS = frozenset(
         "num_retries",
         "fallbacks",
         "stream",
+        "vertex_request_type",
     }
 )
 
@@ -574,6 +575,8 @@ class LLMClient:
         if route.stage.max_tokens is not None:
             kwargs["max_tokens"] = route.stage.max_tokens
         kwargs.update(extra)
+        if model.request_type:
+            kwargs["vertex_request_type"] = model.request_type
         return kwargs, cached
 
     @staticmethod

@@ -23,6 +23,7 @@ sequential, so this does not arise today; it is a limit worth knowing about.
 """
 
 import enum
+import os
 import time
 import uuid
 from collections.abc import Callable, Iterator
@@ -40,6 +41,24 @@ log = structlog.get_logger()
 
 #: The $2 hard cap from the Phase 1 plan (decision 7).
 DEFAULT_MAX_USD = Decimal("2.00")
+#: Names the env var that replaces the cap for one run. Needed for a model billed at another rate:
+#: Priority PayGo costs 1.8x, so the same agent behaviour would hit a $2 cap 1.8x sooner.
+MAX_USD_ENV = "REPOLACE_TASK_MAX_USD"
+
+
+def default_max_usd() -> Decimal:
+    """`DEFAULT_MAX_USD`, or `$REPOLACE_TASK_MAX_USD` when set (a positive decimal; anything else raises)."""
+    raw = os.environ.get(MAX_USD_ENV)
+    if not raw:
+        return DEFAULT_MAX_USD
+    try:
+        value = Decimal(raw)
+    except ArithmeticError:
+        raise ValueError(f"{MAX_USD_ENV}={raw!r} is not a decimal") from None
+    if not value.is_finite() or value <= 0:
+        raise ValueError(f"{MAX_USD_ENV}={raw!r} must be a positive number")
+    return value
+
 #: 3 attempts x the agent's 40-step cap = 120 calls, plus slack for retrieval-time
 #: calls and the occasional failed call, which counts (see `charge`).
 DEFAULT_MAX_CALLS = 150

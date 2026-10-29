@@ -184,3 +184,18 @@ input = 2.00
 output = 12.00
 cache_read = 0.20
 cache_write = 0.0
+
+# The same model on Priority PayGo (1.8x the standard rates), for when the shared pool answers 429 to
+# standard traffic. Priority is a separate model in a report: the same agent, a different bill. Rates
+# are from the Cloud console's pricing page as read by a browser session on 2026-10-29, not yet
+# re-checked against an invoice.
+[models.vertex-gemini-3-1-pro-preview-priority]
+provider = "vertex_ai"
+litellm_model = "vertex_ai/gemini-3.1-pro-preview"
+supports_prompt_caching = true
+request_type = "priority"
+[models.vertex-gemini-3-1-pro-preview-priority.price]
+input = 3.60
+output = 21.60
+cache_read = 0.36
+cache_write = 0.0

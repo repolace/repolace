@@ -206,13 +206,13 @@ def code_limits() -> dict[str, object]:
     from repolace_agents.contracts import AgentLimits
     from repolace_gateway.budget import (
         DEFAULT_MAX_CALLS,
-        DEFAULT_MAX_USD,
         DEFAULT_MAX_WALL_SECONDS,
+        default_max_usd,
     )
 
     agent = AgentLimits.from_env()
     return {
-        "task_cost_cap_usd": float(DEFAULT_MAX_USD),
+        "task_cost_cap_usd": float(default_max_usd()),
         "task_call_cap": DEFAULT_MAX_CALLS,
         "budget_wall_clock_seconds": float(DEFAULT_MAX_WALL_SECONDS),
         "max_steps_per_attempt": agent.max_steps_per_attempt,
