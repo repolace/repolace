@@ -118,6 +118,7 @@ h2 { font: 600 14px/20px var(--sans); }
 .badge { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px; border-radius: var(--radius-pill); font: 500 12px/16px var(--mono); border: 1px solid transparent; white-space: nowrap; }
 .b-queued { color: var(--neutral); background: var(--neutral-bg); }
 .b-running { color: var(--run); background: var(--run-bg); }
+.b-paused { color: var(--orange); background: var(--orange-bg); }
 .b-pr_opened { color: var(--ok); background: var(--ok-bg); }
 .b-completed { color: var(--info); background: var(--info-bg); }
 .b-conflicting { color: var(--orange); background: var(--orange-bg); }

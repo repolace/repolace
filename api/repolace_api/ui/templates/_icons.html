@@ -2,6 +2,7 @@
 {% macro icon(name, cls="") %}<svg class="i {{ cls }}" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
 {% if name == "queued" %}<circle cx="8" cy="8" r="5.5" stroke-dasharray="2.4 2.2"/>
 {% elif name == "running" %}<g class="spin"><circle cx="8" cy="8" r="5.5" opacity=".25"/><path d="M8 2.5a5.5 5.5 0 0 1 5.5 5.5"/></g>
+{% elif name == "paused" %}<circle cx="8" cy="8" r="5.5"/><path d="M6.5 5.8v4.4M9.5 5.8v4.4"/>
 {% elif name == "pr_opened" %}<circle cx="4.5" cy="3.5" r="1.7"/><circle cx="4.5" cy="12.5" r="1.7"/><circle cx="11.5" cy="12.5" r="1.7"/><path d="M4.5 5.2v5.6M11.5 10.8V7a2 2 0 0 0-2-2H8"/>
 {% elif name == "completed" %}<circle cx="8" cy="8" r="5.5"/><rect x="6" y="6" width="4" height="4" rx=".5"/>
 {% elif name == "conflicting" %}<path d="M8 2.2 14.2 13H1.8z"/><path d="M8 6.5v3M8 11.3h.01"/>

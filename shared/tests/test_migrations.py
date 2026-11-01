@@ -412,6 +412,150 @@ class TestMigration0016:
             _in_thread(go)
 
 
+class TestMigration0017:
+    def test_it_upgrades_downgrades_and_upgrades_again(self, scratch_url):
+        dsn = _dsn(make_url(scratch_url))
+
+        async def state() -> dict:
+            import asyncpg
+
+            conn = await asyncpg.connect(dsn)
+            try:
+                cols = await conn.fetch(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name = 'tasks' "
+                    "AND column_name IN ('paused_reason', 'resume_count', 'stop_class')"
+                )
+                table = await conn.fetchval("SELECT to_regclass('task_checkpoints')")
+                values = await conn.fetch("SELECT unnest(enum_range(NULL::task_status))::text AS v")
+            finally:
+                await conn.close()
+            return {
+                "columns": {r[0] for r in cols},
+                "table": table is not None,
+                "paused": "paused" in {r["v"] for r in values},
+            }
+
+        absent = {"columns": set(), "table": False, "paused": False}
+        present = {"columns": {"paused_reason", "resume_count", "stop_class"}, "table": True, "paused": True}
+        with mock.patch.dict(os.environ, {"DATABASE_URL": scratch_url}):
+            command.upgrade(_config(), "0016")
+            assert _in_thread(state) == absent
+            command.upgrade(_config(), "0017")
+            assert _in_thread(state) == present
+            command.downgrade(_config(), "0016")
+            assert _in_thread(state) == absent
+            command.upgrade(_config(), "0017")
+            assert _in_thread(state) == present
+
+    def test_a_paused_row_survives_the_downgrade_as_failed(self, scratch_url):
+        dsn = _dsn(make_url(scratch_url))
+        import asyncpg
+
+        async def seed() -> None:
+            conn = await asyncpg.connect(dsn)
+            try:
+                await conn.execute(
+                    "INSERT INTO github_installations (id, account_login, account_id, account_type) "
+                    "VALUES (1, 'acme', 1, 'Organization')"
+                )
+                await conn.execute(
+                    "INSERT INTO registered_repos (id, installation_id, github_repo_id, owner, name, "
+                    "full_name, default_branch, private) VALUES "
+                    "('00000000-0000-0000-0000-000000000001', 1, 7, 'acme', 'sample', 'acme/sample', 'main', false)"
+                )
+                await conn.execute(
+                    "INSERT INTO tasks (id, repo_id, issue_number, issue_title, issue_url, target_branch, "
+                    "status, paused_reason, stop_class) VALUES "
+                    "(gen_random_uuid(), '00000000-0000-0000-0000-000000000001', 1, 't', 'u', 'main', "
+                    "'paused', 'provider quota', 'unavailable')"
+                )
+            finally:
+                await conn.close()
+
+        async def status() -> str:
+            conn = await asyncpg.connect(dsn)
+            try:
+                return await conn.fetchval("SELECT status::text FROM tasks")
+            finally:
+                await conn.close()
+
+        with mock.patch.dict(os.environ, {"DATABASE_URL": scratch_url}):
+            command.upgrade(_config(), "0017")
+            _in_thread(seed)
+            command.downgrade(_config(), "0016")
+            assert _in_thread(status) == "failed"
+
+    def test_the_new_checks_hold(self, scratch_url):
+        dsn = _dsn(make_url(scratch_url))
+        import asyncpg
+
+        async def go() -> None:
+            conn = await asyncpg.connect(dsn)
+            try:
+                await conn.execute(
+                    "INSERT INTO github_installations (id, account_login, account_id, account_type) "
+                    "VALUES (1, 'acme', 1, 'Organization')"
+                )
+                await conn.execute(
+                    "INSERT INTO registered_repos (id, installation_id, github_repo_id, owner, name, "
+                    "full_name, default_branch, private) VALUES "
+                    "('00000000-0000-0000-0000-000000000001', 1, 7, 'acme', 'sample', 'acme/sample', 'main', false)"
+                )
+                insert = (
+                    "INSERT INTO tasks (id, repo_id, issue_number, issue_title, issue_url, target_branch, "
+                    "status, paused_reason, stop_class) VALUES "
+                    "(gen_random_uuid(), '00000000-0000-0000-0000-000000000001', 1, 't', 'u', 'main', $1, $2, $3)"
+                )
+                await conn.execute(insert, "paused", "the provider refused calls", "unavailable")
+                await conn.execute(insert, "failed", None, "design")
+                await conn.execute(insert, "failed", None, None)
+                with pytest.raises(asyncpg.CheckViolationError):
+                    await conn.execute(insert, "failed", "a reason on the wrong status", None)
+                with pytest.raises(asyncpg.CheckViolationError):
+                    await conn.execute(insert, "failed", None, "whatever")
+            finally:
+                await conn.close()
+
+        with mock.patch.dict(os.environ, {"DATABASE_URL": scratch_url}):
+            command.upgrade(_config(), "0017")
+            _in_thread(go)
+
+    def test_a_checkpoint_goes_with_its_task(self, scratch_url):
+        dsn = _dsn(make_url(scratch_url))
+        import asyncpg
+
+        async def go() -> None:
+            conn = await asyncpg.connect(dsn)
+            try:
+                await conn.execute(
+                    "INSERT INTO github_installations (id, account_login, account_id, account_type) "
+                    "VALUES (1, 'acme', 1, 'Organization')"
+                )
+                await conn.execute(
+                    "INSERT INTO registered_repos (id, installation_id, github_repo_id, owner, name, "
+                    "full_name, default_branch, private) VALUES "
+                    "('00000000-0000-0000-0000-000000000001', 1, 7, 'acme', 'sample', 'acme/sample', 'main', false)"
+                )
+                task_id = await conn.fetchval(
+                    "INSERT INTO tasks (id, repo_id, issue_number, issue_title, issue_url, target_branch) VALUES "
+                    "(gen_random_uuid(), '00000000-0000-0000-0000-000000000001', 1, 't', 'u', 'main') RETURNING id"
+                )
+                await conn.execute(
+                    "INSERT INTO task_checkpoints (task_id, agent_state, base_sha, provenance) "
+                    "VALUES ($1, '{}'::jsonb, 'abc', '{}'::jsonb)",
+                    task_id,
+                )
+                assert await conn.fetchval("SELECT count(*) FROM task_checkpoints") == 1
+                await conn.execute("DELETE FROM tasks WHERE id = $1", task_id)
+                assert await conn.fetchval("SELECT count(*) FROM task_checkpoints") == 0
+            finally:
+                await conn.close()
+
+        with mock.patch.dict(os.environ, {"DATABASE_URL": scratch_url}):
+            command.upgrade(_config(), "0017")
+            _in_thread(go)
+
+
 class TestModelsAgreeWithMigrations:
     def test_alembic_check_is_clean_at_head(self, scratch_url):
         """The model and the migration chain describe the same schema.

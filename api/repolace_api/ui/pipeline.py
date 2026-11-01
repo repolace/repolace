@@ -75,7 +75,7 @@ def _seconds(stage: StageOut, now: datetime) -> float:
 def build_strip(detail: TaskDetail, now: datetime | None = None) -> list[Node]:
     """All seven nodes in display order (main five, then Push and PR)."""
     now = now or datetime.now(UTC)
-    terminal = detail.status not in (TaskStatus.QUEUED, TaskStatus.RUNNING)
+    terminal = detail.status not in (TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.PAUSED)
     by_node: dict[str, list[StageOut]] = {key: [] for key in NODE_STAGES}
     for stage in detail.stages:
         node = STAGE_TO_NODE.get(stage.stage)

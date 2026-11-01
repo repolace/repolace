@@ -304,7 +304,19 @@ class TestTaskDetail:
         assert "Running: Retrieve" in fragment.text
         assert "<html" not in fragment.text  # a fragment, not a page
 
-    @pytest.mark.parametrize("status", [s for s in TaskStatus if s not in (TaskStatus.QUEUED, TaskStatus.RUNNING)])
+    async def test_a_paused_task_keeps_polling_because_it_will_resume(self, db_session, db_session_factory):
+        repo = await seed_repo(db_session)
+        task = await seed_task(db_session, repo, status=TaskStatus.PAUSED, started_at=at(0))
+
+        full = await page(db_session_factory, f"/ui/tasks/{task.id}")
+        fragment = await page(db_session_factory, f"/ui/tasks/{task.id}/live")
+
+        assert 'hx-trigger="every 3s"' in full.text
+        assert fragment.status_code == 200
+
+    @pytest.mark.parametrize(
+        "status", [s for s in TaskStatus if s not in (TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.PAUSED)]
+    )
     async def test_the_polling_stops_once_the_task_is_terminal(self, db_session, db_session_factory, status):
         repo = await seed_repo(db_session)
         task = await seed_task(db_session, repo, status=status, started_at=at(0), completed_at=at(1))

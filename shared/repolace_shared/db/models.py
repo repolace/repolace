@@ -11,9 +11,11 @@ from sqlalchemy import (
     Computed,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Text,
@@ -43,6 +45,11 @@ class TaskStatus(str, enum.Enum):
 
     QUEUED = "queued"
     RUNNING = "running"
+    #: Stopped because something it depends on was unavailable (a provider refusing calls, a dead
+    #: process), with a checkpoint to continue from. **Not terminal**: `resume_count` and
+    #: `paused_reason` say how it got here, and a resumer claims it `paused` -> `running`. A row the
+    #: agent or model ended is never paused (see `STOP_CLASSES`).
+    PAUSED = "paused"
     PR_OPENED = "pr_opened"
     #: The pipeline ran to the end and opened no PR -- read `outcome` for why.
     #: Distinct from FAILED, which stays reserved for "repolace itself broke",
@@ -96,6 +103,15 @@ AGENT_STOP_REASONS: tuple[str, ...] = (
     "max_attempts",
 )
 _AGENT_STOP_REASON_LIST = ", ".join(f"'{reason}'" for reason in AGENT_STOP_REASONS)
+
+#: Why a task stopped, in the one sense that decides whether it may resume. `unavailable`: something it
+#: depends on was not there (the provider refused calls past the retry window, the process died, the
+#: sandbox host was down), so nothing about the agent was learnt and the work done so far is still good.
+#: `design`: the agent or the model ended it (step cap, budget, no change, a bad provider answer) or
+#: repolace has a bug, so the run IS the measurement and is never continued. NULL on a row that predates
+#: the column and on a task that is still running; the pipeline writes it once, where it ends the row.
+STOP_CLASSES: tuple[str, ...] = ("unavailable", "design")
+_STOP_CLASS_LIST = ", ".join(f"'{name}'" for name in STOP_CLASSES)
 
 
 class GithubInstallation(Base):
@@ -198,6 +214,15 @@ class Task(Base):
         CheckConstraint(
             "conflict_reason IS NULL OR status = 'conflicting'",
             name="ck_tasks_conflict_reason_needs_conflicting",
+        ),
+        # Only a `paused` task carries a pause reason (0017), and a stop class can only be one of two names.
+        CheckConstraint(
+            "paused_reason IS NULL OR status = 'paused'",
+            name="ck_tasks_paused_reason_needs_paused",
+        ),
+        CheckConstraint(
+            f"stop_class IS NULL OR stop_class IN ({_STOP_CLASS_LIST})",
+            name="ck_tasks_stop_class",
         ),
         # Makes the harness's enqueue idempotent: a re-run after a crash cannot
         # create a second row for one (run, instance, run_index), which would be
@@ -309,6 +334,14 @@ class Task(Base):
     #: `conflicting`, and only then (`ck_tasks_conflict_reason_needs_conflicting`), so
     #: `error_message` keeps its one meaning.
     conflict_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Why a `paused` task is waiting: the host-written sentence the pipeline recorded when it stopped for
+    #: unavailability. Set only while `paused` (`ck_tasks_paused_reason_needs_paused`); cleared by the resume claim.
+    paused_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: How many times the task was continued from a checkpoint. 0 for a run that never paused, which is what
+    #: the report keys on to show a pass rate with and without resumed rows.
+    resume_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    #: One of `STOP_CLASSES`, written where the row stops. See the constant.
+    stop_class: Mapped[str | None] = mapped_column(String, nullable=True)
 
     repo: Mapped[RegisteredRepo] = relationship(back_populates="tasks")
     test_runs: Mapped[list["TaskTestRun"]] = relationship(
@@ -361,6 +394,44 @@ class TaskStage(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     task: Mapped[Task] = relationship(back_populates="stages")
+
+
+class TaskCheckpoint(Base):
+    """The latest point a running task can continue from. One row per task, replaced as the task moves.
+
+    Written by the pipeline while the agent runs, so that a task stopped by **unavailability** loses no
+    more than the step in flight. The clone is deleted when a process exits, so the edited files cannot
+    be left on disk: they are two patches here, `scored_patch` (base tree to the last scored attempt's
+    tree) and `delta_patch` (that tree to the tree now), and a resume rebuilds both as commits on a fresh
+    clone, scored one first, so "has the tree changed since the last scored attempt" still has an answer.
+
+    **What it never holds:** the unfiltered `AttemptRecord.result`, the baseline or anything naming a
+    hidden test. `agent_state` has only what the agent was already shown; the last scored attempt is
+    rebuilt from its `task_test_runs` row on resume, through the same table scoring reads. The model
+    key, stage models, limits and `git_sha` are kept so a resume can refuse to continue a run under
+    different code or a different model, which would make its row measure neither.
+    """
+
+    __tablename__ = "task_checkpoints"
+
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True
+    )
+    #: Bumped on every write, so a resume can say how far the run had got and a test can see a write happen.
+    seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    #: `AgentSnapshot` as JSON: the transcript, the counters, the delimiter nonce.
+    agent_state: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    base_sha: Mapped[str] = mapped_column(String, nullable=False)
+    #: zlib-compressed `git diff --binary` bytes; empty bytes means "no change".
+    scored_patch: Mapped[bytes] = mapped_column(LargeBinary, nullable=False, server_default="")
+    delta_patch: Mapped[bytes] = mapped_column(LargeBinary, nullable=False, server_default="")
+    #: Active agent seconds so far, downtime excluded, so the wall-clock budget restarts where it stopped.
+    agent_seconds_used: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+    #: `{git_sha, model, stage_models, limits}` of the code and settings that wrote it.
+    provenance: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class TaskTestRun(Base):

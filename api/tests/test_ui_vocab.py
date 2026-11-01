@@ -40,7 +40,7 @@ class TestBadge:
 
     def test_the_status_filter_vocabulary_is_the_enum(self):
         assert env.globals["statuses"] == [s.value for s in TaskStatus]
-        assert len(TaskStatus) == 6
+        assert len(TaskStatus) == 7
 
 
 class TestChip:

@@ -15,7 +15,7 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 _NOT_COPIED = {"attempts", "stages", "test_runs", "repo_full_name", "cost_so_far_usd", "is_benchmark"}
 
 #: A task in one of these states is polled every few seconds by the detail page.
-_LIVE = (TaskStatus.QUEUED, TaskStatus.RUNNING)
+_LIVE = (TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.PAUSED)
 #: Unbounded text that only a finished task has: the pipeline writes both in the UPDATE that ends it. They are
 #: left out of the row load and read separately, once, for a task that is not live -- see `load_task_detail`.
 _TERMINAL_TEXT = ("patch_diff", "score_reason")

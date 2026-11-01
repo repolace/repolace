@@ -24,7 +24,7 @@ from repolace_api.ui.pipeline import (
     failure_title,
 )
 
-LIVE_STATUSES = (TaskStatus.QUEUED, TaskStatus.RUNNING)
+LIVE_STATUSES = (TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.PAUSED)
 #: `unscored` is a UI label for `outcome IS NULL`, never a value of `TaskOutcome`.
 UNSCORED = "unscored"
 OUTCOME_FILTERS = ("all", *(o.value for o in TaskOutcome), UNSCORED)
@@ -63,6 +63,8 @@ async def _stage_hints(db: AsyncSession, task_ids: list[UUID]) -> dict[UUID, dic
 def _note(item: TaskListItem, hints: dict[str, str]) -> tuple[str | None, str | None, bool]:
     if item.status is TaskStatus.RUNNING:
         return "stage", hints.get("running", "starting"), False
+    if item.status is TaskStatus.PAUSED:
+        return "stage", "paused: waiting to resume", False
     if item.status is TaskStatus.FAILED:
         where = hints.get("failed")
         message = first_line(item.error_message)
