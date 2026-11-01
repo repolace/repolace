@@ -12,6 +12,8 @@ paths:
 
 **The pipeline calls `run_agent`, never `run_graph`.** `run_agent` draws a fresh `secrets.token_hex(8)` delimiter nonce per call and takes no parameter for it, because a nonce a caller can choose is one an attacker can predict. `run_graph` takes the nonce only so a test can fix it.
 
+**Checkpoint and resume.** The graph saves an `AgentSnapshot` (transcript, counters, the nonce, and a `ScoredMark`: the last scored attempt's number, commit and infrastructure flag) through `AgentDeps.checkpoint` before every agent step and after a verify that sends the agent back; a failed save never fails the run. **It never holds the suite result, the baseline or a hidden test** (`checkpoint.FIELDS` is held equal to the dataclass by a test, and a test greps the stored JSON for the hidden names). A run given `AgentDeps.resume_from` starts at the `agent` node (the entry edge skips `localize`), continues mid-attempt (`AgentState.resuming`: the transcript is kept as it is, with no elision pass, and `attempt_steps` and `summary` carry over) and needs `resume_last_attempt`, the record the pipeline rebuilt from `task_test_runs`. **`run_agent` draws a fresh nonce except on a resume**, where it reuses the snapshot's: the transcript already contains the delimiters written with it, and a caller still cannot choose one. `LLMCallError.harness_failure` (`provider_refused or unavailable`) is what the graph, the resolver, the conflict stage and `_agent_stop_from` re-raise instead of turning into `llm_error`: **a 5xx or timeout that outlasted the retries is now a harness failure like a quota refusal** (it used to be the agent's `llm_error` stop), and it is the case that pauses a task. See `docs/CHECKPOINT_RESUME_DESIGN.md`.
+
 **Bounds.**
 
 | bound | value | where |
