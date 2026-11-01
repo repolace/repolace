@@ -30,7 +30,27 @@ class TaskNotClaimable(PipelineError):
 
 
 class StageFailed(PipelineError):
-    def __init__(self, stage: str, message: str) -> None:
+    """A stage ended the task. `stop_class` says so when the failure has no exception to read it from.
+
+    Most StageFaileds wrap an exception (`__cause__`), and the class of the stop is the cause's. A stage that
+    raises this one itself -- a baseline run whose sandbox never answered, an index lock that stayed taken --
+    names the class here, because there is nothing else to classify.
+    """
+
+    def __init__(self, stage: str, message: str, *, stop_class: str | None = None) -> None:
         self.stage = stage
         self.message = message
+        self.stop_class = stop_class
         super().__init__(f"{stage}: {message}")
+
+
+class ResumeRefused(StageFailed):
+    """A resume that must not go ahead: the saved work no longer matches the world it would continue in.
+
+    Raised before anything of the paused run is touched. The row fails cleanly with `RESUME_REFUSED_PREFIX`
+    and its checkpoint kept, and the resume it cost is not counted (the claim bumped `resume_count`; the failure
+    hands it back), so an operator who undoes the cause can `reopen_refused` it.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__("resume", message, stop_class="design")

@@ -6,6 +6,7 @@ import asyncio
 import zlib
 from decimal import Decimal
 
+import httpx
 import pytest
 from pipeline_support import TASK_ID, write
 from repolace_agents.contracts import AgentLimits, AttemptRecord
@@ -21,11 +22,17 @@ from repolace_pipeline.checkpoints import (
 )
 from repolace_pipeline.stopclass import DESIGN, UNAVAILABLE, classify_exception
 from repolace_pipeline.testruns import to_row, to_suite_result
-from repolace_shared.git import task_workspace
+from repolace_shared.git import GitCommandError, GitTimeoutError, task_workspace
+from sqlalchemy.exc import InterfaceError, OperationalError, ProgrammingError
 from verify.errors import SandboxTimeout, SandboxUnavailable
 from verify.protocol import RepoSpec, SuiteResult
 from verify.stage import Verifier
 from verify.testing import FakeBackend
+
+
+def _status_error(code: int) -> httpx.HTTPStatusError:
+    request = httpx.Request("GET", "https://api.github.com/x")
+    return httpx.HTTPStatusError("x", request=request, response=httpx.Response(code, request=request))
 
 
 def llm_error(kind: str, *, transient: bool = False) -> LLMCallError:
@@ -52,6 +59,22 @@ class TestTheClassOfAStop:
             (BudgetExceeded(BudgetLimit.USD, spent_usd=Decimal(3), calls=1, elapsed_seconds=1.0), DESIGN),
             (ValueError("a bug"), DESIGN),
             (RuntimeError("anything else"), DESIGN),
+            # What ends a stage before the agent on a resume: GitHub, the network, the database, git.
+            (httpx.ConnectError("no route to github"), UNAVAILABLE),
+            (httpx.ReadTimeout("slow"), UNAVAILABLE),
+            (_status_error(503), UNAVAILABLE),
+            (_status_error(429), UNAVAILABLE),
+            (_status_error(404), DESIGN),
+            (_status_error(403), DESIGN),
+            (OperationalError("select 1", {}, Exception("server closed the connection")), UNAVAILABLE),
+            (InterfaceError("select 1", {}, Exception("connection is closed")), UNAVAILABLE),
+            (ProgrammingError("select nope", {}, Exception("syntax error")), DESIGN),
+            (TimeoutError(), UNAVAILABLE),
+            (ConnectionResetError(), UNAVAILABLE),
+            (GitTimeoutError(["git", "clone"], 300.0), UNAVAILABLE),
+            (GitCommandError(["git", "clone"], 128, "fatal: unable to access: Could not resolve host"), UNAVAILABLE),
+            (GitCommandError(["git", "clone"], 128, "fatal: repository not found"), DESIGN),
+            (PermissionError("nope"), DESIGN),
         ],
         ids=lambda v: type(v).__name__ if isinstance(v, BaseException) else v,
     )

@@ -144,6 +144,17 @@ class TestUnavailability:
 
         assert not raised.value.unavailable and not raised.value.harness_failure
 
+    async def test_a_gateway_timeout_past_the_retries_is_unavailable(self):
+        """`TimeoutError` is transient to the retry loop though `_is_transient` alone would not say so."""
+        harness = make_harness(TimeoutError("no answer"), TimeoutError("no answer"), TimeoutError("no answer"))
+
+        with pytest.raises(LLMCallError) as raised:
+            await complete(harness.client)
+
+        error = raised.value
+        assert error.kind == KIND_OTHER and error.transient and error.unavailable and error.harness_failure
+        assert str(error).startswith(UNAVAILABLE_FAILURE_PREFIX)
+
     def test_the_unavailable_prefix_is_one_of_the_markers_the_runner_looks_for(self):
         assert UNAVAILABLE_FAILURE_PREFIX.strip() in PROVIDER_FAILURE_MARKERS
 

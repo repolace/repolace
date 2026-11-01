@@ -870,7 +870,9 @@ class LLMClient:
         )
         log.error("gateway.call.failed", stage=stage, model=model.litellm_model, retries=retries, error=message)
         kind = failure_kind(failure.cause)
-        transient = _is_transient(failure.cause)
+        # What the retry loop decided, not a second look at the cause: a gateway `TimeoutError` is transient there
+        # (see `_call_with_retries`) though `_is_transient` alone would not say so.
+        transient = failure.transient
         prefix = {KIND_AUTH: AUTH_FAILURE_PREFIX, KIND_QUOTA: QUOTA_FAILURE_PREFIX}.get(kind, "")
         if not prefix and transient:
             prefix = UNAVAILABLE_FAILURE_PREFIX

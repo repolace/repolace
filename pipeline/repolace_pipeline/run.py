@@ -634,6 +634,7 @@ async def _index(
                     "index",
                     f"another task held this repo's indexing lock for more than "
                     f"{INDEX_WAIT_CAP_SECONDS:.0f}s; retry the task once it has finished",
+                    stop_class=UNAVAILABLE,
                 ) from None
             log.info("pipeline.index.waiting", waited_seconds=waited, step_seconds=INDEX_WAIT_STEP_SECONDS)
             await _sleep(INDEX_WAIT_STEP_SECONDS)
@@ -1064,7 +1065,9 @@ async def _run_stages(
             # as inadmissible would say "this instance cannot be scored" about a host problem -- and gold
             # validation drops an instance on exactly that. It is repolace's failure, recorded after the
             # row above so the evidence is kept.
-            raise StageFailed("verify_baseline", baseline.error or "container runtime unavailable")
+            raise StageFailed(
+                "verify_baseline", baseline.error or "container runtime unavailable", stop_class=UNAVAILABLE
+            )
         async with _stage("baseline_files"):
             baseline_files = await workspace.baseline_files()
 
@@ -1643,9 +1646,9 @@ async def run_task(
                     # `_stage` wraps whatever failed inside it, keeping the original as `__cause__`; the class of
                     # the stop is the original's (a provider refusal inside the agent stage), not the wrapper's.
                     cause = exc.__cause__
+                    stop_class = exc.stop_class or (classify_exception(cause) if cause is not None else DESIGN)
                     return await _fail(
-                        state, session_factory, task_id, exc.stage, exc.message, progress,
-                        stop_class=classify_exception(cause) if cause is not None else DESIGN,
+                        state, session_factory, task_id, exc.stage, exc.message, progress, stop_class=stop_class
                     )
                 except Exception as exc:  # noqa: BLE001 -- records the task as failed; cancellation is handled below
                     return await _fail(
