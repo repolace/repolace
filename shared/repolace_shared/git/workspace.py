@@ -292,6 +292,43 @@ class TaskWorkspace:
         """Step 5, the other direction: abandon the current attempt."""
         await self.repo.reset_hard(sha)
 
+    async def capture(self, scored_sha: str | None) -> tuple[bytes, bytes]:
+        """The edited tree as two patches, for a checkpoint: `(base -> last scored tree, that tree -> now)`.
+
+        The clone dies with the process, so a checkpoint cannot point at it. Committing first (a no-op on a
+        clean tree, and what `record_attempt` already does before every scored run) makes "the tree now"
+        a commit, so both patches are plain commit-to-commit diffs. With nothing scored yet the first is
+        empty and the second is the whole change since the base.
+        """
+        await self.record_attempt("checkpoint")
+        scored = await self.repo.binary_diff(self.base_sha, scored_sha) if scored_sha else b""
+        delta = await self.repo.binary_diff(scored_sha or self.base_sha, "HEAD")
+        return scored, delta
+
+    async def restore(self, scored_patch: bytes, delta_patch: bytes) -> str | None:
+        """Rebuild a captured tree on this fresh clone and return the sha carrying the last scored tree.
+
+        The scored tree is committed first and the work since on top of it, so "has the tree changed since
+        the last scored attempt" (`changed_files_from(last_sha)`) still has an answer. The sha is *new*:
+        a commit's name includes its time, so it is not the sha `task_test_runs` recorded for that attempt.
+        None when nothing had been scored. The patches sit in a file beside the checkout, never inside it.
+        """
+        scored_sha: str | None = None
+        for label, patch in (("restored: last scored attempt", scored_patch), ("restored: work in progress", delta_patch)):
+            if not patch:
+                continue
+            fd, name = tempfile.mkstemp(prefix="restore-", suffix=".patch", dir=self.root)
+            try:
+                with os.fdopen(fd, "wb") as handle:
+                    handle.write(patch)
+                await self.repo.apply_patch(Path(name))
+            finally:
+                Path(name).unlink(missing_ok=True)
+            sha = await self.repo.commit_all(label)
+            if label.startswith("restored: last") and sha is not None:
+                scored_sha = sha
+        return scored_sha
+
     async def review_diff(self) -> str:
         """Step 7. Exactly what the Reviewer reads and what the PR will show."""
         return await self.repo.diff_from(self.base_sha)

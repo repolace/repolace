@@ -840,6 +840,26 @@ class GitRepo:
         """
         return await self._run("diff", f"{base_sha}...HEAD")
 
+    async def binary_diff(self, older: str, newer: str) -> bytes:
+        """What takes the tree at `older` to the tree at `newer`, as bytes `apply_patch` reads back exactly.
+
+        Two dots, full object names and `--binary`: this is a transport format for a checkpoint, not text
+        for a human, so a binary file, a mode change and a rename must survive it. `--no-ext-diff` and
+        `--no-textconv` keep any configured diff driver out of it. Empty bytes mean the trees are equal.
+        """
+        return await run_git_bytes(
+            "diff", "--binary", "--full-index", "--no-ext-diff", "--no-textconv", older, newer,
+            cwd=self.path, timeout=EXPORT_TIMEOUT_SECONDS,
+        )
+
+    async def apply_patch(self, patch_file: Path) -> None:
+        """Apply a `binary_diff` to the working tree (not the index). `patch_file` lives outside the checkout.
+
+        `git apply` itself refuses a path outside the tree and any write through a symlink, which is
+        what lets it take content that came out of a database.
+        """
+        await self._run("apply", "--binary", "--whitespace=nowarn", "--", str(patch_file), timeout=EXPORT_TIMEOUT_SECONDS)
+
     async def changed_files_from(self, base_sha: str) -> list[str]:
         """Paths touched since the base. Feeds the no-test-edits success criterion."""
         out = await self._run("diff", "--name-only", "-z", f"{base_sha}...HEAD")
