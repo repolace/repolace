@@ -38,6 +38,7 @@ from decimal import Decimal
 import structlog
 from repolace_gateway.recorder import total_cost
 from repolace_shared.db.models import LLMCall, Task, TaskOutcome, TaskStatus
+from repolace_shared.tasks_recovery import pause_statement
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -125,23 +126,34 @@ async def write_terminal(
     return _written(result.rowcount, task_id, status)
 
 
-async def write_paused(state: AsyncSession, task_id: uuid.UUID, *, paused_reason: str) -> bool:
+async def write_paused(
+    state: AsyncSession,
+    task_id: uuid.UUID,
+    *,
+    paused_reason: str,
+    made_progress: bool = True,
+    claimed_by: str | None = None,
+    pr_number: int | None = None,
+    pr_url: str | None = None,
+) -> bool:
     """RUNNING -> PAUSED: the task stopped for unavailability and its checkpoint is what a resume continues from.
 
-    Executes the UPDATE; the caller commits. Conditional on `running` like the terminal writes, and **not
-    terminal**: no `completed_at`, no outcome, no error (`error_message` keeps its one meaning). The cost so
-    far is already in `llm_calls`, which is where a resume rebuilds it from.
+    Executes the UPDATE; the caller commits. It is `tasks_recovery.pause_statement`, the one definition of what a
+    pause writes, so the pipeline, the reaper and the eval runner cannot disagree. Conditional on `running`
+    **and on a checkpoint existing**, and fenced to `claimed_by` when given (a process that lost its row to a
+    resumer must not pause the resumer's run). **Not terminal**: no `completed_at`, no outcome, no error
+    (`error_message` keeps its one meaning). The cost so far is already in `llm_calls`, which is where a resume
+    rebuilds it from. `made_progress=False` is a resume that stopped again before the agent ran.
     """
-    result = await state.execute(
-        update(Task)
-        .where(Task.id == task_id, Task.status == TaskStatus.RUNNING)
-        .values(
-            status=TaskStatus.PAUSED,
-            paused_reason=_clean(paused_reason),
-            stop_class="unavailable",
-            updated_at=func.clock_timestamp(),
-        )
+    statement = pause_statement(
+        task_id,
+        _clean(paused_reason),
+        made_progress=made_progress,
+        claimed_by=claimed_by,
+        pr_number=pr_number,
+        pr_url=_clean(pr_url),
     )
+    result = await state.execute(statement)
     return _written(result.rowcount, task_id, TaskStatus.PAUSED)
 
 

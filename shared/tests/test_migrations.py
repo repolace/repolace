@@ -556,6 +556,35 @@ class TestMigration0017:
             _in_thread(go)
 
 
+class TestMigration0018:
+    def test_it_upgrades_downgrades_and_upgrades_again(self, scratch_url):
+        dsn = _dsn(make_url(scratch_url))
+
+        async def state() -> dict:
+            import asyncpg
+
+            conn = await asyncpg.connect(dsn)
+            try:
+                column = await conn.fetchval(
+                    "SELECT count(*) FROM information_schema.columns "
+                    "WHERE table_name = 'tasks' AND column_name = 'paused_at'"
+                )
+                definition = await conn.fetchval("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_tasks_active'")
+            finally:
+                await conn.close()
+            return {"column": column == 1, "paused_in_index": "paused" in definition}
+
+        with mock.patch.dict(os.environ, {"DATABASE_URL": scratch_url}):
+            command.upgrade(_config(), "0017")
+            assert _in_thread(state) == {"column": False, "paused_in_index": False}
+            command.upgrade(_config(), "0018")
+            assert _in_thread(state) == {"column": True, "paused_in_index": True}
+            command.downgrade(_config(), "0017")
+            assert _in_thread(state) == {"column": False, "paused_in_index": False}
+            command.upgrade(_config(), "0018")
+            assert _in_thread(state) == {"column": True, "paused_in_index": True}
+
+
 class TestModelsAgreeWithMigrations:
     def test_alembic_check_is_clean_at_head(self, scratch_url):
         """The model and the migration chain describe the same schema.

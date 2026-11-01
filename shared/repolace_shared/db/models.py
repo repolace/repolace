@@ -110,7 +110,9 @@ _AGENT_STOP_REASON_LIST = ", ".join(f"'{reason}'" for reason in AGENT_STOP_REASO
 #: `design`: the agent or the model ended it (step cap, budget, no change, a bad provider answer) or
 #: repolace has a bug, so the run IS the measurement and is never continued. NULL on a row that predates
 #: the column and on a task that is still running; the pipeline writes it once, where it ends the row.
-STOP_CLASSES: tuple[str, ...] = ("unavailable", "design")
+STOP_UNAVAILABLE = "unavailable"
+STOP_DESIGN = "design"
+STOP_CLASSES: tuple[str, ...] = (STOP_UNAVAILABLE, STOP_DESIGN)
 _STOP_CLASS_LIST = ", ".join(f"'{name}'" for name in STOP_CLASSES)
 
 
@@ -175,7 +177,7 @@ class Task(Base):
             "ix_tasks_active",
             "created_at",
             "id",
-            postgresql_where=text("status IN ('queued', 'running')"),
+            postgresql_where=text("status IN ('queued', 'running', 'paused')"),
         ),
         # The escape hatch has to be structurally impossible to use silently.
         # An unexplained `passed_with_test_edit` would be indistinguishable
@@ -337,6 +339,10 @@ class Task(Base):
     #: Why a `paused` task is waiting: the host-written sentence the pipeline recorded when it stopped for
     #: unavailability. Set only while `paused` (`ck_tasks_paused_reason_needs_paused`); cleared by the resume claim.
     paused_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: When the row last became `paused`; the gate a resume claim and the sweeper both respect (0018). Cleared by
+    #: the resume claim. Not `updated_at`: a resume that stopped again before the agent ran made no progress
+    #: and must not postpone the pause's expiry.
+    paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     #: How many times the task was continued from a checkpoint. 0 for a run that never paused, which is what
     #: the report keys on to show a pass rate with and without resumed rows.
     resume_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")

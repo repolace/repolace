@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from repolace_shared.tasks_recovery import DEFAULT_MAX_RESUMES
 
 _REPO_ROOT_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
@@ -53,7 +54,7 @@ class WorkerSettings(BaseSettings):
     #: after this many resumes: the provider may never come back, and a resume that keeps stopping at once
     #: is not making progress.
     paused_max_age_seconds: float = 86_400.0
-    paused_max_resumes: int = 10
+    paused_max_resumes: int = DEFAULT_MAX_RESUMES
     #: Beat messages older than this are dropped by the broker, so a maintenance outage does not
     #: replay a backlog of ticks on recovery.
     beat_expires_seconds: int = 60

@@ -103,11 +103,11 @@ async def sweep_queued(
             select(Task.id)
             .where(
                 Task.eval_run_id.is_(None),
-                # A `paused` row is waiting to resume, and its age is the time since it paused: its
+                # A `paused` row is waiting to resume, and its age is the time since it paused (`paused_at`): its
                 # `created_at` may be days old, which would republish it into a provider still down.
                 or_(
                     (Task.status == TaskStatus.QUEUED) & (Task.created_at < func.now() - min_age),
-                    (Task.status == TaskStatus.PAUSED) & (Task.updated_at < func.now() - min_age),
+                    (Task.status == TaskStatus.PAUSED) & (Task.paused_at < func.now() - min_age),
                 ),
             )
             .order_by(Task.created_at, Task.id)

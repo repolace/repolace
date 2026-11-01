@@ -6,7 +6,13 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from pipeline_support import seed_task
 from repolace_shared.db.models import Task, TaskCheckpoint, TaskStatus
-from repolace_shared.tasks_recovery import expire_paused
+from repolace_shared.tasks_recovery import (
+    RESUME_REFUSED_PREFIX,
+    expire_paused,
+    fail_exhausted_pauses,
+    pause_statement,
+    reopen_refused,
+)
 from repolace_worker import maintenance
 from sqlalchemy import func, select, update
 
@@ -247,8 +253,9 @@ class TestPausedRows:
         # All three are old by `created_at`; only the first has also been paused for a while.
         for task in (long_paused, just_paused, bench):
             await backdate(db_session, task, created_at=OLD)
-        await backdate(db_session, long_paused, updated_at=OLD)
-        await backdate(db_session, bench, updated_at=OLD)
+        await backdate(db_session, long_paused, paused_at=OLD)
+        await backdate(db_session, just_paused, paused_at=datetime.now(UTC))
+        await backdate(db_session, bench, paused_at=OLD)
         long_id = long_paused.id
         sent: list[uuid.UUID] = []
 
@@ -275,3 +282,120 @@ class TestPausedRows:
         assert (await db_session.get(Task, waiting_id)).status is TaskStatus.PAUSED
         row = await db_session.get(Task, stale_id)
         assert (row.status, row.error_message, row.paused_reason) == (TaskStatus.FAILED, "runner: paused too long", None)
+
+
+class TestExpiryIsForProductRows:
+    async def test_a_benchmark_row_is_never_expired_by_age_or_count_here(self, db_session, db_session_factory):
+        bench = await add_task(
+            db_session, status=TaskStatus.PAUSED, eval_run_id="r1", instance_id="i1", run_index=0, resume_count=50
+        )
+        bench_id = bench.id
+        await backdate(db_session, bench, updated_at=OLD)
+
+        failed = await expire_paused(
+            db_session_factory, max_age=timedelta(minutes=30), max_resumes=10, message="expired"
+        )
+
+        assert failed == []
+        db_session.expire_all()
+        assert (await db_session.get(Task, bench_id)).status is TaskStatus.PAUSED
+
+    async def test_a_benchmark_run_gets_only_the_resume_cap(self, db_session, db_session_factory):
+        over = await add_task(
+            db_session, status=TaskStatus.PAUSED, eval_run_id="r1", instance_id="i1", run_index=0, resume_count=10
+        )
+        under = await add_task(
+            db_session, status=TaskStatus.PAUSED, eval_run_id="r1", instance_id="i2", run_index=0, resume_count=9
+        )
+        other_run = await add_task(
+            db_session, status=TaskStatus.PAUSED, eval_run_id="r2", instance_id="i1", run_index=0, resume_count=10
+        )
+        over_id, under_id, other_id = over.id, under.id, other_run.id
+        await backdate(db_session, under, updated_at=OLD)  # old, but age is not a reason on the eval path
+
+        failed = await fail_exhausted_pauses(db_session_factory, "r1", max_resumes=10, message="too many resumes")
+
+        assert failed == [over_id]
+        db_session.expire_all()
+        assert (await db_session.get(Task, under_id)).status is TaskStatus.PAUSED
+        assert (await db_session.get(Task, other_id)).status is TaskStatus.PAUSED
+
+
+class TestThePauseStatement:
+    async def pause(self, factory, task_id, **kwargs):
+        async with factory() as session:
+            result = await session.execute(pause_statement(task_id, "why", **kwargs).returning(Task.id))
+            await session.commit()
+            return result.scalar_one_or_none()
+
+    async def test_a_resume_that_made_no_progress_keeps_updated_at_but_restarts_the_gate(
+        self, db_session, db_session_factory
+    ):
+        task = await add_task(db_session, status=TaskStatus.RUNNING)
+        task_id = task.id
+        await add_checkpoint(db_session, task)
+        await backdate(db_session, task, updated_at=OLD, paused_at=None)
+
+        assert await self.pause(db_session_factory, task_id, made_progress=False) == task_id
+
+        db_session.expire_all()
+        row = await db_session.get(Task, task_id)
+        assert row.updated_at == OLD and row.paused_at is not None and row.paused_at > OLD
+
+    async def test_progress_stamps_updated_at(self, db_session, db_session_factory):
+        task = await add_task(db_session, status=TaskStatus.RUNNING)
+        task_id = task.id
+        await add_checkpoint(db_session, task)
+        await backdate(db_session, task, updated_at=OLD)
+
+        await self.pause(db_session_factory, task_id)
+
+        db_session.expire_all()
+        assert (await db_session.get(Task, task_id)).updated_at > OLD
+
+    async def test_it_is_fenced_to_the_process_that_owns_the_row(self, db_session, db_session_factory):
+        task = await add_task(db_session, status=TaskStatus.RUNNING, claimed_by="host:2")
+        task_id = task.id
+        await add_checkpoint(db_session, task)
+
+        assert await self.pause(db_session_factory, task_id, claimed_by="host:1") is None
+        assert await self.pause(db_session_factory, task_id, claimed_by="host:2") == task_id
+
+    async def test_it_needs_a_checkpoint(self, db_session, db_session_factory):
+        task = await add_task(db_session, status=TaskStatus.RUNNING)
+
+        assert await self.pause(db_session_factory, task.id) is None
+
+
+class TestReopeningARefusedResume:
+    async def failed_refusal(self, session, with_checkpoint=True, message=None):
+        task = await add_task(
+            session, status=TaskStatus.FAILED, stop_class="design",
+            error_message=message or (RESUME_REFUSED_PREFIX + "the target branch moved"),
+        )
+        task_id = task.id
+        if with_checkpoint:
+            await add_checkpoint(session, task)
+        return task_id
+
+    async def test_a_refused_resume_with_its_checkpoint_goes_back_to_paused(self, db_session, db_session_factory):
+        task_id = await self.failed_refusal(db_session)
+
+        assert await reopen_refused(db_session_factory, task_id) is True
+
+        db_session.expire_all()
+        row = await db_session.get(Task, task_id)
+        assert (row.status, row.error_message, row.completed_at, row.stop_class) == (
+            TaskStatus.PAUSED, None, None, "unavailable",
+        )
+        assert row.paused_at is not None
+
+    async def test_a_row_that_failed_for_anything_else_stays_failed(self, db_session, db_session_factory):
+        task_id = await self.failed_refusal(db_session, message="agent: RuntimeError: a bug")
+
+        assert await reopen_refused(db_session_factory, task_id) is False
+
+    async def test_a_refusal_whose_checkpoint_is_gone_cannot_be_reopened(self, db_session, db_session_factory):
+        task_id = await self.failed_refusal(db_session, with_checkpoint=False)
+
+        assert await reopen_refused(db_session_factory, task_id) is False
