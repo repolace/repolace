@@ -282,10 +282,12 @@ async def agent(state: AgentState, runtime: Runtime[RunContext]) -> dict[str, An
     assert llm is not None and tools is not None  # run_graph refuses a None before the graph is built
 
     attempt_no = state.attempt + 1
-    if state.resuming:
+    if state.resuming and state.attempt_steps > 0:
         # Continuing the attempt a snapshot was taken in: its transcript is already what the model last
         # saw (the elision pass belongs to the entry of a retry, and would blank this attempt's own
-        # results), and its counters are mid-attempt.
+        # results), and its counters are mid-attempt. A snapshot with `attempt_steps == 0` is the other
+        # kind -- taken after a verify, before the retry began -- and is entered exactly as the original
+        # run entered it, elision included, so the first request after a resume equals the original's.
         messages = list(state.messages)
         attempt_steps = state.attempt_steps
         summary: str | None = state.summary

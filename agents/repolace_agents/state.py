@@ -72,6 +72,7 @@ class AgentState:
     #: True only in the state a resumed run starts from, and cleared by the first `agent` node that reads it.
     #: It makes that node continue the attempt the snapshot was taken in -- keep the transcript as it is
     #: (no elision pass, which belongs to the *entry* of a retry), and keep `attempt_steps` and `summary`
-    #: rather than resetting them -- and makes the entry edge skip `localize`, whose two opening messages
-    #: would replace the whole transcript.
+    #: rather than resetting them -- when `attempt_steps > 0`; a snapshot at an attempt's very start
+    #: (`attempt_steps == 0`) is entered like any retry. It also makes the entry edge skip `localize`,
+    #: whose two opening messages would replace the whole transcript.
     resuming: bool = False

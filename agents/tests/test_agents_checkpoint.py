@@ -154,6 +154,23 @@ class TestResuming:
         assert verifier.calls == [2]
         assert resumed.attempts == 2 and resumed.last_attempt.attempt == 2
 
+    async def test_the_first_request_after_a_resume_at_a_retrys_start_equals_the_original_first_request(self):
+        """The differential: a resume from the snapshot taken after a verify must enter the retry as the original did."""
+        original_llm = ScriptedLLM([read(), submit_reply("first"), submit_reply("second")])
+        collector = Collector()
+        await run_with(collector, original_llm, ScriptedVerifier([red(1), clean(2)]))
+        after_verify = next(s for s in collector.snapshots if s.attempt == 1 and s.attempt_steps == 0 and s.steps == 2)
+        assert any(m["role"] == "tool" and "read_file" in m["content"] for m in after_verify.messages), (
+            "the snapshot still holds attempt 1's tool output, which the entry to attempt 2 elides"
+        )
+        original_second_attempt_first_request = original_llm.calls[2].messages
+
+        llm = ScriptedLLM([submit_reply("second")])
+        await run_agent(deps_for(llm, ScriptedVerifier([clean(2)]), resume_from=after_verify, resume_last_attempt=red(1)))
+
+        assert llm.calls[0].messages == original_second_attempt_first_request
+        assert not any(m["role"] == "tool" and "read_file" in m["content"] for m in llm.calls[0].messages)
+
     async def test_the_step_cap_counts_the_steps_taken_before_the_stop(self):
         collector = Collector()
         steps = LIMITS.max_steps_per_attempt
