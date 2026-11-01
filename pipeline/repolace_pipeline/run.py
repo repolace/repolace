@@ -695,7 +695,7 @@ def _agent_stop_from(exc: BaseException) -> StopReason | None:
         # A provider that refuses our key or has no quota left is repolace's problem, not the
         # agent's: it stays a harness error (FAILED), carrying the gateway's fixed prefix, so the
         # report keeps it out of the agent's failures and the eval runner can stop dispatching.
-        return None if exc.provider_refused else StopReason.LLM_ERROR
+        return None if exc.harness_failure else StopReason.LLM_ERROR
     return None
 
 

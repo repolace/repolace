@@ -396,7 +396,7 @@ async def _resolve(
         # the rule `run._agent_stop_from` applies to the main agent.
         stop = ResolverStop.BUDGET.value
     except LLMCallError as exc:
-        if exc.provider_refused:
+        if exc.harness_failure:
             raise  # the provider refusing us is a harness failure wherever it happens
         stop = ResolverStop.LLM_ERROR.value
     if stop is not None:

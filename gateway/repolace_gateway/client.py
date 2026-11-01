@@ -63,6 +63,7 @@ from repolace_gateway.errors import (
     KIND_OTHER,
     KIND_QUOTA,
     QUOTA_FAILURE_PREFIX,
+    UNAVAILABLE_FAILURE_PREFIX,
     LLMCallError,
     UnpricedModelError,
 )
@@ -865,11 +866,15 @@ class LLMClient:
         )
         log.error("gateway.call.failed", stage=stage, model=model.litellm_model, retries=retries, error=message)
         kind = failure_kind(failure.cause)
+        transient = _is_transient(failure.cause)
         prefix = {KIND_AUTH: AUTH_FAILURE_PREFIX, KIND_QUOTA: QUOTA_FAILURE_PREFIX}.get(kind, "")
+        if not prefix and transient:
+            prefix = UNAVAILABLE_FAILURE_PREFIX
         raise LLMCallError(
             f"{prefix}{stage} call to {model.litellm_model} failed after {retries} retries: {message}",
             stage=stage,
             model=model.litellm_model,
             retries=retries,
             kind=kind,
+            transient=transient,
         ) from failure.cause

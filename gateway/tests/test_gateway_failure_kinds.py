@@ -20,6 +20,7 @@ from repolace_gateway.errors import (
     KIND_QUOTA,
     PROVIDER_FAILURE_MARKERS,
     QUOTA_FAILURE_PREFIX,
+    UNAVAILABLE_FAILURE_PREFIX,
     LLMCallError,
 )
 from repolace_gateway.vertex import VertexAPIError, VertexGeminiTransport
@@ -97,6 +98,54 @@ class TestWhatReachesTheCaller:
 
         assert raised.value.kind == KIND_OTHER and not raised.value.provider_refused
         assert not str(raised.value).startswith(tuple(PROVIDER_FAILURE_MARKERS))
+
+
+class TestUnavailability:
+    """What may resume (docs/CHECKPOINT_RESUME_DESIGN.md): the provider was not there, not "it said no"."""
+
+    async def test_spent_quota_is_unavailable_and_a_harness_failure(self):
+        body = {"error": {"status": "RESOURCE_EXHAUSTED", "message": "Quota exceeded"}}
+        client, _, _ = make_vertex_client(Wire(json_response(429, body)))
+
+        with pytest.raises(LLMCallError) as raised:
+            await complete(client)
+
+        assert raised.value.unavailable and raised.value.harness_failure
+
+    async def test_a_5xx_that_outlasts_the_retries_is_unavailable_with_its_own_prefix(self):
+        body = {"error": {"status": "UNAVAILABLE", "message": "the model is overloaded"}}
+        wire = Wire(json_response(503, body))
+        client, _, _ = make_vertex_client(wire)
+
+        with pytest.raises(LLMCallError) as raised:
+            await complete(client)
+
+        error = raised.value
+        assert error.kind == KIND_OTHER and error.transient and error.unavailable and error.harness_failure
+        assert str(error).startswith(UNAVAILABLE_FAILURE_PREFIX)
+        assert not error.provider_refused  # the quota/auth predicate keeps its meaning
+        assert len(wire.requests) == 3
+
+    async def test_a_rejected_key_is_not_unavailable_because_waiting_does_not_fix_it(self):
+        wire = Wire(json_response(403, {"error": {"status": "PERMISSION_DENIED", "message": "key rejected"}}))
+        client, _, _ = make_vertex_client(wire)
+
+        with pytest.raises(LLMCallError) as raised:
+            await complete(client)
+
+        assert not raised.value.unavailable and raised.value.harness_failure
+
+    async def test_a_bad_request_is_neither(self):
+        bad = lx.BadRequestError(message="messages must not be empty", llm_provider="anthropic", model="test-main")
+        harness = make_harness(bad)
+
+        with pytest.raises(LLMCallError) as raised:
+            await complete(harness.client)
+
+        assert not raised.value.unavailable and not raised.value.harness_failure
+
+    def test_the_unavailable_prefix_is_one_of_the_markers_the_runner_looks_for(self):
+        assert UNAVAILABLE_FAILURE_PREFIX.strip() in PROVIDER_FAILURE_MARKERS
 
 
 class TestTheWallClockInsideACall:

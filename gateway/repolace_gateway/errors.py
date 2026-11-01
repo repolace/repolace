@@ -46,7 +46,14 @@ KIND_OTHER = "other"
 #: failing for the provider's reasons from a task's `error_message` without a new column.
 AUTH_FAILURE_PREFIX = "provider auth failure: "
 QUOTA_FAILURE_PREFIX = "provider quota exhausted: "
-PROVIDER_FAILURE_MARKERS = (AUTH_FAILURE_PREFIX.strip(), QUOTA_FAILURE_PREFIX.strip())
+#: A transient failure (5xx, a timeout, a dropped connection) that outlasted the bounded retries: the provider
+#: was not there, which is the same fact about the run as a quota refusal even though the status differs.
+UNAVAILABLE_FAILURE_PREFIX = "provider unavailable: "
+PROVIDER_FAILURE_MARKERS = (
+    AUTH_FAILURE_PREFIX.strip(),
+    QUOTA_FAILURE_PREFIX.strip(),
+    UNAVAILABLE_FAILURE_PREFIX.strip(),
+)
 
 
 class LLMCallError(GatewayError):
@@ -60,13 +67,31 @@ class LLMCallError(GatewayError):
     is a harness failure, not a task the agent failed.
     """
 
-    def __init__(self, message: str, *, stage: str, model: str, retries: int, kind: str = KIND_OTHER) -> None:
+    def __init__(
+        self, message: str, *, stage: str, model: str, retries: int, kind: str = KIND_OTHER, transient: bool = False
+    ) -> None:
         super().__init__(message)
         self.stage = stage
         self.model = model
         self.retries = retries
         self.kind = kind
+        #: The last failure was a transient one (5xx, timeout, connection) and the retries ran out. Decided by the
+        #: client from the provider's own error, never from the message text.
+        self.transient = transient
 
     @property
     def provider_refused(self) -> bool:
         return self.kind != KIND_OTHER
+
+    @property
+    def unavailable(self) -> bool:
+        """The provider was not there: out of quota past the retry window, or transiently failing throughout.
+
+        `auth` is excluded on purpose: a key the provider rejects needs a person, and waiting does not fix it.
+        """
+        return self.kind == KIND_QUOTA or (self.kind == KIND_OTHER and self.transient)
+
+    @property
+    def harness_failure(self) -> bool:
+        """The call failed for a reason that says nothing about the agent: the task is repolace's, not the model's."""
+        return self.provider_refused or self.unavailable
