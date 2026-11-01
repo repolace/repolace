@@ -33,15 +33,23 @@ checkpointer would persist, and an LLM client is not.
 
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 
+import structlog
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 from repolace_gateway.budget import BudgetExceeded, BudgetLimit, current_scope
 from repolace_gateway.errors import LLMCallError, NoTaskScope
 
-from repolace_agents.contracts import AgentDeps, AgentLimits, AgentResult, StopReason
+from repolace_agents.contracts import (
+    AgentDeps,
+    AgentLimits,
+    AgentResult,
+    AgentSnapshot,
+    ScoredMark,
+    StopReason,
+)
 from repolace_agents.feedback import baseline_summary, render_feedback, visible_feedback
 from repolace_agents.prompts import (
     EMPTY_TOOL_OUTPUT,
@@ -55,6 +63,8 @@ from repolace_agents.prompts import (
 )
 from repolace_agents.render import escape_invisible, require_nonce, sanitize_text
 from repolace_agents.state import AgentState
+
+log = structlog.get_logger()
 
 _BUDGET_STOPS = {
     BudgetLimit.USD: StopReason.BUDGET_USD,
@@ -224,6 +234,29 @@ def _raise_if_budget_reached() -> None:
     scope.budget.raise_if_reached()
 
 
+def _scored_mark(state: AgentState) -> ScoredMark | None:
+    """The part of `last_attempt` a checkpoint may keep: no suite result, so nothing the oracle touches."""
+    record = state.last_attempt
+    if record is None:
+        return None
+    return ScoredMark(record.attempt, record.commit_sha, record.infrastructure_error)
+
+
+async def _checkpoint(ctx: RunContext, snapshot: AgentSnapshot) -> None:
+    """Hand the snapshot to the pipeline's writer, if there is one. Never lets a failed save fail the run.
+
+    A checkpoint exists to protect the task, so a database blip while writing one must cost the
+    protection for that step and nothing else. `Exception` only: a cancellation must still propagate.
+    """
+    writer = ctx.deps.checkpoint
+    if writer is None:
+        return
+    try:
+        await writer(snapshot)
+    except Exception as exc:  # noqa: BLE001 -- see the docstring
+        log.warning("agent.checkpoint.failed", error=f"{type(exc).__name__}: {exc}"[:300])
+
+
 # --- nodes -------------------------------------------------------------------
 
 
@@ -249,13 +282,38 @@ async def agent(state: AgentState, runtime: Runtime[RunContext]) -> dict[str, An
     assert llm is not None and tools is not None  # run_graph refuses a None before the graph is built
 
     attempt_no = state.attempt + 1
-    messages = list(_elide_tool_outputs(state.messages, state.attempt) if state.attempt else state.messages)
+    if state.resuming:
+        # Continuing the attempt a snapshot was taken in: its transcript is already what the model last
+        # saw (the elision pass belongs to the entry of a retry, and would blank this attempt's own
+        # results), and its counters are mid-attempt.
+        messages = list(state.messages)
+        attempt_steps = state.attempt_steps
+        summary: str | None = state.summary
+    else:
+        messages = list(_elide_tool_outputs(state.messages, state.attempt) if state.attempt else state.messages)
+        attempt_steps = 0
+        summary = None
     schemas = tools.schemas()
     steps = state.steps
-    attempt_steps = 0
-    summary: str | None = None
 
     while True:
+        # The point a run can be continued from: the previous step is complete (every tool call answered),
+        # and nothing of the next has begun. First iteration of a retry included, so the feedback message
+        # the verify node added is in the snapshot.
+        await _checkpoint(
+            runtime.context,
+            AgentSnapshot(
+                nonce=runtime.context.nonce,
+                messages=tuple(messages),
+                attempt=state.attempt,
+                steps=steps,
+                attempt_steps=attempt_steps,
+                summary=summary,
+                scored_summary=state.scored_summary,
+                feedback_clean=state.feedback_clean,
+                last_scored=_scored_mark(state),
+            ),
+        )
         if attempt_steps >= deps.limits.max_steps_per_attempt:
             stop = StopReason.STEP_CAP
             break
@@ -273,9 +331,9 @@ async def agent(state: AgentState, runtime: Runtime[RunContext]) -> dict[str, An
             stop = _BUDGET_STOPS[exc.limit]
             break
         except LLMCallError as exc:
-            if exc.provider_refused:
-                # The provider rejected our key or our quota is spent: that says nothing about the
-                # agent, so it is not a stop reason. It propagates and fails the task (a harness error).
+            if exc.harness_failure:
+                # The provider rejected our key, our quota is spent or it was unavailable throughout: that says
+                # nothing about the agent, so it is not a stop reason. It propagates and fails the task (a harness error).
                 raise
             stop = StopReason.LLM_ERROR
             break
@@ -331,6 +389,7 @@ async def agent(state: AgentState, runtime: Runtime[RunContext]) -> dict[str, An
         "summary": summary,
         "stop_reason": stop,
         "feedback_clean": None,
+        "resuming": False,
     }
 
 
@@ -380,6 +439,23 @@ async def verify(state: AgentState, runtime: Runtime[RunContext]) -> dict[str, A
     update["messages"] = state.messages + (
         {"role": "user", "content": render_feedback(feedback, nonce=ctx.nonce)},
     )
+    # A retry follows, and the attempt just scored has a `task_test_runs` row: a crash before the next
+    # agent step would find the row without a snapshot that knows it. So the snapshot is taken here too.
+    after = replace(state, **update)
+    await _checkpoint(
+        ctx,
+        AgentSnapshot(
+            nonce=ctx.nonce,
+            messages=after.messages,
+            attempt=after.attempt,
+            steps=after.steps,
+            attempt_steps=0,
+            summary=None,
+            scored_summary=after.scored_summary,
+            feedback_clean=after.feedback_clean,
+            last_scored=_scored_mark(after),
+        ),
+    )
     return update
 
 
@@ -403,13 +479,18 @@ def route(state: AgentState, runtime: Runtime[RunContext]) -> Literal["agent", "
     return "agent"
 
 
+def entry(state: AgentState) -> Literal["localize", "agent"]:
+    """A fresh run opens with `localize`; a resumed one already has its transcript and goes straight to `agent`."""
+    return "agent" if state.resuming else "localize"
+
+
 def build_graph():
     """The compiled graph. Cheap; built per run so nothing is shared between tasks."""
     builder = StateGraph(AgentState, context_schema=RunContext)
     builder.add_node("localize", localize)
     builder.add_node("agent", agent)
     builder.add_node("verify", verify)
-    builder.add_edge(START, "localize")
+    builder.add_conditional_edges(START, entry, {"localize": "localize", "agent": "agent"})
     builder.add_edge("localize", "agent")
     builder.add_edge("agent", "verify")
     builder.add_conditional_edges("verify", route, {"agent": "agent", END: END})
@@ -451,6 +532,34 @@ def result_from_state(state: AgentState) -> AgentResult:
     )
 
 
+def _resumed_state(deps: AgentDeps) -> AgentState:
+    """The state a resumed run starts from, from the snapshot and the record rebuilt from `task_test_runs`."""
+    snapshot = deps.resume_from
+    assert snapshot is not None
+    mark = snapshot.last_scored
+    record = deps.resume_last_attempt
+    if (mark is None) != (record is None) or (
+        mark is not None and record is not None and mark.attempt != record.attempt
+    ):
+        # Numbers only: nothing that could carry the record's suite result is formatted into the message.
+        wanted = mark.attempt if mark is not None else None
+        got = record.attempt if record is not None else None
+        raise ValueError(
+            f"a resumed run needs the scored attempt that matches its snapshot (wanted {wanted}, got {got})"
+        )
+    return AgentState(
+        messages=snapshot.messages,
+        attempt=snapshot.attempt,
+        steps=snapshot.steps,
+        attempt_steps=snapshot.attempt_steps,
+        summary=snapshot.summary,
+        scored_summary=snapshot.scored_summary,
+        last_attempt=record,
+        feedback_clean=snapshot.feedback_clean,
+        resuming=True,
+    )
+
+
 async def run_graph(deps: AgentDeps, *, nonce: str) -> AgentResult:
     """Run the graph for one task. `run_agent` calls this with a random nonce.
 
@@ -466,8 +575,9 @@ async def run_graph(deps: AgentDeps, *, nonce: str) -> AgentResult:
         raise ValueError("the LLM graph needs deps.llm and deps.tools; only the stub and gold runners run without them")
     if deps.limits.max_attempts < 1 or deps.limits.max_steps_per_attempt < 1:
         raise ValueError(f"max_attempts and max_steps_per_attempt must be at least 1, got {deps.limits}")
+    initial = AgentState() if deps.resume_from is None else _resumed_state(deps)
     final = await build_graph().ainvoke(
-        AgentState(),
+        initial,
         config={"recursion_limit": recursion_limit_for(deps.limits)},
         context=RunContext(deps=deps, nonce=nonce),
     )

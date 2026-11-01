@@ -251,6 +251,45 @@ class AgentResult:
 
 
 @dataclass(frozen=True)
+class ScoredMark:
+    """What a checkpoint remembers of the last scored attempt: the number, the commit and one flag.
+
+    **Deliberately not an `AttemptRecord`.** The record's `result` is the unfiltered, oracle-bearing suite
+    result; it already lives in `task_test_runs`, and a resume rebuilds the record from there. Nothing that
+    could name a hidden test is written to a checkpoint.
+    """
+
+    attempt: int
+    commit_sha: str
+    infrastructure_error: bool
+
+
+@dataclass(frozen=True)
+class AgentSnapshot:
+    """Everything the agent graph needs to continue a run, and nothing the model was not already shown.
+
+    The transcript is what the model has seen (feedback included, rendered by the filter). `nonce` is the
+    run's delimiter nonce: it is inside that transcript, so a resumed run must keep it, and it is no more
+    exposed than in `llm_calls.request`, which already holds every prompt. See `checkpoint.py` for the JSON form.
+    """
+
+    nonce: str
+    messages: tuple[Mapping[str, Any], ...]
+    attempt: int
+    steps: int
+    attempt_steps: int
+    summary: str | None
+    scored_summary: str | None
+    feedback_clean: bool | None
+    last_scored: ScoredMark | None
+
+
+#: Called by the graph at the points a run can be continued from. May raise; the graph logs and carries on,
+#: because failing to save a checkpoint must never fail the task that the checkpoint is meant to protect.
+CheckpointWriter = Callable[[AgentSnapshot], Awaitable[None]]
+
+
+@dataclass(frozen=True)
 class AgentDeps:
     """Everything an agent run is given. Built by the pipeline, once per task."""
 
@@ -288,6 +327,14 @@ class AgentDeps:
     #: Files changed since the base commit, repo-relative.
     changed_files: Callable[[], Awaitable[list[str]]]
     limits: AgentLimits = AgentLimits()
+    #: Where the graph saves a snapshot of itself. None (the stub, gold and every test that does not care)
+    #: saves nothing, and the graph behaves exactly as before.
+    checkpoint: CheckpointWriter | None = None
+    #: Set by the pipeline when the task is being resumed: the graph then skips `localize`, keeps the
+    #: snapshot's nonce and continues from its counters. `last_attempt` must be the record rebuilt from
+    #: `task_test_runs` for `resume_from.last_scored`.
+    resume_from: AgentSnapshot | None = None
+    resume_last_attempt: AttemptRecord | None = None
 
 
 class AgentRunner(Protocol):

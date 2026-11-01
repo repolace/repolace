@@ -14,6 +14,11 @@ async def run_agent(deps: AgentDeps) -> AgentResult:
     `deps.tools` (the stub and gold runners are the ones that run without), and
     must be called inside the gateway's `task_scope`, which the pipeline binds.
     """
+    if deps.resume_from is not None:
+        # The one run that does not draw a fresh nonce: the snapshot's transcript already contains the
+        # delimiters written with it, and rewriting them would change what the model has been told. The
+        # nonce was never chosen by a caller; it is this same run's own, kept in its checkpoint.
+        return await run_graph(deps, nonce=deps.resume_from.nonce)
     return await run_graph(deps, nonce=secrets.token_hex(8))
 
 

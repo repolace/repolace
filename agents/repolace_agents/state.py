@@ -69,3 +69,9 @@ class AgentState:
     #: which is what stops the router reading a stale answer from an earlier
     #: attempt. Reset on entry to each attempt.
     feedback_clean: bool | None = None
+    #: True only in the state a resumed run starts from, and cleared by the first `agent` node that reads it.
+    #: It makes that node continue the attempt the snapshot was taken in -- keep the transcript as it is
+    #: (no elision pass, which belongs to the *entry* of a retry), and keep `attempt_steps` and `summary`
+    #: rather than resetting them -- and makes the entry edge skip `localize`, whose two opening messages
+    #: would replace the whole transcript.
+    resuming: bool = False
