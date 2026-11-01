@@ -63,17 +63,19 @@ QueuedTask = TaskRef
 
 
 async def queued_tasks(factory: SessionFactory, eval_run_id: str) -> list[QueuedTask]:
-    """The QUEUED tasks of a run, ordered `(run_index, instance_id)`.
+    """The QUEUED and PAUSED tasks of a run, ordered `(run_index, instance_id)`.
+
+    A PAUSED row stopped for unavailability and has a checkpoint; dispatching it resumes it.
 
     Index 0 of every instance goes first so each repository's index is warmed
     before its second and third runs reach it. A nicety, not a correctness rule:
-    the pipeline itself waits on `RepoIndexInProgress`. Rows that are not QUEUED
+    the pipeline itself waits on `RepoIndexInProgress`. Rows that are neither
     are not returned, which is what makes the runner resumable.
     """
     async with factory() as session:
         rows = await session.execute(
             select(Task.id, Task.instance_id, Task.run_index)
-            .where(Task.eval_run_id == eval_run_id, Task.status == TaskStatus.QUEUED)
+            .where(Task.eval_run_id == eval_run_id, Task.status.in_((TaskStatus.QUEUED, TaskStatus.PAUSED)))
             .order_by(Task.run_index, Task.instance_id, Task.id)
         )
         return [QueuedTask(task_id, instance_id, run_index) for task_id, instance_id, run_index in rows]
@@ -97,10 +99,11 @@ async def run_cost_usd(factory: SessionFactory, eval_run_id: str) -> Decimal:
 async def run_provider_failures(
     factory: SessionFactory, eval_run_id: str, task_ids: Collection[uuid.UUID] | None = None
 ) -> int:
-    """Tasks of the run that FAILED because the provider refused us (a rejected key, spent quota).
+    """Tasks of the run that stopped because the provider refused us or was not there.
 
-    Recognised by the gateway's fixed message prefixes in `error_message`. Such a task is a harness
-    error, not an agent failure; two of them mean the rest of the run would fail the same way.
+    Either FAILED with one of the gateway's fixed message prefixes in `error_message` (a rejected key,
+    spent quota, a provider that failed throughout), or PAUSED for unavailability. Such a task is a harness
+    error, not an agent failure; two of them mean the rest of the run would stop the same way.
 
     `task_ids` limits the count to the tasks one invocation of the runner dispatched. Without it the
     rows a *previous* invocation left behind would stop a re-run at its first dispatch, after the
@@ -110,8 +113,11 @@ async def run_provider_failures(
         return 0
     conditions = [
         Task.eval_run_id == eval_run_id,
-        Task.status == TaskStatus.FAILED,
-        or_(*(Task.error_message.contains(marker) for marker in PROVIDER_FAILURE_MARKERS)),
+        or_(
+            (Task.status == TaskStatus.FAILED)
+            & or_(*(Task.error_message.contains(marker) for marker in PROVIDER_FAILURE_MARKERS)),
+            (Task.status == TaskStatus.PAUSED) & (Task.stop_class == "unavailable"),
+        ),
     ]
     if task_ids is not None:
         conditions.append(Task.id.in_(list(task_ids)))

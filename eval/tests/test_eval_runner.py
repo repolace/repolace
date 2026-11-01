@@ -121,7 +121,7 @@ class TestPureHelpers:
     @pytest.mark.parametrize(
         ("code", "outcome"),
         [(0, Outcome.RAN), (1, Outcome.REPOLACE_FAILED), (2, Outcome.NOT_FOUND), (3, Outcome.NOT_CLAIMABLE),
-         (7, Outcome.CRASHED), (255, Outcome.CRASHED), (-9, Outcome.CRASHED), (-11, Outcome.CRASHED)],
+         (4, Outcome.PAUSED), (7, Outcome.CRASHED), (255, Outcome.CRASHED), (-9, Outcome.CRASHED), (-11, Outcome.CRASHED)],
     )
     def test_exit_code_mapping(self, code, outcome):
         assert classify(code) is outcome
@@ -134,6 +134,7 @@ class TestPureHelpers:
             "EXIT_TASK_FAILED": runner.EXIT_TASK_FAILED,
             "EXIT_NOT_FOUND": runner.EXIT_NOT_FOUND,
             "EXIT_NOT_CLAIMABLE": runner.EXIT_NOT_CLAIMABLE,
+            "EXIT_PAUSED": runner.EXIT_PAUSED,
         }
         assert {name: declared.get(name) for name in known} == known
 
@@ -143,7 +144,9 @@ class TestPureHelpers:
         would be an exit status the runner cannot classify and would count as a harness failure."""
         source = (Path(__file__).resolve().parents[2] / "pipeline" / "repolace_pipeline" / "cli.py").read_text()
         declared = {name: int(value) for name, value in re.findall(r"^(EXIT_[A-Z_]+) = (\d+)$", source, re.MULTILINE)}
-        classified = {runner.EXIT_OK, runner.EXIT_TASK_FAILED, runner.EXIT_NOT_FOUND, runner.EXIT_NOT_CLAIMABLE}
+        classified = {
+            runner.EXIT_OK, runner.EXIT_TASK_FAILED, runner.EXIT_NOT_FOUND, runner.EXIT_NOT_CLAIMABLE, runner.EXIT_PAUSED,
+        }
 
         assert set(declared.values()) <= classified, sorted(set(declared.values()) - classified)
 
@@ -1276,3 +1279,61 @@ class TestPathConfinement:
 
         assert victim.read_text() == "precious"
         assert records(tmp_path) == {}, "no child may be started when its log path is refused"
+
+
+@pytest.mark.anyio
+@pytest.mark.db
+class TestPausedRows:
+    """A row paused for unavailability is dispatched again, counts toward the breaker, and is what an abandoned
+    row with a checkpoint becomes; a row that stopped for any other reason is none of those."""
+
+    async def test_queued_tasks_include_paused_rows(self, db_session, db_session_factory):
+        repo = await add_repo(db_session, "repolace/bench-x")
+        await add_task(db_session, repo, instance_id="a", run_index=0, status=TaskStatus.QUEUED)
+        await add_task(db_session, repo, instance_id="b", run_index=0, status=TaskStatus.PAUSED)
+        await add_task(db_session, repo, instance_id="c", run_index=0, status=TaskStatus.FAILED)
+
+        queued = await queued_tasks(db_session_factory, RUN)
+
+        assert [t.instance_id for t in queued] == ["a", "b"]
+
+    async def test_a_pause_for_unavailability_counts_toward_the_breaker_and_other_rows_do_not(
+        self, db_session, db_session_factory
+    ):
+        repo = await add_repo(db_session, "repolace/bench-x")
+        paused = await add_task(
+            db_session, repo, instance_id="a", run_index=0, status=TaskStatus.PAUSED, stop_class="unavailable"
+        )
+        paused_id = paused.id
+        await add_task(db_session, repo, instance_id="b", run_index=0, status=TaskStatus.PAUSED, stop_class="design")
+        await add_task(
+            db_session, repo, instance_id="c", run_index=0, status=TaskStatus.FAILED,
+            error_message="agent: LLMCallError: provider unavailable: agent call to m failed after 20 retries",
+        )
+        await add_task(db_session, repo, instance_id="d", run_index=0, status=TaskStatus.FAILED, error_message="agent: a bug")
+
+        assert await run_provider_failures(db_session_factory, RUN) == 2
+        assert await run_provider_failures(db_session_factory, RUN, [paused_id]) == 1
+
+    async def test_an_abandoned_row_with_a_checkpoint_is_paused_and_one_without_is_failed(
+        self, db_session, db_session_factory
+    ):
+        from repolace_shared.db.models import TaskCheckpoint
+
+        repo = await add_repo(db_session, "repolace/bench-x")
+        saved = await add_task(db_session, repo, instance_id="a", run_index=0, status=TaskStatus.RUNNING, started_at=ago(hours=3))
+        bare = await add_task(db_session, repo, instance_id="b", run_index=0, status=TaskStatus.RUNNING, started_at=ago(hours=3))
+        saved_id, bare_id = saved.id, bare.id
+        db_session.add(TaskCheckpoint(task_id=saved_id, agent_state={}, base_sha="b" * 40, provenance={}))
+        await db_session.commit()
+
+        report = await mark_abandoned(db_session_factory, RUN, 600.0, process_runner=FakeProcesses())
+
+        assert {t.task_id for t in report.marked} == {saved_id, bare_id}
+        db_session.expire_all()
+        kept = await db_session.get(Task, saved_id)
+        lost = await db_session.get(Task, bare_id)
+        assert (kept.status, kept.paused_reason, kept.stop_class, kept.completed_at) == (
+            TaskStatus.PAUSED, "runner: abandoned", "unavailable", None,
+        )
+        assert (lost.status, lost.error_message, lost.stop_class) == (TaskStatus.FAILED, "runner: abandoned", "unavailable")

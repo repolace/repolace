@@ -12,19 +12,21 @@ sampled from `/proc/<pid>/status` (`VmHWM`) every couple of seconds and logged
 when it exits; it is a lower bound (a spike between samples is missed) and absent
 off Linux. Read it from the dry run before choosing K for the sweep.
 
-**A task row is never re-run, so the runner never makes one QUEUED again.** The
+**A task row is never run from scratch twice, so the runner never makes one QUEUED again.** The
 pipeline's `task_test_runs` is unique on `(task_id, attempt)`; a second run of a
 row would fail on insert at best and mix two runs' evidence at worst. Every
-status write here is `RUNNING -> FAILED`, conditional on the row still being
-RUNNING (see `repolace_shared.tasks_recovery.fail_if_running`), so a task that finished in the same
-instant keeps its real status. That covers three cases: a child killed on the
-wall-clock timeout, a child that died (OOM kill, crash) leaving its row RUNNING,
-and `--mark-abandoned` for rows whose runner itself died.
+status write here is conditional on the row still being RUNNING (see
+`repolace_shared.tasks_recovery.settle_running`), so a task that finished in the same instant keeps its
+real status. A stopped row becomes FAILED, **except** one that stopped for unavailability (a child that
+died, an interrupted runner) and left a checkpoint: it becomes PAUSED, and the next invocation dispatches
+it again and the pipeline continues it from the checkpoint. A child killed on the wall-clock timeout is
+the task's own doing and is FAILED. Three cases: a child killed on the timeout, a child that died (OOM
+kill, crash) leaving its row RUNNING, and `--mark-abandoned` for rows whose runner itself died.
 
 **Exit codes are the pipeline's** (`repolace_pipeline.cli`): 0 ran, whatever the
 outcome, so a COMPLETED task with a stop reason is never treated as a crash; 1
 repolace itself broke (the row is FAILED); 2 not found / not wired; 3 not
-claimable. A child that exits 2 or 3 never owned the row, so its row is not
+claimable; 4 the task paused for unavailability (the row is PAUSED, with a checkpoint). A child that exits 2 or 3 never owned the row, so its row is not
 touched: 3 can mean another runner is running it right now.
 
 **The run manifest.** `enqueue` writes `eval/runs/<run>/manifest.json` naming the
@@ -79,7 +81,14 @@ from repolace_shared.process import (
     kill_process_tree,
     run_process,
 )
-from repolace_shared.tasks_recovery import ProcessRunner, fail_if_running, remove_task_containers
+from repolace_shared.tasks_recovery import (
+    DESIGN,
+    UNAVAILABLE,
+    ProcessRunner,
+    fail_if_running,
+    remove_task_containers,
+    settle_running,
+)
 
 from harness.bench_repos import TOKEN_ENV_VAR
 from harness.db import (
@@ -102,6 +111,7 @@ EXIT_OK = 0
 EXIT_TASK_FAILED = 1
 EXIT_NOT_FOUND = 2
 EXIT_NOT_CLAIMABLE = 3
+EXIT_PAUSED = 4
 
 #: Added to `--timeout-seconds` before a RUNNING row counts as abandoned, so a
 #: task that is merely at the end of its allowance is never swept.
@@ -117,6 +127,8 @@ class Outcome(str, Enum):
     REPOLACE_FAILED = "repolace_failed"
     NOT_FOUND = "not_found"
     NOT_CLAIMABLE = "not_claimable"
+    #: The task stopped for unavailability and its row is PAUSED with a checkpoint: not finished, not failed.
+    PAUSED = "paused"
     #: Killed by a signal or an exit code the pipeline never uses.
     CRASHED = "crashed"
     TIMED_OUT = "timed_out"
@@ -130,6 +142,7 @@ def classify(returncode: int) -> Outcome:
         EXIT_TASK_FAILED: Outcome.REPOLACE_FAILED,
         EXIT_NOT_FOUND: Outcome.NOT_FOUND,
         EXIT_NOT_CLAIMABLE: Outcome.NOT_CLAIMABLE,
+        EXIT_PAUSED: Outcome.PAUSED,
     }.get(returncode, Outcome.CRASHED)
 
 
@@ -258,7 +271,7 @@ async def _settle_interrupted(
     row that was never claimed stays QUEUED, as on a timeout.
     """
     async def settle() -> None:
-        await fail_if_running(factory, task.task_id, "runner: interrupted")
+        await settle_running(factory, task.task_id, "runner: interrupted", stop_class=UNAVAILABLE)
         await remove_task_containers(task.task_id, process_runner=process_runner, docker=docker, env=env)
 
     with suppress(Exception):
@@ -326,7 +339,7 @@ async def _run_child(
 
     if timed_out:
         outcome = Outcome.TIMED_OUT
-        marked = await fail_if_running(factory, task.task_id, "runner: timeout")
+        marked = await fail_if_running(factory, task.task_id, "runner: timeout", stop_class=DESIGN)
         removed = await remove_task_containers(task.task_id, process_runner=process_runner, docker=docker, env=env)
     else:
         assert returncode is not None
@@ -334,8 +347,16 @@ async def _run_child(
         if outcome not in (Outcome.NOT_FOUND, Outcome.NOT_CLAIMABLE):
             # The child owned the row and is gone. If it still says RUNNING it
             # died without finishing (an OOM kill, a crash); nothing is running it.
-            marked = await fail_if_running(
-                factory, task.task_id, f"runner: child exited {returncode} without finishing the task"
+            # A child that died holding the row stopped for a reason outside the agent: a pause if it saved
+            # a checkpoint. One that exited PAUSED already wrote its own row, so this finds nothing to do.
+            marked = (
+                await settle_running(
+                    factory,
+                    task.task_id,
+                    f"runner: child exited {returncode} without finishing the task",
+                    stop_class=UNAVAILABLE,
+                )
+                is not None
             )
 
     log.info(
@@ -460,8 +481,9 @@ async def run_queue(
                 refused = await run_provider_failures(factory, config.eval_run_id, dispatched_ids)
                 if refused >= PROVIDER_REFUSAL_LIMIT:
                     reason = (
-                        f"the provider refused {refused} tasks (rejected key or spent quota); "
-                        "every further task would fail the same way. Fix the key or quota, then re-run"
+                        f"the provider refused {refused} tasks (rejected key, spent quota or an outage); "
+                        "every further task would stop the same way. Fix the key or "
+                        "quota, or wait for the provider, then re-run: paused tasks resume from their checkpoints"
                     )
             if reason is not None:
                 semaphore.release()
@@ -518,7 +540,10 @@ async def mark_abandoned(
     grace_seconds: float = ABANDONED_GRACE_SECONDS,
     env: Mapping[str, str] | None = None,
 ) -> AbandonedReport:
-    """RUNNING -> FAILED (`runner: abandoned`) for stale rows with no live process. Never QUEUED."""
+    """RUNNING -> FAILED (`runner: abandoned`) for stale rows with no live process; PAUSED if one left a checkpoint.
+
+    Never QUEUED.
+    """
     report = AbandonedReport()
     # The helper gets the allowlisted environment, never the operator's whole shell.
     tool_env = allowlisted_env(os.environ if env is None else env)
@@ -529,7 +554,7 @@ async def mark_abandoned(
             report.unknown.append(task)
         elif matches:
             report.alive.append(task)
-        elif await fail_if_running(factory, task.task_id, "runner: abandoned"):
+        elif await settle_running(factory, task.task_id, "runner: abandoned", stop_class=UNAVAILABLE) is not None:
             report.marked.append(task)
     return report
 

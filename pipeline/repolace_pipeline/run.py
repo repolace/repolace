@@ -47,11 +47,14 @@ from pathlib import Path
 
 import httpx
 import structlog
+from repolace_agents.checkpoint import CheckpointError, snapshot_from_json
 from repolace_agents.contracts import (
     AgentDeps,
     AgentLimits,
     AgentResult,
     AgentRunner,
+    AgentSnapshot,
+    AttemptRecord,
     IssueContext,
     LLMClientLike,
     StopReason,
@@ -62,6 +65,7 @@ from repolace_gateway.budget import BudgetExceeded, BudgetLimit, TaskBudget, tas
 from repolace_gateway.errors import LLMCallError
 from repolace_shared.db.models import (
     BASELINE_ATTEMPT,
+    LLMCall,
     RegisteredRepo,
     Task,
     TaskOutcome,
@@ -77,6 +81,7 @@ from repolace_shared.git import (
 )
 from repolace_shared.github.client import GithubClient
 from repolace_shared.instances import InstanceSpec, load_instance_by_id
+from repolace_shared.tasks_recovery import has_checkpoint
 from retrieval.embed import get_embedder
 from retrieval.index import (
     RepoIndexInProgress,
@@ -97,6 +102,13 @@ from verify.stage import Verifier
 
 from repolace_pipeline.agent_context import build_tool_context, make_search
 from repolace_pipeline.attempts import AttemptScorer, run_scored_suite
+from repolace_pipeline.checkpoints import (
+    CheckpointRecorder,
+    StoredCheckpoint,
+    load_checkpoint,
+    provenance_for,
+    provenance_mismatch,
+)
 from repolace_pipeline.conflicts import MergeOutcome, Resolver, TargetMerge, merge_target
 from repolace_pipeline.context import RetrievedChunk, repo_overview, search_hit
 from repolace_pipeline.edit import StubEditRequest
@@ -111,12 +123,14 @@ from repolace_pipeline.finalize import (
     first_model,
     task_cost,
     write_failure_minimal,
+    write_paused,
     write_terminal,
 )
 from repolace_pipeline.gate import PrDecision, count_changed_lines, pr_decision
 from repolace_pipeline.pr import PrFacts, commit_message, pr_title, render_pr_body
 from repolace_pipeline.runners import GoldAgent, StubAgent
-from repolace_pipeline.testruns import record_test_run
+from repolace_pipeline.stopclass import DESIGN, UNAVAILABLE, classify_exception
+from repolace_pipeline.testruns import load_test_runs, record_test_run
 
 log = structlog.get_logger()
 
@@ -184,6 +198,8 @@ class RunResult:
     #: Why a `CONFLICTING` task could not merge its change onto the moved target branch, as stored
     #: in `tasks.conflict_reason`. None for every other status.
     conflict_reason: str | None = None
+    #: Why a `PAUSED` task stopped, as stored in `tasks.paused_reason`. None for every other status.
+    paused_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -201,6 +217,8 @@ class _Seams:
     max_changed_files: int | None
     max_changed_lines: int | None
     resolver: Resolver
+    #: Identifies the code that wrote a checkpoint, so a resume under other code is refused. None skips the check.
+    code_version: str | None
 
 
 @dataclass
@@ -377,22 +395,35 @@ async def _stop_heartbeat(heartbeat: asyncio.Task) -> None:
 async def _claim(
     state: AsyncSession, task_id: uuid.UUID, claimed_by: str | None = None
 ) -> tuple[Task, RegisteredRepo]:
-    """Move `queued` -> `running`, but only if it is still queued.
+    """Move `queued` -> `running`, or `paused` -> `running` (a resume), but only if it is still that.
 
     Conditional rather than a read-then-write: it makes a second CLI run against
     a finished task a no-op instead of a duplicate PR, and it is exactly the
-    guard Phase 2 needs once Celery delivers at-least-once.
+    guard Phase 2 needs once Celery delivers at-least-once. Two resumers of one paused row race
+    on the same conditional UPDATE and exactly one wins.
+
+    A resume keeps `started_at` (the task began once), clears `paused_reason`, bumps `resume_count` and
+    forgets the old `stop_class`; the run then reads `task.resume_count > 0` to know it is a resume.
     """
+    claimant = claimed_by if claimed_by is not None else default_claimant()
     result = await state.execute(
         update(Task)
         .where(Task.id == task_id, Task.status == TaskStatus.QUEUED)
-        .values(
-            status=TaskStatus.RUNNING,
-            started_at=func.now(),
-            claimed_by=claimed_by if claimed_by is not None else default_claimant(),
-            heartbeat_at=func.now(),
-        )
+        .values(status=TaskStatus.RUNNING, started_at=func.now(), claimed_by=claimant, heartbeat_at=func.now())
     )
+    if result.rowcount == 0:
+        result = await state.execute(
+            update(Task)
+            .where(Task.id == task_id, Task.status == TaskStatus.PAUSED)
+            .values(
+                status=TaskStatus.RUNNING,
+                paused_reason=None,
+                stop_class=None,
+                resume_count=Task.resume_count + 1,
+                claimed_by=claimant,
+                heartbeat_at=func.now(),
+            )
+        )
     if result.rowcount == 0:
         existing = await state.get(Task, task_id)
         # Read the status *before* rolling back. `rollback()` expires every
@@ -411,7 +442,7 @@ async def _claim(
     repo = await state.get(RegisteredRepo, task.repo_id)
     if repo is None:
         raise StageFailed("claim", f"task references unknown repo {task.repo_id}")
-    log.info("pipeline.task.claimed", target_branch=task.target_branch)
+    log.info("pipeline.task.claimed", target_branch=task.target_branch, resume_count=task.resume_count)
     return task, repo
 
 
@@ -429,6 +460,41 @@ async def _best_effort_cost(session_factory, task_id: uuid.UUID) -> Decimal | No
         return None
 
 
+async def _try_pause(
+    state: AsyncSession,
+    session_factory,
+    task_id: uuid.UUID,
+    detail: str,
+    progress: _Progress,
+    cost: Decimal | None,
+) -> RunResult | None:
+    """RUNNING -> PAUSED if the task has a checkpoint; None (nothing written) if it has none or the write failed.
+
+    A task with no checkpoint stopped before the agent saved anything, so there is nothing to continue
+    from and it fails like any other. A database error here is logged and answers None: the caller's FAILED
+    write is the fallback, and a row must never stay `running`.
+    """
+    try:
+        if not await has_checkpoint(session_factory, task_id):
+            return None
+        await state.rollback()
+        if not await write_paused(state, task_id, paused_reason=detail):
+            return None
+        await state.commit()
+    except SQLAlchemyError as exc:
+        log.error("pipeline.pause.failed", error=str(exc)[:300])
+        return None
+    log.warning("pipeline.task.paused", reason=detail)
+    scorer = progress.scorer
+    return RunResult(
+        task_id,
+        TaskStatus.PAUSED,
+        cost_usd=cost,
+        attempts=scorer.attempts if scorer is not None else 0,
+        paused_reason=detail,
+    )
+
+
 async def _fail(
     state: AsyncSession,
     session_factory,
@@ -436,16 +502,25 @@ async def _fail(
     stage: str,
     message: str,
     progress: _Progress,
+    stop_class: str = DESIGN,
 ) -> RunResult:
     """Record the failure without letting a write problem replace the reason for it.
 
     Also records what the task had by then -- the spend, and whatever the agent produced --
     so a harness-error row is not blind: a task that spent a dollar and then failed to push
     must still show the dollar, and the diff it had.
+
+    **A stop for unavailability with a checkpoint is `paused`, not `failed`**: the provider or the process
+    was not there, nothing about the agent was learnt, and the work so far is saved. Any other stop (and an
+    unavailability stop with nothing saved) is FAILED exactly as before, with `stop_class` recorded.
     """
     detail = redact(f"{stage}: {message}")[:MAX_ERROR_CHARS]
-    log.error("pipeline.task.failed", stage=stage, error=detail)
     cost = await _best_effort_cost(session_factory, task_id)
+    if stop_class == UNAVAILABLE:
+        paused = await _try_pause(state, session_factory, task_id, detail, progress, cost)
+        if paused is not None:
+            return paused
+    log.error("pipeline.task.failed", stage=stage, error=detail, stop_class=stop_class)
     result = progress.result
     stop_reason = result.stop_reason.value if result is not None else None
     # From the result when the agent returned one, else from the scorer: an agent stage that
@@ -475,6 +550,7 @@ async def _fail(
             pr_number=progress.pr_number,
             pr_url=progress.pr_url,
             conflict_reason=None,
+            stop_class=stop_class,
         )
         await state.commit()
     except SQLAlchemyError as exc:
@@ -484,7 +560,12 @@ async def _fail(
         try:
             await state.rollback()
             await write_failure_minimal(
-                state, task_id, error_message=detail, pr_number=progress.pr_number, pr_url=progress.pr_url
+                state,
+                task_id,
+                error_message=detail,
+                pr_number=progress.pr_number,
+                pr_url=progress.pr_url,
+                stop_class=stop_class,
             )
             await state.commit()
         except SQLAlchemyError as fallback_exc:
@@ -765,6 +846,112 @@ def _agent_budget(supplied: TaskBudget | None) -> TaskBudget:
     return budget
 
 
+def _provenance(seams: _Seams) -> dict:
+    """What identifies this run for a checkpoint: the code, the agent's model, the loop limits and the budget caps.
+
+    The model is read from the gateway client when it can say (`model_key`); a stub client or none gives None,
+    which `provenance_mismatch` does not compare. A resume that differs on any value present on both sides is
+    refused: it would measure neither the run that paused nor the run that was configured.
+    """
+    budget = seams.budget if seams.budget is not None else TaskBudget()
+    model_key = getattr(seams.llm, "model_key", None)
+    return provenance_for(
+        code=seams.code_version,
+        model=model_key("agent") if callable(model_key) else None,
+        limits=AgentLimits.from_env(),
+        budget={
+            "max_usd": str(budget.max_usd),
+            "max_calls": budget.max_calls,
+            "max_wall_seconds": budget.max_wall_seconds,
+        },
+    )
+
+
+async def _load_resume(session_factory, task: Task, workspace: TaskWorkspace, seams: _Seams) -> StoredCheckpoint:
+    """The checkpoint a resume continues from, or a `StageFailed` saying why it cannot.
+
+    Refused: no checkpoint; a clone whose base commit is not the one the saved work was made against (the
+    patches are relative to it, so applying them to a moved branch would measure a different tree); and a
+    run whose code, model, limits or budget differ from the paused one's.
+    """
+    stored = await load_checkpoint(session_factory, task.id)
+    if stored is None:
+        raise StageFailed("resume", "the task is paused but has no checkpoint to continue from")
+    if stored.base_sha != workspace.base_sha:
+        raise StageFailed(
+            "resume",
+            f"the target branch moved while the task was paused ({stored.base_sha[:12]} -> "
+            f"{workspace.base_sha[:12]}); the saved work is relative to the old base, so it is not continued",
+        )
+    mismatch = provenance_mismatch(stored.provenance, _provenance(seams))
+    if mismatch is not None:
+        raise StageFailed("resume", f"refusing to continue under different code or settings: {mismatch}")
+    return stored
+
+
+async def _stored_baseline(session_factory, task_id: uuid.UUID) -> SuiteResult:
+    runs = await load_test_runs(session_factory, task_id)
+    if BASELINE_ATTEMPT not in runs:
+        raise StageFailed("record_baseline", "the task is being resumed but its baseline run was never recorded")
+    return runs[BASELINE_ATTEMPT][1]
+
+
+async def _restore(
+    session_factory,
+    task: Task,
+    workspace: TaskWorkspace,
+    scorer: AttemptScorer,
+    stored: StoredCheckpoint,
+) -> tuple[AgentSnapshot, AttemptRecord | None]:
+    """Rebuild the paused run on this fresh clone: the tree, the scorer's memory, the last scored record.
+
+    The unfiltered suite result of the last scored attempt comes from `task_test_runs`, the table scoring
+    reads, never from the checkpoint. The checkpoint must agree with that table about how many attempts were
+    scored: they can only differ if the process died between a scored run being recorded and the snapshot
+    that follows it, and a transcript without that attempt's feedback cannot be continued.
+    """
+    try:
+        snapshot = snapshot_from_json(stored.agent_state)
+        scored_sha = await workspace.restore(stored.scored_patch, stored.delta_patch)
+        runs = await load_test_runs(session_factory, task.id)
+        newest = max((attempt for attempt in runs if attempt >= 1), default=0)
+        if newest != snapshot.attempt:
+            raise StageFailed(
+                "restore",
+                f"the checkpoint is older than the scored attempts (the recorded runs reach attempt {newest}, "
+                f"the checkpoint attempt {snapshot.attempt}); it cannot be continued",
+            )
+        mark = snapshot.last_scored
+        last: AttemptRecord | None = None
+        if mark is not None:
+            if scored_sha is None or mark.attempt not in runs:
+                raise StageFailed("restore", f"the checkpoint names scored attempt {mark.attempt} but not its tree or its run")
+            last = AttemptRecord(mark.attempt, scored_sha, runs[mark.attempt][1], mark.infrastructure_error)
+        scorer.restore(last, snapshot.attempt)
+    except (CheckpointError, ValueError, GitError) as exc:
+        raise StageFailed("restore", f"{type(exc).__name__}: {exc}") from exc
+    log.info("pipeline.resume.restored", attempt=snapshot.attempt, steps=snapshot.steps, seq=stored.seq)
+    return snapshot, last
+
+
+async def _rebuild_budget(budget: TaskBudget, session_factory, task_id: uuid.UUID, seconds_used: float) -> None:
+    """Put a resumed task's budget where it stopped: dollars and calls from `llm_calls`, the clock from the checkpoint.
+
+    `llm_calls` is the record and the budget only a running estimate (see the recorder's `total_cost`); a failed
+    call is a row too and counts as a call, as `TaskBudget.charge` counts it. The wall clock counts the
+    seconds the agent was actually running, not the time the task spent paused.
+    """
+    async with session_factory() as session:
+        calls, spent = (
+            await session.execute(
+                select(func.count(), func.coalesce(func.sum(LLMCall.cost_usd), 0)).where(LLMCall.task_id == task_id)
+            )
+        ).one()
+    budget.calls = int(calls)
+    budget.spent_usd = Decimal(spent)
+    budget.started_at = budget.clock() - seconds_used
+
+
 async def _run_stages(
     state: AsyncSession,
     session_factory,
@@ -820,6 +1007,12 @@ async def _run_stages(
                         f"measure a different tree",
                     )
 
+        resumed = task.resume_count > 0
+        stored: StoredCheckpoint | None = None
+        if resumed:
+            async with _stage("resume"):
+                stored = await _load_resume(session_factory, task, workspace, seams)
+
         async with _stage("index"):
             chunk_count = await _index(
                 session_factory, repo, workspace.path, workspace.base_sha, seams.embedding_strategy
@@ -858,7 +1051,14 @@ async def _run_stages(
         async with _stage("verify_baseline"):
             baseline, baseline_infrastructure_error = await run_scored_suite(verifier, workspace, BASELINE_ATTEMPT)
         async with _stage("record_baseline"):
-            await record_test_run(session_factory, task.id, BASELINE_ATTEMPT, workspace.base_sha, baseline)
+            if resumed:
+                # Its row exists (`task_test_runs` is unique per attempt) and is what the task was judged
+                # against before it paused. The run above was only to build the environment from the base
+                # commit, which `verify_attempt` requires; its result is not used, so a flaky suite cannot
+                # move the baseline under a task that already has scored attempts.
+                baseline = await _stored_baseline(session_factory, task.id)
+            else:
+                await record_test_run(session_factory, task.id, BASELINE_ATTEMPT, workspace.base_sha, baseline)
         if baseline_infrastructure_error:
             # The daemon never answered, so nothing about the instance was learnt. Completing the task
             # as inadmissible would say "this instance cannot be scored" about a host problem -- and gold
@@ -895,8 +1095,29 @@ async def _run_stages(
         )
         progress.scorer = scorer
 
+        resume_snapshot: AgentSnapshot | None = None
+        resume_record: AttemptRecord | None = None
+        if resumed:
+            assert stored is not None
+            async with _stage("restore"):
+                resume_snapshot, resume_record = await _restore(session_factory, task, workspace, scorer, stored)
+
         # Kept, not only passed: the conflict resolver's own budget is cut from what this one has left.
         agent_budget = _agent_budget(seams.budget)
+        if resumed:
+            assert stored is not None
+            await _rebuild_budget(agent_budget, session_factory, task.id, stored.agent_seconds_used)
+        recorder: CheckpointRecorder | None = None
+        if seams.llm is not None:
+            # Only a model-driven agent has anything worth saving: the stub and gold runners finish in seconds.
+            recorder = CheckpointRecorder(
+                session_factory,
+                task.id,
+                workspace,
+                last_scored_sha=lambda: scorer.last_record.commit_sha if scorer.last_record is not None else None,
+                seconds_used=lambda: agent_budget.elapsed_seconds,
+                provenance=_provenance(seams),
+            )
         async with _stage("agent"):
             # The gateway scope: every model call is attributable to this task and charged to its
             # budget. A contextvar, not a parameter, so the agent cannot forget it.
@@ -913,6 +1134,9 @@ async def _run_stages(
                     baseline_files,
                     retrieved,
                     index_strategy,
+                    checkpoint=recorder,
+                    resume_from=resume_snapshot,
+                    resume_last_attempt=resume_record,
                 )
                 result = await _run_agent(runner, deps, scorer)
         progress.result = result
@@ -1075,6 +1299,7 @@ async def _run_stages(
             pr_number=pull_request.number if pull_request is not None else None,
             pr_url=pull_request.html_url if pull_request is not None else None,
             conflict_reason=conflict_reason,
+            stop_class=None,
         )
         await state.commit()
     log.info(
@@ -1193,6 +1418,7 @@ async def _complete_without_agent(
         pr_number=None,
         pr_url=None,
         conflict_reason=None,
+        stop_class=None,
     )
     await state.commit()
     log.info("pipeline.task.completed", **_score_log_fields(scored, benchmark=benchmark), gate=gate_reason)
@@ -1270,6 +1496,10 @@ async def _build_deps(
     baseline_files: tuple[str, ...],
     retrieved: tuple[RetrievedChunk, ...],
     index_strategy: str,
+    *,
+    checkpoint: CheckpointRecorder | None = None,
+    resume_from: AgentSnapshot | None = None,
+    resume_last_attempt: AttemptRecord | None = None,
 ) -> AgentDeps:
     """Everything the agent is given. The model client is the caller's; the rest is built here."""
     limits = AgentLimits.from_env()
@@ -1317,6 +1547,9 @@ async def _build_deps(
         verify_attempt=scorer.verify_attempt,
         changed_files=workspace.changed_files,
         limits=limits,
+        checkpoint=checkpoint,
+        resume_from=resume_from,
+        resume_last_attempt=resume_last_attempt,
     )
 
 
@@ -1340,6 +1573,7 @@ async def run_task(
     claimed_by: str | None = None,
     heartbeat_interval: float = HEARTBEAT_INTERVAL_SECONDS,
     resolver: Resolver = resolve_conflicts,
+    code_version: str | None = None,
 ) -> RunResult:
     """Run one task. `backend` and `specs` are the caller's, like everything else.
 
@@ -1365,6 +1599,10 @@ async def run_task(
     * `heartbeat_interval` -- seconds between `tasks.heartbeat_at` bumps while the task runs.
     * `resolver` -- what reconciles conflicts when the target branch moved (`conflicts.py`); a test
       passes a scripted one.
+    * `code_version` -- identifies the code, saved in every checkpoint; a resume under other code is refused.
+
+    A `paused` task (stopped for unavailability, with a checkpoint) is claimed by this same function and
+    continued from the checkpoint; see `_resume`.
     """
     if isinstance(agent, GoldAgent) and open_pr:
         # In the API, not only in the CLI: a gold run validates an instance by pushing the reference
@@ -1383,6 +1621,7 @@ async def run_task(
         max_changed_files=max_changed_files,
         max_changed_lines=max_changed_lines,
         resolver=resolver,
+        code_version=code_version,
     )
     progress = _Progress()
     async with session_factory() as state:
@@ -1401,13 +1640,25 @@ async def run_task(
                         state, session_factory, github, task, repo, backend, specs or {}, seams, progress
                     )
                 except StageFailed as exc:
-                    return await _fail(state, session_factory, task_id, exc.stage, exc.message, progress)
+                    # `_stage` wraps whatever failed inside it, keeping the original as `__cause__`; the class of
+                    # the stop is the original's (a provider refusal inside the agent stage), not the wrapper's.
+                    cause = exc.__cause__
+                    return await _fail(
+                        state, session_factory, task_id, exc.stage, exc.message, progress,
+                        stop_class=classify_exception(cause) if cause is not None else DESIGN,
+                    )
                 except Exception as exc:  # noqa: BLE001 -- records the task as failed; cancellation is handled below
-                    return await _fail(state, session_factory, task_id, "unknown", _describe(exc), progress)
+                    return await _fail(
+                        state, session_factory, task_id, "unknown", _describe(exc), progress,
+                        stop_class=classify_exception(exc),
+                    )
                 except BaseException as exc:
                     # Ctrl-C or cancellation would otherwise leave the task
                     # `running` forever with nothing to reap it.
-                    await _fail(state, session_factory, task_id, "interrupted", type(exc).__name__, progress)
+                    await _fail(
+                        state, session_factory, task_id, "interrupted", type(exc).__name__, progress,
+                        stop_class=classify_exception(exc),
+                    )
                     raise
         finally:
             # Always stopped and awaited, so it never outlives the task or raises after it.

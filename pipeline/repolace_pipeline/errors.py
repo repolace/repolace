@@ -17,7 +17,7 @@ class TaskNotFound(PipelineError):
 
 
 class TaskNotClaimable(PipelineError):
-    """The row exists but is not `queued`, so this runner must not touch it.
+    """The row exists but is neither `queued` nor `paused`, so this runner must not touch it.
 
     Not an error in the task itself -- it is what a second concurrent runner,
     or a re-run of a finished task, is supposed to hit.
@@ -26,7 +26,7 @@ class TaskNotClaimable(PipelineError):
     def __init__(self, task_id, status: str) -> None:
         self.task_id = task_id
         self.status = status
-        super().__init__(f"task {task_id} is {status}, not queued")
+        super().__init__(f"task {task_id} is {status}, not queued or paused")
 
 
 class StageFailed(PipelineError):

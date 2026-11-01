@@ -20,7 +20,7 @@ from pathlib import Path
 
 import structlog
 from repolace_agents.contracts import AgentRunner
-from repolace_shared.db.models import Task
+from repolace_shared.db.models import Task, TaskStatus
 from repolace_shared.instances import InstanceError, load_instance_by_id
 from repolace_shared.logging import configure_logging
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -48,6 +48,8 @@ EXIT_OK = 0
 EXIT_TASK_FAILED = 1
 EXIT_NOT_FOUND = 2
 EXIT_NOT_CLAIMABLE = 3
+#: The task stopped for unavailability and is `paused` with a checkpoint: not repolace's failure, not finished.
+EXIT_PAUSED = 4
 #: A command that cannot run as asked (a model that cannot be priced, gold on a task with no instance).
 #: The same number as `EXIT_NOT_FOUND` and as argparse's own usage error: all three mean "this
 #: invocation was wrong", never "repolace broke", which is the one meaning exit 1 keeps.
@@ -132,6 +134,8 @@ async def _run(task_id: uuid.UUID, *, agent: str, no_pr: bool) -> int:
     # run of the pipeline with a negative result, and a benchmark harness that
     # treated it as a crash would be unable to tell the two apart. The outcome
     # is on the task row and in `pipeline.score`.
+    if result.status is TaskStatus.PAUSED:
+        return EXIT_PAUSED
     return EXIT_OK if result.error_message is None else EXIT_TASK_FAILED
 
 

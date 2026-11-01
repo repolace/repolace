@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from verify.backends.docker import DockerBackend
 from verify.spec import RepoSpec, load_specs
 
+from repolace_pipeline.checkpoints import code_version
 from repolace_pipeline.config import PipelineSettings
 
 if TYPE_CHECKING:
@@ -139,4 +140,5 @@ def task_options(settings: PipelineSettings) -> dict[str, Any]:
         "max_changed_files": settings.max_changed_files,
         "max_changed_lines": settings.max_changed_lines,
         "workspace_factory": functools.partial(task_workspace, parent_dir=settings.workspace_parent_dir),
+        "code_version": code_version(),
     }
