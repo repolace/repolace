@@ -27,6 +27,9 @@ What `None` means is not the same for every column, and the difference is the po
   instance), which must never be recorded as `failed`: that would charge an instrument
   limitation to the agent.
 * `conflict_reason` is set exactly when the status is `conflicting`; a CHECK refuses it on any other.
+* `stop_class` is `None` for a task that ran to the end (`completed`, `pr_opened`, `conflicting`: an agent
+  that hit its step cap is *not* a stopped task) and is set only on a row that stopped abnormally -- `failed`
+  here, `paused` in `write_paused`.
 """
 
 import uuid
@@ -82,6 +85,7 @@ async def write_terminal(
     pr_number: int | None,
     pr_url: str | None,
     conflict_reason: str | None,
+    stop_class: str | None,
 ) -> bool:
     """Write the task's final row. Executes the UPDATE; the caller commits. True if a row changed.
 
@@ -113,11 +117,32 @@ async def write_terminal(
             pr_number=pr_number,
             pr_url=_clean(pr_url),
             conflict_reason=_clean(conflict_reason),
+            stop_class=stop_class,
             completed_at=func.clock_timestamp(),
             updated_at=func.clock_timestamp(),
         )
     )
     return _written(result.rowcount, task_id, status)
+
+
+async def write_paused(state: AsyncSession, task_id: uuid.UUID, *, paused_reason: str) -> bool:
+    """RUNNING -> PAUSED: the task stopped for unavailability and its checkpoint is what a resume continues from.
+
+    Executes the UPDATE; the caller commits. Conditional on `running` like the terminal writes, and **not
+    terminal**: no `completed_at`, no outcome, no error (`error_message` keeps its one meaning). The cost so
+    far is already in `llm_calls`, which is where a resume rebuilds it from.
+    """
+    result = await state.execute(
+        update(Task)
+        .where(Task.id == task_id, Task.status == TaskStatus.RUNNING)
+        .values(
+            status=TaskStatus.PAUSED,
+            paused_reason=_clean(paused_reason),
+            stop_class="unavailable",
+            updated_at=func.clock_timestamp(),
+        )
+    )
+    return _written(result.rowcount, task_id, TaskStatus.PAUSED)
 
 
 async def write_failure_minimal(
@@ -127,6 +152,7 @@ async def write_failure_minimal(
     error_message: str,
     pr_number: int | None,
     pr_url: str | None,
+    stop_class: str | None = None,
 ) -> bool:
     """The least a failed task's row can say: failed, why, when, and the PR if one is open.
 
@@ -143,6 +169,7 @@ async def write_failure_minimal(
             error_message=_clean(error_message),
             pr_number=pr_number,
             pr_url=_clean(pr_url),
+            stop_class=stop_class,
             completed_at=func.clock_timestamp(),
             updated_at=func.clock_timestamp(),
         )

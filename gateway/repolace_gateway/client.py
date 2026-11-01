@@ -438,6 +438,10 @@ class LLMClient:
 
     # -- pre-spend checks -----------------------------------------------------
 
+    def model_key(self, stage: str) -> str:
+        """The `models.toml` key `stage` routes to now (after any per-run override), for a checkpoint's provenance."""
+        return self._config.route(stage).primary.key
+
     def preflight(self, stage: str) -> None:
         """Refuse a stage whose model, or its fallback, cannot be priced or keyed.
 

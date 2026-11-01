@@ -95,6 +95,23 @@ class AttemptScorer:
         """The last scored attempt, or None. Only ever replaced by a record, never cleared."""
         return self._last_record
 
+    def restore(self, record: AttemptRecord | None, attempts: int) -> None:
+        """Continue a resumed task: the last scored attempt, rebuilt on the fresh clone, and how many were scored.
+
+        `record.commit_sha` must be a commit in *this* clone (the one `TaskWorkspace.restore` made), because
+        the "has the tree changed since" question is asked of it. Only the pipeline's resume path calls this,
+        before the agent starts.
+        """
+        if self._count or self._last_record is not None:
+            raise RuntimeError("restore() is for a scorer that has scored nothing yet")
+        if (record is None) != (attempts == 0):
+            raise ValueError(f"{attempts} scored attempt(s) and a last record of {None if record is None else record.attempt}")
+        if record is not None:
+            self._last_sha = record.commit_sha
+            self._last_number = record.attempt
+            self._last_record = record
+        self._count = attempts
+
     async def verify_attempt(self, attempt: int) -> AttemptRecord | None:
         """Commit the tree, score it, record it. `None` means there was nothing to score.
 

@@ -18,6 +18,7 @@ from repolace_pipeline.finalize import (
     first_model,
     task_cost,
     write_failure_minimal,
+    write_paused,
     write_terminal,
 )
 from repolace_shared.db.models import TaskOutcome, TaskStatus
@@ -31,7 +32,7 @@ def columns(**overrides):
         "status": TaskStatus.COMPLETED, "outcome": TaskOutcome.FAILED, "score_reason": "because", "error_message": None,
         "agent_stop_reason": "submitted", "retry_count": 1, "cost_usd": Decimal("0.25"), "patch_sha": "a" * 40,
         "patch_diff": "diff", "changed_files": ["a.py"], "pr_number": None, "pr_url": None,
-        "conflict_reason": None,
+        "conflict_reason": None, "stop_class": None,
     }
     return {**values, **overrides}
 
@@ -214,3 +215,37 @@ class TestFirstModel:
         task = await seed_task(db_session)
 
         assert await first_model(db_session_factory, task.id) is None
+
+
+class TestPaused:
+    async def paused(self, factory, task_id, reason="provider quota exhausted") -> bool:
+        async with factory() as session:
+            wrote = await write_paused(session, task_id, paused_reason=reason)
+            await session.commit()
+        return wrote
+
+    async def test_a_running_row_is_paused_without_being_finished(self, db_session, db_session_factory):
+        task = await seed_task(db_session, status=TaskStatus.RUNNING)
+
+        assert await self.paused(db_session_factory, task.id) is True
+
+        row, _ = await reload(db_session_factory, task.id)
+        assert (row.status, row.paused_reason, row.stop_class) == (TaskStatus.PAUSED, "provider quota exhausted", "unavailable")
+        assert row.completed_at is None and row.error_message is None and row.outcome is None
+
+    @pytest.mark.parametrize("status", [TaskStatus.QUEUED, TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.PAUSED])
+    async def test_only_a_running_row_is_paused(self, db_session, db_session_factory, status):
+        task = await seed_task(db_session, status=status)
+
+        assert await self.paused(db_session_factory, task.id) is False
+
+        row, _ = await reload(db_session_factory, task.id)
+        assert row.status is status and row.paused_reason is None
+
+    async def test_the_terminal_write_records_the_class_it_is_given(self, db_session, db_session_factory):
+        task = await seed_task(db_session, status=TaskStatus.RUNNING)
+
+        await write(db_session_factory, task.id, status=TaskStatus.FAILED, stop_class="design")
+
+        row, _ = await reload(db_session_factory, task.id)
+        assert (row.status, row.stop_class) == (TaskStatus.FAILED, "design")

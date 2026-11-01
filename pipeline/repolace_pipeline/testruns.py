@@ -16,6 +16,7 @@ import uuid
 
 import structlog
 from repolace_shared.db.models import TaskTestRun
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from verify.protocol import SuiteResult
 
@@ -46,6 +47,38 @@ def to_row(
         duration_seconds=result.duration_seconds,
         error=result.error,
     )
+
+
+def to_suite_result(row: TaskTestRun) -> SuiteResult:
+    """The `SuiteResult` a stored row was made from. The inverse of `to_row`, for a resume.
+
+    Lossless on purpose: `to_row` keeps every field of the result, which is what lets scoring read the
+    table instead of a copy in memory. The checkpoint therefore never stores a result of its own.
+    """
+    return SuiteResult(
+        passed=tuple(row.passed),
+        failed=tuple(row.failed),
+        skipped=tuple(row.skipped),
+        xfailed=tuple(row.xfailed),
+        did_not_run=tuple(row.did_not_run),
+        collect_failures=tuple(row.collect_failures),
+        collected_files=tuple(row.collected_files),
+        conftests=tuple(row.conftests),
+        fingerprint=dict(row.fingerprint),
+        exit_code=row.exit_code,
+        duration_seconds=float(row.duration_seconds) if row.duration_seconds is not None else None,
+        stdout_tail=row.stdout_tail,
+        error=row.error,
+    )
+
+
+async def load_test_runs(
+    session_factory: async_sessionmaker[AsyncSession], task_id: uuid.UUID
+) -> dict[int, tuple[str, SuiteResult]]:
+    """Every recorded run of the task, as `{attempt: (commit_sha, result)}` (0 is the baseline)."""
+    async with session_factory() as session:
+        rows = await session.scalars(select(TaskTestRun).where(TaskTestRun.task_id == task_id))
+        return {row.attempt: (row.commit_sha, to_suite_result(row)) for row in rows}
 
 
 async def record_test_run(
