@@ -5,7 +5,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from pipeline_support import seed_task
-from repolace_shared.db.models import Task, TaskStatus
+from repolace_shared.db.models import Task, TaskCheckpoint, TaskStatus
+from repolace_shared.tasks_recovery import expire_paused
 from repolace_worker import maintenance
 from sqlalchemy import func, select, update
 
@@ -197,3 +198,80 @@ class TestReaper:
         await backdate(db_session, beating, started_at=OLD, heartbeat_at=datetime.now(UTC))
 
         assert await maintenance.reap_abandoned(db_session_factory, THREE_MIN, lambda _: None) == []
+
+
+async def add_checkpoint(session, task) -> None:
+    session.add(TaskCheckpoint(task_id=task.id, agent_state={}, base_sha="b" * 40, provenance={}))
+    await session.commit()
+
+
+class TestPausedRows:
+    """A dead runner with a checkpoint is waiting to resume, not failed; everything else is as before."""
+
+    async def test_a_dead_runner_with_a_checkpoint_is_paused_and_one_without_is_failed(
+        self, db_session, db_session_factory
+    ):
+        with_checkpoint = await add_task(db_session, status=TaskStatus.RUNNING)
+        without = await add_task(db_session, status=TaskStatus.RUNNING)
+        for task in (with_checkpoint, without):
+            await backdate(db_session, task, started_at=OLD, heartbeat_at=OLD)
+        with_id, without_id = with_checkpoint.id, without.id
+        await add_checkpoint(db_session, with_checkpoint)
+        removed = []
+
+        async def remove(task_id):
+            removed.append(task_id)
+
+        reaped = await maintenance.reap_abandoned(db_session_factory, THREE_MIN, remove)
+
+        assert set(reaped) == set(removed) == {with_id, without_id}
+        db_session.expire_all()
+        paused = await db_session.get(Task, with_id)
+        failed = await db_session.get(Task, without_id)
+        assert (paused.status, paused.paused_reason, paused.stop_class) == (
+            TaskStatus.PAUSED, "runner: abandoned", "unavailable",
+        )
+        assert paused.completed_at is None and paused.error_message is None
+        assert (failed.status, failed.error_message, failed.stop_class) == (
+            TaskStatus.FAILED, "runner: abandoned", "unavailable",
+        )
+
+    async def test_the_sweeper_republishes_a_paused_row_by_the_time_since_it_paused(
+        self, db_session, db_session_factory
+    ):
+        long_paused = await add_task(db_session, status=TaskStatus.PAUSED)
+        just_paused = await add_task(db_session, status=TaskStatus.PAUSED)
+        bench = await add_task(
+            db_session, status=TaskStatus.PAUSED, eval_run_id="r1", instance_id="i1", run_index=0
+        )
+        # All three are old by `created_at`; only the first has also been paused for a while.
+        for task in (long_paused, just_paused, bench):
+            await backdate(db_session, task, created_at=OLD)
+        await backdate(db_session, long_paused, updated_at=OLD)
+        await backdate(db_session, bench, updated_at=OLD)
+        long_id = long_paused.id
+        sent: list[uuid.UUID] = []
+
+        await sweep(db_session_factory, sent.append, FakeClaims())
+
+        assert sent == [long_id]
+
+    async def test_a_pause_that_waited_too_long_or_was_resumed_too_often_is_failed(
+        self, db_session, db_session_factory
+    ):
+        waiting = await add_task(db_session, status=TaskStatus.PAUSED)
+        stale = await add_task(db_session, status=TaskStatus.PAUSED)
+        churning = await add_task(db_session, status=TaskStatus.PAUSED)
+        waiting_id, stale_id, churning_id = waiting.id, stale.id, churning.id
+        await backdate(db_session, stale, updated_at=OLD)
+        await backdate(db_session, churning, resume_count=10)
+
+        failed = await expire_paused(
+            db_session_factory, max_age=timedelta(minutes=30), max_resumes=10, message="runner: paused too long"
+        )
+
+        assert set(failed) == {stale_id, churning_id}
+        db_session.expire_all()
+        assert (await db_session.get(Task, waiting_id)).status is TaskStatus.PAUSED
+        row = await db_session.get(Task, stale_id)
+        assert (row.status, row.error_message, row.paused_reason) == (TaskStatus.FAILED, "runner: paused too long", None)

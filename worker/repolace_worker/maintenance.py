@@ -18,11 +18,12 @@ from repolace_shared.config import SharedSettings
 from repolace_shared.db.models import Task, TaskStatus
 from repolace_shared.db.session import create_engine, create_session_factory
 from repolace_shared.tasks_recovery import (
-    fail_if_heartbeat_stale,
+    expire_paused,
     remove_task_containers,
     running_with_stale_heartbeat,
+    settle_if_heartbeat_stale,
 )
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from repolace_worker.celery_app import REAP_TASK_NAME, RUN_TASK_NAME, SWEEP_TASK_NAME, celery_app
@@ -34,6 +35,7 @@ SessionFactory = async_sessionmaker[AsyncSession]
 Publish = Callable[[uuid.UUID], Any]
 
 ABANDONED_MESSAGE = "runner: abandoned"
+PAUSE_EXPIRED_MESSAGE = "runner: paused too long or resumed too often"
 
 
 class SweepClaims(Protocol):
@@ -82,7 +84,7 @@ async def sweep_queued(
     max_per_tick: int = 50,
     scan_limit: int | None = None,
 ) -> list[uuid.UUID]:
-    """Republish `queued` non-benchmark rows older than `min_age`, at most once per dedupe window.
+    """Republish `queued` (and `paused`) non-benchmark rows older than `min_age`, at most once per dedupe window.
 
     A row is republished only if its Redis key could be set, so the next tick (and the next after
     that) leaves it alone until the key expires; at most `max_per_tick` are sent per call. The first
@@ -100,9 +102,13 @@ async def sweep_queued(
         rows = await session.scalars(
             select(Task.id)
             .where(
-                Task.status == TaskStatus.QUEUED,
                 Task.eval_run_id.is_(None),
-                Task.created_at < func.now() - min_age,
+                # A `paused` row is waiting to resume, and its age is the time since it paused: its
+                # `created_at` may be days old, which would republish it into a provider still down.
+                or_(
+                    (Task.status == TaskStatus.QUEUED) & (Task.created_at < func.now() - min_age),
+                    (Task.status == TaskStatus.PAUSED) & (Task.updated_at < func.now() - min_age),
+                ),
             )
             .order_by(Task.created_at, Task.id)
             .limit(scan_limit)
@@ -139,7 +145,10 @@ async def reap_abandoned(
     *,
     long_stale_factor: float = 3.0,
 ) -> list[uuid.UUID]:
-    """Fail `running` rows with a stale heartbeat (`runner: abandoned`) and remove their containers.
+    """Settle `running` rows with a stale heartbeat (`runner: abandoned`) and remove their containers.
+
+    A row that left a checkpoint becomes `paused` (a dead process is unavailability, and there is work to
+    continue from); one that did not is `failed`, as before.
 
     The staleness test is re-evaluated **inside the UPDATE** (`fail_if_heartbeat_stale`), so a
     heartbeat that lands between the SELECT and the write leaves the row running, and containers are
@@ -155,7 +164,7 @@ async def reap_abandoned(
         )
     reaped: list[uuid.UUID] = []
     for stale in await running_with_stale_heartbeat(factory, stale_after):
-        if await fail_if_heartbeat_stale(factory, stale.task_id, ABANDONED_MESSAGE, stale_after):
+        if await settle_if_heartbeat_stale(factory, stale.task_id, ABANDONED_MESSAGE, stale_after) is not None:
             reaped.append(stale.task_id)
             log.error("worker.reaper.abandoned", task_id=str(stale.task_id))
             try:
@@ -199,9 +208,25 @@ def sweep_queued_job() -> int:
         claims.close()
 
 
+async def reap_and_expire(factory: SessionFactory, settings: Any) -> list[uuid.UUID]:
+    """One reaper tick: settle dead runners, then fail pauses that waited too long or were resumed too often."""
+    reaped = await reap_abandoned(
+        factory,
+        timedelta(seconds=settings.reaper_stale_seconds),
+        long_stale_factor=settings.reaper_long_stale_factor,
+    )
+    expired = await expire_paused(
+        factory,
+        max_age=timedelta(seconds=settings.paused_max_age_seconds),
+        max_resumes=settings.paused_max_resumes,
+        message=PAUSE_EXPIRED_MESSAGE,
+    )
+    if expired:
+        log.error("worker.reaper.pause_expired", count=len(expired))
+    return reaped
+
+
 @celery_app.task(name=REAP_TASK_NAME)
 def reap_abandoned_job() -> int:
     settings = get_worker_settings()
-    stale = timedelta(seconds=settings.reaper_stale_seconds)
-    factor = settings.reaper_long_stale_factor
-    return len(asyncio.run(_with_factory(lambda factory: reap_abandoned(factory, stale, long_stale_factor=factor))))
+    return len(asyncio.run(_with_factory(lambda factory: reap_and_expire(factory, settings))))

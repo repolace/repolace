@@ -1,9 +1,10 @@
 """Settling a task whose runner is gone, shared by the eval runner and the worker's reaper.
 
-Every status write here is **conditional on `status = 'running'`**. A task row can never be
-re-run (`task_test_runs` is unique on `(task_id, attempt)`), so the only transition anyone
-but the pipeline itself may perform on a row is RUNNING -> FAILED, and there is deliberately
-no function here that sets QUEUED.
+Every status write here is **conditional on `status = 'running'`**. A task row is never run from
+scratch twice (`task_test_runs` is unique on `(task_id, attempt)`), so there is deliberately no function
+here that sets QUEUED. What a stopped row may become is FAILED, or -- only when it stopped for
+**unavailability** (a dead process, an operator's stop) *and* has a checkpoint -- PAUSED, which a resumer
+claims and continues from the checkpoint (`settle_running`). A row the agent or model ended is never paused.
 """
 
 import re
@@ -13,10 +14,10 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 import structlog
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from repolace_shared.db.models import Task, TaskStatus
+from repolace_shared.db.models import Task, TaskCheckpoint, TaskStatus
 from repolace_shared.process import ProcessResult, run_process
 
 log = structlog.get_logger()
@@ -35,20 +36,100 @@ class TaskRef:
     run_index: int | None
 
 
-async def fail_if_running(factory: SessionFactory, task_id: uuid.UUID, message: str) -> bool:
+#: What `tasks.stop_class` holds. Duplicated from `repolace_shared.db.models.STOP_CLASSES` as names.
+UNAVAILABLE = "unavailable"
+DESIGN = "design"
+
+
+async def fail_if_running(
+    factory: SessionFactory, task_id: uuid.UUID, message: str, *, stop_class: str | None = None
+) -> bool:
     """RUNNING -> FAILED with `message`, only if the row is still RUNNING.
 
     Conditional so a task that finished in the same instant keeps its real
-    status. Returns whether this call changed the row.
+    status. Returns whether this call changed the row. `stop_class` is recorded when given.
     """
     async with factory() as session:
         result = await session.execute(
             update(Task)
             .where(Task.id == task_id, Task.status == TaskStatus.RUNNING)
-            .values(status=TaskStatus.FAILED, error_message=message, completed_at=func.now())
+            .values(
+                status=TaskStatus.FAILED, error_message=message, completed_at=func.now(), stop_class=stop_class
+            )
         )
         await session.commit()
         return result.rowcount == 1
+
+
+async def has_checkpoint(factory: SessionFactory, task_id: uuid.UUID) -> bool:
+    async with factory() as session:
+        found = await session.scalar(select(exists().where(TaskCheckpoint.task_id == task_id)))
+        return bool(found)
+
+
+async def settle_running(
+    factory: SessionFactory, task_id: uuid.UUID, message: str, *, stop_class: str | None
+) -> TaskStatus | None:
+    """RUNNING -> PAUSED when the stop was unavailability and a checkpoint exists, else RUNNING -> FAILED.
+
+    The one place a row somebody else stopped (the eval runner killing a child, a reaper finding a dead
+    heartbeat) is settled. PAUSED needs both facts: the class says waiting can help, the checkpoint says
+    there is something to continue from. Anything else is FAILED, exactly as before. The checkpoint test is
+    part of the UPDATE, so a row cannot be paused over a checkpoint that does not exist. Returns the status
+    this call wrote, or None if the row was no longer RUNNING.
+    """
+    if stop_class == UNAVAILABLE:
+        async with factory() as session:
+            paused = await session.execute(
+                update(Task)
+                .where(
+                    Task.id == task_id,
+                    Task.status == TaskStatus.RUNNING,
+                    exists().where(TaskCheckpoint.task_id == Task.id),
+                )
+                .values(
+                    status=TaskStatus.PAUSED,
+                    paused_reason=message,
+                    stop_class=UNAVAILABLE,
+                    updated_at=func.clock_timestamp(),
+                )
+                .returning(Task.id)
+            )
+            wrote = paused.scalar_one_or_none() is not None
+            await session.commit()
+        if wrote:
+            return TaskStatus.PAUSED
+    if await fail_if_running(factory, task_id, message, stop_class=stop_class):
+        return TaskStatus.FAILED
+    return None
+
+
+async def expire_paused(
+    factory: SessionFactory, *, max_age: timedelta, max_resumes: int, message: str
+) -> list[uuid.UUID]:
+    """PAUSED -> FAILED for rows that waited too long or were resumed too often. Returns the ids it failed.
+
+    A pause is not a place to leave a task forever: the provider may never come back, and a resume that
+    keeps stopping at once is not making progress. The age is measured from the pause (`updated_at`).
+    """
+    async with factory() as session:
+        result = await session.execute(
+            update(Task)
+            .where(
+                Task.status == TaskStatus.PAUSED,
+                or_(Task.updated_at < func.now() - max_age, Task.resume_count >= max_resumes),
+            )
+            .values(
+                status=TaskStatus.FAILED,
+                error_message=message,
+                paused_reason=None,
+                completed_at=func.now(),
+            )
+            .returning(Task.id)
+        )
+        failed = list(result.scalars())
+        await session.commit()
+        return failed
 
 
 async def running_older_than(
@@ -96,7 +177,12 @@ async def running_with_stale_heartbeat(
 
 
 async def fail_if_heartbeat_stale(
-    factory: SessionFactory, task_id: uuid.UUID, message: str, older_than: timedelta
+    factory: SessionFactory,
+    task_id: uuid.UUID,
+    message: str,
+    older_than: timedelta,
+    *,
+    stop_class: str | None = None,
 ) -> bool:
     """RUNNING -> FAILED only if the row is *still* running **and still stale** at write time.
 
@@ -116,12 +202,53 @@ async def fail_if_heartbeat_stale(
                     Task.heartbeat_at.is_(None) & (func.coalesce(Task.started_at, Task.created_at) < cutoff),
                 ),
             )
-            .values(status=TaskStatus.FAILED, error_message=message, completed_at=func.now())
+            .values(
+                status=TaskStatus.FAILED, error_message=message, completed_at=func.now(), stop_class=stop_class
+            )
             .returning(Task.id)
         )
         failed = result.scalar_one_or_none() is not None
         await session.commit()
         return failed
+
+
+async def settle_if_heartbeat_stale(
+    factory: SessionFactory, task_id: uuid.UUID, message: str, older_than: timedelta
+) -> TaskStatus | None:
+    """A dead runner's row: PAUSED if it left a checkpoint, else FAILED -- only if still running **and still stale**.
+
+    A process that stopped beating died (or was killed), which is unavailability by definition. The staleness
+    test is part of each UPDATE, as in `fail_if_heartbeat_stale`.
+    """
+    cutoff = func.now() - older_than
+    stale = or_(
+        Task.heartbeat_at < cutoff,
+        Task.heartbeat_at.is_(None) & (func.coalesce(Task.started_at, Task.created_at) < cutoff),
+    )
+    async with factory() as session:
+        paused = await session.execute(
+            update(Task)
+            .where(
+                Task.id == task_id,
+                Task.status == TaskStatus.RUNNING,
+                stale,
+                exists().where(TaskCheckpoint.task_id == Task.id),
+            )
+            .values(
+                status=TaskStatus.PAUSED,
+                paused_reason=message,
+                stop_class=UNAVAILABLE,
+                updated_at=func.clock_timestamp(),
+            )
+            .returning(Task.id)
+        )
+        wrote = paused.scalar_one_or_none() is not None
+        await session.commit()
+    if wrote:
+        return TaskStatus.PAUSED
+    if await fail_if_heartbeat_stale(factory, task_id, message, older_than, stop_class=UNAVAILABLE):
+        return TaskStatus.FAILED
+    return None
 
 
 async def remove_task_containers(

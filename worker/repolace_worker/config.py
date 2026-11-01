@@ -49,6 +49,11 @@ class WorkerSettings(BaseSettings):
     #: The reaper warns when a row has been stale for this many times the threshold: it means the
     #: maintenance worker was down, not that one task died.
     reaper_long_stale_factor: float = 3.0
+    #: A `paused` row (stopped for unavailability, with a checkpoint) is failed after waiting this long, or
+    #: after this many resumes: the provider may never come back, and a resume that keeps stopping at once
+    #: is not making progress.
+    paused_max_age_seconds: float = 86_400.0
+    paused_max_resumes: int = 10
     #: Beat messages older than this are dropped by the broker, so a maintenance outage does not
     #: replay a backlog of ticks on recovery.
     beat_expires_seconds: int = 60
