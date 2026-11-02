@@ -15,17 +15,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from repolace_api.config import ApiSettings, get_settings
 from repolace_api.deps import get_db, get_github_client
+from repolace_api.protection import SHIELD, WEBHOOK, protect
 
 router = APIRouter(prefix="/github", tags=["github"])
 log = structlog.get_logger()
 
 
-@router.get("/install")
+@router.get("/install", dependencies=[Depends(protect(SHIELD))])
 def install(settings: ApiSettings = Depends(get_settings)) -> RedirectResponse:
     return RedirectResponse(f"https://github.com/apps/{settings.github_app_slug}/installations/new")
 
 
-@router.get("/callback")
+@router.get("/callback", dependencies=[Depends(protect(SHIELD))])
 async def callback(installation_id: int, setup_action: str) -> dict[str, str]:
     """Where GitHub sends the browser after an install. It only acknowledges.
 
@@ -37,7 +38,7 @@ async def callback(installation_id: int, setup_action: str) -> dict[str, str]:
     return {"status": "ok"}
 
 
-@router.post("/webhook")
+@router.post("/webhook", dependencies=[Depends(protect(WEBHOOK))])
 async def webhook(
     request: Request,
     db: AsyncSession = Depends(get_db),

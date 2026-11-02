@@ -1,6 +1,6 @@
 import base64
 import binascii
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -9,15 +9,17 @@ from uuid import UUID
 
 import httpx
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, ValidationError
 from repolace_shared.db.models import LLMCall, RegisteredRepo, Task, TaskOutcome, TaskStatus
 from repolace_shared.github.client import GithubClient
+from repolace_shared.github.schemas import Issue
 from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
 from repolace_api.deps import get_db, get_github_client
+from repolace_api.protection import ENQUEUE, GITHUB_READ, SHIELD, Protection, get_protection, protect, scan_issue
 from repolace_api.publisher import TaskPublisher, get_publisher
 from repolace_api.schemas import (
     BranchOut,
@@ -68,7 +70,7 @@ async def active_repo(db: AsyncSession, repo_id: UUID) -> RegisteredRepo:
     return repo
 
 
-@router.get("", response_model=list[RepoOut])
+@router.get("", response_model=list[RepoOut], dependencies=[Depends(protect(SHIELD))])
 async def list_repos(db: AsyncSession = Depends(get_db)) -> list[RepoOut]:
     return await list_active_repos(db)
 
@@ -78,7 +80,7 @@ async def list_active_repos(db: AsyncSession) -> list[RepoOut]:
     return [RepoOut.model_validate(row, from_attributes=True) for row in rows]
 
 
-@router.get("/{repo_id}/issues", response_model=list[IssueOut])
+@router.get("/{repo_id}/issues", response_model=list[IssueOut], dependencies=[Depends(protect(GITHUB_READ))])
 async def list_repo_issues(
     repo_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -106,7 +108,7 @@ async def fetch_issues(db: AsyncSession, github: GithubClient, repo_id: UUID) ->
     ]
 
 
-@router.get("/{repo_id}/branches", response_model=list[BranchOut])
+@router.get("/{repo_id}/branches", response_model=list[BranchOut], dependencies=[Depends(protect(GITHUB_READ))])
 async def list_repo_branches(
     repo_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -136,15 +138,22 @@ class CreateTaskRequest(BaseModel):
     open_pr_on_failure: bool = False
 
 
-@router.post("/{repo_id}/tasks", status_code=201, response_model=TaskCreated)
+@router.post(
+    "/{repo_id}/tasks", status_code=201, response_model=TaskCreated, dependencies=[Depends(protect(ENQUEUE))]
+)
 async def create_task(
+    request: Request,
     repo_id: UUID,
     body: CreateTaskRequest,
     db: AsyncSession = Depends(get_db),
     github: GithubClient = Depends(get_github_client),
     publisher: TaskPublisher = Depends(get_publisher),
+    protection: Protection | None = Depends(get_protection),
 ) -> TaskCreated:
-    return await enqueue_task(db, github, repo_id, body, publisher)
+    async def scan(issue: Issue) -> None:
+        await scan_issue(request, protection, issue)
+
+    return await enqueue_task(db, github, repo_id, body, publisher, on_issue=scan)
 
 
 async def enqueue_task(
@@ -153,6 +162,7 @@ async def enqueue_task(
     repo_id: UUID,
     body: CreateTaskRequest,
     publisher: TaskPublisher,
+    on_issue: Callable[[Issue], Awaitable[None]] | None = None,
 ) -> TaskCreated:
     """Queue a task. Does not run it.
 
@@ -187,6 +197,8 @@ async def enqueue_task(
     issue = next((i for i in issues if i.number == body.issue_number), None)
     if issue is None:
         raise HTTPException(status_code=404, detail="issue not found or not open")
+    if on_issue is not None:
+        await on_issue(issue)  # the optional observe-only prompt-injection scan; it never raises
 
     # A double click or a client retry would otherwise queue a second task, open a second PR and
     # spend a second budget on the same issue. A finished task does not block: running again after
@@ -266,7 +278,7 @@ def _usd(value: float | None) -> Decimal | None:
     return None if value is None else Decimal(str(round(value, 4)))
 
 
-@router.get("/{repo_id}/tasks/estimate", response_model=CostEstimate)
+@router.get("/{repo_id}/tasks/estimate", response_model=CostEstimate, dependencies=[Depends(protect(SHIELD))])
 async def estimate_task_cost(repo_id: UUID, db: AsyncSession = Depends(get_db)) -> CostEstimate:
     return await compute_estimate(db, repo_id)
 
@@ -339,7 +351,7 @@ async def compute_estimate(db: AsyncSession, repo_id: UUID) -> CostEstimate:
     return CostEstimate(basis="none", n=n, p50_usd=None, p90_usd=None, upper_bound_usd=TASK_COST_CAP_USD)
 
 
-@router.get("/{repo_id}/tasks", response_model=TaskPage)
+@router.get("/{repo_id}/tasks", response_model=TaskPage, dependencies=[Depends(protect(SHIELD))])
 async def list_repo_tasks(
     repo_id: UUID,
     status: TaskStatus | None = None,

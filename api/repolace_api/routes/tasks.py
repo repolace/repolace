@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
 from repolace_api.deps import get_db
+from repolace_api.protection import SHIELD, protect
 from repolace_api.schemas import StageOut, TaskDetail, TestRunSummary
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -30,7 +31,7 @@ BENCHMARK_SCRUBBED_FIELDS = (
 )
 
 
-@router.get("/{task_id}", response_model=TaskDetail)
+@router.get("/{task_id}", response_model=TaskDetail, dependencies=[Depends(protect(SHIELD))])
 async def get_task(task_id: UUID, db: AsyncSession = Depends(get_db)) -> TaskDetail:
     detail = await load_task_detail(db, task_id)
     if detail is None:

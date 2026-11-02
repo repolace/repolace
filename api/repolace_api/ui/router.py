@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
 from repolace_api.deps import get_db, get_github_client
+from repolace_api.protection import ENQUEUE, SHIELD, Protection, get_protection, protect, scan_issue
 from repolace_api.publisher import TaskPublisher, get_publisher
 from repolace_api.routes.repos import (
     _LIST_COLUMNS,
@@ -53,7 +54,13 @@ from repolace_api.ui.views import (
 )
 
 log = structlog.get_logger()
-router = APIRouter(prefix="/ui", tags=["ui"], include_in_schema=False)
+# Every page is shielded; the one POST is excluded here and carries the stricter enqueue policy.
+router = APIRouter(
+    prefix="/ui",
+    tags=["ui"],
+    include_in_schema=False,
+    dependencies=[Depends(protect(SHIELD, safe_methods_only=True))],
+)
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
 #: How long one repo's open-issue list is reused. The picker filters this list
@@ -358,13 +365,14 @@ def _int_or_none(value: str | None) -> int | None:
         return None
 
 
-@router.post("/repos/{repo_id}/tasks")
+@router.post("/repos/{repo_id}/tasks", dependencies=[Depends(protect(ENQUEUE))])
 async def create_task_form(
     request: Request,
     repo_id: UUID,
     db: AsyncSession = Depends(get_db),
     github: GithubClient = Depends(get_github_client),
     publisher: TaskPublisher = Depends(get_publisher),
+    protection: Protection | None = Depends(get_protection),
 ):
     """Enqueue through the same function as `POST /repos/{id}/tasks`, then redirect to the task."""
     if not same_origin(request):
@@ -401,7 +409,9 @@ async def create_task_form(
         return await again("That issue number is not valid.", 422)
     await active_repo(db, repo_id)  # 404 for an unknown repo, not a form error
     try:
-        created = await enqueue_task(db, github, repo_id, body, publisher)
+        created = await enqueue_task(
+            db, github, repo_id, body, publisher, on_issue=lambda issue: scan_issue(request, protection, issue)
+        )
     except HTTPException as exc:
         return await again(str(exc.detail), exc.status_code, is_branch=exc.status_code in (400, 422))
     return RedirectResponse(f"/ui/tasks/{created.id}", status_code=303)
