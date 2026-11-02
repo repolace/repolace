@@ -23,7 +23,7 @@ import math
 import random
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 try:
@@ -218,9 +218,9 @@ def mantel_haenszel(strata):
     q_ = [(b + c) / (a + b + c + d) for a, b, c, d in informative]
     r_ = [a * d / (a + b + c + d) for a, b, c, d in informative]
     s_ = [b * c / (a + b + c + d) for a, b, c, d in informative]
-    var = (sum(pp * rr for pp, rr in zip(p_, r_)) / (2 * r_num ** 2)
-           + sum(pp * ss + qq * rr for pp, qq, rr, ss in zip(p_, q_, r_, s_)) / (2 * r_num * s_den)
-           + sum(qq * ss for qq, ss in zip(q_, s_)) / (2 * s_den ** 2))
+    var = (sum(pp * rr for pp, rr in zip(p_, r_, strict=True)) / (2 * r_num ** 2)
+           + sum(pp * ss + qq * rr for pp, qq, rr, ss in zip(p_, q_, r_, s_, strict=True)) / (2 * r_num * s_den)
+           + sum(qq * ss for qq, ss in zip(q_, s_, strict=True)) / (2 * s_den ** 2))
     se = math.sqrt(var)
     lo, hi = math.exp(math.log(or_mh) - 1.959964 * se), math.exp(math.log(or_mh) + 1.959964 * se)
     return {"defined": True, "odds_ratio": or_mh, "ci": [lo, hi], "informative_strata": len(informative),
@@ -323,7 +323,7 @@ def analyse(label, meta, grid, manifest, code_versions, archived_usd, extra=None
     cells = sorted(grid)
     instances = sorted({c[0] for c in cells})
     rows = [grid[c] for c in cells]
-    buckets = {b: 0 for b in BUCKETS}
+    buckets = dict.fromkeys(BUCKETS, 0)
     for r in rows:
         buckets[bucket(r)] += 1
     planned = len(cells)
@@ -354,7 +354,7 @@ def analyse(label, meta, grid, manifest, code_versions, archived_usd, extra=None
     full_instances = [i for i in instances if per_inst[i][1] == 3]
     if len(full_instances) == len(instances) and not partial and len(instances) > 2:
         groups = [[1 if passed(grid[(i, k)]) else 0 for k in range(3)] for i in instances]
-        icc, msb, msw = icc_oneway(groups)
+        icc, _msb, _msw = icc_oneway(groups)
         deff = 1 + 2 * icc
         out["clustering"] = {"icc_oneway": icc, "design_effect_3_runs": deff, "effective_n_rows": planned / deff,
                              "cochran_q_run_index": cochran_q(groups),
@@ -547,11 +547,12 @@ def compare(variant_id, variant_grid, base_grid, label, se_variant, se_base):
 
 
 def mcnemar_split_table(n_pairs):
-    """For n discordant pairs, the most lopsided split that is NOT yet significant at 0.05, and the least that is."""
+    """For n discordant pairs, the least lopsided split (majority:minority) that is still significant at 0.05."""
     out = []
     for n in range(1, n_pairs + 1):
-        sig = next((k for k in range(0, n // 2 + 1) if mcnemar_exact(k, n - k) < 0.05), None)
-        out.append({"discordant": n, "needs_split_at_least": None if sig is None else f"{n - sig}:{sig}"})
+        sig = [k for k in range(n // 2 + 1) if mcnemar_exact(k, n - k) < 0.05]
+        least = max(sig) if sig else None  # the least lopsided split that is still significant
+        out.append({"discordant": n, "needs_split_at_least": None if least is None else f"{n - least}:{least}"})
     return out
 
 
@@ -606,11 +607,11 @@ def build_report(sample=False):
             c = compare(r["id"], grids[r["id"]], base_grid, f"cmp/{r['id']}", r["headline"]["se"], base["headline"]["se"])
             comparisons.append(c)
             raw.append(c["primary"]["mcnemar_run_index_0"]["p_exact_two_sided"])
-        for c, adj in zip(comparisons, holm(raw)):
+        for c, adj in zip(comparisons, holm(raw), strict=True):
             c["primary"]["mcnemar_run_index_0"]["p_holm_adjusted"] = adj
             c["primary"]["holm_family"] = VARIANTS
         sign_adj = holm([c["exploratory"]["sign_test"]["p_exact_two_sided"] for c in comparisons])
-        for c, a in zip(comparisons, sign_adj):
+        for c, a in zip(comparisons, sign_adj, strict=True):
             c["exploratory"]["sign_test"]["p_holm_adjusted"] = a
         # sweep-5 is partial: McNemar only on run_index 0 pairs scored in both, no rate comparison
         if "sweep-5" in grids:
@@ -695,13 +696,13 @@ def cost_curves(loaded, grids):
     """Mean cumulative cost by model-call index for each full run, over tasks that reached that index (n shown)."""
     out = {}
     for rid, run in loaded.items():
-        if rid in ("sweep-4b",) or rid not in grids:
+        if rid == "sweep-4b" or rid not in grids:
             continue
         by = {}
         for c in run["calls"]:
             by.setdefault(c["task_id"], []).append(c)
         series = []
-        for tid, cs in by.items():
+        for cs in by.values():
             cs.sort(key=lambda c: int(c["seq"]))
             acc, cum = 0.0, []
             for c in cs:
@@ -709,7 +710,7 @@ def cost_curves(loaded, grids):
                 cum.append(acc)
             series.append(cum)
         pts = []
-        for idx in range(0, 120):
+        for idx in range(120):
             vals = [s[idx] for s in series if len(s) > idx]
             if len(vals) < 5:
                 break
@@ -721,7 +722,7 @@ def cost_curves(loaded, grids):
 def failure_flow(runs):
     flow = {}
     for r in runs:
-        if r["id"] in ("sweep-4b",):
+        if r["id"] == "sweep-4b":
             continue
         links = {}
         for t in r["tasks"]:
@@ -755,16 +756,16 @@ def power_block(base):
 
 
 DISCLOSURES = [
-    "The 18 instances are a filtered subset of SWE-bench Verified (allowlisted repositories, a simple-fix filter, a round-robin "
-    "cap, gold-validation pruning and a fixed seed). The result is not the published Verified score.",
+    ("The 18 instances are a filtered subset of SWE-bench Verified (allowlisted repositories, a simple-fix filter, a round-robin "
+     "cap, gold-validation pruning and a fixed seed). The result is not the published Verified score."),
     "These public instances were probably seen in training; the number does not predict performance on unseen issues.",
-    "Tiny sample: 18 instances, 3 runs each. The runs of one instance are strongly correlated, so 54 rows carry far less evidence "
-    "than 54 independent trials.",
+    ("Tiny sample: 18 instances, 3 runs each. The runs of one instance are strongly correlated, so 54 rows carry far less evidence "
+     "than 54 independent trials."),
     "The six pytest instances pass in every run and make up a third of the instances; without them the baseline rate is lower.",
     "Every run used --no-pr: no pull request was opened, so nothing here measures PR opening.",
     "35/54 is a hand-stated substitution of sweep-4 (29/54 officially, 12 rows lost to Vertex 429) and sweep-4b (the re-run of those rows).",
-    "e1, r2 and m1 had their rows lost to 429 archived and re-run in place; the baseline used a separate re-run. Spend on those "
-    "archived attempts is added back and shown both ways.",
+    ("e1, r2 and m1 had their rows lost to 429 archived and re-run in place; the baseline used a separate re-run. Spend on those "
+     "archived attempts is added back and shown both ways."),
     "Sweep-5 and r1 are partial and are shown for completeness only: never compared on a rate.",
     "Model prices are Google AI Studio list rates, not billed Vertex rates.",
 ]
@@ -809,10 +810,10 @@ METHODS = [
 
 def meta_block(sample):
     try:
-        sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=BENCH, capture_output=True, text=True).stdout.strip()
+        sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=BENCH, capture_output=True, text=True, check=False).stdout.strip()
     except OSError:
         sha = ""
-    return {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "seed": SEED, "bootstrap_resamples": BOOT,
+    return {"generated_at": datetime.now(UTC).isoformat(timespec="seconds"), "seed": SEED, "bootstrap_resamples": BOOT,
             "permutations": PERM, "sample": sample, "report_commit": sha, "disclosures": DISCLOSURES,
             "rules": "Generated under .claude/rules/benchmark.md: no run is pooled, intervals are over instances, comparisons use "
                      "run_index 0 and exact McNemar, partial runs are marked and never compared on a rate."}

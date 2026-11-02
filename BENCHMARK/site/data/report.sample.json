@@ -1,11 +1,11 @@
 {
  "meta": {
-  "generated_at": "2026-11-02T16:48:16+00:00",
+  "generated_at": "2026-11-02T16:53:28+00:00",
   "seed": 20261025,
   "bootstrap_resamples": 20000,
   "permutations": 20000,
   "sample": true,
-  "report_commit": "15fd6d4",
+  "report_commit": "2bad9d9",
   "disclosures": [
    "The 18 instances are a filtered subset of SWE-bench Verified (allowlisted repositories, a simple-fix filter, a round-robin cap, gold-validation pruning and a fixed seed). The result is not the published Verified score.",
    "These public instances were probably seen in training; the number does not predict performance on unseen issues.",
@@ -5191,43 +5191,43 @@
    },
    {
     "discordant": 9,
-    "needs_split_at_least": "9:0"
+    "needs_split_at_least": "8:1"
    },
    {
     "discordant": 10,
-    "needs_split_at_least": "10:0"
+    "needs_split_at_least": "9:1"
    },
    {
     "discordant": 11,
-    "needs_split_at_least": "11:0"
+    "needs_split_at_least": "10:1"
    },
    {
     "discordant": 12,
-    "needs_split_at_least": "12:0"
+    "needs_split_at_least": "10:2"
    },
    {
     "discordant": 13,
-    "needs_split_at_least": "13:0"
+    "needs_split_at_least": "11:2"
    },
    {
     "discordant": 14,
-    "needs_split_at_least": "14:0"
+    "needs_split_at_least": "12:2"
    },
    {
     "discordant": 15,
-    "needs_split_at_least": "15:0"
+    "needs_split_at_least": "12:3"
    },
    {
     "discordant": 16,
-    "needs_split_at_least": "16:0"
+    "needs_split_at_least": "13:3"
    },
    {
     "discordant": 17,
-    "needs_split_at_least": "17:0"
+    "needs_split_at_least": "13:4"
    },
    {
     "discordant": 18,
-    "needs_split_at_least": "18:0"
+    "needs_split_at_least": "14:4"
    }
   ],
   "reading": "with 18 instances a comparison of two configurations needs a gap of about 40 points to be called clearly different"

@@ -19,7 +19,7 @@ import os
 import re
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -252,7 +252,7 @@ def parse_table(lines):
 def retrieval():
     path = MAIN / "eval" / "runs" / "retrieval-1" / "report.md"
     text = path.read_text()
-    sections = re.split(r"^## ", text, flags=re.M)
+    sections = re.split(r"^## ", text, flags=re.MULTILINE)
     out = {"source": str(path.relative_to(ROOT)), "tables": {}, "intro": sections[0].strip()}
     for sec in sections[1:]:
         title, _, body = sec.partition("\n")
@@ -274,7 +274,7 @@ def git(*args, cwd):
 
 def retry_window(sha, cwd):
     text = git("show", f"{sha}:gateway/models.toml", cwd=cwd)
-    m = re.search(r"^max_attempts\s*=\s*(\d+)", text, flags=re.M)
+    m = re.search(r"^max_attempts\s*=\s*(\d+)", text, flags=re.MULTILINE)
     return int(m.group(1)) if m else None
 
 
@@ -288,7 +288,7 @@ def code_versions():
     commits = {}
     for name, cwd in (("early", early), ("roles", ROOT / "repolace-roles"), ("mixed", ROOT / "repolace-mixed"), ("main", MAIN)):
         log = git("log", "--format=%H|%cI|%s", "-40", cwd=cwd).splitlines()
-        commits[name] = [dict(zip(("sha", "committed_at", "subject"), ln.split("|", 2))) for ln in log]
+        commits[name] = [dict(zip(("sha", "committed_at", "subject"), ln.split("|", 2), strict=True)) for ln in log]
     # the e1 retry-window commit and the file's own mtime (which equals the commit time: the edit was committed at once)
     e1_window_commit = git("log", "--format=%H|%cI", "-1", "--", "gateway/models.toml", cwd=early).split("|")
     e1_sha, e1_time = e1_window_commit[0], e1_window_commit[1]
@@ -305,21 +305,21 @@ def code_versions():
     started = rows_of(psql(
         "select eval_run_id as run, id as task_id, started_at from tasks "
         f"where eval_run_id in {sql_in(RUNS)} and started_at is not null"))
-    boundary = datetime.fromisoformat(e1_time).astimezone(timezone.utc)
+    boundary = datetime.fromisoformat(e1_time).astimezone(UTC)
     per_row = {}
     for r in started:
         run = r["run"]
         if run == "sweep-e1":
-            ts = datetime.fromisoformat(r["started_at"].replace("Z", "+00:00"))
+            ts = datetime.fromisoformat(r["started_at"])
             if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
+                ts = ts.replace(tzinfo=UTC)
             window = 21 if ts >= boundary else 9
         else:
             window = manifests.get(run, {}).get("retry_window_at_manifest_sha")
         per_row.setdefault(run, {}).setdefault(window, 0)
         per_row[run][window] += 1
     out = {
-        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "method": "retry window = gateway max_attempts in the worktree files at the task's started_at; sweep-e1's worktree "
                   "moved on after enqueue (commit below), every other run's worktree stayed at its manifest sha",
         "e1_retry_window_commit": {"sha": e1_sha[:10], "committed_at": e1_time, "from": 9, "to": 21},
