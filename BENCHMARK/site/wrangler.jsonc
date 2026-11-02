@@ -1,0 +1,6 @@
+{
+  "name": "repolace-benchmark",
+  "compatibility_date": "2026-10-01",
+  "assets": { "directory": "./.dist" },
+  "routes": [{ "pattern": "repolace.rounakkumarsingh.com", "custom_domain": true }]
+}
