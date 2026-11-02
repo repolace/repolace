@@ -197,7 +197,7 @@ async def enqueue_task(
             Task.repo_id == repo.id,
             Task.issue_number == issue.number,
             Task.target_branch == target_branch,
-            Task.status.in_((TaskStatus.QUEUED, TaskStatus.RUNNING)),
+            Task.status.in_((TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.PAUSED)),
             Task.eval_run_id.is_(None),
         )
         .limit(1)
@@ -205,7 +205,7 @@ async def enqueue_task(
     if in_flight is not None:
         raise HTTPException(
             status_code=409,
-            detail=f"issue #{issue.number} already has a task queued or running for {target_branch!r}",
+            detail=f"issue #{issue.number} already has a task queued, running or paused for {target_branch!r}",
         )
 
     task = Task(

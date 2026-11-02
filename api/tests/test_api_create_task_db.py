@@ -107,6 +107,14 @@ class TestOneTaskInFlightPerIssue:
 
         assert second.status_code == 409
 
+    async def test_a_paused_task_also_blocks_it_will_resume_and_a_second_would_open_a_second_pr(
+        self, db_session, db_session_factory
+    ):
+        _, second = await self.two_posts(db_session, db_session_factory, first_status=TaskStatus.PAUSED)
+
+        assert second.status_code == 409
+        assert "paused" in second.json()["detail"]
+
     async def test_a_finished_task_does_not_block_a_retry(self, db_session, db_session_factory):
         _, second = await self.two_posts(db_session, db_session_factory, first_status=TaskStatus.FAILED)
 
