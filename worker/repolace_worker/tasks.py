@@ -5,9 +5,11 @@ backend, specs, model client), built in `worker_process_init` and closed in
 `worker_process_shutdown`. The embedder is warmed there too: per child, never in the prefork
 parent (torch and fork do not mix).
 
-Delivery is at-least-once (`acks_late`, `reject_on_worker_lost`), and a task row is never re-run:
-a redelivered message finds the row no longer `queued`, `run_task` raises `TaskNotClaimable`, and
-the message is acked and dropped here. Nothing in this module retries.
+Delivery is at-least-once (`acks_late`, `reject_on_worker_lost`), and a task row is never run from scratch
+twice: a redelivered message finds the row no longer `queued`, `run_task` raises `TaskNotClaimable`, and
+the message is acked and dropped here. The one row that can be claimed again is a `paused` one, and only once
+it has been paused for the sweeper's minimum age (`min_pause_seconds`), so a duplicate message for a row that
+has just paused is dropped the same way; the sweeper republishes it later. Nothing in this module retries.
 """
 
 import asyncio
@@ -75,7 +77,11 @@ async def run_one(
     from repolace_shared.tasks_recovery import fail_if_running, remove_task_containers
     from sqlalchemy import select
 
-    options = {**task_options(resources.settings), **run_task_overrides}
+    options = {
+        **task_options(resources.settings),
+        "min_pause_seconds": get_worker_settings().sweeper_min_age_seconds,
+        **run_task_overrides,
+    }
     try:
         # Benchmark rows belong to the eval runner, which owns the run manifest, the instance
         # selection and the report's denominator. The API and the sweeper never publish one, so a

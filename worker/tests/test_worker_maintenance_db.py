@@ -336,7 +336,7 @@ class TestThePauseStatement:
         await add_checkpoint(db_session, task)
         await backdate(db_session, task, updated_at=OLD, paused_at=None)
 
-        assert await self.pause(db_session_factory, task_id, made_progress=False) == task_id
+        assert await self.pause(db_session_factory, task_id, keep_updated_at=OLD) == task_id
 
         db_session.expire_all()
         row = await db_session.get(Task, task_id)

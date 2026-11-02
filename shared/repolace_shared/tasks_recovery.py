@@ -11,7 +11,7 @@ import re
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 import structlog
@@ -79,7 +79,7 @@ def pause_statement(
     reason: str,
     *,
     conditions: Sequence[Any] = (),
-    made_progress: bool = True,
+    keep_updated_at: datetime | None = None,
     claimed_by: str | None = None,
     pr_number: int | None = None,
     pr_url: str | None = None,
@@ -89,8 +89,8 @@ def pause_statement(
     Only a `running` row, and only one that has a checkpoint (the existence test is part of the statement, so a
     row cannot be paused over a checkpoint that is not there). `claimed_by`, when given, fences it to the process
     that owns the row. `paused_at` always restarts (it is the gate a resume claim waits on); `updated_at` is
-    stamped only when the run `made_progress`, so a resume that stopped again before the agent ran does not
-    postpone the pause's expiry.
+    stamped now unless `keep_updated_at` is given, which a resume that stopped again before the agent ran passes
+    (the value the row had when it was claimed), so it does not postpone the pause's expiry.
     """
     statement = update(Task).where(
         Task.id == task_id,
@@ -105,7 +105,7 @@ def pause_statement(
         "paused_reason": reason,
         "paused_at": func.clock_timestamp(),
         "stop_class": UNAVAILABLE,
-        "updated_at": func.clock_timestamp() if made_progress else Task.updated_at,
+        "updated_at": func.clock_timestamp() if keep_updated_at is None else keep_updated_at,
     }
     if pr_number is not None:
         values["pr_number"] = pr_number

@@ -33,6 +33,7 @@ What `None` means is not the same for every column, and the difference is the po
 """
 
 import uuid
+from datetime import datetime
 from decimal import Decimal
 
 import structlog
@@ -87,6 +88,7 @@ async def write_terminal(
     pr_url: str | None,
     conflict_reason: str | None,
     stop_class: str | None,
+    claimed_by: str | None = None,
 ) -> bool:
     """Write the task's final row. Executes the UPDATE; the caller commits. True if a row changed.
 
@@ -100,10 +102,17 @@ async def write_terminal(
     the task's real state is whatever the first writer recorded.
 
     Free text goes through `_clean` first, so a NUL byte cannot make the write fail.
+
+    `claimed_by` is a fence, not a column (so it is the one keyword with a default): when given, only the
+    process that owns the row may finish it. A task that was paused and claimed again by a resumer while an
+    older process was still running must not have its row finished by that older process.
     """
+    where = [Task.id == task_id, Task.status == TaskStatus.RUNNING]
+    if claimed_by is not None:
+        where.append(Task.claimed_by == claimed_by)
     result = await state.execute(
         update(Task)
-        .where(Task.id == task_id, Task.status == TaskStatus.RUNNING)
+        .where(*where)
         .values(
             status=status,
             outcome=outcome,
@@ -131,7 +140,7 @@ async def write_paused(
     task_id: uuid.UUID,
     *,
     paused_reason: str,
-    made_progress: bool = True,
+    keep_updated_at: datetime | None = None,
     claimed_by: str | None = None,
     pr_number: int | None = None,
     pr_url: str | None = None,
@@ -143,12 +152,12 @@ async def write_paused(
     **and on a checkpoint existing**, and fenced to `claimed_by` when given (a process that lost its row to a
     resumer must not pause the resumer's run). **Not terminal**: no `completed_at`, no outcome, no error
     (`error_message` keeps its one meaning). The cost so far is already in `llm_calls`, which is where a resume
-    rebuilds it from. `made_progress=False` is a resume that stopped again before the agent ran.
+    rebuilds it from. `keep_updated_at` is for a resume that stopped again before the agent ran.
     """
     statement = pause_statement(
         task_id,
         _clean(paused_reason),
-        made_progress=made_progress,
+        keep_updated_at=keep_updated_at,
         claimed_by=claimed_by,
         pr_number=pr_number,
         pr_url=_clean(pr_url),
@@ -165,6 +174,7 @@ async def write_failure_minimal(
     pr_number: int | None,
     pr_url: str | None,
     stop_class: str | None = None,
+    claimed_by: str | None = None,
 ) -> bool:
     """The least a failed task's row can say: failed, why, when, and the PR if one is open.
 
@@ -173,9 +183,12 @@ async def write_failure_minimal(
     worst outcome here -- it is never reaped and a pull request may already exist -- so this
     carries nothing that can be refused: no diff, no list, no cost.
     """
+    where = [Task.id == task_id, Task.status == TaskStatus.RUNNING]
+    if claimed_by is not None:
+        where.append(Task.claimed_by == claimed_by)
     result = await state.execute(
         update(Task)
-        .where(Task.id == task_id, Task.status == TaskStatus.RUNNING)
+        .where(*where)
         .values(
             status=TaskStatus.FAILED,
             error_message=_clean(error_message),

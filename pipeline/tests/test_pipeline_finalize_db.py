@@ -21,7 +21,7 @@ from repolace_pipeline.finalize import (
     write_paused,
     write_terminal,
 )
-from repolace_shared.db.models import TaskOutcome, TaskStatus
+from repolace_shared.db.models import TaskCheckpoint, TaskOutcome, TaskStatus
 from sqlalchemy import func, select
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db]
@@ -224,22 +224,37 @@ class TestPaused:
             await session.commit()
         return wrote
 
-    async def test_a_running_row_is_paused_without_being_finished(self, db_session, db_session_factory):
+    async def checkpointed(self, session, status: TaskStatus):
+        task = await seed_task(session, status=status)
+        task_id = task.id
+        session.add(TaskCheckpoint(task_id=task_id, agent_state={}, base_sha="b" * 40, provenance={}))
+        await session.commit()
+        return task_id
+
+    async def test_a_row_without_a_checkpoint_is_not_paused(self, db_session, db_session_factory):
         task = await seed_task(db_session, status=TaskStatus.RUNNING)
 
-        assert await self.paused(db_session_factory, task.id) is True
+        assert await self.paused(db_session_factory, task.id) is False
 
         row, _ = await reload(db_session_factory, task.id)
+        assert row.status is TaskStatus.RUNNING
+
+    async def test_a_running_row_is_paused_without_being_finished(self, db_session, db_session_factory):
+        task_id = await self.checkpointed(db_session, TaskStatus.RUNNING)
+
+        assert await self.paused(db_session_factory, task_id) is True
+
+        row, _ = await reload(db_session_factory, task_id)
         assert (row.status, row.paused_reason, row.stop_class) == (TaskStatus.PAUSED, "provider quota exhausted", "unavailable")
         assert row.completed_at is None and row.error_message is None and row.outcome is None
 
     @pytest.mark.parametrize("status", [TaskStatus.QUEUED, TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.PAUSED])
     async def test_only_a_running_row_is_paused(self, db_session, db_session_factory, status):
-        task = await seed_task(db_session, status=status)
+        task_id = await self.checkpointed(db_session, status)
 
-        assert await self.paused(db_session_factory, task.id) is False
+        assert await self.paused(db_session_factory, task_id) is False
 
-        row, _ = await reload(db_session_factory, task.id)
+        row, _ = await reload(db_session_factory, task_id)
         assert row.status is status and row.paused_reason is None
 
     async def test_the_terminal_write_records_the_class_it_is_given(self, db_session, db_session_factory):
