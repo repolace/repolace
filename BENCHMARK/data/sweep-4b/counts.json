@@ -1,0 +1,14 @@
+{
+  "rows_in_db": 12,
+  "by_status_outcome": {
+    "completed/passed": 6,
+    "completed/failed": 6
+  },
+  "grid": {
+    "instances": 11,
+    "runs_per_instance": 3,
+    "planned": 33,
+    "rows_subset": true
+  },
+  "manifest_source": "repolace/eval/runs/sweep-4b/manifest.json"
+}

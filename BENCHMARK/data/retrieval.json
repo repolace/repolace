@@ -1,0 +1,716 @@
+{
+  "source": "repolace/eval/runs/retrieval-1/report.md",
+  "tables": {
+    "Plan": {
+      "header": [
+        "repo",
+        "instances",
+        "first index (chunks)",
+        "status"
+      ],
+      "rows": [
+        [
+          "mwaskom/seaborn",
+          "2",
+          "2637",
+          "evaluated"
+        ],
+        [
+          "pallets/flask",
+          "1",
+          "972",
+          "evaluated"
+        ],
+        [
+          "pylint-dev/pylint",
+          "3",
+          "6503",
+          "evaluated"
+        ],
+        [
+          "pytest-dev/pytest",
+          "6",
+          "4055",
+          "evaluated"
+        ],
+        [
+          "sphinx-doc/sphinx",
+          "6",
+          "6462",
+          "evaluated"
+        ]
+      ]
+    },
+    "By embedding strategy (all repositories pooled)": {
+      "header": [
+        "index / query strategy",
+        "scored: file / chunk",
+        "file R@5",
+        "file R@10",
+        "file R@20",
+        "chunk R@5",
+        "chunk R@10",
+        "chunk R@20",
+        "file MRR",
+        "chunk MRR"
+      ],
+      "rows": [
+        [
+          "head_tail / head_tail",
+          "18 / 18 of 18",
+          "24.1%",
+          "25.9%",
+          "48.1%",
+          "2.8%",
+          "6.3%",
+          "13.3%",
+          "18.1%",
+          "4.2%"
+        ],
+        [
+          "head_tail / truncate",
+          "18 / 18 of 18",
+          "29.6%",
+          "37.0%",
+          "61.1%",
+          "9.1%",
+          "11.9%",
+          "11.9%",
+          "25.1%",
+          "8.1%"
+        ],
+        [
+          "signature_docstring / head_tail",
+          "18 / 18 of 18",
+          "18.5%",
+          "31.5%",
+          "45.4%",
+          "2.8%",
+          "6.3%",
+          "13.3%",
+          "21.0%",
+          "7.0%"
+        ],
+        [
+          "signature_docstring / truncate",
+          "18 / 18 of 18",
+          "29.6%",
+          "41.7%",
+          "61.1%",
+          "11.9%",
+          "11.9%",
+          "13.3%",
+          "29.9%",
+          "12.5%"
+        ],
+        [
+          "truncate / head_tail",
+          "18 / 18 of 18",
+          "25.9%",
+          "31.5%",
+          "39.8%",
+          "2.8%",
+          "7.7%",
+          "13.3%",
+          "22.1%",
+          "3.6%"
+        ],
+        [
+          "truncate / truncate",
+          "18 / 18 of 18",
+          "33.3%",
+          "44.4%",
+          "55.6%",
+          "5.6%",
+          "9.1%",
+          "9.1%",
+          "32.5%",
+          "7.3%"
+        ],
+        [
+          "windows / head_tail",
+          "18 / 18 of 18",
+          "28.7%",
+          "37.0%",
+          "53.7%",
+          "6.3%",
+          "6.6%",
+          "19.1%",
+          "25.2%",
+          "12.1%"
+        ],
+        [
+          "windows / truncate",
+          "18 / 18 of 18",
+          "31.5%",
+          "41.7%",
+          "58.3%",
+          "6.3%",
+          "6.6%",
+          "20.5%",
+          "26.5%",
+          "12.6%"
+        ]
+      ]
+    },
+    "Reading the grid": {
+      "header": [
+        "cell",
+        "paired instances",
+        "chunk MRR vs baseline [95% interval over instances]",
+        "meets the switch rule",
+        "file MRR vs baseline"
+      ],
+      "rows": [
+        [
+          "head_tail / head_tail",
+          "18",
+          "-3.1 pp [-16.3, +5.8] (n = 18)",
+          "no",
+          "-14.3 pp [-31.9, +0.8] (n = 18)"
+        ],
+        [
+          "head_tail / truncate",
+          "18",
+          "+0.8 pp [+0.0, +2.0] (n = 18)",
+          "no",
+          "-7.4 pp [-20.3, +1.3] (n = 18)"
+        ],
+        [
+          "signature_docstring / head_tail",
+          "18",
+          "-0.2 pp [-16.2, +14.2] (n = 18)",
+          "no",
+          "-11.4 pp [-30.9, +7.6] (n = 18)"
+        ],
+        [
+          "signature_docstring / truncate",
+          "18",
+          "+5.3 pp [+0.0, +14.8] (n = 18)",
+          "no",
+          "-2.5 pp [-19.7, +14.2] (n = 18)"
+        ],
+        [
+          "truncate / head_tail",
+          "18",
+          "-3.6 pp [-15.9, +3.7] (n = 18)",
+          "no",
+          "-10.4 pp [-25.5, +0.9] (n = 18)"
+        ],
+        [
+          "windows / head_tail",
+          "18",
+          "+4.9 pp [-11.6, +20.5] (n = 18)",
+          "no",
+          "-7.2 pp [-28.3, +11.8] (n = 18)"
+        ],
+        [
+          "windows / truncate",
+          "18",
+          "+5.3 pp [-10.1, +20.6] (n = 18)",
+          "no",
+          "-5.9 pp [-24.4, +11.8] (n = 18)"
+        ]
+      ],
+      "prose": "Primary metric: chunk MRR. Pick a strategy over truncate / truncate only if its paired chunk MRR gain is at least 10 percentage points with the 95% interval over instances excluding 0. This is one of 7 comparisons, on the same instances the agent is benchmarked on, so a winner is exploratory: with this many cells on this few queries one always looks better."
+    },
+    "By repository": {
+      "header": [
+        "repo, index / query strategy",
+        "scored: file / chunk",
+        "file R@5",
+        "file R@10",
+        "file R@20",
+        "chunk R@5",
+        "chunk R@10",
+        "chunk R@20",
+        "file MRR",
+        "chunk MRR"
+      ],
+      "rows": [
+        [
+          "mwaskom/seaborn, head_tail / head_tail",
+          "2 / 2 of 2",
+          "0.0%",
+          "0.0%",
+          "50.0%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "2.8%",
+          "0.0%"
+        ],
+        [
+          "mwaskom/seaborn, head_tail / truncate",
+          "2 / 2 of 2",
+          "0.0%",
+          "0.0%",
+          "50.0%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "3.3%",
+          "0.0%"
+        ],
+        [
+          "mwaskom/seaborn, signature_docstring / head_tail",
+          "2 / 2 of 2",
+          "0.0%",
+          "50.0%",
+          "50.0%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "8.3%",
+          "0.0%"
+        ],
+        [
+          "mwaskom/seaborn, signature_docstring / truncate",
+          "2 / 2 of 2",
+          "0.0%",
+          "0.0%",
+          "50.0%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "3.1%",
+          "0.0%"
+        ],
+        [
+          "mwaskom/seaborn, truncate / head_tail",
+          "2 / 2 of 2",
+          "50.0%",
+          "50.0%",
+          "50.0%",
+          "0.0%",
+          "12.5%",
+          "12.5%",
+          "50.0%",
+          "8.3%"
+        ],
+        [
+          "mwaskom/seaborn, truncate / truncate",
+          "2 / 2 of 2",
+          "50.0%",
+          "50.0%",
+          "50.0%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "50.0%",
+          "0.0%"
+        ],
+        [
+          "mwaskom/seaborn, windows / head_tail",
+          "2 / 2 of 2",
+          "0.0%",
+          "25.0%",
+          "25.0%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "5.0%",
+          "0.0%"
+        ],
+        [
+          "mwaskom/seaborn, windows / truncate",
+          "2 / 2 of 2",
+          "0.0%",
+          "0.0%",
+          "50.0%",
+          "0.0%",
+          "0.0%",
+          "12.5%",
+          "2.8%",
+          "2.8%"
+        ],
+        [
+          "pallets/flask, head_tail / head_tail",
+          "1 / 1 of 1",
+          "100.0%",
+          "100.0%",
+          "100.0%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "25.0%",
+          "0.0%"
+        ],
+        [
+          "pallets/flask, head_tail / truncate",
+          "1 / 1 of 1",
+          "100.0%",
+          "100.0%",
+          "100.0%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "25.0%",
+          "0.0%"
+        ],
+        [
+          "pallets/flask, signature_docstring / head_tail",
+          "1 / 1 of 1",
+          "100.0%",
+          "100.0%",
+          "100.0%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "25.0%",
+          "0.0%"
+        ],
+        [
+          "pallets/flask, signature_docstring / truncate",
+          "1 / 1 of 1",
+          "100.0%",
+          "100.0%",
+          "100.0%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "25.0%",
+          "0.0%"
+        ],
+        [
+          "pallets/flask, truncate / head_tail",
+          "1 / 1 of 1",
+          "100.0%",
+          "100.0%",
+          "100.0%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "33.3%",
+          "0.0%"
+        ],
+        [
+          "pallets/flask, truncate / truncate",
+          "1 / 1 of 1",
+          "100.0%",
+          "100.0%",
+          "100.0%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "33.3%",
+          "0.0%"
+        ],
+        [
+          "pallets/flask, windows / head_tail",
+          "1 / 1 of 1",
+          "100.0%",
+          "100.0%",
+          "100.0%",
+          "0.0%",
+          "0.0%",
+          "100.0%",
+          "50.0%",
+          "5.9%"
+        ],
+        [
+          "pallets/flask, windows / truncate",
+          "1 / 1 of 1",
+          "100.0%",
+          "100.0%",
+          "100.0%",
+          "0.0%",
+          "0.0%",
+          "100.0%",
+          "50.0%",
+          "5.9%"
+        ],
+        [
+          "pylint-dev/pylint, head_tail / head_tail",
+          "3 / 3 of 3",
+          "33.3%",
+          "33.3%",
+          "50.0%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "36.1%",
+          "0.0%"
+        ],
+        [
+          "pylint-dev/pylint, head_tail / truncate",
+          "3 / 3 of 3",
+          "33.3%",
+          "33.3%",
+          "50.0%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "36.1%",
+          "0.0%"
+        ],
+        [
+          "pylint-dev/pylint, signature_docstring / head_tail",
+          "3 / 3 of 3",
+          "33.3%",
+          "33.3%",
+          "50.0%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "35.9%",
+          "0.0%"
+        ],
+        [
+          "pylint-dev/pylint, signature_docstring / truncate",
+          "3 / 3 of 3",
+          "33.3%",
+          "33.3%",
+          "50.0%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "36.4%",
+          "0.0%"
+        ],
+        [
+          "pylint-dev/pylint, truncate / head_tail",
+          "3 / 3 of 3",
+          "33.3%",
+          "33.3%",
+          "50.0%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "35.6%",
+          "0.0%"
+        ],
+        [
+          "pylint-dev/pylint, truncate / truncate",
+          "3 / 3 of 3",
+          "33.3%",
+          "33.3%",
+          "50.0%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "35.4%",
+          "0.0%"
+        ],
+        [
+          "pylint-dev/pylint, windows / head_tail",
+          "3 / 3 of 3",
+          "50.0%",
+          "50.0%",
+          "50.0%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "19.4%",
+          "0.0%"
+        ],
+        [
+          "pylint-dev/pylint, windows / truncate",
+          "3 / 3 of 3",
+          "33.3%",
+          "50.0%",
+          "50.0%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "38.9%",
+          "0.0%"
+        ],
+        [
+          "pytest-dev/pytest, head_tail / head_tail",
+          "6 / 6 of 6",
+          "16.7%",
+          "16.7%",
+          "50.0%",
+          "0.0%",
+          "0.0%",
+          "20.8%",
+          "5.4%",
+          "2.2%"
+        ],
+        [
+          "pytest-dev/pytest, head_tail / truncate",
+          "6 / 6 of 6",
+          "16.7%",
+          "33.3%",
+          "66.7%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "13.0%",
+          "0.0%"
+        ],
+        [
+          "pytest-dev/pytest, signature_docstring / head_tail",
+          "6 / 6 of 6",
+          "0.0%",
+          "16.7%",
+          "50.0%",
+          "0.0%",
+          "0.0%",
+          "20.8%",
+          "4.9%",
+          "2.6%"
+        ],
+        [
+          "pytest-dev/pytest, signature_docstring / truncate",
+          "6 / 6 of 6",
+          "16.7%",
+          "33.3%",
+          "66.7%",
+          "0.0%",
+          "0.0%",
+          "4.2%",
+          "13.6%",
+          "0.9%"
+        ],
+        [
+          "pytest-dev/pytest, truncate / head_tail",
+          "6 / 6 of 6",
+          "0.0%",
+          "16.7%",
+          "33.3%",
+          "0.0%",
+          "0.0%",
+          "16.7%",
+          "4.1%",
+          "1.2%"
+        ],
+        [
+          "pytest-dev/pytest, truncate / truncate",
+          "6 / 6 of 6",
+          "16.7%",
+          "33.3%",
+          "50.0%",
+          "0.0%",
+          "0.0%",
+          "0.0%",
+          "20.4%",
+          "0.0%"
+        ],
+        [
+          "pytest-dev/pytest, windows / head_tail",
+          "6 / 6 of 6",
+          "16.7%",
+          "16.7%",
+          "66.7%",
+          "0.0%",
+          "0.0%",
+          "20.8%",
+          "19.8%",
+          "2.1%"
+        ],
+        [
+          "pytest-dev/pytest, windows / truncate",
+          "6 / 6 of 6",
+          "16.7%",
+          "33.3%",
+          "50.0%",
+          "0.0%",
+          "0.0%",
+          "4.2%",
+          "11.9%",
+          "1.1%"
+        ],
+        [
+          "sphinx-doc/sphinx, head_tail / head_tail",
+          "6 / 6 of 6",
+          "22.2%",
+          "27.8%",
+          "36.1%",
+          "8.3%",
+          "19.0%",
+          "19.0%",
+          "25.8%",
+          "10.4%"
+        ],
+        [
+          "sphinx-doc/sphinx, head_tail / truncate",
+          "6 / 6 of 6",
+          "38.9%",
+          "44.4%",
+          "58.3%",
+          "27.4%",
+          "35.7%",
+          "35.7%",
+          "39.0%",
+          "24.2%"
+        ],
+        [
+          "sphinx-doc/sphinx, signature_docstring / head_tail",
+          "6 / 6 of 6",
+          "22.2%",
+          "27.8%",
+          "27.8%",
+          "8.3%",
+          "19.0%",
+          "19.0%",
+          "33.3%",
+          "18.5%"
+        ],
+        [
+          "sphinx-doc/sphinx, signature_docstring / truncate",
+          "6 / 6 of 6",
+          "38.9%",
+          "58.3%",
+          "58.3%",
+          "35.7%",
+          "35.7%",
+          "35.7%",
+          "52.8%",
+          "36.7%"
+        ],
+        [
+          "sphinx-doc/sphinx, truncate / head_tail",
+          "6 / 6 of 6",
+          "27.8%",
+          "27.8%",
+          "27.8%",
+          "8.3%",
+          "19.0%",
+          "19.0%",
+          "22.2%",
+          "6.9%"
+        ],
+        [
+          "sphinx-doc/sphinx, truncate / truncate",
+          "6 / 6 of 6",
+          "33.3%",
+          "50.0%",
+          "58.3%",
+          "16.7%",
+          "27.4%",
+          "27.4%",
+          "37.1%",
+          "21.8%"
+        ],
+        [
+          "sphinx-doc/sphinx, windows / head_tail",
+          "6 / 6 of 6",
+          "27.8%",
+          "44.4%",
+          "44.4%",
+          "19.0%",
+          "19.8%",
+          "19.8%",
+          "36.1%",
+          "33.3%"
+        ],
+        [
+          "sphinx-doc/sphinx, windows / truncate",
+          "6 / 6 of 6",
+          "44.4%",
+          "50.0%",
+          "66.7%",
+          "19.0%",
+          "19.8%",
+          "36.5%",
+          "39.0%",
+          "34.8%"
+        ]
+      ],
+      "prose": "Gold hunks no indexed chunk overlaps: 0. They are dropped from the chunk metrics and not scored as misses; the chunk metrics credit only a hunk's innermost chunks. Chunks written across the run (first instance of each repo/strategy is the full index): 376412."
+    }
+  },
+  "intro": "# Retrieval eval\n\nGold is the fix's old-side Python files and changed lines. File R@k is the gold files among the files of the first k chunks (the search returns 20 chunks, not 20 files). Chunk R@k is over gold hunks, crediting only a hunk's innermost chunks. MRR is over the top 20 chunks only; a miss scores 0. A query with no gold of a kind is not scored on that kind: the `scored` column says how many queries each kind had (file and chunk metrics skip different queries). Retrieval breaks score ties by chunk id (a UUID), which can change after an incremental reindex, so the order among tied chunks is not stable between runs and a small difference between cells can be tie noise."
+}

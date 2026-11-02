@@ -1,0 +1,16 @@
+{
+  "rows_in_db": 54,
+  "by_status_outcome": {
+    "completed/failed": 5,
+    "queued/-": 44,
+    "completed/passed": 2,
+    "failed/-": 3
+  },
+  "grid": {
+    "instances": 18,
+    "runs_per_instance": 3,
+    "planned": 54,
+    "rows_subset": false
+  },
+  "manifest_source": "repolace-roles/eval/runs/sweep-r1/manifest.json"
+}
