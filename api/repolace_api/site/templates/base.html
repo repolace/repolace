@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>{% block title %}repolace: an agent that turns GitHub issues into tested pull requests{% endblock %}</title>
+  <meta name="description" content="{% block description %}repolace takes a GitHub issue, finds the relevant code, writes a fix, runs your test suite in a locked-down sandbox and opens a pull request. Early access.{% endblock %}">
+  <link rel="preload" href="/assets/fonts/ibm-plex-sans-latin-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/assets/fonts/ibm-plex-sans-latin-600.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/assets/site.css">
+  <script src="/assets/theme.js"></script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="top">
+    <div class="wrap bar">
+      <a class="brand" href="/" aria-label="repolace home">
+        <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h9a4 4 0 0 1 0 8H8m0 0 3-3m-3 3 3 3M5 19h14"/></svg>repolace
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a href="/benchmark"{% if path.startswith('/benchmark') %} aria-current="page"{% endif %}>Benchmark</a>
+        <a href="/pricing"{% if path == '/pricing' %} aria-current="page"{% endif %}>Pricing</a>
+        <a class="btn btn-primary" href="/waitlist">Join the waitlist</a>
+      </nav>
+      <button type="button" id="theme-toggle" class="btn themebtn" hidden>Theme: system</button>
+    </div>
+  </header>
+  <main id="main">
+{% block content %}{% endblock %}
+  </main>
+  <footer class="foot">
+    <div class="wrap footrow">
+      <p>repolace is in early access. Python repositories only, for now.</p>
+      <nav aria-label="Footer"><a href="/benchmark">Benchmark</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
+    </div>
+  </footer>
+</body>
+</html>

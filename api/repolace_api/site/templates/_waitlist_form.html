@@ -1,0 +1,12 @@
+{# The waitlist form. Included by the landing page, the pricing page and /waitlist; `error` is set only on a failed POST. #}
+<form class="wl" method="post" action="/waitlist" novalidate>
+  {% if error %}<p class="formerr" role="alert">{{ error }}</p>{% endif %}
+  <label for="wl-email-{{ form_id }}">Email address</label>
+  <div class="wl-row">
+    <input id="wl-email-{{ form_id }}" name="email" type="email" inputmode="email" autocomplete="email" required maxlength="254" placeholder="you@company.com">
+    <button type="submit" class="btn btn-primary">Join the waitlist</button>
+  </div>
+  <p class="hp" aria-hidden="true"><label>Leave this empty <input name="website" type="text" tabindex="-1" autocomplete="off"></label></p>
+  <p class="check"><input id="wl-consent-{{ form_id }}" name="consent" type="checkbox" value="yes" required><label for="wl-consent-{{ form_id }}">Email me when early access opens. I have read the <a href="/privacy">privacy notice</a>.</label></p>
+  {% if turnstile_site_key %}<div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}"></div>{% endif %}
+</form>
