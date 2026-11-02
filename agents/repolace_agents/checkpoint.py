@@ -28,6 +28,15 @@ FIELDS = (
 )
 
 
+class CheckpointFenced(Exception):
+    """The writer refused to save: this process no longer owns the task.
+
+    Raised by the pipeline's checkpoint writer when the row is not `running` under this process's claim (it was
+    paused and claimed again, or finished, while this run was stalled). Unlike any other save failure the graph
+    does **not** swallow it: a run that has lost its task must stop, or two runs would work on one task.
+    """
+
+
 class CheckpointError(ValueError):
     """A stored checkpoint that cannot be read back as one. The task is not resumed from it."""
 

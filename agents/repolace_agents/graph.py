@@ -42,6 +42,7 @@ from langgraph.runtime import Runtime
 from repolace_gateway.budget import BudgetExceeded, BudgetLimit, current_scope
 from repolace_gateway.errors import LLMCallError, NoTaskScope
 
+from repolace_agents.checkpoint import CheckpointFenced
 from repolace_agents.contracts import (
     AgentDeps,
     AgentLimits,
@@ -246,13 +247,16 @@ async def _checkpoint(ctx: RunContext, snapshot: AgentSnapshot) -> None:
     """Hand the snapshot to the pipeline's writer, if there is one. Never lets a failed save fail the run.
 
     A checkpoint exists to protect the task, so a database blip while writing one must cost the
-    protection for that step and nothing else. `Exception` only: a cancellation must still propagate.
+    protection for that step and nothing else. `Exception` only: a cancellation must still propagate. The one
+    exception to "never fails the run" is `CheckpointFenced`: a run that no longer owns its task must stop.
     """
     writer = ctx.deps.checkpoint
     if writer is None:
         return
     try:
         await writer(snapshot)
+    except CheckpointFenced:
+        raise  # the task belongs to someone else now: stop, do not carry on beside them
     except Exception as exc:  # noqa: BLE001 -- see the docstring
         log.warning("agent.checkpoint.failed", error=f"{type(exc).__name__}: {exc}"[:300])
 

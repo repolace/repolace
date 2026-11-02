@@ -41,6 +41,7 @@ from collections.abc import Callable, Mapping
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
+from datetime import datetime, timedelta
 from decimal import Decimal
 from functools import partial
 from pathlib import Path
@@ -81,7 +82,7 @@ from repolace_shared.git import (
 )
 from repolace_shared.github.client import GithubClient
 from repolace_shared.instances import InstanceSpec, load_instance_by_id
-from repolace_shared.tasks_recovery import has_checkpoint
+from repolace_shared.tasks_recovery import RESUME_REFUSED_PREFIX
 from retrieval.embed import get_embedder
 from retrieval.index import (
     RepoIndexInProgress,
@@ -91,7 +92,7 @@ from retrieval.index import (
 from retrieval.query import build_query
 from retrieval.retrieve import hybrid_search
 from retrieval.strategies import DEFAULT_STRATEGY
-from sqlalchemy import func, insert, select, update
+from sqlalchemy import func, insert, or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from verify.errors import SandboxError
@@ -105,6 +106,7 @@ from repolace_pipeline.attempts import AttemptScorer, run_scored_suite
 from repolace_pipeline.checkpoints import (
     CheckpointRecorder,
     StoredCheckpoint,
+    checkpoint_attempts,
     load_checkpoint,
     provenance_for,
     provenance_mismatch,
@@ -114,6 +116,7 @@ from repolace_pipeline.context import RetrievedChunk, repo_overview, search_hit
 from repolace_pipeline.edit import StubEditRequest
 from repolace_pipeline.errors import (
     PipelineError,
+    ResumeRefused,
     StageFailed,
     TaskNotClaimable,
     TaskNotFound,
@@ -242,6 +245,16 @@ class _Progress:
     pr_number: int | None = None
     pr_url: str | None = None
     scorer: AttemptScorer | None = None
+    #: Who owns the row (`tasks.claimed_by`). Every write that ends or pauses the task is fenced to it, so a
+    #: process that lost its row to a resumer (it stalled, the reaper paused it, a resumer claimed it) cannot
+    #: finish, fail or pause the resumer's run.
+    claimant: str | None = None
+    #: The agent stage was entered. A resume that stops again before this made no progress: it hands back the
+    #: resume it cost and leaves the pause's expiry clock alone.
+    agent_started: bool = False
+    #: `tasks.updated_at` as the paused row had it when this run claimed it (None for a first run). A resume that
+    #: stops again before the agent ran puts it back, so the pause's expiry measures from the last real progress.
+    paused_updated_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -360,7 +373,9 @@ def default_claimant() -> str:
     return f"{socket.gethostname()}:{os.getpid()}"
 
 
-async def _heartbeat(session_factory, task_id: uuid.UUID, interval: float) -> None:
+async def _heartbeat(
+    session_factory, task_id: uuid.UUID, interval: float, claimed_by: str | None = None
+) -> None:
     """Bump `tasks.heartbeat_at` every `interval` seconds until cancelled.
 
     Its own session per beat, and a failed beat is logged and skipped: a database blip must
@@ -371,9 +386,11 @@ async def _heartbeat(session_factory, task_id: uuid.UUID, interval: float) -> No
         await asyncio.sleep(interval)
         try:
             async with session_factory() as session:
-                await session.execute(update(Task)
-                    .where(Task.id == task_id, Task.status == TaskStatus.RUNNING)
-                    .values(heartbeat_at=func.now()))
+                beat = update(Task).where(Task.id == task_id, Task.status == TaskStatus.RUNNING)
+                if claimed_by is not None:
+                    # A process that lost the row must not keep the new owner's heartbeat fresh.
+                    beat = beat.where(Task.claimed_by == claimed_by)
+                await session.execute(beat.values(heartbeat_at=func.now()))
                 await session.commit()
         except Exception as exc:  # noqa: BLE001 -- a missed beat must not fail the task
             log.error("pipeline.heartbeat.failed", error=str(exc)[:300])
@@ -393,7 +410,11 @@ async def _stop_heartbeat(heartbeat: asyncio.Task) -> None:
 
 
 async def _claim(
-    state: AsyncSession, task_id: uuid.UUID, claimed_by: str | None = None
+    state: AsyncSession,
+    task_id: uuid.UUID,
+    claimed_by: str | None = None,
+    min_pause_seconds: float = 0.0,
+    progress: "_Progress | None" = None,
 ) -> tuple[Task, RegisteredRepo]:
     """Move `queued` -> `running`, or `paused` -> `running` (a resume), but only if it is still that.
 
@@ -402,8 +423,11 @@ async def _claim(
     guard Phase 2 needs once Celery delivers at-least-once. Two resumers of one paused row race
     on the same conditional UPDATE and exactly one wins.
 
-    A resume keeps `started_at` (the task began once), clears `paused_reason`, bumps `resume_count` and
-    forgets the old `stop_class`; the run then reads `task.resume_count > 0` to know it is a resume.
+    A resume keeps `started_at` (the task began once), clears `paused_reason` and `paused_at`, bumps
+    `resume_count` and forgets the old `stop_class`; the run then reads `task.resume_count > 0` to know it is a
+    resume. **A paused row is claimable only once it has been paused for `min_pause_seconds`** (0 for an operator
+    or the eval runner, the sweeper's minimum age for a worker): a duplicate broker message for a row that has
+    just paused must not start a resume into the outage that paused it, and a refused claim burns nothing.
     """
     claimant = claimed_by if claimed_by is not None else default_claimant()
     result = await state.execute(
@@ -412,12 +436,22 @@ async def _claim(
         .values(status=TaskStatus.RUNNING, started_at=func.now(), claimed_by=claimant, heartbeat_at=func.now())
     )
     if result.rowcount == 0:
+        if progress is not None:
+            progress.paused_updated_at = await state.scalar(
+                select(Task.updated_at).where(Task.id == task_id, Task.status == TaskStatus.PAUSED)
+            )
+        old_enough = (
+            [or_(Task.paused_at.is_(None), Task.paused_at < func.now() - timedelta(seconds=min_pause_seconds))]
+            if min_pause_seconds > 0
+            else []
+        )
         result = await state.execute(
             update(Task)
-            .where(Task.id == task_id, Task.status == TaskStatus.PAUSED)
+            .where(Task.id == task_id, Task.status == TaskStatus.PAUSED, *old_enough)
             .values(
                 status=TaskStatus.RUNNING,
                 paused_reason=None,
+                paused_at=None,
                 stop_class=None,
                 resume_count=Task.resume_count + 1,
                 claimed_by=claimant,
@@ -460,6 +494,20 @@ async def _best_effort_cost(session_factory, task_id: uuid.UUID) -> Decimal | No
         return None
 
 
+async def _refund_resume(state: AsyncSession, task_id: uuid.UUID, claimed_by: str | None) -> None:
+    """Hand back the resume the claim counted, for a resume that did nothing the cap should count.
+
+    A refusal, or a stop before the agent ran, is not a run of the task: counting it would let a long outage or
+    an operator's mistake use up the resumes a task needs. Fenced to the owner like every write after the claim.
+    """
+    where = [Task.id == task_id, Task.resume_count > 0]
+    if claimed_by is not None:
+        where.append(Task.claimed_by == claimed_by)
+    await state.execute(
+        update(Task).where(*where).values(resume_count=Task.resume_count - 1, updated_at=Task.updated_at)
+    )
+
+
 async def _try_pause(
     state: AsyncSession,
     session_factory,
@@ -468,18 +516,37 @@ async def _try_pause(
     progress: _Progress,
     cost: Decimal | None,
 ) -> RunResult | None:
-    """RUNNING -> PAUSED if the task has a checkpoint; None (nothing written) if it has none or the write failed.
+    """RUNNING -> PAUSED if the task can be continued; None (nothing written) if it cannot or the write failed.
 
-    A task with no checkpoint stopped before the agent saved anything, so there is nothing to continue
-    from and it fails like any other. A database error here is logged and answers None: the caller's FAILED
-    write is the fallback, and a row must never stay `running`.
+    It can be continued only if **the agent has not returned** (once it has, the saved state is stale: a resume
+    would run the agent again and could open a second pull request) and **the checkpoint covers every scored
+    attempt** (a scored run recorded after the last snapshot would make the resume refuse, so pausing would only
+    postpone a failure). A task that cannot fails like any other. A database error here is logged and answers
+    None: the caller's FAILED write is the fallback, and a row must never stay `running`.
     """
+    if progress.result is not None:
+        return None
     try:
-        if not await has_checkpoint(session_factory, task_id):
+        saved_attempts = await checkpoint_attempts(session_factory, task_id)
+        if saved_attempts is None:
+            return None
+        scorer = progress.scorer
+        if scorer is not None and scorer.attempts != saved_attempts:
+            log.warning("pipeline.pause.checkpoint_behind", scored=scorer.attempts, checkpoint=saved_attempts)
             return None
         await state.rollback()
-        if not await write_paused(state, task_id, paused_reason=detail):
+        if not await write_paused(
+            state,
+            task_id,
+            paused_reason=detail,
+            keep_updated_at=None if progress.agent_started else progress.paused_updated_at,
+            claimed_by=progress.claimant,
+            pr_number=progress.pr_number,
+            pr_url=progress.pr_url,
+        ):
             return None
+        if not progress.agent_started:
+            await _refund_resume(state, task_id, progress.claimant)
         await state.commit()
     except SQLAlchemyError as exc:
         log.error("pipeline.pause.failed", error=str(exc)[:300])
@@ -503,6 +570,8 @@ async def _fail(
     message: str,
     progress: _Progress,
     stop_class: str = DESIGN,
+    *,
+    refused: bool = False,
 ) -> RunResult:
     """Record the failure without letting a write problem replace the reason for it.
 
@@ -513,8 +582,12 @@ async def _fail(
     **A stop for unavailability with a checkpoint is `paused`, not `failed`**: the provider or the process
     was not there, nothing about the agent was learnt, and the work so far is saved. Any other stop (and an
     unavailability stop with nothing saved) is FAILED exactly as before, with `stop_class` recorded.
+
+    **A refused resume** (`refused=True`) fails with `RESUME_REFUSED_PREFIX`, keeps the checkpoint (nothing here
+    touches it) and hands back the resume the claim counted, so `reopen_refused` can put the row back once the
+    cause is undone.
     """
-    detail = redact(f"{stage}: {message}")[:MAX_ERROR_CHARS]
+    detail = redact(RESUME_REFUSED_PREFIX + message if refused else f"{stage}: {message}")[:MAX_ERROR_CHARS]
     cost = await _best_effort_cost(session_factory, task_id)
     if stop_class == UNAVAILABLE:
         paused = await _try_pause(state, session_factory, task_id, detail, progress, cost)
@@ -551,7 +624,10 @@ async def _fail(
             pr_url=progress.pr_url,
             conflict_reason=None,
             stop_class=stop_class,
+            claimed_by=progress.claimant,
         )
+        if refused:
+            await _refund_resume(state, task_id, progress.claimant)
         await state.commit()
     except SQLAlchemyError as exc:
         log.error("pipeline.state.full_write_failed", error=str(exc)[:300])
@@ -566,6 +642,7 @@ async def _fail(
                 pr_number=progress.pr_number,
                 pr_url=progress.pr_url,
                 stop_class=stop_class,
+                claimed_by=progress.claimant,
             )
             await state.commit()
         except SQLAlchemyError as fallback_exc:
@@ -879,21 +956,20 @@ async def _load_resume(session_factory, task: Task, workspace: TaskWorkspace, se
     if stored is None:
         raise StageFailed("resume", "the task is paused but has no checkpoint to continue from")
     if stored.base_sha != workspace.base_sha:
-        raise StageFailed(
-            "resume",
+        raise ResumeRefused(
             f"the target branch moved while the task was paused ({stored.base_sha[:12]} -> "
             f"{workspace.base_sha[:12]}); the saved work is relative to the old base, so it is not continued",
         )
     mismatch = provenance_mismatch(stored.provenance, _provenance(seams))
     if mismatch is not None:
-        raise StageFailed("resume", f"refusing to continue under different code or settings: {mismatch}")
+        raise ResumeRefused(f"refusing to continue under different code or settings: {mismatch}")
     return stored
 
 
 async def _stored_baseline(session_factory, task_id: uuid.UUID) -> SuiteResult:
     runs = await load_test_runs(session_factory, task_id)
     if BASELINE_ATTEMPT not in runs:
-        raise StageFailed("record_baseline", "the task is being resumed but its baseline run was never recorded")
+        raise ResumeRefused("the task is being resumed but its baseline run was never recorded")
     return runs[BASELINE_ATTEMPT][1]
 
 
@@ -917,8 +993,7 @@ async def _restore(
         runs = await load_test_runs(session_factory, task.id)
         newest = max((attempt for attempt in runs if attempt >= 1), default=0)
         if newest != snapshot.attempt:
-            raise StageFailed(
-                "restore",
+            raise ResumeRefused(
                 f"the checkpoint is older than the scored attempts (the recorded runs reach attempt {newest}, "
                 f"the checkpoint attempt {snapshot.attempt}); it cannot be continued",
             )
@@ -926,11 +1001,11 @@ async def _restore(
         last: AttemptRecord | None = None
         if mark is not None:
             if scored_sha is None or mark.attempt not in runs:
-                raise StageFailed("restore", f"the checkpoint names scored attempt {mark.attempt} but not its tree or its run")
+                raise ResumeRefused(f"the checkpoint names scored attempt {mark.attempt} but not its tree or its run")
             last = AttemptRecord(mark.attempt, scored_sha, runs[mark.attempt][1], mark.infrastructure_error)
         scorer.restore(last, snapshot.attempt)
     except (CheckpointError, ValueError, GitError) as exc:
-        raise StageFailed("restore", f"{type(exc).__name__}: {exc}") from exc
+        raise ResumeRefused(f"the saved work could not be restored: {type(exc).__name__}: {exc}") from exc
     log.info("pipeline.resume.restored", attempt=snapshot.attempt, steps=snapshot.steps, seq=stored.seq)
     return snapshot, last
 
@@ -1076,7 +1151,9 @@ async def _run_stages(
         # one would burn its whole budget for a result that is thrown away.
         skip = _inadmissible_instance(baseline, instance)
         if skip is not None:
-            return await _complete_without_agent(state, task, *skip, benchmark=instance is not None)
+            return await _complete_without_agent(
+                state, task, *skip, benchmark=instance is not None, claimed_by=progress.claimant
+            )
 
         async with _stage("branch"):
             branch = await workspace.start_agent_branch(task.issue_number, task.id)
@@ -1117,10 +1194,12 @@ async def _run_stages(
                 session_factory,
                 task.id,
                 workspace,
+                claimed_by=progress.claimant or default_claimant(),
                 last_scored_sha=lambda: scorer.last_record.commit_sha if scorer.last_record is not None else None,
                 seconds_used=lambda: agent_budget.elapsed_seconds,
                 provenance=_provenance(seams),
             )
+        progress.agent_started = True
         async with _stage("agent"):
             # The gateway scope: every model call is attributable to this task and charged to its
             # budget. A contextvar, not a parameter, so the agent cannot forget it.
@@ -1303,6 +1382,7 @@ async def _run_stages(
             pr_url=pull_request.html_url if pull_request is not None else None,
             conflict_reason=conflict_reason,
             stop_class=None,
+            claimed_by=progress.claimant,
         )
         await state.commit()
     log.info(
@@ -1397,7 +1477,7 @@ def _inadmissible_instance(baseline: SuiteResult, instance: InstanceSpec | None)
 
 
 async def _complete_without_agent(
-    state: AsyncSession, task: Task, scored: Score, gate_reason: str, *, benchmark: bool
+    state: AsyncSession, task: Task, scored: Score, gate_reason: str, *, benchmark: bool, claimed_by: str | None
 ) -> RunResult:
     """Finish a task whose instance cannot be scored, without having run an agent.
 
@@ -1422,6 +1502,7 @@ async def _complete_without_agent(
         pr_url=None,
         conflict_reason=None,
         stop_class=None,
+        claimed_by=claimed_by,
     )
     await state.commit()
     log.info("pipeline.task.completed", **_score_log_fields(scored, benchmark=benchmark), gate=gate_reason)
@@ -1577,6 +1658,7 @@ async def run_task(
     heartbeat_interval: float = HEARTBEAT_INTERVAL_SECONDS,
     resolver: Resolver = resolve_conflicts,
     code_version: str | None = None,
+    min_pause_seconds: float = 0.0,
 ) -> RunResult:
     """Run one task. `backend` and `specs` are the caller's, like everything else.
 
@@ -1603,6 +1685,8 @@ async def run_task(
     * `resolver` -- what reconciles conflicts when the target branch moved (`conflicts.py`); a test
       passes a scripted one.
     * `code_version` -- identifies the code, saved in every checkpoint; a resume under other code is refused.
+    * `min_pause_seconds` -- a paused row is claimable only once paused this long (see `_claim`); the worker
+      passes the sweeper's minimum age.
 
     A `paused` task (stopped for unavailability, with a checkpoint) is claimed by this same function and
     continued from the checkpoint; see `_resume`.
@@ -1626,14 +1710,15 @@ async def run_task(
         resolver=resolver,
         code_version=code_version,
     )
-    progress = _Progress()
+    claimant = claimed_by if claimed_by is not None else default_claimant()
+    progress = _Progress(claimant=claimant)
     async with session_factory() as state:
-        task, repo = await _claim(state, task_id, claimed_by)
+        task, repo = await _claim(state, task_id, claimant, min_pause_seconds, progress)
 
         # The context-manager form, so the binding unwinds. `bind_contextvars`
         # is never unbound anywhere in this codebase and bleeds across tasks.
         sink_token = _stage_sink.set(_StageSink(session_factory, task_id))
-        heartbeat = asyncio.create_task(_heartbeat(session_factory, task_id, heartbeat_interval))
+        heartbeat = asyncio.create_task(_heartbeat(session_factory, task_id, heartbeat_interval, claimant))
         try:
             with structlog.contextvars.bound_contextvars(
                 task_id=str(task_id), repo=repo.full_name, issue_number=task.issue_number
@@ -1641,6 +1726,11 @@ async def run_task(
                 try:
                     return await _run_stages(
                         state, session_factory, github, task, repo, backend, specs or {}, seams, progress
+                    )
+                except ResumeRefused as exc:
+                    return await _fail(
+                        state, session_factory, task_id, exc.stage, exc.message, progress,
+                        stop_class=DESIGN, refused=True,
                     )
                 except StageFailed as exc:
                     # `_stage` wraps whatever failed inside it, keeping the original as `__cause__`; the class of
