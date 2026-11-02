@@ -1,0 +1,892 @@
+{
+  "generated_at": "2026-11-02T16:44:56+00:00",
+  "method": "retry window = gateway max_attempts in the worktree files at the task's started_at; sweep-e1's worktree moved on after enqueue (commit below), every other run's worktree stayed at its manifest sha",
+  "e1_retry_window_commit": {
+    "sha": "1336c5999b",
+    "committed_at": "2026-10-29T22:07:24+05:30",
+    "from": 9,
+    "to": 21
+  },
+  "baseline_claim_check": {
+    "plan_said": "the baseline ran on the shortest retry window",
+    "found": "sweep-4's manifest sha f02ccb3c57 is the merge of PR #50 (b661a30), which already set max_attempts = 9; sweep-4, sweep-4b, r2 and m1 all ran on 9 attempts. The plan's claim is WRONG: the baseline did not run on a shorter window than r2 and m1. Only e1 rows started after the window commit ran on 21."
+  },
+  "manifests": {
+    "sweep-4": {
+      "manifest_sha": "f02ccb3c57",
+      "created_at": "2026-10-23T19:51:50+00:00",
+      "retry_window_at_manifest_sha": 9,
+      "subject": "Merge pull request #50 from repolace/fix/vertex-429-retry-window"
+    },
+    "sweep-4b": {
+      "manifest_sha": "f02ccb3c57",
+      "created_at": "2026-10-24T16:41:37+00:00",
+      "retry_window_at_manifest_sha": 9,
+      "subject": "Merge pull request #50 from repolace/fix/vertex-429-retry-window"
+    },
+    "sweep-5": {
+      "manifest_sha": "f02ccb3c57",
+      "created_at": "2026-10-24T06:56:36+00:00",
+      "retry_window_at_manifest_sha": 9,
+      "subject": "Merge pull request #50 from repolace/fix/vertex-429-retry-window"
+    },
+    "sweep-r1": {
+      "manifest_sha": "2a5721040c",
+      "created_at": "2026-10-25T10:49:18+00:00",
+      "retry_window_at_manifest_sha": 9,
+      "subject": "Merge remote-tracking branch 'origin/main' into roles-sweep"
+    },
+    "sweep-r2": {
+      "manifest_sha": "90c0be7bd1",
+      "created_at": "2026-10-28T11:25:25+00:00",
+      "retry_window_at_manifest_sha": 9,
+      "subject": "Hold back the planner's last step so it always hands over a plan"
+    },
+    "sweep-e1": {
+      "manifest_sha": "613664405b",
+      "created_at": "2026-10-28T11:25:22+00:00",
+      "retry_window_at_manifest_sha": 9,
+      "subject": "Early-edit nudge: ask for a first edit by step 12 and remind once (experiment)"
+    },
+    "sweep-m1": {
+      "manifest_sha": "196bbfe143",
+      "created_at": "2026-10-28T11:25:27+00:00",
+      "retry_window_at_manifest_sha": 9,
+      "subject": "Mixed-model roles: debug stage, specific plans for a cheap editor, --stage-model"
+    }
+  },
+  "rows_by_retry_window": {
+    "sweep-r2": {
+      "9": 54
+    },
+    "sweep-e1": {
+      "9": 16,
+      "21": 38
+    },
+    "sweep-4": {
+      "9": 54
+    },
+    "sweep-4b": {
+      "9": 12
+    },
+    "sweep-m1": {
+      "9": 54
+    },
+    "sweep-5": {
+      "9": 34
+    },
+    "sweep-r1": {
+      "9": 10
+    }
+  },
+  "commit_logs": {
+    "early": [
+      {
+        "sha": "1336c5999b5da83f87fa0ac31e0a9e92483d91c6",
+        "committed_at": "2026-10-29T22:07:24+05:30",
+        "subject": "Retry a rate-limited Vertex call for 15-30 minutes, not 3-6"
+      },
+      {
+        "sha": "5f87098637cc5489f9c73eacee00d5ffc3f12157",
+        "committed_at": "2026-10-29T19:59:48+05:30",
+        "subject": "Priority PayGo model key and REPOLACE_TASK_MAX_USD for the priority early-edit run"
+      },
+      {
+        "sha": "613664405bf45d95d0bd94a24001896245182467",
+        "committed_at": "2026-10-25T19:01:55+05:30",
+        "subject": "Early-edit nudge: ask for a first edit by step 12 and remind once (experiment)"
+      },
+      {
+        "sha": "f02ccb3c57be22c4d487776c3fa259457154b1d1",
+        "committed_at": "2026-10-24T01:17:31+05:30",
+        "subject": "Merge pull request #50 from repolace/fix/vertex-429-retry-window"
+      },
+      {
+        "sha": "b661a307592cdbf59da483dfa00ea185ab6fa385",
+        "committed_at": "2026-10-24T01:17:01+05:30",
+        "subject": "Lengthen the gateway retry window so a Vertex 429 spell does not cost a task"
+      },
+      {
+        "sha": "8f8334fb816225bdb062b505dda82d15caf445c1",
+        "committed_at": "2026-10-20T23:17:52+05:30",
+        "subject": "Merge pull request #49 from repolace/fix/sonnet-5-5-cache-read-price"
+      },
+      {
+        "sha": "97ca567a61a24bcbc41021ff89fa3f67a26cb187",
+        "committed_at": "2026-10-20T23:17:35+05:30",
+        "subject": "Correct Claude Sonnet 5.5's cache-read price to $0.10 per million tokens"
+      },
+      {
+        "sha": "10c4293c27f97c464c03c0cbd91c821dc2ab7fe0",
+        "committed_at": "2026-10-18T19:57:12+05:30",
+        "subject": "Merge pull request #45 from repolace/cloud/c-conflict-resolver"
+      },
+      {
+        "sha": "5d95a7d57fd107d23c771bc027dfdb91ab780b57",
+        "committed_at": "2026-10-18T19:56:09+05:30",
+        "subject": "Merge main into the conflict-resolver branch; renumber its migration to 0016; fix review findings"
+      },
+      {
+        "sha": "f33b2ddec429022cac94ee99a0b303dc1e8ab792",
+        "committed_at": "2026-10-18T16:54:24+05:30",
+        "subject": "Merge pull request #48 from repolace/fix/pip-network-tolerance"
+      },
+      {
+        "sha": "654fb8ccd4190e01d51e4d87bfe82a66d0ed741e",
+        "committed_at": "2026-10-18T16:54:00+05:30",
+        "subject": "Make image builds tolerate a slow link: pip waits 120 s and retries 10 times"
+      },
+      {
+        "sha": "77fbe096b0eb1a22ca03665770940c8701aa8a1f",
+        "committed_at": "2026-10-18T13:42:23+05:30",
+        "subject": "Merge pull request #47 from repolace/fix/github-client-retry"
+      },
+      {
+        "sha": "c1b77241347626dcb5f43e71f8ee626c764129cf",
+        "committed_at": "2026-10-18T13:42:16+05:30",
+        "subject": "Address review of the retry change"
+      },
+      {
+        "sha": "e5aa44cb07d92d787699a1929de973943d37b905",
+        "committed_at": "2026-10-18T13:17:00+05:30",
+        "subject": "Retry transient GitHub API, git push and git fetch failures"
+      },
+      {
+        "sha": "3b0a4503401cd7a47a75e52e05ea0a0706264cbc",
+        "committed_at": "2026-10-18T13:01:10+05:30",
+        "subject": "Merge pull request #46 from repolace/fix/clone-retry"
+      },
+      {
+        "sha": "87e384a485dad61b44a97ab31d626cbbf7184868",
+        "committed_at": "2026-10-18T12:59:58+05:30",
+        "subject": "Retry a transient git clone failure instead of failing the task"
+      },
+      {
+        "sha": "0280095ee9d846622c9b4e926e39c5f8c9d9d9b1",
+        "committed_at": "2026-10-18T12:09:53+05:30",
+        "subject": "Merge pull request #44 from repolace/cloud/b-db-performance"
+      },
+      {
+        "sha": "98980fd3d9c69c52b746c656d99fe84e4f5d57d6",
+        "committed_at": "2026-10-18T12:09:16+05:30",
+        "subject": "Merge pull request #43 from repolace/cloud/a-deployment-hardening"
+      },
+      {
+        "sha": "07d39e42e75b774a71c7f84fc56690beae799f02",
+        "committed_at": "2026-10-17T19:22:18Z",
+        "subject": "Test a target that moved without changing a file"
+      },
+      {
+        "sha": "dd08d7625b975787fb93d0db06f1934e3215beb8",
+        "committed_at": "2026-10-17T19:07:11Z",
+        "subject": "Keep the conflict_reason CHECK to one direction"
+      },
+      {
+        "sha": "a5e69d30547cc22756a51956b3335e9d24b2c0ad",
+        "committed_at": "2026-10-17T19:02:16Z",
+        "subject": "Merge main into cloud/c-conflict-resolver"
+      },
+      {
+        "sha": "348423074d0f8d0bd74d0e176d8ad7d1b4092a23",
+        "committed_at": "2026-10-17T19:02:04Z",
+        "subject": "Wire the merge-conflict resolver into the pipeline"
+      },
+      {
+        "sha": "26bd52bd4b6f75260a4d72d7d7cc03edb4427aa5",
+        "committed_at": "2026-10-17T18:56:20Z",
+        "subject": "Record the query indexes and the bounded reads in the rules"
+      },
+      {
+        "sha": "830fa601364e25a43c043adfd0dacb0426850dbf",
+        "committed_at": "2026-10-17T18:56:20Z",
+        "subject": "Do not load patch_diff, score_reason or issue_body while a task is live"
+      },
+      {
+        "sha": "0163e3ffdac8fedeb010cbc07d288b891dd73343",
+        "committed_at": "2026-10-17T18:56:20Z",
+        "subject": "Limit the estimate's model fallback to the latest 30 tasks"
+      },
+      {
+        "sha": "0d1c1fe70728325669d2e127f9eddaf8ad162201",
+        "committed_at": "2026-10-17T18:56:20Z",
+        "subject": "Index the task list, the sweeper/reaper scan and the latest-call lookup (migration 0015)"
+      },
+      {
+        "sha": "6e84fa8bc7227d6f103a39b0a026033cdebe0df5",
+        "committed_at": "2026-10-17T18:53:25Z",
+        "subject": "Name the bound-capturing helper in the worker timeout test"
+      },
+      {
+        "sha": "da98b4489d77f4d808feabbb3a924952f13d622c",
+        "committed_at": "2026-10-17T18:52:18Z",
+        "subject": "Document the worker deployment, the new bound and the sweeper limits"
+      },
+      {
+        "sha": "035a30dde32b319e56c6ec78b1a98c6577a2d075",
+        "committed_at": "2026-10-17T18:51:35Z",
+        "subject": "Fail, not skip, when the eval harness is missing and required"
+      },
+      {
+        "sha": "59870a099ead0c5b3f08ca126ff3b1d0400f1861",
+        "committed_at": "2026-10-17T18:50:50Z",
+        "subject": "Refuse benchmark rows in the worker"
+      },
+      {
+        "sha": "2d0c3c85a59aad3e6243646d10e56aac87ae6adc",
+        "committed_at": "2026-10-17T18:49:00Z",
+        "subject": "Make the worker's timeout the visible reason on the task row"
+      },
+      {
+        "sha": "fb4f89fd82d7a4b2c3629b16421f55576f0f03f4",
+        "committed_at": "2026-10-17T18:42:38Z",
+        "subject": "Bound the sweeper's read and let republished messages expire"
+      },
+      {
+        "sha": "cb0a06a5441bc0b9e4c4278af176d886a291e610",
+        "committed_at": "2026-10-17T18:40:16Z",
+        "subject": "Give RabbitMQ a consumer_timeout above the longest task"
+      },
+      {
+        "sha": "03660af228f42f8949843e7eada913412d609117",
+        "committed_at": "2026-10-17T18:39:15Z",
+        "subject": "Test that the broker timeout exceeds the hard limit, as its name says"
+      },
+      {
+        "sha": "5c2555f4943225cb72f492a976c65ba078dbf5fe",
+        "committed_at": "2026-10-17T18:38:26Z",
+        "subject": "Make the compose worker able to run a task"
+      },
+      {
+        "sha": "d0e599948422612783cb0830c8a07241bde9528c",
+        "committed_at": "2026-10-17T18:35:19Z",
+        "subject": "Give the api container its own env file"
+      },
+      {
+        "sha": "a7fcc78ea900f7add85a643686a37512f186131c",
+        "committed_at": "2026-10-18T00:03:02+05:30",
+        "subject": "Merge pull request #42 from repolace/feat/agent-limits-override"
+      },
+      {
+        "sha": "8ef0ad1a3597e459226c0bb64441b4c8bb2fd61a",
+        "committed_at": "2026-10-18T00:02:43+05:30",
+        "subject": "Let a run override the agent's step and attempt bounds, recorded in the manifest"
+      },
+      {
+        "sha": "5d8618e69783051bb01afc4b47c373940e3068fd",
+        "committed_at": "2026-10-17T23:31:13+05:30",
+        "subject": "Merge pull request #41 from repolace/docs/cloud-prompts"
+      },
+      {
+        "sha": "330e9962b974ca990f6418890256e0ec138b67e5",
+        "committed_at": "2026-10-17T23:30:33+05:30",
+        "subject": "Cloud briefs: plan mode first, no usage figures"
+      }
+    ],
+    "roles": [
+      {
+        "sha": "90c0be7bd14ad5659e92db7248664ed802142826",
+        "committed_at": "2026-10-25T17:48:53+05:30",
+        "subject": "Hold back the planner's last step so it always hands over a plan"
+      },
+      {
+        "sha": "2a5721040c6b278d4f827ccf4087380a61f415ce",
+        "committed_at": "2026-10-25T16:17:01+05:30",
+        "subject": "Merge remote-tracking branch 'origin/main' into roles-sweep"
+      },
+      {
+        "sha": "f02ccb3c57be22c4d487776c3fa259457154b1d1",
+        "committed_at": "2026-10-24T01:17:31+05:30",
+        "subject": "Merge pull request #50 from repolace/fix/vertex-429-retry-window"
+      },
+      {
+        "sha": "b661a307592cdbf59da483dfa00ea185ab6fa385",
+        "committed_at": "2026-10-24T01:17:01+05:30",
+        "subject": "Lengthen the gateway retry window so a Vertex 429 spell does not cost a task"
+      },
+      {
+        "sha": "8f8334fb816225bdb062b505dda82d15caf445c1",
+        "committed_at": "2026-10-20T23:17:52+05:30",
+        "subject": "Merge pull request #49 from repolace/fix/sonnet-5-5-cache-read-price"
+      },
+      {
+        "sha": "97ca567a61a24bcbc41021ff89fa3f67a26cb187",
+        "committed_at": "2026-10-20T23:17:35+05:30",
+        "subject": "Correct Claude Sonnet 5.5's cache-read price to $0.10 per million tokens"
+      },
+      {
+        "sha": "10c4293c27f97c464c03c0cbd91c821dc2ab7fe0",
+        "committed_at": "2026-10-18T19:57:12+05:30",
+        "subject": "Merge pull request #45 from repolace/cloud/c-conflict-resolver"
+      },
+      {
+        "sha": "5d95a7d57fd107d23c771bc027dfdb91ab780b57",
+        "committed_at": "2026-10-18T19:56:09+05:30",
+        "subject": "Merge main into the conflict-resolver branch; renumber its migration to 0016; fix review findings"
+      },
+      {
+        "sha": "f33b2ddec429022cac94ee99a0b303dc1e8ab792",
+        "committed_at": "2026-10-18T16:54:24+05:30",
+        "subject": "Merge pull request #48 from repolace/fix/pip-network-tolerance"
+      },
+      {
+        "sha": "654fb8ccd4190e01d51e4d87bfe82a66d0ed741e",
+        "committed_at": "2026-10-18T16:54:00+05:30",
+        "subject": "Make image builds tolerate a slow link: pip waits 120 s and retries 10 times"
+      },
+      {
+        "sha": "77fbe096b0eb1a22ca03665770940c8701aa8a1f",
+        "committed_at": "2026-10-18T13:42:23+05:30",
+        "subject": "Merge pull request #47 from repolace/fix/github-client-retry"
+      },
+      {
+        "sha": "c1b77241347626dcb5f43e71f8ee626c764129cf",
+        "committed_at": "2026-10-18T13:42:16+05:30",
+        "subject": "Address review of the retry change"
+      },
+      {
+        "sha": "e5aa44cb07d92d787699a1929de973943d37b905",
+        "committed_at": "2026-10-18T13:17:00+05:30",
+        "subject": "Retry transient GitHub API, git push and git fetch failures"
+      },
+      {
+        "sha": "3b0a4503401cd7a47a75e52e05ea0a0706264cbc",
+        "committed_at": "2026-10-18T13:01:10+05:30",
+        "subject": "Merge pull request #46 from repolace/fix/clone-retry"
+      },
+      {
+        "sha": "87e384a485dad61b44a97ab31d626cbbf7184868",
+        "committed_at": "2026-10-18T12:59:58+05:30",
+        "subject": "Retry a transient git clone failure instead of failing the task"
+      },
+      {
+        "sha": "0280095ee9d846622c9b4e926e39c5f8c9d9d9b1",
+        "committed_at": "2026-10-18T12:09:53+05:30",
+        "subject": "Merge pull request #44 from repolace/cloud/b-db-performance"
+      },
+      {
+        "sha": "98980fd3d9c69c52b746c656d99fe84e4f5d57d6",
+        "committed_at": "2026-10-18T12:09:16+05:30",
+        "subject": "Merge pull request #43 from repolace/cloud/a-deployment-hardening"
+      },
+      {
+        "sha": "215b5e7bfe63f7a656a0478c31a2edea592baf22",
+        "committed_at": "2026-10-17T19:45:50Z",
+        "subject": "Record what the role split is and is not"
+      },
+      {
+        "sha": "780a6d51e615caceeac686f3d5a3d6741ecdffac",
+        "committed_at": "2026-10-17T19:45:50Z",
+        "subject": "Wire the roles into the gateway, the CLI, the PR body and the benchmark manifest"
+      },
+      {
+        "sha": "90f1821dc671d8a185de447494881b49bc70fa0c",
+        "committed_at": "2026-10-17T19:27:23Z",
+        "subject": "Size the recursion limit by the graph's node count"
+      },
+      {
+        "sha": "2f73ad889d5556174a8dbf7ae0e170e724d6a9c8",
+        "committed_at": "2026-10-17T19:25:46Z",
+        "subject": "Add the debugger to the roles graph"
+      },
+      {
+        "sha": "85a011c526df61cd7e0c2dd62f25b05d0a21d328",
+        "committed_at": "2026-10-17T19:23:16Z",
+        "subject": "Add the reviewer to the roles graph"
+      },
+      {
+        "sha": "07d39e42e75b774a71c7f84fc56690beae799f02",
+        "committed_at": "2026-10-17T19:22:18Z",
+        "subject": "Test a target that moved without changing a file"
+      },
+      {
+        "sha": "ad143ee3242b9a65800f70971ef786a2e43b631e",
+        "committed_at": "2026-10-17T19:20:44Z",
+        "subject": "Add the roles graph with its planner"
+      },
+      {
+        "sha": "b713cc838f0460d87d2748790bfef8d7390c6df1",
+        "committed_at": "2026-10-17T19:16:53Z",
+        "subject": "Add the roles flag, off, and prove the single agent is unchanged"
+      },
+      {
+        "sha": "f304632d976e8f17efa1563d8b614c664c7d9223",
+        "committed_at": "2026-10-17T19:14:58Z",
+        "subject": "Add role prompts, role tools and ToolBox.subset for the role split"
+      },
+      {
+        "sha": "c32705dc307db473bfa0b64398d2e8e0b9eebdf6",
+        "committed_at": "2026-10-17T19:11:38Z",
+        "subject": "Extract the agent's tool loop into _run_loop"
+      },
+      {
+        "sha": "dd08d7625b975787fb93d0db06f1934e3215beb8",
+        "committed_at": "2026-10-17T19:07:11Z",
+        "subject": "Keep the conflict_reason CHECK to one direction"
+      },
+      {
+        "sha": "a5e69d30547cc22756a51956b3335e9d24b2c0ad",
+        "committed_at": "2026-10-17T19:02:16Z",
+        "subject": "Merge main into cloud/c-conflict-resolver"
+      },
+      {
+        "sha": "348423074d0f8d0bd74d0e176d8ad7d1b4092a23",
+        "committed_at": "2026-10-17T19:02:04Z",
+        "subject": "Wire the merge-conflict resolver into the pipeline"
+      },
+      {
+        "sha": "26bd52bd4b6f75260a4d72d7d7cc03edb4427aa5",
+        "committed_at": "2026-10-17T18:56:20Z",
+        "subject": "Record the query indexes and the bounded reads in the rules"
+      },
+      {
+        "sha": "830fa601364e25a43c043adfd0dacb0426850dbf",
+        "committed_at": "2026-10-17T18:56:20Z",
+        "subject": "Do not load patch_diff, score_reason or issue_body while a task is live"
+      },
+      {
+        "sha": "0163e3ffdac8fedeb010cbc07d288b891dd73343",
+        "committed_at": "2026-10-17T18:56:20Z",
+        "subject": "Limit the estimate's model fallback to the latest 30 tasks"
+      },
+      {
+        "sha": "0d1c1fe70728325669d2e127f9eddaf8ad162201",
+        "committed_at": "2026-10-17T18:56:20Z",
+        "subject": "Index the task list, the sweeper/reaper scan and the latest-call lookup (migration 0015)"
+      },
+      {
+        "sha": "6e84fa8bc7227d6f103a39b0a026033cdebe0df5",
+        "committed_at": "2026-10-17T18:53:25Z",
+        "subject": "Name the bound-capturing helper in the worker timeout test"
+      },
+      {
+        "sha": "da98b4489d77f4d808feabbb3a924952f13d622c",
+        "committed_at": "2026-10-17T18:52:18Z",
+        "subject": "Document the worker deployment, the new bound and the sweeper limits"
+      },
+      {
+        "sha": "035a30dde32b319e56c6ec78b1a98c6577a2d075",
+        "committed_at": "2026-10-17T18:51:35Z",
+        "subject": "Fail, not skip, when the eval harness is missing and required"
+      },
+      {
+        "sha": "59870a099ead0c5b3f08ca126ff3b1d0400f1861",
+        "committed_at": "2026-10-17T18:50:50Z",
+        "subject": "Refuse benchmark rows in the worker"
+      },
+      {
+        "sha": "2d0c3c85a59aad3e6243646d10e56aac87ae6adc",
+        "committed_at": "2026-10-17T18:49:00Z",
+        "subject": "Make the worker's timeout the visible reason on the task row"
+      },
+      {
+        "sha": "fb4f89fd82d7a4b2c3629b16421f55576f0f03f4",
+        "committed_at": "2026-10-17T18:42:38Z",
+        "subject": "Bound the sweeper's read and let republished messages expire"
+      }
+    ],
+    "mixed": [
+      {
+        "sha": "196bbfe143323085c3abf9b9abca2726691ccbf0",
+        "committed_at": "2026-10-25T21:51:27+05:30",
+        "subject": "Mixed-model roles: debug stage, specific plans for a cheap editor, --stage-model"
+      },
+      {
+        "sha": "90c0be7bd14ad5659e92db7248664ed802142826",
+        "committed_at": "2026-10-25T17:48:53+05:30",
+        "subject": "Hold back the planner's last step so it always hands over a plan"
+      },
+      {
+        "sha": "2a5721040c6b278d4f827ccf4087380a61f415ce",
+        "committed_at": "2026-10-25T16:17:01+05:30",
+        "subject": "Merge remote-tracking branch 'origin/main' into roles-sweep"
+      },
+      {
+        "sha": "f02ccb3c57be22c4d487776c3fa259457154b1d1",
+        "committed_at": "2026-10-24T01:17:31+05:30",
+        "subject": "Merge pull request #50 from repolace/fix/vertex-429-retry-window"
+      },
+      {
+        "sha": "b661a307592cdbf59da483dfa00ea185ab6fa385",
+        "committed_at": "2026-10-24T01:17:01+05:30",
+        "subject": "Lengthen the gateway retry window so a Vertex 429 spell does not cost a task"
+      },
+      {
+        "sha": "8f8334fb816225bdb062b505dda82d15caf445c1",
+        "committed_at": "2026-10-20T23:17:52+05:30",
+        "subject": "Merge pull request #49 from repolace/fix/sonnet-5-5-cache-read-price"
+      },
+      {
+        "sha": "97ca567a61a24bcbc41021ff89fa3f67a26cb187",
+        "committed_at": "2026-10-20T23:17:35+05:30",
+        "subject": "Correct Claude Sonnet 5.5's cache-read price to $0.10 per million tokens"
+      },
+      {
+        "sha": "10c4293c27f97c464c03c0cbd91c821dc2ab7fe0",
+        "committed_at": "2026-10-18T19:57:12+05:30",
+        "subject": "Merge pull request #45 from repolace/cloud/c-conflict-resolver"
+      },
+      {
+        "sha": "5d95a7d57fd107d23c771bc027dfdb91ab780b57",
+        "committed_at": "2026-10-18T19:56:09+05:30",
+        "subject": "Merge main into the conflict-resolver branch; renumber its migration to 0016; fix review findings"
+      },
+      {
+        "sha": "f33b2ddec429022cac94ee99a0b303dc1e8ab792",
+        "committed_at": "2026-10-18T16:54:24+05:30",
+        "subject": "Merge pull request #48 from repolace/fix/pip-network-tolerance"
+      },
+      {
+        "sha": "654fb8ccd4190e01d51e4d87bfe82a66d0ed741e",
+        "committed_at": "2026-10-18T16:54:00+05:30",
+        "subject": "Make image builds tolerate a slow link: pip waits 120 s and retries 10 times"
+      },
+      {
+        "sha": "77fbe096b0eb1a22ca03665770940c8701aa8a1f",
+        "committed_at": "2026-10-18T13:42:23+05:30",
+        "subject": "Merge pull request #47 from repolace/fix/github-client-retry"
+      },
+      {
+        "sha": "c1b77241347626dcb5f43e71f8ee626c764129cf",
+        "committed_at": "2026-10-18T13:42:16+05:30",
+        "subject": "Address review of the retry change"
+      },
+      {
+        "sha": "e5aa44cb07d92d787699a1929de973943d37b905",
+        "committed_at": "2026-10-18T13:17:00+05:30",
+        "subject": "Retry transient GitHub API, git push and git fetch failures"
+      },
+      {
+        "sha": "3b0a4503401cd7a47a75e52e05ea0a0706264cbc",
+        "committed_at": "2026-10-18T13:01:10+05:30",
+        "subject": "Merge pull request #46 from repolace/fix/clone-retry"
+      },
+      {
+        "sha": "87e384a485dad61b44a97ab31d626cbbf7184868",
+        "committed_at": "2026-10-18T12:59:58+05:30",
+        "subject": "Retry a transient git clone failure instead of failing the task"
+      },
+      {
+        "sha": "0280095ee9d846622c9b4e926e39c5f8c9d9d9b1",
+        "committed_at": "2026-10-18T12:09:53+05:30",
+        "subject": "Merge pull request #44 from repolace/cloud/b-db-performance"
+      },
+      {
+        "sha": "98980fd3d9c69c52b746c656d99fe84e4f5d57d6",
+        "committed_at": "2026-10-18T12:09:16+05:30",
+        "subject": "Merge pull request #43 from repolace/cloud/a-deployment-hardening"
+      },
+      {
+        "sha": "215b5e7bfe63f7a656a0478c31a2edea592baf22",
+        "committed_at": "2026-10-17T19:45:50Z",
+        "subject": "Record what the role split is and is not"
+      },
+      {
+        "sha": "780a6d51e615caceeac686f3d5a3d6741ecdffac",
+        "committed_at": "2026-10-17T19:45:50Z",
+        "subject": "Wire the roles into the gateway, the CLI, the PR body and the benchmark manifest"
+      },
+      {
+        "sha": "90f1821dc671d8a185de447494881b49bc70fa0c",
+        "committed_at": "2026-10-17T19:27:23Z",
+        "subject": "Size the recursion limit by the graph's node count"
+      },
+      {
+        "sha": "2f73ad889d5556174a8dbf7ae0e170e724d6a9c8",
+        "committed_at": "2026-10-17T19:25:46Z",
+        "subject": "Add the debugger to the roles graph"
+      },
+      {
+        "sha": "85a011c526df61cd7e0c2dd62f25b05d0a21d328",
+        "committed_at": "2026-10-17T19:23:16Z",
+        "subject": "Add the reviewer to the roles graph"
+      },
+      {
+        "sha": "07d39e42e75b774a71c7f84fc56690beae799f02",
+        "committed_at": "2026-10-17T19:22:18Z",
+        "subject": "Test a target that moved without changing a file"
+      },
+      {
+        "sha": "ad143ee3242b9a65800f70971ef786a2e43b631e",
+        "committed_at": "2026-10-17T19:20:44Z",
+        "subject": "Add the roles graph with its planner"
+      },
+      {
+        "sha": "b713cc838f0460d87d2748790bfef8d7390c6df1",
+        "committed_at": "2026-10-17T19:16:53Z",
+        "subject": "Add the roles flag, off, and prove the single agent is unchanged"
+      },
+      {
+        "sha": "f304632d976e8f17efa1563d8b614c664c7d9223",
+        "committed_at": "2026-10-17T19:14:58Z",
+        "subject": "Add role prompts, role tools and ToolBox.subset for the role split"
+      },
+      {
+        "sha": "c32705dc307db473bfa0b64398d2e8e0b9eebdf6",
+        "committed_at": "2026-10-17T19:11:38Z",
+        "subject": "Extract the agent's tool loop into _run_loop"
+      },
+      {
+        "sha": "dd08d7625b975787fb93d0db06f1934e3215beb8",
+        "committed_at": "2026-10-17T19:07:11Z",
+        "subject": "Keep the conflict_reason CHECK to one direction"
+      },
+      {
+        "sha": "a5e69d30547cc22756a51956b3335e9d24b2c0ad",
+        "committed_at": "2026-10-17T19:02:16Z",
+        "subject": "Merge main into cloud/c-conflict-resolver"
+      },
+      {
+        "sha": "348423074d0f8d0bd74d0e176d8ad7d1b4092a23",
+        "committed_at": "2026-10-17T19:02:04Z",
+        "subject": "Wire the merge-conflict resolver into the pipeline"
+      },
+      {
+        "sha": "26bd52bd4b6f75260a4d72d7d7cc03edb4427aa5",
+        "committed_at": "2026-10-17T18:56:20Z",
+        "subject": "Record the query indexes and the bounded reads in the rules"
+      },
+      {
+        "sha": "830fa601364e25a43c043adfd0dacb0426850dbf",
+        "committed_at": "2026-10-17T18:56:20Z",
+        "subject": "Do not load patch_diff, score_reason or issue_body while a task is live"
+      },
+      {
+        "sha": "0163e3ffdac8fedeb010cbc07d288b891dd73343",
+        "committed_at": "2026-10-17T18:56:20Z",
+        "subject": "Limit the estimate's model fallback to the latest 30 tasks"
+      },
+      {
+        "sha": "0d1c1fe70728325669d2e127f9eddaf8ad162201",
+        "committed_at": "2026-10-17T18:56:20Z",
+        "subject": "Index the task list, the sweeper/reaper scan and the latest-call lookup (migration 0015)"
+      },
+      {
+        "sha": "6e84fa8bc7227d6f103a39b0a026033cdebe0df5",
+        "committed_at": "2026-10-17T18:53:25Z",
+        "subject": "Name the bound-capturing helper in the worker timeout test"
+      },
+      {
+        "sha": "da98b4489d77f4d808feabbb3a924952f13d622c",
+        "committed_at": "2026-10-17T18:52:18Z",
+        "subject": "Document the worker deployment, the new bound and the sweeper limits"
+      },
+      {
+        "sha": "035a30dde32b319e56c6ec78b1a98c6577a2d075",
+        "committed_at": "2026-10-17T18:51:35Z",
+        "subject": "Fail, not skip, when the eval harness is missing and required"
+      },
+      {
+        "sha": "59870a099ead0c5b3f08ca126ff3b1d0400f1861",
+        "committed_at": "2026-10-17T18:50:50Z",
+        "subject": "Refuse benchmark rows in the worker"
+      },
+      {
+        "sha": "2d0c3c85a59aad3e6243646d10e56aac87ae6adc",
+        "committed_at": "2026-10-17T18:49:00Z",
+        "subject": "Make the worker's timeout the visible reason on the task row"
+      }
+    ],
+    "main": [
+      {
+        "sha": "7f4cd9eda7d3d5b3f9129969430e6199c254f108",
+        "committed_at": "2026-10-26T09:24:00+05:30",
+        "subject": "Update docs for the first measured benchmark: no stale 'not yet run' statements"
+      },
+      {
+        "sha": "0e9692ddea8b2afc657585cb2ad20e4ce2d2b853",
+        "committed_at": "2026-10-26T02:39:11+05:30",
+        "subject": "Add BENCHMARK: sweep-4 and sweep-4b data, statistical analysis and report"
+      },
+      {
+        "sha": "f02ccb3c57be22c4d487776c3fa259457154b1d1",
+        "committed_at": "2026-10-24T01:17:31+05:30",
+        "subject": "Merge pull request #50 from repolace/fix/vertex-429-retry-window"
+      },
+      {
+        "sha": "b661a307592cdbf59da483dfa00ea185ab6fa385",
+        "committed_at": "2026-10-24T01:17:01+05:30",
+        "subject": "Lengthen the gateway retry window so a Vertex 429 spell does not cost a task"
+      },
+      {
+        "sha": "8f8334fb816225bdb062b505dda82d15caf445c1",
+        "committed_at": "2026-10-20T23:17:52+05:30",
+        "subject": "Merge pull request #49 from repolace/fix/sonnet-5-5-cache-read-price"
+      },
+      {
+        "sha": "97ca567a61a24bcbc41021ff89fa3f67a26cb187",
+        "committed_at": "2026-10-20T23:17:35+05:30",
+        "subject": "Correct Claude Sonnet 5.5's cache-read price to $0.10 per million tokens"
+      },
+      {
+        "sha": "10c4293c27f97c464c03c0cbd91c821dc2ab7fe0",
+        "committed_at": "2026-10-18T19:57:12+05:30",
+        "subject": "Merge pull request #45 from repolace/cloud/c-conflict-resolver"
+      },
+      {
+        "sha": "5d95a7d57fd107d23c771bc027dfdb91ab780b57",
+        "committed_at": "2026-10-18T19:56:09+05:30",
+        "subject": "Merge main into the conflict-resolver branch; renumber its migration to 0016; fix review findings"
+      },
+      {
+        "sha": "f33b2ddec429022cac94ee99a0b303dc1e8ab792",
+        "committed_at": "2026-10-18T16:54:24+05:30",
+        "subject": "Merge pull request #48 from repolace/fix/pip-network-tolerance"
+      },
+      {
+        "sha": "654fb8ccd4190e01d51e4d87bfe82a66d0ed741e",
+        "committed_at": "2026-10-18T16:54:00+05:30",
+        "subject": "Make image builds tolerate a slow link: pip waits 120 s and retries 10 times"
+      },
+      {
+        "sha": "77fbe096b0eb1a22ca03665770940c8701aa8a1f",
+        "committed_at": "2026-10-18T13:42:23+05:30",
+        "subject": "Merge pull request #47 from repolace/fix/github-client-retry"
+      },
+      {
+        "sha": "c1b77241347626dcb5f43e71f8ee626c764129cf",
+        "committed_at": "2026-10-18T13:42:16+05:30",
+        "subject": "Address review of the retry change"
+      },
+      {
+        "sha": "e5aa44cb07d92d787699a1929de973943d37b905",
+        "committed_at": "2026-10-18T13:17:00+05:30",
+        "subject": "Retry transient GitHub API, git push and git fetch failures"
+      },
+      {
+        "sha": "3b0a4503401cd7a47a75e52e05ea0a0706264cbc",
+        "committed_at": "2026-10-18T13:01:10+05:30",
+        "subject": "Merge pull request #46 from repolace/fix/clone-retry"
+      },
+      {
+        "sha": "87e384a485dad61b44a97ab31d626cbbf7184868",
+        "committed_at": "2026-10-18T12:59:58+05:30",
+        "subject": "Retry a transient git clone failure instead of failing the task"
+      },
+      {
+        "sha": "0280095ee9d846622c9b4e926e39c5f8c9d9d9b1",
+        "committed_at": "2026-10-18T12:09:53+05:30",
+        "subject": "Merge pull request #44 from repolace/cloud/b-db-performance"
+      },
+      {
+        "sha": "98980fd3d9c69c52b746c656d99fe84e4f5d57d6",
+        "committed_at": "2026-10-18T12:09:16+05:30",
+        "subject": "Merge pull request #43 from repolace/cloud/a-deployment-hardening"
+      },
+      {
+        "sha": "07d39e42e75b774a71c7f84fc56690beae799f02",
+        "committed_at": "2026-10-17T19:22:18Z",
+        "subject": "Test a target that moved without changing a file"
+      },
+      {
+        "sha": "dd08d7625b975787fb93d0db06f1934e3215beb8",
+        "committed_at": "2026-10-17T19:07:11Z",
+        "subject": "Keep the conflict_reason CHECK to one direction"
+      },
+      {
+        "sha": "a5e69d30547cc22756a51956b3335e9d24b2c0ad",
+        "committed_at": "2026-10-17T19:02:16Z",
+        "subject": "Merge main into cloud/c-conflict-resolver"
+      },
+      {
+        "sha": "348423074d0f8d0bd74d0e176d8ad7d1b4092a23",
+        "committed_at": "2026-10-17T19:02:04Z",
+        "subject": "Wire the merge-conflict resolver into the pipeline"
+      },
+      {
+        "sha": "26bd52bd4b6f75260a4d72d7d7cc03edb4427aa5",
+        "committed_at": "2026-10-17T18:56:20Z",
+        "subject": "Record the query indexes and the bounded reads in the rules"
+      },
+      {
+        "sha": "830fa601364e25a43c043adfd0dacb0426850dbf",
+        "committed_at": "2026-10-17T18:56:20Z",
+        "subject": "Do not load patch_diff, score_reason or issue_body while a task is live"
+      },
+      {
+        "sha": "0163e3ffdac8fedeb010cbc07d288b891dd73343",
+        "committed_at": "2026-10-17T18:56:20Z",
+        "subject": "Limit the estimate's model fallback to the latest 30 tasks"
+      },
+      {
+        "sha": "0d1c1fe70728325669d2e127f9eddaf8ad162201",
+        "committed_at": "2026-10-17T18:56:20Z",
+        "subject": "Index the task list, the sweeper/reaper scan and the latest-call lookup (migration 0015)"
+      },
+      {
+        "sha": "6e84fa8bc7227d6f103a39b0a026033cdebe0df5",
+        "committed_at": "2026-10-17T18:53:25Z",
+        "subject": "Name the bound-capturing helper in the worker timeout test"
+      },
+      {
+        "sha": "da98b4489d77f4d808feabbb3a924952f13d622c",
+        "committed_at": "2026-10-17T18:52:18Z",
+        "subject": "Document the worker deployment, the new bound and the sweeper limits"
+      },
+      {
+        "sha": "035a30dde32b319e56c6ec78b1a98c6577a2d075",
+        "committed_at": "2026-10-17T18:51:35Z",
+        "subject": "Fail, not skip, when the eval harness is missing and required"
+      },
+      {
+        "sha": "59870a099ead0c5b3f08ca126ff3b1d0400f1861",
+        "committed_at": "2026-10-17T18:50:50Z",
+        "subject": "Refuse benchmark rows in the worker"
+      },
+      {
+        "sha": "2d0c3c85a59aad3e6243646d10e56aac87ae6adc",
+        "committed_at": "2026-10-17T18:49:00Z",
+        "subject": "Make the worker's timeout the visible reason on the task row"
+      },
+      {
+        "sha": "fb4f89fd82d7a4b2c3629b16421f55576f0f03f4",
+        "committed_at": "2026-10-17T18:42:38Z",
+        "subject": "Bound the sweeper's read and let republished messages expire"
+      },
+      {
+        "sha": "cb0a06a5441bc0b9e4c4278af176d886a291e610",
+        "committed_at": "2026-10-17T18:40:16Z",
+        "subject": "Give RabbitMQ a consumer_timeout above the longest task"
+      },
+      {
+        "sha": "03660af228f42f8949843e7eada913412d609117",
+        "committed_at": "2026-10-17T18:39:15Z",
+        "subject": "Test that the broker timeout exceeds the hard limit, as its name says"
+      },
+      {
+        "sha": "5c2555f4943225cb72f492a976c65ba078dbf5fe",
+        "committed_at": "2026-10-17T18:38:26Z",
+        "subject": "Make the compose worker able to run a task"
+      },
+      {
+        "sha": "d0e599948422612783cb0830c8a07241bde9528c",
+        "committed_at": "2026-10-17T18:35:19Z",
+        "subject": "Give the api container its own env file"
+      },
+      {
+        "sha": "a7fcc78ea900f7add85a643686a37512f186131c",
+        "committed_at": "2026-10-18T00:03:02+05:30",
+        "subject": "Merge pull request #42 from repolace/feat/agent-limits-override"
+      },
+      {
+        "sha": "8ef0ad1a3597e459226c0bb64441b4c8bb2fd61a",
+        "committed_at": "2026-10-18T00:02:43+05:30",
+        "subject": "Let a run override the agent's step and attempt bounds, recorded in the manifest"
+      },
+      {
+        "sha": "5d8618e69783051bb01afc4b47c373940e3068fd",
+        "committed_at": "2026-10-17T23:31:13+05:30",
+        "subject": "Merge pull request #41 from repolace/docs/cloud-prompts"
+      },
+      {
+        "sha": "330e9962b974ca990f6418890256e0ec138b67e5",
+        "committed_at": "2026-10-17T23:30:33+05:30",
+        "subject": "Cloud briefs: plan mode first, no usage figures"
+      },
+      {
+        "sha": "479ba415bb3b96188cd6e638f799a8027d7b9430",
+        "committed_at": "2026-10-17T16:25:05+05:30",
+        "subject": "Merge pull request #40 from repolace/fix/terminal-timestamps"
+      }
+    ]
+  }
+}
