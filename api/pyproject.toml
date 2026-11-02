@@ -11,6 +11,7 @@ dependencies = [
     "alembic>=1.13",
     "celery>=5.4",
     "repolace-shared",
+    "arcjet>=1.5.0",
 ]
 
 [tool.uv.sources]
