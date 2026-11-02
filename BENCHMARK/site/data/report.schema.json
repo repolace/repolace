@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "repolace benchmark report",
+  "description": "Written by BENCHMARK/analysis/stats.py. Fractions are 0..1; money is USD; 'ci' pairs are [lo, hi]. No run is pooled: 'baseline' is a hand-stated substitution of sweep-4 and sweep-4b and says so in runs[].substitution.",
+  "type": "object",
+  "required": ["meta", "runs", "comparisons", "failure_flow", "power", "methods", "code_versions"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["generated_at", "seed", "bootstrap_resamples", "permutations", "sample", "disclosures", "rules"],
+      "properties": {
+        "generated_at": {"type": "string"}, "seed": {"type": "integer"}, "bootstrap_resamples": {"type": "integer"},
+        "permutations": {"type": "integer"}, "sample": {"type": "boolean", "description": "true for report.sample.json (sweep-4/4b only)"},
+        "report_commit": {"type": "string"}, "rules": {"type": "string"},
+        "disclosures": {"type": "array", "items": {"type": "string"}, "description": "must be shown next to any number"}
+      }
+    },
+    "runs": {
+      "type": "array",
+      "description": "ids: sweep-4, sweep-4b, baseline (substitution), sweep-5, sweep-r1, sweep-r2, sweep-e1, sweep-m1",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "kind", "planned", "finished", "passed", "partial", "partial_mark", "buckets", "headline",
+                     "secondary_admissible", "stop_reasons", "behaviour", "cost", "latency_s", "tokens", "instances", "tasks", "power"],
+        "properties": {
+          "id": {"type": "string"}, "label": {"type": "string"}, "short": {"type": "string"},
+          "kind": {"enum": ["baseline-official", "baseline-rerun", "baseline-substitution", "model", "variant"]},
+          "planned": {"type": "integer"}, "finished": {"type": "integer"}, "passed": {"type": "integer"},
+          "partial": {"type": "boolean"}, "partial_mark": {"type": ["string", "null"], "description": "'PARTIAL (n of m)' when rows are unfinished; never compare such a run on a rate"},
+          "buckets": {"type": "object", "description": "unfinished, harness_error, inadmissible, passed_with_test_edit, passed, failed"},
+          "headline": {"type": "object", "required": ["passed", "planned", "rate", "ci_bootstrap_instances", "definition"],
+            "properties": {"passed": {"type": "integer"}, "planned": {"type": "integer"}, "rate": {"type": "number"},
+              "ci_bootstrap_instances": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+              "se": {"type": ["number", "null"]}, "wilson_rows_context_only": {"type": ["array", "null"]}, "definition": {"type": "string"}}},
+          "secondary_admissible": {"type": "object"},
+          "bootstrap_samples": {"type": "array", "items": {"type": "number"}, "description": "every 40th sorted resample, for drawing the distribution"},
+          "clustering": {"type": "object", "description": "absent for partial runs: icc_oneway, design_effect_3_runs, effective_n_rows, cochran_q_run_index"},
+          "pass_at_k": {"type": "object"}, "per_run_index": {"type": "array", "items": {"type": "number"}},
+          "stop_reasons": {"type": "object"}, "stop_reason_shares_of_completed": {"type": "object"},
+          "behaviour": {"type": "object", "description": "step_cap_share, submitted_share, no_change_share, first_edit_call, first_edit_ecdf [[call, cumulative share]], auc_passed_edits_earlier, tool_mix"},
+          "cost": {"type": "object", "description": "total_usd_in_db, archived_added_back_usd, total_usd_with_archived, per_task, per_pass {usd, ci_bootstrap_instances}, per_pass_with_archived_usd, censoring, price_basis"},
+          "latency_s": {"type": "object"}, "tokens": {"type": "object"},
+          "lost_rows": {"type": "array"},
+          "instances": {"type": "array", "items": {"type": "object", "required": ["instance_id", "repo", "planned", "passes", "outcomes"]}},
+          "tasks": {"type": "array", "items": {"type": "object", "required": ["instance_id", "run_index", "bucket"], "description": "one per planned cell; bucket is the benchmark.md bucket"}},
+          "power": {"type": "object"}, "code_versions": {"type": "object", "description": "rows by gateway retry window"},
+          "manifest": {"type": "object"}, "substitution": {"type": "object", "description": "baseline only: hand_stated, substituted_cells, statement"},
+          "retry_windows": {"type": "object"}, "archived_attempts": {"type": "object"}, "headline_note": {"type": "string"}
+        }
+      }
+    },
+    "comparisons": {
+      "type": "array",
+      "description": "variant vs the baseline substitution. primary = the pre-registered rule; exploratory is context only and is null for partial runs.",
+      "items": {
+        "type": "object", "required": ["variant", "baseline", "n_instances", "primary"],
+        "properties": {
+          "variant": {"type": "string"}, "baseline": {"const": "baseline"}, "n_instances": {"type": "integer"},
+          "partial": {"type": "boolean"}, "variant_rate": {"type": ["number", "null"]}, "baseline_rate": {"type": ["number", "null"]},
+          "primary": {"type": "object", "required": ["mcnemar_run_index_0"],
+            "properties": {"rule": {"type": "string"},
+              "mcnemar_run_index_0": {"type": "object", "required": ["pairs", "baseline_only_passed", "variant_only_passed", "p_exact_two_sided"]},
+              "secondary_metrics": {"type": "object"}, "holm_family": {"type": ["array", "null"]},
+              "baseline_inside_variant_interval": {"type": ["boolean", "null"]}}},
+          "exploratory": {"type": ["object", "null"], "description": "paired_cluster_bootstrap_difference, sign_test, wilcoxon_signed_rank, permutation_sign_flip, cohens_h, mantel_haenszel (defined: false when degenerate), flips, minimum_detectable_gap_pp"}
+        }
+      }
+    },
+    "difficulty": {"type": ["object", "null"]},
+    "cost_effectiveness": {"type": ["object", "null"]},
+    "cost_curves": {"type": ["object", "null"], "description": "run id -> [[call index, mean cumulative usd, n tasks]]"},
+    "failure_flow": {"type": "object", "description": "run id -> [{stop_reason, bucket, n}]"},
+    "retrieval": {"type": ["object", "null"]},
+    "power": {"type": "object"},
+    "methods": {"type": "array", "items": {"type": "object", "required": ["id", "name", "role", "formula", "detail"]}},
+    "code_versions": {"type": "object"}
+  }
+}
