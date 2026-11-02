@@ -23,8 +23,23 @@ rule files (`agent.md`, `task-bookkeeping.md`, `benchmark.md`, `no-oracle.md`) a
    `task_test_runs.commit_sha` recorded for that attempt; `patch_sha` of a resumed task is a restored sha.
 7. **`WorkerTimeout` is `design`** (a slow task is the task's own doing), and an operator's stop (Ctrl-C, SIGTERM, a
    deploy cancelling the task) is `unavailable`.
-8. **A pause is bounded:** 24 h or 10 resumes (`WorkerSettings.paused_max_age_seconds`, `paused_max_resumes`), then
-   `failed` with `runner: paused too long or resumed too often`.
+8. **A pause is bounded:** a product row after 24 h since its last progress or 10 resumes
+   (`WorkerSettings.paused_max_age_seconds`, `paused_max_resumes`), then `failed` with `runner: paused too long or
+   resumed too often`; a benchmark row only by the resume cap (`runner: resumed too often`), never by age.
+
+**Changes after review** (each has a regression test):
+
+- A pause is written only while the agent has not returned and only if the checkpoint knows every scored attempt;
+  a push or PR outage after the agent finished fails the task, because a resume would run the agent a second time.
+- A refused resume (moved base, other code or model, missing baseline, patches that do not apply, a checkpoint older
+  than the scored attempts) fails the row with `resume refused: ...`, keeps the checkpoint and hands back the resume
+  the claim counted; `reopen_refused` / `repolace-eval run --reopen-refused` recovers it once the cause is undone.
+- Transient failures in the stages a resume re-runs (GitHub 5xx, network, database, git transport, the sandbox host)
+  are `unavailable` and re-pause the row without costing a resume or postponing its expiry.
+- Every write after the claim is fenced to the claimant (checkpoint saves under `FOR SHARE`, the heartbeat, the
+  terminal writes, the pause), and a resume claim waits `min_pause_seconds` after `paused_at` (migration 0018).
+- A first-attempt snapshot taken after a verify is entered with the retry's elision, so the first request after a
+  resume equals the original's.
 
 ## Goal and the one limit on it
 
