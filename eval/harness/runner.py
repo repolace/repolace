@@ -51,7 +51,7 @@ backends re-sanitise what they hand to git and docker.
 
 On SIGTERM or SIGHUP (and Ctrl-C) the children's process groups are killed, their rows
 are settled RUNNING to FAILED (`runner: interrupted`), and their containers are removed;
-`--mark-abandoned` settles rows left by a crash.
+`--mark-abandoned` settles rows left by a crash, and `--reopen-refused` puts back rows whose resume was refused.
 """
 
 from __future__ import annotations
@@ -82,11 +82,14 @@ from repolace_shared.process import (
     run_process,
 )
 from repolace_shared.tasks_recovery import (
+    DEFAULT_MAX_RESUMES,
     DESIGN,
     UNAVAILABLE,
     ProcessRunner,
+    fail_exhausted_pauses,
     fail_if_running,
     remove_task_containers,
+    reopen_refused,
     settle_running,
 )
 
@@ -97,6 +100,7 @@ from harness.db import (
     check_eval_run_id,
     open_session_factory,
     queued_tasks,
+    refused_resumes,
     run_cost_usd,
     run_provider_failures,
     running_older_than,
@@ -118,6 +122,9 @@ EXIT_PAUSED = 4
 ABANDONED_GRACE_SECONDS = 600.0
 
 GATEWAY_STAGE_MODELS_VAR = "GATEWAY_STAGE_MODELS"
+
+#: What a benchmark row that was resumed `DEFAULT_MAX_RESUMES` times and paused again is failed with.
+PAUSE_EXHAUSTED_MESSAGE = "runner: resumed too often"
 
 _CONTAINER_ID = re.compile(r"[0-9a-f]{12,64}")
 
@@ -438,6 +445,13 @@ async def run_queue(
         raise ValueError(str(exc)) from None
     run_dir.mkdir(exist_ok=True)
     manifest_found = check_manifest(runs_dir, config)
+    # A row whose resumes are used up is finished before the queue is read, so a child that keeps dying (an OOM
+    # kill, a crash) pauses it and is dispatched again only up to the cap, never for ever.
+    exhausted = await fail_exhausted_pauses(
+        factory, config.eval_run_id, max_resumes=DEFAULT_MAX_RESUMES, message=PAUSE_EXHAUSTED_MESSAGE
+    )
+    if exhausted:
+        log.error("runner.pause_exhausted", count=len(exhausted), task_ids=[str(t) for t in exhausted])
 
     command = tuple(child_command) if child_command is not None else default_child_command()
     env = child_env(os.environ if base_env is None else base_env, config.model)
@@ -613,6 +627,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--mark-abandoned", action="store_true",
         help="instead of running: mark stale RUNNING rows of the run FAILED ('runner: abandoned') and exit",
     )
+    parser.add_argument(
+        "--reopen-refused", action="store_true",
+        help="instead of running: put the run's rows whose resume was refused (the base moved, other code or "
+        "model) back to PAUSED, once the cause is undone, and exit",
+    )
     parser.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
     return parser
 
@@ -673,7 +692,7 @@ def main(
         print(f"repolace-eval run: {exc}", file=sys.stderr)
         return 2
 
-    if args.agent == "llm" and not args.mark_abandoned and args.max_total_usd is None:
+    if args.agent == "llm" and not (args.mark_abandoned or args.reopen_refused) and args.max_total_usd is None:
         print(
             "repolace-eval run: --max-total-usd is required for --agent llm: a sweep spends real money "
             "and the per-task cap does not bound the total",
@@ -689,6 +708,13 @@ def main(
     async def run() -> int:
         _cancel_on_signals(received)
         async with (session_factory or open_session_factory)() as factory:
+            if args.reopen_refused:
+                reopened = [
+                    task for task in await refused_resumes(factory, args.eval_run_id)
+                    if await reopen_refused(factory, task.task_id)
+                ]
+                print(f"reopened {len(reopened)} task(s) whose resume had been refused; the next run resumes them")
+                return 0
             if args.mark_abandoned:
                 report = await mark_abandoned(
                     factory, args.eval_run_id, args.timeout_seconds, process_runner=process_runner

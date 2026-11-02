@@ -81,7 +81,7 @@ class TestClassification:
     def test_each_kind_has_one_bucket(self, kind, bucket):
         assert classify(task_row(**KINDS[kind])) == bucket
 
-    @pytest.mark.parametrize("status", [S.QUEUED, S.RUNNING])
+    @pytest.mark.parametrize("status", [S.QUEUED, S.RUNNING, S.PAUSED])
     def test_a_task_still_in_flight_is_unfinished_whatever_it_says_so_far(self, status):
         assert classify(task_row(status=status, outcome=O.PASSED, agent_stop_reason="llm_error")) == UNFINISHED
 

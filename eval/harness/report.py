@@ -189,7 +189,8 @@ def is_gold(row: TaskRow) -> bool:
 
 def classify(row: TaskRow) -> str:
     """The one bucket a row belongs to. The order is the accounting; see the module docstring."""
-    if row.status in (TaskStatus.QUEUED, TaskStatus.RUNNING):
+    # A paused row stopped for unavailability and will be resumed: it is not finished, and not a harness error.
+    if row.status in (TaskStatus.QUEUED, TaskStatus.RUNNING, TaskStatus.PAUSED):
         return UNFINISHED
     if row.status is TaskStatus.FAILED:
         return HARNESS_ERROR

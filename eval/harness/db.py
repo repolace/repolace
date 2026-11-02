@@ -3,11 +3,11 @@
 `enqueue`, `runner` and `gold` all read or write `tasks`, and the rules about
 which rows they may change live here so they are stated once. The one that
 matters most is the shape of every status write the runner makes: **conditional
-on `status = 'running'`**. A task row can never be re-run (`task_test_runs` has
-`UNIQUE(task_id, attempt)`), so the only legitimate transitions a harness
-performs on a row it did not finish are RUNNING -> FAILED; there is no function
-here that sets QUEUED, and adding one would reintroduce the double run the whole
-runner is built to prevent.
+on `status = 'running'`**. A task row is never run from scratch twice (`task_test_runs` has
+`UNIQUE(task_id, attempt)`), so the legitimate transitions a harness performs on a row it did not finish are
+RUNNING -> FAILED, and RUNNING -> PAUSED for a row that stopped for unavailability and left a checkpoint (the
+pipeline continues it from there; see `tasks_recovery.settle_running`); there is no function here that sets
+QUEUED, and adding one would reintroduce the double run the whole runner is built to prevent.
 """
 
 from __future__ import annotations
@@ -20,11 +20,11 @@ from datetime import timedelta
 from decimal import Decimal
 
 from repolace_gateway.errors import PROVIDER_FAILURE_MARKERS
-from repolace_shared.db.models import LLMCall, Task, TaskStatus
+from repolace_shared.db.models import STOP_UNAVAILABLE, LLMCall, Task, TaskCheckpoint, TaskStatus
 from repolace_shared.db.session import create_engine, create_session_factory
-from repolace_shared.tasks_recovery import TaskRef
+from repolace_shared.tasks_recovery import RESUME_REFUSED_PREFIX, TaskRef
 from repolace_shared.tasks_recovery import running_older_than as _running_older_than
-from sqlalchemy import func, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 SessionFactory = async_sessionmaker[AsyncSession]
@@ -81,6 +81,22 @@ async def queued_tasks(factory: SessionFactory, eval_run_id: str) -> list[Queued
         return [QueuedTask(task_id, instance_id, run_index) for task_id, instance_id, run_index in rows]
 
 
+async def refused_resumes(factory: SessionFactory, eval_run_id: str) -> list[QueuedTask]:
+    """FAILED rows of the run whose resume was refused (`RESUME_REFUSED_PREFIX`) and whose checkpoint is kept."""
+    async with factory() as session:
+        rows = await session.execute(
+            select(Task.id, Task.instance_id, Task.run_index)
+            .where(
+                Task.eval_run_id == eval_run_id,
+                Task.status == TaskStatus.FAILED,
+                Task.error_message.startswith(RESUME_REFUSED_PREFIX),
+                exists().where(TaskCheckpoint.task_id == Task.id),
+            )
+            .order_by(Task.run_index, Task.instance_id, Task.id)
+        )
+        return [QueuedTask(task_id, instance_id, run_index) for task_id, instance_id, run_index in rows]
+
+
 async def run_cost_usd(factory: SessionFactory, eval_run_id: str) -> Decimal:
     """Everything the run has spent so far, from `llm_calls` (the only complete record).
 
@@ -116,7 +132,12 @@ async def run_provider_failures(
         or_(
             (Task.status == TaskStatus.FAILED)
             & or_(*(Task.error_message.contains(marker) for marker in PROVIDER_FAILURE_MARKERS)),
-            (Task.status == TaskStatus.PAUSED) & (Task.stop_class == "unavailable"),
+            # Paused *because the provider was unavailable*, not because a child died: the reason carries the
+            # gateway's prefix in the one case. A crashed or OOM-killed child pauses with `runner: child exited
+            # ...`, which says nothing about the provider and must not stop the sweep as if it did.
+            (Task.status == TaskStatus.PAUSED)
+            & (Task.stop_class == STOP_UNAVAILABLE)
+            & or_(*(Task.paused_reason.contains(marker) for marker in PROVIDER_FAILURE_MARKERS)),
         ),
     ]
     if task_ids is not None:

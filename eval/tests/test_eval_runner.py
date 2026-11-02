@@ -62,6 +62,7 @@ from harness.runner import (
 from repolace_shared.db.models import Task, TaskStatus
 from repolace_shared.paths import PathEscapesRoot
 from repolace_shared.process import ProcessResult
+from repolace_shared.tasks_recovery import DEFAULT_MAX_RESUMES, RESUME_REFUSED_PREFIX
 
 RUN = "run-1"
 
@@ -1302,7 +1303,8 @@ class TestPausedRows:
     ):
         repo = await add_repo(db_session, "repolace/bench-x")
         paused = await add_task(
-            db_session, repo, instance_id="a", run_index=0, status=TaskStatus.PAUSED, stop_class="unavailable"
+            db_session, repo, instance_id="a", run_index=0, status=TaskStatus.PAUSED, stop_class="unavailable",
+            paused_reason="agent: LLMCallError: provider quota exhausted: agent call to m failed after 20 retries",
         )
         paused_id = paused.id
         await add_task(db_session, repo, instance_id="b", run_index=0, status=TaskStatus.PAUSED, stop_class="design")
@@ -1337,3 +1339,73 @@ class TestPausedRows:
             TaskStatus.PAUSED, "runner: abandoned", "unavailable", None,
         )
         assert (lost.status, lost.error_message, lost.stop_class) == (TaskStatus.FAILED, "runner: abandoned", "unavailable")
+
+
+@pytest.mark.anyio
+@pytest.mark.db
+class TestADeadChildIsNotAProviderRefusal:
+    """Fix 8: a crashed or OOM-killed child pauses its row, and that says nothing about the provider."""
+
+    async def test_a_pause_for_a_dead_child_does_not_count_toward_the_breaker(self, db_session, db_session_factory):
+        repo = await add_repo(db_session, "repolace/bench-x")
+        for i in range(3):
+            await add_task(
+                db_session, repo, instance_id=f"dead{i}", run_index=0, status=TaskStatus.PAUSED,
+                stop_class="unavailable", paused_reason="runner: child exited -9 without finishing the task",
+            )
+        await add_task(
+            db_session, repo, instance_id="gone", run_index=0, status=TaskStatus.PAUSED, stop_class="unavailable",
+            paused_reason="runner: abandoned",
+        )
+
+        assert await run_provider_failures(db_session_factory, RUN) == 0
+
+    async def test_a_child_that_keeps_dying_is_dispatched_up_to_the_cap_and_then_failed(
+        self, db_session, db_session_factory, tmp_path
+    ):
+        repo = await add_repo(db_session, "repolace/bench-x")
+        capped = await add_task(
+            db_session, repo, instance_id="a", run_index=0, status=TaskStatus.PAUSED, stop_class="unavailable",
+            paused_reason="runner: child exited -9 without finishing the task", resume_count=DEFAULT_MAX_RESUMES,
+        )
+        fresh = await add_task(
+            db_session, repo, instance_id="b", run_index=0, status=TaskStatus.PAUSED, stop_class="unavailable",
+            paused_reason="runner: child exited -9 without finishing the task", resume_count=1,
+        )
+        capped_id, fresh_id = capped.id, fresh.id
+
+        summary = await run_queue(
+            db_session_factory, config(concurrency=1, agent="gold"), runs_dir=tmp_path / "runs",
+            child_command=child_command(), base_env=child_base_env(tmp_path),
+        )
+
+        db_session.expire_all()
+        failed = await db_session.get(Task, capped_id)
+        assert (failed.status, failed.error_message) == (TaskStatus.FAILED, runner.PAUSE_EXHAUSTED_MESSAGE)
+        assert [r.task.task_id for r in summary.results] == [fresh_id], "only the row under the cap was dispatched"
+
+    async def test_reopening_puts_refused_resumes_back_to_paused(self, db_session, db_session_factory):
+        from repolace_shared.db.models import TaskCheckpoint
+
+        repo = await add_repo(db_session, "repolace/bench-x")
+        refused = await add_task(
+            db_session, repo, instance_id="a", run_index=0, status=TaskStatus.FAILED, stop_class="design",
+            error_message=RESUME_REFUSED_PREFIX + "the target branch moved",
+        )
+        other = await add_task(
+            db_session, repo, instance_id="b", run_index=0, status=TaskStatus.FAILED, error_message="agent: a bug"
+        )
+        refused_id, other_id = refused.id, other.id
+        db_session.add(TaskCheckpoint(task_id=refused_id, agent_state={}, base_sha="b" * 40, provenance={}))
+        await db_session.commit()
+
+        @asynccontextmanager
+        async def seam():
+            yield db_session_factory
+
+        code = await asyncio.to_thread(main, ["--eval-run-id", RUN, "--reopen-refused"], session_factory=seam)
+
+        assert code == 0
+        db_session.expire_all()
+        assert (await db_session.get(Task, refused_id)).status is TaskStatus.PAUSED
+        assert (await db_session.get(Task, other_id)).status is TaskStatus.FAILED
