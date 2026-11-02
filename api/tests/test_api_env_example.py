@@ -1,7 +1,7 @@
 """`infra/api.env.example` is the whole environment the `api` container is meant to see.
 
-The API is the internet-facing process, so its env file lists only what `ApiSettings` and
-`UiSettings` read. The test holds the example equal to those settings in both directions: a new
+The API is the internet-facing process, so its env file lists only what `ApiSettings`,
+`UiSettings` and `ArcjetSettings` read. The test holds the example equal to those settings in both directions: a new
 setting without an example line fails here, and so does a stray line (a provider key, say) that
 nothing in the API reads. It also checks the examples under `infra/` carry no secret values.
 """
@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 from repolace_api.config import ApiSettings, UiSettings
+from repolace_api.protection import ArcjetSettings
 
 INFRA = Path(__file__).resolve().parents[2] / "infra"
 API_ENV_EXAMPLE = INFRA / "api.env.example"
@@ -32,7 +33,7 @@ def read_env(path: Path) -> dict[str, str]:
 
 
 def test_the_api_example_lists_exactly_what_the_api_reads():
-    expected = {name.upper() for name in (*ApiSettings.model_fields, *UiSettings.model_fields)}
+    expected = {name.upper() for name in (*ApiSettings.model_fields, *UiSettings.model_fields, *ArcjetSettings.model_fields)}
 
     assert set(read_env(API_ENV_EXAMPLE)) == expected
 
