@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>repolace benchmark report</title>
+<meta name="description" content="An autonomous issue-fixing agent measured on 18 real bugs: 35 of 54 attempts passed, the honest range is 44 to 83 percent, and no variant beat the baseline.">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="fonts/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+<script>
+  document.documentElement.classList.add("js");
+  try {
+    var t = localStorage.getItem("theme");
+    if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  } catch (e) {}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the report</a>
+
+<header class="topbar">
+  <a class="mark" href="#top">repolace benchmark</a>
+  <nav aria-label="Sections">
+    <a href="#runs">Runs</a>
+    <a href="#why-wide">Why so wide</a>
+    <a href="#bug-map">Bug map</a>
+    <a href="#variants">Variants</a>
+    <a href="#budget">Budget</a>
+    <a href="#endings">Endings</a>
+    <a href="#power">Power</a>
+    <a href="#method">Method</a>
+  </nav>
+  <details class="menu">
+    <summary>Sections</summary>
+    <div class="panel">
+      <a href="#runs">Runs</a>
+      <a href="#why-wide">Why so wide</a>
+      <a href="#bug-map">Bug map</a>
+      <a href="#variants">Variants</a>
+      <a href="#budget">Budget</a>
+      <a href="#endings">Endings</a>
+      <a href="#power">Power</a>
+      <a href="#method">Method</a>
+    </div>
+  </details>
+  <button class="iconbtn" id="theme" type="button" aria-label="Switch colour theme" title="Switch colour theme">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7Z"/></svg>
+  </button>
+</header>
+
+<main id="main">
+  <a id="top"></a>
+  <div class="wrap">
+    <section class="hero" aria-labelledby="headline">
+      <h1 id="headline">Across <span class="n">54</span> attempts at <span class="n">18</span> real bugs, the agent’s fix passed the hidden tests <span class="n">35</span> times.</h1>
+      <p class="sub" id="hero-sub">Gemini 3.1 Pro driving a single agent that reads the repository, edits, and runs the tests in a sandbox. No pull request was opened in any run.</p>
+      <div class="hero-fig" id="hero-fig"></div>
+      <p class="hero-note" id="hero-note"></p>
+      <noscript><div class="nojs">This report draws its charts with JavaScript. The numbers are all in <a href="data/report.json">data/report.json</a>.</div></noscript>
+    </section>
+  </div>
+
+  <div class="wrap">
+    <section class="story" id="runs" aria-labelledby="runs-h">
+      <h2 id="runs-h">Every run, on one axis</h2>
+      <div class="pair">
+        <div class="measure" id="runs-text"></div>
+        <aside class="note" id="runs-note"></aside>
+      </div>
+      <div id="fig-forest"></div>
+    </section>
+  </div>
+
+  <div class="filterbar" id="filterbar" role="group" aria-label="Runs shown in the figures below">
+    <div class="wrap"><div class="row" id="filter-row"></div></div>
+  </div>
+
+  <div class="wrap">
+    <section class="story" id="why-wide" aria-labelledby="why-h">
+      <h2 id="why-h">Why the range is so wide</h2>
+      <div class="pair">
+        <div class="measure" id="why-text"></div>
+        <aside class="note" id="why-note"></aside>
+      </div>
+      <div id="fig-clump"></div>
+      <div class="clips" id="clips-why"></div>
+    </section>
+
+    <section class="story" id="bug-map" aria-labelledby="map-h">
+      <h2 id="map-h">Which bugs it fixes, and which it never does</h2>
+      <div class="pair">
+        <div class="measure" id="map-text"></div>
+        <aside class="note" id="map-note"></aside>
+      </div>
+      <div id="fig-heat"></div>
+    </section>
+
+    <section class="story" id="variants" aria-labelledby="var-h">
+      <h2 id="var-h">Did any variant beat the baseline? No.</h2>
+      <div class="pair">
+        <div class="measure" id="var-text"></div>
+        <aside class="note" id="var-note"></aside>
+      </div>
+      <div class="rule-box" id="prereg"></div>
+      <div id="fig-waffle"></div>
+      <div id="tbl-primary"></div>
+      <div class="clips one" id="clips-pair"></div>
+      <div class="caveat" id="confounds"></div>
+      <div class="exploratory" id="exploratory"></div>
+    </section>
+
+    <section class="story" id="budget" aria-labelledby="bud-h">
+      <h2 id="bud-h">Where the forty steps go</h2>
+      <div class="pair">
+        <div class="measure" id="bud-text"></div>
+        <aside class="note" id="bud-note"></aside>
+      </div>
+      <div id="fig-ecdf"></div>
+      <div id="fig-ends"></div>
+      <div id="fig-curves"></div>
+      <div id="fig-cpp"></div>
+    </section>
+
+    <section class="story" id="endings" aria-labelledby="end-h">
+      <h2 id="end-h">How the attempts ended</h2>
+      <div class="pair">
+        <div class="measure" id="end-text"></div>
+        <aside class="note" id="end-note"></aside>
+      </div>
+      <div id="fig-flow"></div>
+    </section>
+
+    <section class="story" id="power" aria-labelledby="pow-h">
+      <h2 id="pow-h">What forty points means</h2>
+      <div class="pair">
+        <div class="measure" id="pow-text"></div>
+        <aside class="note" id="pow-note"></aside>
+      </div>
+      <div id="fig-power"></div>
+      <div class="clips one" id="clips-power"></div>
+      <h3>The retrieval grid</h3>
+      <div class="measure" id="ret-text"></div>
+      <div id="fig-retrieval"></div>
+    </section>
+
+    <section class="story" id="method" aria-labelledby="met-h">
+      <h2 id="met-h">Method, caveats and data</h2>
+      <div class="pair">
+        <div class="measure" id="met-text"></div>
+        <aside class="note" id="met-note"></aside>
+      </div>
+      <h3>Read this next to any number</h3>
+      <ul class="plain disc" id="disclosures"></ul>
+      <h3>Code version of every row</h3>
+      <div id="code-versions"></div>
+      <h3>Spend on attempts that were re-run</h3>
+      <div id="archived-spend"></div>
+      <h3>Every test, with its formula</h3>
+      <div class="methods" id="methods"></div>
+      <h3>Data and regeneration</h3>
+      <div class="downloads" id="downloads"></div>
+      <pre class="cmd" id="regen"></pre>
+    </section>
+
+    <footer class="foot" id="foot"></footer>
+  </div>
+</main>
+
+<div class="tip" id="tip" role="tooltip"></div>
+
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js" crossorigin="anonymous"></script>
+<script defer type="module" src="js/main.js"></script>
+</body>
+</html>
