@@ -95,3 +95,12 @@ async def test_hero_stagger_uses_classes_not_inline_styles():
     assert "rise-1" in html and " style=" not in html
     for name in ("rise-1", "rise-2", "rise-3", "rise-4"):
         assert f".{name}" in SITE_CSS
+
+
+async def test_site_assets_are_versioned_so_a_deploy_is_not_hidden_by_browser_caches():
+    async with client() as c:
+        first = (await c.get("/")).text
+        second = (await c.get("/pricing")).text
+    versions = set(re.findall(r"/assets/(?:site\.css|site\.js|theme-init\.js)\?v=([0-9a-f]{10})", first + second))
+    assert len(versions) == 1, versions
+    assert len(re.findall(r"\?v=", first)) == 3
