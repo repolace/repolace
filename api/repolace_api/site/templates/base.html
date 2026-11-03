@@ -6,26 +6,35 @@
   <meta name="color-scheme" content="light dark">
   <title>{% block title %}repolace: an agent that turns GitHub issues into tested pull requests{% endblock %}</title>
   <meta name="description" content="{% block description %}repolace takes a GitHub issue, finds the relevant code, writes a fix, runs your test suite in a locked-down sandbox and opens a pull request. Early access.{% endblock %}">
-  <link rel="preload" href="/assets/fonts/ibm-plex-sans-latin-400.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="/assets/fonts/ibm-plex-sans-latin-600.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/benchmark/fonts/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/benchmark/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/assets/site.css">
-  <script src="/assets/theme.js"></script>
+  <script src="/assets/theme-init.js"></script>
   {% block head %}{% endblock %}
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
-  <header class="top">
-    <div class="wrap bar">
-      <a class="brand" href="/" aria-label="repolace home">
-        <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h9a4 4 0 0 1 0 8H8m0 0 3-3m-3 3 3 3M5 19h14"/></svg>repolace
-      </a>
-      <nav class="nav" aria-label="Primary">
-        <a href="/benchmark"{% if path.startswith('/benchmark') %} aria-current="page"{% endif %}>Benchmark</a>
-        <a href="/pricing"{% if path == '/pricing' %} aria-current="page"{% endif %}>Pricing</a>
-        <a class="btn btn-primary" href="/waitlist">Join the waitlist</a>
-      </nav>
-      <button type="button" id="theme-toggle" class="btn themebtn" hidden>Theme: system</button>
-    </div>
+  <header class="topbar">
+    <a class="mark" href="/" aria-label="repolace home">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h9a4 4 0 0 1 0 8H8m0 0 3-3m-3 3 3 3M5 19h14"/></svg>repolace
+    </a>
+    <nav aria-label="Primary">
+      <a href="/benchmark/">Benchmark</a>
+      <a href="/pricing"{% if path == '/pricing' %} aria-current="page"{% endif %}>Pricing</a>
+    </nav>
+    <a class="btn btn-primary btn-sm cta-top" href="/waitlist">Join the waitlist</a>
+    <details class="menu">
+      <summary>Menu</summary>
+      <div class="panel">
+        <a href="/">Home</a>
+        <a href="/benchmark/">Benchmark</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/waitlist">Join the waitlist</a>
+      </div>
+    </details>
+    <button class="iconbtn" id="theme" type="button" aria-label="Switch colour theme" title="Switch colour theme">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7Z"/></svg>
+    </button>
   </header>
   <main id="main">
 {% block content %}{% endblock %}
@@ -33,8 +42,9 @@
   <footer class="foot">
     <div class="wrap footrow">
       <p>repolace is in early access. Python repositories only, for now.</p>
-      <nav aria-label="Footer"><a href="/benchmark">Benchmark</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
+      <nav aria-label="Footer"><a href="/benchmark/">Benchmark</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
     </div>
   </footer>
+  <script src="/assets/site.js" defer></script>
 </body>
 </html>
