@@ -1,9 +1,11 @@
 {% extends "base.html" %}
 {% block title %}{{ code }} | repolace{% endblock %}
 {% block content %}
-<section class="wrap narrow pagehead">
-  <p class="eyebrow">{{ code }}</p>
-  <h1>{{ message }}</h1>
-  <p><a class="btn" href="/">Back to the home page</a></p>
-</section>
+<div class="wrap narrow">
+  <section class="pagehead">
+    <p class="eyebrow">{{ code }}</p>
+    <h1>{{ message }}</h1>
+    <p class="cta"><a class="btn" href="/">Back to the home page</a></p>
+  </section>
+</div>
 {% endblock %}

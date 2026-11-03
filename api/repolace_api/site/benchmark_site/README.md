@@ -11,6 +11,7 @@ no remote origin) and follows the official headline:
   the description and headline say 29 of 54 (53.7%, the official sweep-4 figure).
 - `js/core.js`: `el()` sets `style` through `style.cssText` (allowed) instead of `setAttribute("style")` (blocked);
   `js/budget.js`: the legend swatch is built with `el()`; `js/main.js`: the D3 credit line.
+- `index.html` and `js/main.js`: the top bar, the mobile menu and the footer link back to `/`, `/pricing`, `/waitlist`, `/privacy` and `/terms`.
 - `js/hero.js`: the hero reads `runs["sweep-4"]`, and its note says the 35/54 figure is a hand-stated substitution used
   as the comparisons' baseline.
 - `js/vendor/d3.min.js` is **D3 7.8.5**, copied from CPython 3.15's `profiling/sampling/_vendor/d3/7.8.5/` (ISC licence),

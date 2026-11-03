@@ -39,7 +39,6 @@ from repolace_api.site.waitlist import (
 )
 
 HERE = Path(__file__).parent
-FONTS_DIR = HERE.parent / "ui" / "static" / "fonts"
 
 _MESSAGES = {
     "email": "That does not look like an email address.",
@@ -65,7 +64,7 @@ def _is_local_peer(peer: str) -> bool:
 
 
 class StaticAssets(StaticFiles):
-    """Fonts never change under one URL, so they are cached for a year; the rest revalidates."""
+    """Everything revalidates (`no-cache`); `immutable_suffix` opts one file type into a year-long cache."""
 
     def __init__(self, *, immutable_suffix: str | None = None, **kwargs):
         super().__init__(**kwargs)
@@ -197,7 +196,6 @@ def create_site_app(
     # feat/benchmark-site branch, see benchmark_site/README.md). `/benchmark` redirects to `/benchmark/`
     # so its relative URLs resolve.
     app.mount("/benchmark", StaticAssets(directory=HERE / "benchmark_site", html=True), name="benchmark")
-    app.mount("/assets/fonts", StaticAssets(directory=FONTS_DIR, immutable_suffix=".woff2"), name="fonts")
     app.mount("/assets", StaticAssets(directory=HERE / "static"), name="assets")
 
     @app.exception_handler(StarletteHTTPException)
