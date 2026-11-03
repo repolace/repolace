@@ -109,6 +109,30 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  # The public site (landing, pricing, benchmark snapshot, waitlist). The only service the Cloudflare
+  # Tunnel points at; it mounts no task, repository or webhook route and loads its own env file
+  # (infra/site.env), which has no GitHub App, broker or provider key. Same image as `api`.
+  site:
+    build:
+      context: ..
+      dockerfile: api/Dockerfile
+    restart: unless-stopped
+    command: ["uv", "run", "--project", "api", "uvicorn", "repolace_api.site.main:app", "--host", "0.0.0.0", "--port", "8100"]
+    env_file:
+      - path: site.env
+        required: false
+    ports:
+      - "127.0.0.1:8100:8100"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8100/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   # Runs tasks: the default queue, `WORKER_CONCURRENCY` prefork children (default 3). The only
   # service with provider keys and the GitHub App key (infra/worker.env).
   worker:

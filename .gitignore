@@ -14,6 +14,7 @@ build/
 
 # Per-service compose env files (the committed copies are the *.env.example files).
 infra/api.env
+infra/site.env
 infra/worker.env
 
 node_modules/

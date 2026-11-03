@@ -553,3 +553,23 @@ class CodeChunk(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     repo: Mapped[RegisteredRepo] = relationship()
+
+
+class WaitlistSignup(Base):
+    """An email address left on the public site's waitlist form.
+
+    Written only by the public site process, which connects with a role that may INSERT into this
+    table and nothing else. `email` is stored lower-cased and is unique, so a repeat signup is a
+    no-op that the form answers exactly like a first one (no way to ask "is this address on it").
+    `consent` is true only because the form's checkbox was ticked; the column exists so a future
+    import that lacks consent cannot be mistaken for a form signup.
+    """
+
+    __tablename__ = "waitlist_signups"
+    __table_args__ = (CheckConstraint("char_length(email) <= 254", name="ck_waitlist_signups_email_length"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    source: Mapped[str] = mapped_column(String, nullable=False, server_default="site")
+    consent: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

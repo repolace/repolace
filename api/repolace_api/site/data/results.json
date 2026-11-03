@@ -1,0 +1,446 @@
+{
+  "bootstrap_resamples": 20000,
+  "by_repository": {
+    "flask": {
+      "instances": 1,
+      "passed": 3,
+      "rate": 100.0,
+      "rows": 3,
+      "wilson_ci_rows": [
+        43.9,
+        100.0
+      ]
+    },
+    "pylint": {
+      "instances": 3,
+      "passed": 2,
+      "rate": 22.2,
+      "rows": 9,
+      "wilson_ci_rows": [
+        6.3,
+        54.7
+      ]
+    },
+    "pytest": {
+      "instances": 6,
+      "passed": 18,
+      "rate": 100.0,
+      "rows": 18,
+      "wilson_ci_rows": [
+        82.4,
+        100.0
+      ]
+    },
+    "seaborn": {
+      "instances": 2,
+      "passed": 1,
+      "rate": 16.7,
+      "rows": 6,
+      "wilson_ci_rows": [
+        3.0,
+        56.4
+      ]
+    },
+    "sphinx": {
+      "instances": 6,
+      "passed": 11,
+      "rate": 61.1,
+      "rows": 18,
+      "wilson_ci_rows": [
+        38.6,
+        79.7
+      ]
+    }
+  },
+  "clustering": {
+    "design_effect_runs_3": 2.38,
+    "effective_n_runs": 22.7,
+    "icc_oneway": 0.689,
+    "reading": "runs of one instance are strongly correlated, so 54 rows carry far less than 54 rows of evidence"
+  },
+  "cost": {
+    "censoring_note": "no task reached the $2.00 cap, so cost is not censored here; latency is bounded only by the 3,600 s agent clock",
+    "failed": {
+      "max": 1.8215,
+      "mean": 0.966,
+      "median": 0.729,
+      "min": 0.4464,
+      "n": 19,
+      "p10": 0.606,
+      "p90": 1.708
+    },
+    "final_rows": {
+      "max": 1.8215,
+      "mean": 0.751,
+      "median": 0.645,
+      "min": 0.173,
+      "n": 54,
+      "p10": 0.355,
+      "p90": 1.435
+    },
+    "max_observed_usd": 1.8215,
+    "passed": {
+      "max": 1.4409,
+      "mean": 0.634,
+      "median": 0.611,
+      "min": 0.173,
+      "n": 35,
+      "p10": 0.301,
+      "p90": 0.999
+    },
+    "per_task_cap_usd": 2.0,
+    "perm_test_mean_diff_passed_minus_failed": [
+      -0.333,
+      0.0024
+    ],
+    "total_usd_all": 44.17,
+    "total_usd_final_rows": 40.54,
+    "total_usd_lost_rows_wasted": 3.64,
+    "usd_per_pass_all_spend": 1.262,
+    "usd_per_pass_final_rows": 1.158
+  },
+  "grid": {
+    "instances": 18,
+    "planned_rows": 54,
+    "runs_per_instance": 3
+  },
+  "headlines": {
+    "combined_final_outcomes": {
+      "boot_ci_instances": [
+        44.4,
+        83.3
+      ],
+      "boot_se": 9.94,
+      "passed": 35,
+      "planned": 54,
+      "rate": 64.8,
+      "wilson_ci_rows_ignoring_clustering": [
+        51.5,
+        76.2
+      ]
+    },
+    "sweep4_official": {
+      "boot_ci_instances": [
+        35.2,
+        72.2
+      ],
+      "passed": 29,
+      "planned": 54,
+      "rate": 53.7,
+      "wilson_ci_rows": [
+        40.6,
+        66.3
+      ]
+    },
+    "sweep4_secondary_admissible": {
+      "admissible": 42,
+      "note": "excludes the 12 rows lost to provider errors; not the headline",
+      "passed": 29,
+      "rate": 69.0,
+      "wilson_ci_rows": [
+        54.0,
+        80.9
+      ]
+    },
+    "sweep4b_alone": {
+      "passed": 6,
+      "planned": 12,
+      "rate": 50.0,
+      "wilson_ci_rows": [
+        25.4,
+        74.6
+      ]
+    }
+  },
+  "instances": {
+    "always_pass": [
+      "pallets__flask-5014",
+      "pytest-dev__pytest-5631",
+      "pytest-dev__pytest-6202",
+      "pytest-dev__pytest-7236",
+      "pytest-dev__pytest-7432",
+      "pytest-dev__pytest-7571",
+      "pytest-dev__pytest-7982",
+      "sphinx-doc__sphinx-9230",
+      "sphinx-doc__sphinx-9320",
+      "sphinx-doc__sphinx-9367"
+    ],
+    "mixed": [
+      "mwaskom__seaborn-3069",
+      "pylint-dev__pylint-4970",
+      "sphinx-doc__sphinx-7462",
+      "sphinx-doc__sphinx-9602"
+    ],
+    "never_pass": [
+      "mwaskom__seaborn-3187",
+      "pylint-dev__pylint-4551",
+      "pylint-dev__pylint-4604",
+      "sphinx-doc__sphinx-7590"
+    ],
+    "pass_at_1": 64.8,
+    "pass_at_2": 72.2,
+    "pass_at_3": 77.8,
+    "passes_of_3_distribution": {
+      "0": 4,
+      "1": 3,
+      "2": 1,
+      "3": 10
+    },
+    "per_instance": {
+      "mwaskom__seaborn-3069": 1,
+      "mwaskom__seaborn-3187": 0,
+      "pallets__flask-5014": 3,
+      "pylint-dev__pylint-4551": 0,
+      "pylint-dev__pylint-4604": 0,
+      "pylint-dev__pylint-4970": 2,
+      "pytest-dev__pytest-5631": 3,
+      "pytest-dev__pytest-6202": 3,
+      "pytest-dev__pytest-7236": 3,
+      "pytest-dev__pytest-7432": 3,
+      "pytest-dev__pytest-7571": 3,
+      "pytest-dev__pytest-7982": 3,
+      "sphinx-doc__sphinx-7462": 1,
+      "sphinx-doc__sphinx-7590": 0,
+      "sphinx-doc__sphinx-9230": 3,
+      "sphinx-doc__sphinx-9320": 3,
+      "sphinx-doc__sphinx-9367": 3,
+      "sphinx-doc__sphinx-9602": 1
+    }
+  },
+  "latency_s": {
+    "caveat": "claim to completion, with 1-3 tasks sharing the machine, the image build and index waits included",
+    "failed": {
+      "max": 2350.0,
+      "mean": 1452.868,
+      "median": 1683.0,
+      "min": 641.1,
+      "n": 19,
+      "p10": 727.22,
+      "p90": 2055.4
+    },
+    "final_rows": {
+      "max": 2350.0,
+      "mean": 1196.787,
+      "median": 1105.6,
+      "min": 177.1,
+      "n": 54,
+      "p10": 683.43,
+      "p90": 1781.16
+    },
+    "passed": {
+      "max": 1944.7,
+      "mean": 1057.771,
+      "median": 1073.4,
+      "min": 177.1,
+      "n": 35,
+      "p10": 687.14,
+      "p90": 1521.66
+    },
+    "perm_test_mean_diff_passed_minus_failed": [
+      -395.1,
+      0.0025
+    ]
+  },
+  "lost_rows": {
+    "bounds_if_unreplaced": {
+      "all_fail": [
+        29,
+        54,
+        53.7
+      ],
+      "all_pass": [
+        41,
+        54,
+        75.9
+      ]
+    },
+    "by_repo": {
+      "flask": 1,
+      "pylint": 3,
+      "seaborn": 2,
+      "sphinx": 6
+    },
+    "count": 12,
+    "finished_rows_pass_rate": 69.0,
+    "fisher_p_two_sided": 0.307,
+    "odds_ratio": 0.45,
+    "reason": "Vertex AI HTTP 429 RESOURCE_EXHAUSTED after the gateway's bounded retries (provider refusal, a harness error)",
+    "rerun_pass_rate": 50.0,
+    "wasted_spend_usd": 3.64
+  },
+  "permutations": 20000,
+  "power": {
+    "approx_minimum_detectable_gap_pp_two_independent_models": 39,
+    "boot_se_pp": 9.9,
+    "instances": 18,
+    "mcnemar_exact_examples": {
+      "6:2": 0.289,
+      "7:1": 0.07,
+      "8:0": 0.008
+    },
+    "one_instance_moves_the_rate_by_pp": 5.6,
+    "reading": "a comparison of two configurations on these 18 instances needs a gap of roughly 40 points (two independent configurations) to be called clearly different"
+  },
+  "run_index": {
+    "cochran_q": 0.5,
+    "df": 2,
+    "p": 0.779,
+    "passed_by_run_index": {
+      "0": 12,
+      "1": 11,
+      "2": 12
+    },
+    "reading": "no evidence the run index matters; differences are sampling noise (and run 0/1/2 were not run in order)"
+  },
+  "seed": 20261025,
+  "sensitivity": [
+    {
+      "definition": "sweep-4 official headline (passed / planned, lost rows count as non-passes)",
+      "k": 29,
+      "n": 54,
+      "rate": 53.7,
+      "wilson_ci_rows": [
+        40.6,
+        66.3
+      ]
+    },
+    {
+      "definition": "sweep-4 secondary (passed / admissible; excludes the 12 lost rows)",
+      "k": 29,
+      "n": 42,
+      "rate": 69.0,
+      "wilson_ci_rows": [
+        54.0,
+        80.9
+      ]
+    },
+    {
+      "definition": "combined final outcomes (lost rows replaced by their sweep-4b re-run)",
+      "k": 35,
+      "n": 54,
+      "rate": 64.8,
+      "wilson_ci_rows": [
+        51.5,
+        76.2
+      ]
+    },
+    {
+      "definition": "conservative: count only passes where the agent called submit",
+      "k": 24,
+      "n": 54,
+      "rate": 44.4,
+      "wilson_ci_rows": [
+        32.0,
+        57.6
+      ]
+    },
+    {
+      "definition": "pytest instances removed (the 6 always-pass instances)",
+      "k": 17,
+      "n": 36,
+      "rate": 47.2,
+      "wilson_ci_rows": [
+        32.0,
+        63.0
+      ]
+    }
+  ],
+  "step_use": {
+    "auc_passed_edits_earlier_than_failed": 0.836,
+    "first_edit_call_failed": {
+      "max": 35,
+      "mean": 22.263,
+      "median": 24.0,
+      "min": 5,
+      "n": 19,
+      "p10": 7.8,
+      "p90": 33.2
+    },
+    "first_edit_call_passed": {
+      "max": 28,
+      "mean": 10.314,
+      "median": 9.0,
+      "min": 2,
+      "n": 35,
+      "p10": 5.0,
+      "p90": 16.8
+    },
+    "note": "descriptive: the first edit comes later in failures partly because hard instances need more investigation",
+    "perm_test_mean_diff": [
+      -11.95,
+      0.0
+    ],
+    "perm_test_median_diff": [
+      -15,
+      0.0001
+    ],
+    "step_cap_failed_first_edit": {
+      "max": 35,
+      "mean": 24.118,
+      "median": 25.0,
+      "min": 7,
+      "n": 17,
+      "p10": 12.2,
+      "p90": 33.4
+    },
+    "step_cap_passed_first_edit": {
+      "max": 28,
+      "mean": 11.727,
+      "median": 8.0,
+      "min": 4,
+      "n": 11,
+      "p10": 5.0,
+      "p90": 23.0
+    },
+    "submitted_passed_first_edit": {
+      "max": 20,
+      "mean": 9.667,
+      "median": 10.0,
+      "min": 2,
+      "n": 24,
+      "p10": 6.0,
+      "p90": 14.0
+    },
+    "tasks_analysed": 54,
+    "tasks_never_editing": 0,
+    "tool_calls_share_in_step_cap_failures": {
+      "edit": 8.1,
+      "read_search": 28.4,
+      "run_tests_or_run_python": 63.5
+    }
+  },
+  "stop_reason": {
+    "caveat": "stop reason is an outcome of the run, not an assignment: a task that finds the fix early submits early",
+    "fisher_p_two_sided": 4.7e-05,
+    "odds_ratio": 18.5,
+    "step_cap_pass_rate": 39.3,
+    "step_cap_share": 51.9,
+    "submitted_pass_rate": 92.3,
+    "table": {
+      "step_cap": {
+        "failed": 17,
+        "passed": 11
+      },
+      "submitted": {
+        "failed": 2,
+        "passed": 24
+      }
+    }
+  },
+  "tokens": {
+    "cached_share": 65.2,
+    "calls_per_task": {
+      "max": 40,
+      "mean": 34.907,
+      "median": 40.0,
+      "min": 15,
+      "n": 54,
+      "p10": 23.0,
+      "p90": 40.0
+    },
+    "input_tokens_per_task_mean": 748798,
+    "input_tokens_total": 40435092,
+    "output_tokens_per_task_mean": 11035,
+    "output_tokens_total": 595913
+  }
+}

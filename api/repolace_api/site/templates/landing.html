@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block head %}{% if turnstile_site_key %}<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>{% endif %}{% endblock %}
+{% block content %}
+<section class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Early access</p>
+    <h1>Hand it a GitHub issue.<br>Get back a tested pull request.</h1>
+    <p class="lead">repolace reads your repository, plans a fix, edits the code and runs your own test suite in a locked-down sandbox before it opens anything. You review the pull request like any other.</p>
+    <div class="cta">
+      <a class="btn btn-primary btn-lg" href="#waitlist">Join the waitlist</a>
+      <a class="btn btn-lg" href="/benchmark">See the benchmark</a>
+    </div>
+    <p class="fine">Python repositories only for now. Nothing is merged for you: approval stays with GitHub branch protection and your reviewers.</p>
+  </div>
+</section>
+
+<section class="band" aria-labelledby="how">
+  <div class="wrap">
+    <h2 id="how">How a task runs</h2>
+    <ol class="steps">
+      <li><span class="n">1</span><h3>Pick an issue</h3><p>Choose an open issue and the branch the fix should target.</p></li>
+      <li><span class="n">2</span><h3>Retrieve</h3><p>The repository is indexed by function and class so the agent reads the code that matters, not the whole tree.</p></li>
+      <li><span class="n">3</span><h3>Plan and edit</h3><p>The agent writes a change and revises it when your tests disagree, within a fixed step and spend budget.</p></li>
+      <li><span class="n">4</span><h3>Verify</h3><p>Your suite runs in a rootless container, once on the base commit and once after the edit, so a pass means something went from red to green.</p></li>
+      <li><span class="n">5</span><h3>Open the PR</h3><p>On success a pull request opens against your branch with the diff and the test results.</p></li>
+    </ol>
+  </div>
+</section>
+
+<section class="wrap" aria-labelledby="numbers">
+  <h2 id="numbers">What we measured, and how much to trust it</h2>
+  <p class="sectionlead">A first measurement on {{ facts.planned // 3 }} real issues from public projects, three runs each, with Gemini 3.1 Pro. It is a starting point, not a score.</p>
+  <div class="stats">
+    <div class="stat"><p class="big">{{ '%.1f'|format(facts.rate) }}%</p><p class="lab">of runs produced a fix that passed the project's own tests ({{ facts.passed }} of {{ facts.planned }})</p><p class="cap">95% interval {{ '%.0f'|format(facts.ci_low) }} to {{ '%.0f'|format(facts.ci_high) }}%</p></div>
+    <div class="stat"><p class="big">${{ '%.2f'|format(facts.cost_mean) }}</p><p class="lab">average model cost per task</p><p class="cap">about ${{ '%.2f'|format(facts.cost_per_pass_low) }} to ${{ '%.2f'|format(facts.cost_per_pass_high) }} per passing task</p></div>
+    <div class="stat"><p class="big">{{ facts.latency_median_min }} min</p><p class="lab">median time from start to finish</p><p class="cap">{{ '%.0f'|format(facts.step_cap_share) }}% of tasks used every step they were allowed</p></div>
+  </div>
+  <p class="caveat">Read this before quoting it. The issues come from SWE-bench Verified, which is public, so a model may have seen some of them. {{ facts.planned // 3 }} issues is a small sample, which is why the interval is wide. {{ facts.lost_rows }} runs were lost to a model-provider rate limit and count as failures. Opening a pull request was switched off for the sweep, so PR creation on a real run is not yet measured. <a href="/benchmark">The full report</a> has every caveat and the method.</p>
+</section>
+
+<section class="band" aria-labelledby="trust">
+  <div class="wrap">
+    <h2 id="trust">Built so you can say no</h2>
+    <ul class="trust">
+      <li><h3>Your tests are the judge</h3><p>A task counts as fixed only when failing tests turn green and nothing that passed before breaks. Edits to test files are flagged, not hidden.</p></li>
+      <li><h3>Generated code never runs on the host</h3><p>Verification runs in a rootless container with resource limits, against a copy of the source with no <code>.git</code> inside.</p></li>
+      <li><h3>A hard spend cap per task</h3><p>Every task has a fixed model budget, a call limit and a time limit. A runaway task stops; it does not bill you for hours.</p></li>
+      <li><h3>You decide what merges</h3><p>repolace opens a pull request. Reviews, required checks and merging are GitHub's, exactly as for a human contributor.</p></li>
+    </ul>
+  </div>
+</section>
+
+<section class="wrap" aria-labelledby="price-teaser">
+  <h2 id="price-teaser">Pricing, in preview</h2>
+  <p class="sectionlead">Plans start at $0 and scale with the number of tasks you run. These are preview prices and billing is not open yet. <a href="/pricing">See the plans</a>.</p>
+</section>
+
+<section class="band" id="waitlist" aria-labelledby="join">
+  <div class="wrap narrow">
+    <h2 id="join">Join the waitlist</h2>
+    <p class="sectionlead">We are letting people in gradually, starting with maintainers of Python projects. One email when your spot opens, nothing else.</p>
+    {% with form_id = "landing" %}{% include "_waitlist_form.html" %}{% endwith %}
+  </div>
+</section>
+{% endblock %}
