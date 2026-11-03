@@ -103,4 +103,37 @@ async def test_site_assets_are_versioned_so_a_deploy_is_not_hidden_by_browser_ca
         second = (await c.get("/pricing")).text
     versions = set(re.findall(r"/assets/(?:site\.css|site\.js|theme-init\.js)\?v=([0-9a-f]{10})", first + second))
     assert len(versions) == 1, versions
-    assert len(re.findall(r"\?v=", first)) == 3
+    # three styles/scripts plus three icon links, all carrying the same content-hash version
+    assert len(re.findall(r"\?v=", first)) == 6
+
+
+async def test_every_page_and_the_report_carry_the_favicon_and_it_is_served():
+    async with client() as c:
+        for path in ("/", "/pricing", "/waitlist", "/privacy", "/terms", "/benchmark/"):
+            html = (await c.get(path)).text
+            assert 'rel="icon" type="image/svg+xml"' in html and 'rel="apple-touch-icon"' in html, path
+        icon = await c.get("/assets/favicon.svg")
+        touch = await c.get("/assets/apple-touch-icon.png")
+        ico = await c.get("/favicon.ico")
+    assert icon.status_code == 200 and "svg" in icon.headers["content-type"]
+    assert touch.status_code == 200 and touch.content[:8] == b"\x89PNG\r\n\x1a\n"
+    assert ico.status_code == 200 and ico.headers["content-type"] == "image/png"
+
+
+async def test_the_logo_is_the_wordmark_not_the_old_arrow_glyph():
+    async with client() as c:
+        home = (await c.get("/")).text
+        report = (await c.get("/benchmark/")).text
+    assert '<a class="mark" href="/" aria-label="repolace home">repolace</a>' in home
+    assert "M5 5h9a4 4 0 0 1 0 8H8" not in home + report  # the placeholder arrow path
+    assert '<span class="wm">repolace</span>' in report
+
+
+def test_logo_files_are_outlined_and_self_contained():
+    static = SITE / "static"
+    for name in ("repolace-wordmark.svg", "repolace-wordmark-ink.svg", "repolace-wordmark-paper.svg", "favicon.svg"):
+        svg = (static / name).read_text()
+        assert svg.startswith("<svg") and "<text" not in svg and "font-family" not in svg, name
+        assert "http://" not in svg.replace("http://www.w3.org/2000/svg", ""), name
+    assert 'fill="currentColor"' in (static / "repolace-wordmark.svg").read_text()
+    assert 'fill="#2a78d6"' in (static / "favicon.svg").read_text()

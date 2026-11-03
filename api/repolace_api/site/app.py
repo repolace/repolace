@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.parse import parse_qs
 
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.staticfiles import StaticFiles
@@ -59,7 +59,7 @@ def _asset_version(directory: Path) -> str:
     new URL, so it is fetched at once, and an unchanged one stays cached.
     """
     digest = hashlib.sha256()
-    for name in ("site.css", "site.js", "theme-init.js"):
+    for name in ("site.css", "site.js", "theme-init.js", "favicon.svg", "favicon.png", "apple-touch-icon.png"):
         digest.update((directory / name).read_bytes())
     return digest.hexdigest()[:10]
 
@@ -203,6 +203,11 @@ def create_site_app(
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> JSONResponse:
         return JSONResponse({"status": "ok"})
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon_ico() -> FileResponse:
+        # Browsers ask for this path when a page has no icon link (feeds, direct image loads); a PNG is accepted.
+        return FileResponse(HERE / "static" / "favicon.png", media_type="image/png")
 
     @app.get("/robots.txt", include_in_schema=False)
     async def robots() -> PlainTextResponse:
