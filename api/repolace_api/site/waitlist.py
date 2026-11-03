@@ -35,11 +35,9 @@ class SqlWaitlistStore:
         self._session_factory = session_factory
 
     async def add(self, email: str) -> None:
-        stmt = (
-            insert(WaitlistSignup)
-            .values(email=email, consent=True, source="site")
-            .on_conflict_do_nothing(index_elements=["email"])
-        )
+        # No conflict target on purpose: naming `(email)` makes Postgres require SELECT on that column,
+        # and the site's database role may INSERT into this table and nothing else.
+        stmt = insert(WaitlistSignup).values(email=email, consent=True, source="site").on_conflict_do_nothing()
         async with self._session_factory() as session:
             await session.execute(stmt)
             await session.commit()
