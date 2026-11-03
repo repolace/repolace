@@ -1,6 +1,7 @@
 """The public site: what it serves, what it must not serve, and the headers on every response."""
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -23,7 +24,7 @@ def site_client(**kwargs) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=f"http://{HOST}")
 
 
-@pytest.mark.parametrize("path", ["/", "/pricing", "/benchmark", "/privacy", "/terms", "/waitlist", "/waitlist/thanks"])
+@pytest.mark.parametrize("path", ["/", "/pricing", "/benchmark/", "/privacy", "/terms", "/waitlist", "/waitlist/thanks"])
 async def test_public_pages_render(path):
     async with site_client() as client:
         resp = await client.get(path)
@@ -77,7 +78,7 @@ def test_csp_adds_turnstile_origin_only_when_enabled():
 
 async def test_pages_have_no_inline_style_or_script():
     async with site_client() as client:
-        for path in ("/", "/pricing", "/benchmark"):
+        for path in ("/", "/pricing", "/benchmark/"):
             html = (await client.get(path)).text
             assert " style=" not in html
             assert "<style" not in html
@@ -88,14 +89,26 @@ async def test_landing_headline_is_the_official_figure_with_its_interval_and_cav
     facts = content.load_facts()
     async with site_client() as client:
         html = (await client.get("/")).text
-        bench = (await client.get("/benchmark")).text
     assert f"{facts.rate:.1f}%" in html
     assert f"{facts.ci_low:.0f} to {facts.ci_high:.0f}%" in html
     assert "not a score" in html and "SWE-bench Verified" in html
     assert "not yet measured" in html
-    # The hand-pooled figure must not be the landing page's number; /benchmark shows it, labelled.
+    # The hand-pooled figure must not be the landing page's number.
     assert f"{facts.combined_rate:.1f}%" not in html
-    assert "hand-stated" in bench
+
+
+async def test_benchmark_report_headlines_the_official_run_and_labels_the_substitution():
+    async with site_client() as client:
+        redirect = await client.get("/benchmark")
+        page = await client.get("/benchmark/")
+        data = await client.get("/benchmark/data/report.json")
+        hero = await client.get("/benchmark/js/hero.js")
+    assert redirect.status_code in (301, 302, 307, 308) and redirect.headers["location"].endswith("/benchmark/")
+    assert 'the hidden tests <span class="n">29</span> times' in page.text
+    assert "29 of 54" in page.text and "35 of 54" not in page.text
+    sweep4 = next(r for r in data.json()["runs"] if r["id"] == "sweep-4")
+    assert (sweep4["headline"]["passed"], sweep4["headline"]["planned"]) == (29, 54)
+    assert 'D.runs["sweep-4"]' in hero.text and "hand-stated substitution" in hero.text
 
 
 async def test_pricing_is_labelled_preview_and_has_no_checkout():
@@ -108,24 +121,27 @@ async def test_pricing_is_labelled_preview_and_has_no_checkout():
     assert "stripe" not in html.lower() and "checkout" not in html.lower()
 
 
-async def test_benchmark_data_is_the_packaged_snapshot_and_has_no_live_data():
-    async with site_client() as client:
-        resp = await client.get("/benchmark/data.json")
-        fig = await client.get("/assets/fig/pass_rate_intervals.svg")
-    assert resp.status_code == 200
-    assert resp.json() == json.loads(content.DATA_FILE.read_text())
-    assert fig.status_code == 200 and "svg" in fig.headers["content-type"]
-    assert "live" not in resp.json()
-
-
 def test_snapshot_matches_benchmark_sources_when_present():
     src = ROOT / "BENCHMARK" / "analysis" / "results.json"
     if not src.exists():
         pytest.skip("BENCHMARK/ not in this checkout")
     assert json.loads(src.read_text()) == json.loads(content.DATA_FILE.read_text()), "run scripts/snapshot_benchmark.py"
-    for svg in (ROOT / "BENCHMARK" / "figures").glob("*.svg"):
-        copy = content.DATA_FILE.parent.parent / "static" / "fig" / svg.name
-        assert copy.read_bytes() == svg.read_bytes(), f"{svg.name} drifted; run scripts/snapshot_benchmark.py"
+
+
+def test_benchmark_static_site_is_csp_clean():
+    """No inline script or style, no remote origin: the report must run under the site's own CSP."""
+    root = Path(content.DATA_FILE).parents[1] / "benchmark_site"
+    html = (root / "index.html").read_text()
+    assert "<style" not in html and " style=" not in html
+    assert re.findall(r"<script(?![^>]*\bsrc=)[^>]*>", html) == []  # every <script> has a src
+    for name in ["index.html", "style.css", *[p.relative_to(root).as_posix() for p in (root / "js").glob("*.js") if "vendor" not in p.parts]]:
+        text = (root / name).read_text()
+        assert "http://" not in text and "https://cdn" not in text and "cdnjs" not in text, name
+    for p in (root / "js").glob("*.js"):
+        if "vendor" in p.parts:
+            continue
+        # a style attribute must go through el()'s CSSOM path, never be markup in a string
+        assert 'style="' not in p.read_text(), p.name
 
 
 def test_site_does_not_import_the_private_routers():

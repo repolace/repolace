@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import parse_qs
 
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.staticfiles import StaticFiles
@@ -135,21 +135,6 @@ def create_site_app(
     async def pricing(request: Request) -> Response:
         return page(request, "pricing.html")
 
-    @app.get("/benchmark", include_in_schema=False)
-    async def benchmark(request: Request) -> Response:
-        results = content.load_results()
-        return page(
-            request,
-            "benchmark.html",
-            results=results,
-            instances=content.instance_rows(results),
-            repos=content.repository_rows(results),
-        )
-
-    @app.get("/benchmark/data.json", include_in_schema=False)
-    async def benchmark_data() -> Response:
-        return FileResponse(content.DATA_FILE, media_type="application/json", headers={"Cache-Control": "no-cache"})
-
     @app.get("/privacy", include_in_schema=False)
     async def privacy(request: Request) -> Response:
         return page(request, "privacy.html")
@@ -208,6 +193,10 @@ def create_site_app(
     async def robots() -> PlainTextResponse:
         return PlainTextResponse("User-agent: *\nAllow: /\n")
 
+    # The benchmark report: a self-contained static site (a copy of BENCHMARK/site from the
+    # feat/benchmark-site branch, see benchmark_site/README.md). `/benchmark` redirects to `/benchmark/`
+    # so its relative URLs resolve.
+    app.mount("/benchmark", StaticAssets(directory=HERE / "benchmark_site", html=True), name="benchmark")
     app.mount("/assets/fonts", StaticAssets(directory=FONTS_DIR, immutable_suffix=".woff2"), name="fonts")
     app.mount("/assets", StaticAssets(directory=HERE / "static"), name="assets")
 

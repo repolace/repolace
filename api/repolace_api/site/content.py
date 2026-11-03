@@ -1,13 +1,13 @@
 """What the public pages say about the benchmark, read from the packaged snapshot.
 
-`data/results.json` is a copy of `BENCHMARK/analysis/results.json` (and `static/fig/` of
-`BENCHMARK/figures/`); `scripts/snapshot_benchmark.py` refreshes them and a test fails if they
-drift from the sources while those exist. The public process reads only this package, never `eval/`
+`data/results.json` is a copy of `BENCHMARK/analysis/results.json` that feeds the landing and pricing
+numbers; `scripts/snapshot_benchmark.py` refreshes it and a test fails if it drifts from the source while
+that exists. The full report at /benchmark/ is the static site in `benchmark_site/`. The public process reads only this package, never `eval/`
 or the database, so it cannot leak a live sweep.
 
 The headline is the official sweep-4 figure with its interval. The 35/54 "combined" figure is a
 hand-stated substitution of 12 provider-lost rows by their re-run (`repolace-eval report` refuses to
-pool runs), so it appears on /benchmark labelled as that and never as the headline.
+pool runs), so it appears only where labelled as that, never as a headline.
 """
 
 import json
@@ -77,17 +77,6 @@ def load_results() -> dict:
 
 def load_facts() -> BenchmarkFacts:
     return facts_from(load_results())
-
-
-def instance_rows(results: dict) -> list[tuple[str, int]]:
-    """(short instance name, passes out of 3), best first then by name."""
-    rows = [(name.split("__", 1)[-1], n) for name, n in results["instances"]["per_instance"].items()]
-    return sorted(rows, key=lambda r: (-r[1], r[0]))
-
-
-def repository_rows(results: dict) -> list[dict]:
-    rows = [{"name": name, **row} for name, row in results["by_repository"].items()]
-    return sorted(rows, key=lambda r: (-r["rate"], r["name"]))
 
 
 @dataclass(frozen=True)
