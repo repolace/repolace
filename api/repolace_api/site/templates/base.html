@@ -8,8 +8,8 @@
   <meta name="description" content="{% block description %}repolace takes a GitHub issue, finds the relevant code, writes a fix, runs your test suite in a locked-down sandbox and opens a pull request. Early access.{% endblock %}">
   <link rel="preload" href="/benchmark/fonts/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/benchmark/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/assets/site.css">
-  <script src="/assets/theme-init.js"></script>
+  <link rel="stylesheet" href="/assets/site.css?v={{ asset_v }}">
+  <script src="/assets/theme-init.js?v={{ asset_v }}"></script>
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -45,6 +45,6 @@
       <nav aria-label="Footer"><a href="/benchmark/">Benchmark</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
     </div>
   </footer>
-  <script src="/assets/site.js" defer></script>
+  <script src="/assets/site.js?v={{ asset_v }}" defer></script>
 </body>
 </html>

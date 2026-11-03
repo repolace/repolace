@@ -7,6 +7,7 @@ Cloudflare Tunnel points at this port only; the API and the task UI stay on loop
 Tailscale (see `.claude/rules/api-and-ui.md`).
 """
 
+import hashlib
 import ipaddress
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -48,6 +49,19 @@ _MESSAGES = {
     "unavailable": "The waitlist is not accepting signups right now. Please try again later.",
     "body": "That request was too large.",
 }
+
+
+def _asset_version(directory: Path) -> str:
+    """A short hash of the site's own CSS and JS, appended to their URLs as `?v=`.
+
+    Cloudflare rewrites `Cache-Control` on static files to `max-age=14400`, so a returning visitor's browser
+    can keep a previous deploy's stylesheet for hours; new HTML on old CSS looks broken. A changed file gets a
+    new URL, so it is fetched at once, and an unchanged one stays cached.
+    """
+    digest = hashlib.sha256()
+    for name in ("site.css", "site.js", "theme-init.js"):
+        digest.update((directory / name).read_bytes())
+    return digest.hexdigest()[:10]
 
 
 def _is_local_peer(peer: str) -> bool:
@@ -108,6 +122,7 @@ def create_site_app(
 
     app = FastAPI(title="repolace site", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     templates = Jinja2Templates(directory=HERE / "templates")
+    asset_v = _asset_version(HERE / "static")
 
     def page(request: Request, name: str, status: int = 200, **ctx) -> Response:
         base = {
@@ -116,6 +131,7 @@ def create_site_app(
             "overage": content.OVERAGE_USD,
             "facts": content.load_facts(),
             "path": request.url.path,
+            "asset_v": asset_v,
         }
         return templates.TemplateResponse(request, name, {**base, **ctx}, status_code=status)
 
