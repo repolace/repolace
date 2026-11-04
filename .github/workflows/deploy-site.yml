@@ -1,0 +1,112 @@
+# Test, build and deploy the public site on every push to main that touches it.
+#
+# Gate: every job runs only when the repository variable SITE_DEPLOY_ENABLED is 'true'. Merging this file
+# does nothing until that variable is set (after the cutover in infra/aws/README.md).
+#
+# Two AWS roles, because GitHub presents a different OIDC subject to a job with and without `environment:`:
+#   build  (no environment)            sub = repo:repolace/repolace:ref:refs/heads/main        -> ECR push only
+#   deploy (environment: production)   sub = repo:repolace/repolace:environment:production     -> SSM on one instance
+#
+# Repository variables: SITE_DEPLOY_ENABLED, AWS_REGION, AWS_BUILD_ROLE_ARN, AWS_DEPLOY_ROLE_ARN,
+# SITE_INSTANCE_ID, ECR_REPOSITORY_URI. No secret is stored in GitHub.
+name: deploy-site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api/repolace_api/site/**"
+      - "shared/**"
+      - "api/Dockerfile"
+      - "api/pyproject.toml"
+      - "uv.lock"
+      - "infra/aws/**"
+      - ".github/workflows/deploy-site.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-site
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    if: vars.SITE_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen --package repolace-api
+      - run: uv run ruff check .
+      - run: uv run pytest api/tests/test_site_pages.py api/tests/test_site_design.py api/tests/test_site_waitlist.py -m "not db and not docker"
+
+  build:
+    if: vars.SITE_DEPLOY_ENABLED == 'true'
+    needs: test
+    # Native arm64 (the host is a Graviton t4g.small): no QEMU. Public repositories may use this runner.
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_BUILD_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: api/Dockerfile
+          platforms: linux/arm64
+          push: true
+          provenance: false
+          tags: ${{ vars.ECR_REPOSITORY_URI }}:${{ github.sha }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+
+  deploy:
+    if: vars.SITE_DEPLOY_ENABLED == 'true'
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Run deploy.sh on the host through SSM
+        env:
+          INSTANCE_ID: ${{ vars.SITE_INSTANCE_ID }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          command_id="$(aws ssm send-command \
+            --instance-ids "${INSTANCE_ID}" \
+            --document-name AWS-RunShellScript \
+            --comment "deploy-site ${SHA}" \
+            --timeout-seconds 900 \
+            --parameters "commands=[\"/opt/repolace/deploy.sh ${SHA}\"]" \
+            --query Command.CommandId --output text)"
+          echo "SSM command: ${command_id}"
+          status=Pending
+          for _ in $(seq 1 120); do
+            sleep 10
+            status="$(aws ssm get-command-invocation --command-id "${command_id}" --instance-id "${INSTANCE_ID}" \
+              --query Status --output text 2>/dev/null || echo Pending)"
+            case "${status}" in
+              Success|Failed|Cancelled|TimedOut) break ;;
+            esac
+          done
+          echo "Status: ${status}"
+          # deploy.sh prints progress only, never a secret or an env file.
+          aws ssm get-command-invocation --command-id "${command_id}" --instance-id "${INSTANCE_ID}" \
+            --query '{stdout: StandardOutputContent, stderr: StandardErrorContent}' --output text || true
+          [ "${status}" = "Success" ]

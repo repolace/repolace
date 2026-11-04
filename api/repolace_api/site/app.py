@@ -9,6 +9,7 @@ Tailscale (see `.claude/rules/api-and-ui.md`).
 
 import hashlib
 import ipaddress
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -202,7 +203,9 @@ def create_site_app(
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> JSONResponse:
-        return JSONResponse({"status": "ok"})
+        # `sha` is the commit the image was built from (Dockerfile ARG GIT_SHA); deploy.sh compares it to
+        # the sha it just deployed, locally and through the tunnel, so a stale container cannot pass.
+        return JSONResponse({"status": "ok", "sha": os.environ.get("REPOLACE_GIT_SHA", "unknown")})
 
     @app.get("/favicon.ico", include_in_schema=False)
     async def favicon_ico() -> FileResponse:

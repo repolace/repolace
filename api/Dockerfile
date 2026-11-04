@@ -29,4 +29,9 @@ COPY --chown=repolace:repolace . .
 
 RUN uv sync --frozen --package repolace-api
 
+# The commit this image was built from; the public site reports it on /healthz. Declared last so a new
+# sha does not invalidate the dependency layers above.
+ARG GIT_SHA=unknown
+ENV REPOLACE_GIT_SHA=$GIT_SHA
+
 CMD ["uv", "run", "--project", "api", "uvicorn", "repolace_api.main:app", "--host", "0.0.0.0", "--port", "8000"]

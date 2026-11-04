@@ -1,0 +1,8 @@
+[Unit]
+Description=Dump the repolace site database to S3
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/repolace/backup.sh
