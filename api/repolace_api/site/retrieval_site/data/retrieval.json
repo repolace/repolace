@@ -2,8 +2,8 @@
  "status": "awaiting",
  "synthetic": false,
  "meta": {
-  "source": "repolace/eval/runs/retrieval-1/report.md",
-  "generated_at": "2026-11-04T06:16:14+00:00",
+  "source": "aggregate grid",
+  "generated_at": "2026-11-04T06:26:46+00:00",
   "seed": 20261104,
   "bootstrap_resamples": 10000,
   "permutations": 20000,
@@ -33,11 +33,9 @@
   "preregistered": "The switch rule was written down before any number existed: a cell replaces truncate / truncate only if its paired chunk-MRR gain is at least 10 percentage points and the 95% interval over instances excludes zero."
  },
  "awaiting": {
-  "run": "retrieval-2",
-  "reason": "The full per-instance run (about 12.7 hours on CPU) is still in progress. The per-instance panels, the Holm-adjusted tests, the power analysis and the pass/fail relation need it."
+  "reason": "The per-bug figures are still being computed. The bug-by-bug panels, the Holm-adjusted tests, the power analysis and the pass/fail relation need them."
  },
- "retrieval1": {
-  "run": "retrieval-1",
+ "aggregate": {
   "plan": [
    {
     "repo": "mwaskom/seaborn",

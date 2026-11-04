@@ -40,7 +40,7 @@ function banner(D) {
     b.innerHTML = `<span class="tag">Synthetic data</span><b>These numbers come from a seeded random fixture used to test this page.</b> They are not a measurement and must not be quoted.`;
   } else if (!D.ready) {
     b.className = "banner";
-    b.innerHTML = `<span class="tag">Awaiting ${esc(D.d.awaiting.run)}</span>${esc(D.d.awaiting.reason)} Until it finishes, this page shows the aggregates of the first run (${esc(D.d.retrieval1.run)}) and marks every panel that needs per-bug results as pending.`;
+    b.innerHTML = `<span class="tag">Per-bug figures in progress</span>${esc(D.d.awaiting.reason)} Until they are ready, this page shows the aggregate grid and marks every panel that needs per-bug results as pending.`;
   }
 }
 
@@ -48,21 +48,20 @@ function metRows(D) { return D.deltas("chunk_mrr").filter((r) => r.meets_switch_
 
 function hero(D) {
   const met = metRows(D);
-  const first = D.ready ? "" : "In the first run, ";
   let h;
   if (!D.anyMet) {
     h = D.ready
       ? `None of the seven alternatives beat plain truncation at finding the changed code: the best gained ${fpp(D.best.mean_pp)}, against a bar of ${D.minGain}.`
-      : `${first}no alternative to plain truncation cleared the bar for finding the code a fix changes.`;
+      : "No alternative to plain truncation cleared the bar for finding the code a fix changes.";
   } else {
     h = `${plural(met.length, "alternative")} cleared the bar on chunk MRR (${met.map((r) => r.cell).join(", ")}). With seven comparisons on ${D.n} bugs, treat that as a candidate, not a finding.`;
   }
   $("#headline").textContent = h;
   $("#hero-sub").textContent = `Eight ways of preparing code and queries for embedding, scored on where the lines a real fix changed land in the top 20 results of ${D.n} bugs. No model writes anything here: this is retrieval alone.` +
-    (D.ready ? "" : " Per-bug panels follow once the full run lands.");
+    (D.ready ? "" : " Per-bug panels follow once the figures are ready.");
   const kv = (dt, dd, small) => el("div", {}, el("dt", {}, dt), el("dd", {}, dd, small ? el("small", {}, " " + small) : null));
   $("#hero-kv").replaceChildren(
-    kv("Bugs", String(D.n), `from ${D.ready ? D.d.meta.plans.length : D.d.retrieval1.plan.length} repositories`),
+    kv("Bugs", String(D.n), `from ${D.ready ? D.d.meta.plans.length : D.d.aggregate.plan.length} repositories`),
     kv("Cells", String(D.keys.length), "4 index × 2 query strategies"),
     kv("Cleared the bar", `${met.length} of ${D.comps}`, `${D.minGain} pp and an interval above 0`),
     kv("Best paired gain", fpp(D.best?.mean_pp), D.best ? `${D.best.cell}, interval ${ciPP(D.best.ci_pp)}` : ""),
@@ -85,9 +84,9 @@ function prose(D) {
     (D.ready
       ? `<p>${mets.length ? `${plural(mets.length, "cell")} met it: ${mets.map((r) => code(r.cell)).join(", ")}.` : "No cell met it."} The largest gain was ${code(best.cell)} at ${fpp(best.mean_pp)} (interval ${ciPP(best.ci_pp)}). ` +
         `Across the seven comparisons the smallest Holm-adjusted p-value is ${pv(holmMin)}. Those tests are exploratory: they were not part of the pre-registration, and with seven of them on ${D.n} bugs a small p-value is more likely luck than a result.</p>`
-      : `<p>${mets.length ? `${plural(mets.length, "cell")} met it.` : "No cell met it."} The largest gain was ${code(best.cell)} at ${fpp(best.mean_pp)} (interval ${ciPP(best.ci_pp)}). Significance tests and effect sizes need the per-bug differences and appear when the full run lands.</p>`));
+      : `<p>${mets.length ? `${plural(mets.length, "cell")} met it.` : "No cell met it."} The largest gain was ${code(best.cell)} at ${fpp(best.mean_pp)} (interval ${ciPP(best.ci_pp)}). Significance tests and effect sizes need the per-bug differences and appear when the per-bug figures are ready.</p>`));
   html("#gains-note", `<strong>Why paired.</strong> Bugs differ enormously in how findable they are. Comparing each bug with itself removes that, and the interval resamples whole bugs, never individual chunks or queries.`);
-  const verdict = D.anyMet ? `Verdict${D.ready ? "" : " (retrieval-1)"}: ${plural(mets.length, "cell")} cleared the bar. The default is still ${code("truncate / truncate")} until the result is repeated.` : `Verdict${D.ready ? "" : " (retrieval-1)"}: no cell cleared the bar, so the default stays ${code("truncate / truncate")}.`;
+  const verdict = D.anyMet ? `Verdict: ${plural(mets.length, "cell")} cleared the bar. The default is still ${code("truncate / truncate")} until the result is repeated.` : `Verdict: no cell cleared the bar, so the default stays ${code("truncate / truncate")}.`;
   html("#prereg", `<span class="tag">Pre-registered rule</span><p>${esc(D.d.design.preregistered)}</p><p><b>${verdict}</b></p>`);
 
   if (D.ready) {
@@ -111,7 +110,7 @@ function prose(D) {
     html("#pf-note", `<strong>Sweep-4</strong> is the benchmark's official run (29 of 54 passed). Its three attempts at each bug are summarised as a pass rate.`);
     void b;
   } else {
-    html("#bugs-text", `<p class="lede">Which bugs are found, in which cells, and how the first correct chunk is distributed.</p><p>These panels need the per-bug results of the full run.</p>`);
+    html("#bugs-text", `<p class="lede">Which bugs are found, in which cells, and how the first correct chunk is distributed.</p><p>These panels need the per-bug results.</p>`);
     html("#power-text", `<p class="lede">With 18 bugs, a difference has to be large to be seen.</p><p>The power curve is drawn from the observed spread of the paired differences, which needs the per-bug results.</p>`);
     html("#repos-text", `<p class="lede">Five repositories supply the 18 bugs; two of them, pytest and sphinx, supply 12.</p><p>The per-repository breakdown needs the per-bug results. It is descriptive only: one to six bugs per repository.</p>`);
     html("#pf-text", `<p class="lede">Does a bug whose code the baseline retrieves also tend to pass in the agent benchmark?</p><p>This exploratory panel needs the per-bug retrieval results.</p>`);
@@ -131,7 +130,7 @@ function method(D) {
   const bt = t.share_over_budget_by_type;
   $("#trunc-kv").replaceChildren(kv("Over the limit", ppct(t.share_over_budget, 1)), kv("Functions", ppct(bt.function, 1)), kv("Modules", ppct(bt.module, 1)), kv("Class skeletons", ppct(bt.class_skeleton, 1)), kv("Methods", ppct(bt.method, 1)), kv("Longest chunk", `${t.longest_chunk_tokens} tokens`));
 
-  const cells = D.d.denominators?.cells || D.d.retrieval1.cells.map((c) => ({ key: c.key, file_scored: c.file_scored, chunk_scored: c.chunk_scored }));
+  const cells = D.d.denominators?.cells || D.d.aggregate.cells.map((c) => ({ key: c.key, file_scored: c.file_scored, chunk_scored: c.chunk_scored }));
   $("#denominators").replaceChildren(
     el("p", { class: "measure" }, `A bug with no gold of a kind is skipped for that kind, not scored as a miss. File and chunk metrics therefore have their own denominators out of ${D.n} bugs.`),
     buildTable({ caption: "Bugs scored per cell.", cols: [{ key: "c", label: "Cell" }, { key: "f", label: "File metrics" }, { key: "k", label: "Chunk metrics" }], rows: cells.map((c) => ({ c: c.key, f: `${c.file_scored} of ${D.n}`, k: `${c.chunk_scored} of ${D.n}` })) }),
@@ -149,13 +148,13 @@ function method(D) {
   ];
   $("#methods").replaceChildren(...M.map(([name, role, formula, detail]) => el("details", {}, el("summary", {}, name, el("span", { class: `role ${role === "primary" ? "primary" : ""}` }, role === "primary" ? "pre-registered" : role)), el("div", { class: "formula" }, formula), el("p", {}, detail))));
   $("#downloads").replaceChildren(...[["data/retrieval.json", "retrieval.json"], ["data/retrieval.schema.json", "retrieval.schema.json"]].map(([h, l]) => el("a", { href: h, download: "" }, l)));
-  $("#regen").textContent = "uv run --all-packages python BENCHMARK/analysis/retrieval_stats.py eval/runs/retrieval-2/report.json\n# placeholder state, from the retrieval-1 aggregates:\nuv run --all-packages python BENCHMARK/analysis/retrieval_stats.py --placeholder";
+  $("#regen").textContent = "uv run --all-packages python BENCHMARK/analysis/retrieval_stats.py eval/runs/<run>/report.json\n# aggregate-only state:\nuv run --all-packages python BENCHMARK/analysis/retrieval_stats.py --placeholder";
 }
 
 function footer(D) {
   const m = D.d.meta;
   $("#foot").innerHTML =
-    `<p>Generated ${esc(m.generated_at.slice(0, 16).replace("T", " "))} UTC from ${esc(m.source)}. Seed ${m.seed}, ${m.bootstrap_resamples.toLocaleString("en-US")} bootstrap resamples, ${m.permutations.toLocaleString("en-US")} permutations.</p>` +
+    `<p>Generated ${esc(m.generated_at.slice(0, 16).replace("T", " "))} UTC. Seed ${m.seed}, ${m.bootstrap_resamples.toLocaleString("en-US")} bootstrap resamples, ${m.permutations.toLocaleString("en-US")} permutations.</p>` +
     `<p>This grid belongs to the agent benchmark: <a href="/benchmark/">read the benchmark report</a> for how often the agent fixes the same ${D.n} bugs.</p>` +
     `<p>Fonts: Fraunces, Geist and Geist Mono under the SIL Open Font License (see <a href="/benchmark/fonts/LICENSE-Fraunces.txt">licences</a>). Charts: D3 7.8.5 (ISC licence), served from this site.</p>` +
     `<p><a href="/">repolace home</a> · <a href="/benchmark/">Benchmark</a> · <a href="/pricing">Pricing</a> · <a href="/waitlist">Join the waitlist</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>`;

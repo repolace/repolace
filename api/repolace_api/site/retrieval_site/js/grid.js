@@ -15,7 +15,7 @@ export function renderGrid(D) {
   const api = figure($("#fig-curves"), {
     id: "curves",
     title: "Recall at 5, 10 and 20 chunks",
-    sub: D.ready ? "Mean over the bugs, with the 95% interval over bugs. The grey line is the baseline, truncate / truncate." : "Mean over the bugs from the first run (retrieval-1). Intervals arrive with the per-bug run.",
+    sub: D.ready ? "Mean over the bugs, with the 95% interval over bugs. The grey line is the baseline, truncate / truncate." : "Mean over the bugs. Intervals arrive with the per-bug figures.",
     tools: [sel],
     caption: "Each panel holds one index strategy; the solid line is queried with truncate, the dashed line with head_tail. The search returns 20 chunks, so file recall at k is over the files of the first k chunks, not the first k files. All panels share one vertical scale.",
     table: () => ({
@@ -76,7 +76,7 @@ export function renderGrid(D) {
     return { c: key + (isBase(key) ? " (baseline)" : ""), n: `${c.scored.file} / ${c.scored.chunk} of ${D.n}`, ...Object.fromEntries(cols.slice(2).map((col) => [col.key, cellTxt(col.key)])) };
   });
   $("#fig-table").replaceChildren(el("h3", {}, "Every cell, every metric"), buildTable({
-    caption: D.ready ? "Mean with the 95% interval over bugs in brackets. MRR counts only the top 20 chunks: a miss scores 0." : "Means from the first run (retrieval-1), without intervals. MRR counts only the top 20 chunks: a miss scores 0.",
+    caption: D.ready ? "Mean with the 95% interval over bugs in brackets. MRR counts only the top 20 chunks: a miss scores 0." : "Means without intervals. MRR counts only the top 20 chunks: a miss scores 0.",
     cols, rows,
   }));
 }

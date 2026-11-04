@@ -84,8 +84,8 @@ export function renderForest(D) {
 
 export function renderPower(D) {
   if (!D.ready) {
-    $("#fig-power").replaceChildren(el("div", { class: "pending" }, el("b", {}, "The power curve is pending the retrieval-2 run. "),
-      `From the intervals printed for retrieval-1, the spread of the paired differences works out to about ${Math.round(D.d.retrieval1.median_implied_sd_pp)} percentage points, which would put the smallest gain 18 bugs can reliably detect near ${Math.round(D.mde)} points. That is approximate: it is recovered from asymmetric intervals, not from the per-bug differences.`));
+    $("#fig-power").replaceChildren(el("div", { class: "pending" }, el("b", {}, "The power curve is being computed. "),
+      `From the intervals of the aggregate grid, the spread of the paired differences works out to about ${Math.round(D.d.aggregate.median_implied_sd_pp)} percentage points, which would put the smallest gain 18 bugs can reliably detect near ${Math.round(D.mde)} points. That is approximate: it is recovered from asymmetric intervals, not from the per-bug differences.`));
     return;
   }
   const P = D.d.power;

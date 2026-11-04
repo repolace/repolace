@@ -208,8 +208,8 @@ def test_placeholder_matches_the_schema_and_is_not_synthetic():
     out = R.placeholder()
     assert out["status"] == "awaiting" and out["synthetic"] is False
     _validate(out)
-    assert len(out["retrieval1"]["cells"]) == 8 and len(out["retrieval1"]["deltas"]) == 7
-    best = next(d for d in out["retrieval1"]["deltas"] if d["cell"] == "signature_docstring / truncate")
+    assert len(out["aggregate"]["cells"]) == 8 and len(out["aggregate"]["deltas"]) == 7
+    best = next(d for d in out["aggregate"]["deltas"] if d["cell"] == "signature_docstring / truncate")
     assert best["chunk_mrr_pp"] == [5.3, 0.0, 14.8] and best["meets_switch_rule"] is False
 
 

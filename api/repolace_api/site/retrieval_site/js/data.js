@@ -15,7 +15,7 @@ export function derive(d) {
     deltas = (m) => d.comparisons[m]?.rows || [];
     n = d.meta.instances;
   } else {
-    const r = d.retrieval1;
+    const r = d.aggregate;
     const names = ["chunk_mrr", "file_mrr", ...["chunk", "file"].flatMap((k) => KS.map((x) => `${k}_r${x}`))];
     cells = r.cells.map((c) => ({
       key: c.key, scored: { chunk: c.chunk_scored, file: c.file_scored },
@@ -32,6 +32,6 @@ export function derive(d) {
   const prim = deltas("chunk_mrr");
   const anyMet = ready ? d.switch_rule.any_met : prim.some((x) => x.meets_switch_rule);
   const best = prim.reduce((a, b) => (a == null || (b.mean_pp ?? -1e9) > (a.mean_pp ?? -1e9) ? b : a), null);
-  const mde = ready ? d.power.mde_pp_median_sd : d.retrieval1.mde_pp_median;
+  const mde = ready ? d.power.mde_pp_median_sd : d.aggregate.mde_pp_median;
   return { d, ready, cells, byKey, keys, deltas, n, anyMet, best, mde, minGain: d.design.min_gain_pp, comps: d.design.comparisons };
 }

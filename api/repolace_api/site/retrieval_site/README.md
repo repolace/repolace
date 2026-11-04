@@ -5,7 +5,7 @@ Mounted in `api/repolace_api/site/app.py` next to `/benchmark/`, under the same 
 
 - **Data:** `data/retrieval.json`, validated by `data/retrieval.schema.json`. Written by `BENCHMARK/analysis/retrieval_stats.py`; never edit it by hand.
   - Real data: `uv run --all-packages python BENCHMARK/analysis/retrieval_stats.py eval/runs/retrieval-2/report.json` (about 30 s, 10,000 bootstrap resamples and 20,000 permutations).
-  - Placeholder ("awaiting retrieval-2"): `... retrieval_stats.py --placeholder`. This is the committed state until the run finishes: the retrieval-1 aggregates and the intervals it printed, with every per-bug panel marked pending.
+  - Placeholder (aggregate-only state): `... retrieval_stats.py --placeholder`. This is the committed state until the run finishes: the aggregate grid and the intervals printed with it, with every per-bug panel marked pending.
   - Dev preview of the full page: build from `BENCHMARK/analysis/fixtures/retrieval_eval_fixture.json` (synthetic, seeded) into a temp copy of this directory. Its output has `synthetic: true` and the page shows a banner. Never commit it; a test fails if the committed file is synthetic.
 - **Shared with `/benchmark/`, by absolute path:** `/benchmark/style.css` (`@import`, so the tokens, fonts and layout are the report's), `/benchmark/fonts/`, `/benchmark/js/vendor/d3.min.js` (D3 7.8.5), `/benchmark/js/theme-init.js`, `/benchmark/js/core.js`. Keep both directories mounted together.
 - **Own files:** `index.html`, `style.css` (cell colours and the retrieval figures), `js/` (`main.js` assembly and prose built from the JSON, `data.js`, `shared.js`, `grid.js`, `delta.js`, `instances.js`).

@@ -543,16 +543,16 @@ def placeholder(path: Path = RETRIEVAL_1) -> dict:
     return {
         "status": "awaiting",
         "synthetic": False,
-        "meta": {"source": raw.get("source", "retrieval-1"), "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "meta": {"source": "aggregate grid", "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
                  "seed": SEED, "bootstrap_resamples": BOOT, "permutations": PERM, "instances": n,
                  "interval": "95% percentile bootstrap over instances", "ks": list(KS)},
         "design": {"baseline": BASE_KEY, "cells": [c["key"] for c in cells], "comparisons": len(cells) - 1, "primary_metric": PRIMARY,
                    "min_gain_pp": MIN_GAIN_PP,
                    "preregistered": "The switch rule was written down before any number existed: a cell replaces truncate / truncate only if "
                                     "its paired chunk-MRR gain is at least 10 percentage points and the 95% interval over instances excludes zero."},
-        "awaiting": {"run": "retrieval-2", "reason": "The full per-instance run (about 12.7 hours on CPU) is still in progress. The per-instance "
-                                                   "panels, the Holm-adjusted tests, the power analysis and the pass/fail relation need it."},
-        "retrieval1": {"run": "retrieval-1", "plan": plan, "instances": n, "cells": cells, "deltas": deltas,
+        "awaiting": {"reason": "The per-bug figures are still being computed. The bug-by-bug panels, the Holm-adjusted tests, the power analysis "
+                                  "and the pass/fail relation need them."},
+        "aggregate": {"plan": plan, "instances": n, "cells": cells, "deltas": deltas,
                        "implied_sd_pp": implied, "median_implied_sd_pp": med,
                        "mde_pp_median": mde_pp(med, n) if med else None,
                        "implied_note": "Standard deviation of the paired differences, recovered from the printed interval half-width "

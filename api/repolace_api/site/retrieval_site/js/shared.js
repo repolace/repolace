@@ -47,4 +47,4 @@ export function legend() {
 }
 
 export const pendingBox = (what) => el("div", { class: "pending", role: "note" },
-  el("b", {}, "Pending the retrieval-2 run. "), what);
+  el("b", {}, "Being computed. "), what);
