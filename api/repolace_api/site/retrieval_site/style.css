@@ -1,0 +1,72 @@
+/* Retrieval report. The tokens, fonts, layout, figure shell, tables, callouts and tooltip come from the benchmark report's
+   stylesheet, so the two pages cannot drift apart; this file adds only what the retrieval figures need.
+   Colour follows the entity: the four index strategies take the benchmark's four validated series hues; the query
+   strategy is a second, non-colour channel (solid mark = truncate, hollow mark = head_tail). */
+@import url("/benchmark/style.css");
+
+:root {
+  --ix-truncate: var(--s-baseline);
+  --ix-head_tail: var(--s-e1);
+  --ix-windows: var(--s-r2);
+  --ix-signature_docstring: var(--s-m1);
+}
+
+.banner { max-width: 52rem; margin: 0 0 1.4rem; padding: 0.9rem 1.1rem; border-radius: 12px; border: 1px dashed var(--axis); background: var(--surface); font-size: 0.9375rem; }
+.banner b { font-weight: 600; }
+.banner .tag { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 0.15rem 0.6rem; border-radius: 999px; background: var(--ink); color: var(--page); margin-right: 0.5rem; }
+.banner.synthetic { border-style: solid; border-color: var(--ink); }
+.pending { padding: 1.4rem 1.2rem; border: 1px dashed var(--axis); border-radius: 12px; color: var(--ink-2); font-size: 0.9375rem; margin-top: 2rem; max-width: 52rem; background-image: repeating-linear-gradient(45deg, var(--grid) 0 1px, transparent 1px 9px); }
+.pending b { color: var(--ink); }
+.hero h1 { max-width: 22ch; }
+
+.legend-host { margin-top: 1.4rem; }
+.cell-legend { display: flex; flex-wrap: wrap; gap: 0.5rem 1.4rem; font-size: 0.8125rem; color: var(--ink-2); align-items: center; }
+.cell-legend .grp { display: inline-flex; gap: 0.9rem; flex-wrap: wrap; align-items: center; }
+.cell-legend .lab { font-weight: 600; color: var(--ink); margin-right: 0.1rem; }
+.cell-legend .k { display: inline-flex; align-items: center; gap: 0.4rem; }
+.cell-legend .sw { width: 12px; height: 12px; border-radius: 3px; background: var(--c); flex: none; }
+.cell-legend .mk { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--ink-2); flex: none; }
+.cell-legend .mk.solid { background: var(--ink-2); }
+.cell-legend .ln { width: 22px; height: 0; border-top: 2px solid var(--ink-2); flex: none; }
+.cell-legend .ln.dash { border-top-style: dashed; }
+
+.small-multiples { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.2rem 1rem; }
+@media (max-width: 960px) { .small-multiples { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .small-multiples { grid-template-columns: minmax(0, 1fr); } }
+.small-multiples h4 { margin: 0 0 0.2rem; font-size: 0.8125rem; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 0.45rem; }
+.small-multiples h4 .sw { width: 10px; height: 10px; border-radius: 3px; background: var(--c); }
+
+.heat-ret { display: grid; overflow-x: auto; padding-bottom: 4px; font-size: 0.8125rem; }
+.heat-ret .grid { display: grid; width: max-content; min-width: 100%; align-items: center; }
+.heat-ret .lab { position: sticky; left: 0; z-index: 2; background: var(--page); padding-right: 0.7rem; height: 30px; display: flex; align-items: center; gap: 0.5rem; color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.heat-ret .lab .repo { color: var(--muted); font-size: 0.75rem; }
+.heat-ret .colh { text-align: center; font-weight: 600; color: var(--ink); font-size: 0.75rem; line-height: 1.2; padding: 0 2px 0.4rem; min-height: 4.2rem; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 0.25rem; }
+.heat-ret .colh::after { content: ""; display: block; width: 56px; height: 3px; border-radius: 2px; background: var(--c); }
+.heat-ret .colh.hollow::after { background: repeating-linear-gradient(90deg, var(--c) 0 5px, transparent 5px 8px); }
+.hcell { width: 62px; height: 26px; margin: 2px; border-radius: 4px; border: 1px solid var(--axis); padding: 0; cursor: pointer; display: block; font: inherit; font-size: 0.6875rem; font-variant-numeric: tabular-nums; color: var(--ink); background: var(--surface); }
+.hcell.hit { color: var(--page); border-color: transparent; }
+.hcell.miss { background-image: repeating-linear-gradient(45deg, var(--axis) 0 1px, transparent 1px 6px); color: var(--muted); }
+.hcell.na { border-style: dashed; background: transparent; color: var(--muted); }
+.hcell:hover, .hcell:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; z-index: 3; position: relative; }
+.ramp { display: inline-flex; align-items: center; gap: 0.5rem; }
+.ramp .bar { width: 120px; height: 10px; border-radius: 3px; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 12%, var(--surface)), var(--accent)); border: 1px solid var(--axis); }
+
+.sel { margin-left: 0.3rem; }
+svg .thresh { stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 5 4; }
+svg .zero { stroke: var(--ink-2); stroke-width: 1; }
+svg .ci { stroke: var(--c); stroke-width: 2; stroke-linecap: round; }
+svg .dot { fill: var(--c); stroke: var(--surface); stroke-width: 2; }
+svg .dot.hollow { fill: var(--surface); stroke: var(--c); stroke-width: 2.5; }
+svg .row-band { fill: var(--wash); }
+svg .lineseries { fill: none; stroke: var(--c); stroke-width: 2; stroke-linejoin: round; }
+svg .lineseries.dash { stroke-dasharray: 6 4; }
+svg .ghost { fill: none; stroke: var(--axis); stroke-width: 1.5; }
+svg .med { stroke: var(--ink); stroke-width: 2; }
+svg .stack-miss { fill: var(--surface); stroke: var(--axis); }
+svg .annot { font-size: 11.5px; fill: var(--ink-2); }
+svg .annot-strong { font-size: 12px; fill: var(--ink); font-weight: 600; }
+.verdict-yes { font-weight: 600; }
+.pf-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 1rem 2rem; margin: 0.6rem 0 0; }
+.pf-stats div { border-top: 1px solid var(--axis); padding-top: 0.4rem; }
+.pf-stats dt { font-size: 0.8125rem; color: var(--ink-2); }
+.pf-stats dd { margin: 0.1rem 0 0; font-variant-numeric: tabular-nums; font-weight: 600; }

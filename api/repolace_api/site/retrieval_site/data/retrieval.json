@@ -1,0 +1,360 @@
+{
+ "status": "awaiting",
+ "synthetic": false,
+ "meta": {
+  "source": "repolace/eval/runs/retrieval-1/report.md",
+  "generated_at": "2026-11-04T06:16:14+00:00",
+  "seed": 20261104,
+  "bootstrap_resamples": 10000,
+  "permutations": 20000,
+  "instances": 18,
+  "interval": "95% percentile bootstrap over instances",
+  "ks": [
+   5,
+   10,
+   20
+  ]
+ },
+ "design": {
+  "baseline": "truncate / truncate",
+  "cells": [
+   "head_tail / head_tail",
+   "head_tail / truncate",
+   "signature_docstring / head_tail",
+   "signature_docstring / truncate",
+   "truncate / head_tail",
+   "truncate / truncate",
+   "windows / head_tail",
+   "windows / truncate"
+  ],
+  "comparisons": 7,
+  "primary_metric": "chunk_mrr",
+  "min_gain_pp": 10.0,
+  "preregistered": "The switch rule was written down before any number existed: a cell replaces truncate / truncate only if its paired chunk-MRR gain is at least 10 percentage points and the 95% interval over instances excludes zero."
+ },
+ "awaiting": {
+  "run": "retrieval-2",
+  "reason": "The full per-instance run (about 12.7 hours on CPU) is still in progress. The per-instance panels, the Holm-adjusted tests, the power analysis and the pass/fail relation need it."
+ },
+ "retrieval1": {
+  "run": "retrieval-1",
+  "plan": [
+   {
+    "repo": "mwaskom/seaborn",
+    "instances": 2,
+    "first_index_chunks": 2637,
+    "status": "evaluated"
+   },
+   {
+    "repo": "pallets/flask",
+    "instances": 1,
+    "first_index_chunks": 972,
+    "status": "evaluated"
+   },
+   {
+    "repo": "pylint-dev/pylint",
+    "instances": 3,
+    "first_index_chunks": 6503,
+    "status": "evaluated"
+   },
+   {
+    "repo": "pytest-dev/pytest",
+    "instances": 6,
+    "first_index_chunks": 4055,
+    "status": "evaluated"
+   },
+   {
+    "repo": "sphinx-doc/sphinx",
+    "instances": 6,
+    "first_index_chunks": 6462,
+    "status": "evaluated"
+   }
+  ],
+  "instances": 18,
+  "cells": [
+   {
+    "key": "head_tail / head_tail",
+    "strategy": "head_tail",
+    "query_strategy": "head_tail",
+    "file_scored": 18,
+    "chunk_scored": 18,
+    "instances": 18,
+    "file_r5": 0.241,
+    "file_r10": 0.259,
+    "file_r20": 0.481,
+    "chunk_r5": 0.028,
+    "chunk_r10": 0.063,
+    "chunk_r20": 0.133,
+    "file_mrr": 0.181,
+    "chunk_mrr": 0.042
+   },
+   {
+    "key": "head_tail / truncate",
+    "strategy": "head_tail",
+    "query_strategy": "truncate",
+    "file_scored": 18,
+    "chunk_scored": 18,
+    "instances": 18,
+    "file_r5": 0.296,
+    "file_r10": 0.37,
+    "file_r20": 0.611,
+    "chunk_r5": 0.091,
+    "chunk_r10": 0.119,
+    "chunk_r20": 0.119,
+    "file_mrr": 0.251,
+    "chunk_mrr": 0.081
+   },
+   {
+    "key": "signature_docstring / head_tail",
+    "strategy": "signature_docstring",
+    "query_strategy": "head_tail",
+    "file_scored": 18,
+    "chunk_scored": 18,
+    "instances": 18,
+    "file_r5": 0.185,
+    "file_r10": 0.315,
+    "file_r20": 0.454,
+    "chunk_r5": 0.028,
+    "chunk_r10": 0.063,
+    "chunk_r20": 0.133,
+    "file_mrr": 0.21,
+    "chunk_mrr": 0.07
+   },
+   {
+    "key": "signature_docstring / truncate",
+    "strategy": "signature_docstring",
+    "query_strategy": "truncate",
+    "file_scored": 18,
+    "chunk_scored": 18,
+    "instances": 18,
+    "file_r5": 0.296,
+    "file_r10": 0.417,
+    "file_r20": 0.611,
+    "chunk_r5": 0.119,
+    "chunk_r10": 0.119,
+    "chunk_r20": 0.133,
+    "file_mrr": 0.299,
+    "chunk_mrr": 0.125
+   },
+   {
+    "key": "truncate / head_tail",
+    "strategy": "truncate",
+    "query_strategy": "head_tail",
+    "file_scored": 18,
+    "chunk_scored": 18,
+    "instances": 18,
+    "file_r5": 0.259,
+    "file_r10": 0.315,
+    "file_r20": 0.398,
+    "chunk_r5": 0.028,
+    "chunk_r10": 0.077,
+    "chunk_r20": 0.133,
+    "file_mrr": 0.221,
+    "chunk_mrr": 0.036
+   },
+   {
+    "key": "truncate / truncate",
+    "strategy": "truncate",
+    "query_strategy": "truncate",
+    "file_scored": 18,
+    "chunk_scored": 18,
+    "instances": 18,
+    "file_r5": 0.333,
+    "file_r10": 0.444,
+    "file_r20": 0.556,
+    "chunk_r5": 0.056,
+    "chunk_r10": 0.091,
+    "chunk_r20": 0.091,
+    "file_mrr": 0.325,
+    "chunk_mrr": 0.073
+   },
+   {
+    "key": "windows / head_tail",
+    "strategy": "windows",
+    "query_strategy": "head_tail",
+    "file_scored": 18,
+    "chunk_scored": 18,
+    "instances": 18,
+    "file_r5": 0.287,
+    "file_r10": 0.37,
+    "file_r20": 0.537,
+    "chunk_r5": 0.063,
+    "chunk_r10": 0.066,
+    "chunk_r20": 0.191,
+    "file_mrr": 0.252,
+    "chunk_mrr": 0.121
+   },
+   {
+    "key": "windows / truncate",
+    "strategy": "windows",
+    "query_strategy": "truncate",
+    "file_scored": 18,
+    "chunk_scored": 18,
+    "instances": 18,
+    "file_r5": 0.315,
+    "file_r10": 0.417,
+    "file_r20": 0.583,
+    "chunk_r5": 0.063,
+    "chunk_r10": 0.066,
+    "chunk_r20": 0.205,
+    "file_mrr": 0.265,
+    "chunk_mrr": 0.126
+   }
+  ],
+  "deltas": [
+   {
+    "cell": "head_tail / head_tail",
+    "paired": 18,
+    "chunk_mrr_pp": [
+     -3.1,
+     -16.3,
+     5.8
+    ],
+    "file_mrr_pp": [
+     -14.3,
+     -31.9,
+     0.8
+    ],
+    "meets_switch_rule": false
+   },
+   {
+    "cell": "head_tail / truncate",
+    "paired": 18,
+    "chunk_mrr_pp": [
+     0.8,
+     0.0,
+     2.0
+    ],
+    "file_mrr_pp": [
+     -7.4,
+     -20.3,
+     1.3
+    ],
+    "meets_switch_rule": false
+   },
+   {
+    "cell": "signature_docstring / head_tail",
+    "paired": 18,
+    "chunk_mrr_pp": [
+     -0.2,
+     -16.2,
+     14.2
+    ],
+    "file_mrr_pp": [
+     -11.4,
+     -30.9,
+     7.6
+    ],
+    "meets_switch_rule": false
+   },
+   {
+    "cell": "signature_docstring / truncate",
+    "paired": 18,
+    "chunk_mrr_pp": [
+     5.3,
+     0.0,
+     14.8
+    ],
+    "file_mrr_pp": [
+     -2.5,
+     -19.7,
+     14.2
+    ],
+    "meets_switch_rule": false
+   },
+   {
+    "cell": "truncate / head_tail",
+    "paired": 18,
+    "chunk_mrr_pp": [
+     -3.6,
+     -15.9,
+     3.7
+    ],
+    "file_mrr_pp": [
+     -10.4,
+     -25.5,
+     0.9
+    ],
+    "meets_switch_rule": false
+   },
+   {
+    "cell": "windows / head_tail",
+    "paired": 18,
+    "chunk_mrr_pp": [
+     4.9,
+     -11.6,
+     20.5
+    ],
+    "file_mrr_pp": [
+     -7.2,
+     -28.3,
+     11.8
+    ],
+    "meets_switch_rule": false
+   },
+   {
+    "cell": "windows / truncate",
+    "paired": 18,
+    "chunk_mrr_pp": [
+     5.3,
+     -10.1,
+     20.6
+    ],
+    "file_mrr_pp": [
+     -5.9,
+     -24.4,
+     11.8
+    ],
+    "meets_switch_rule": false
+   }
+  ],
+  "implied_sd_pp": [
+   {
+    "cell": "head_tail / head_tail",
+    "sd_pp": 23.918969179932706
+   },
+   {
+    "cell": "head_tail / truncate",
+    "sd_pp": 2.164612595469023
+   },
+   {
+    "cell": "signature_docstring / head_tail",
+    "sd_pp": 32.902111451129144
+   },
+   {
+    "cell": "signature_docstring / truncate",
+    "sd_pp": 16.01813320647077
+   },
+   {
+    "cell": "truncate / head_tail",
+    "sd_pp": 21.213203435596427
+   },
+   {
+    "cell": "windows / head_tail",
+    "sd_pp": 34.74203215727781
+   },
+   {
+    "cell": "windows / truncate",
+    "sd_pp": 33.22680334044951
+   }
+  ],
+  "median_implied_sd_pp": 23.918969179932706,
+  "mde_pp_median": 15.794651357218521,
+  "implied_note": "Standard deviation of the paired differences, recovered from the printed interval half-width (half-width / 1.96 x sqrt(n)); intervals are asymmetric, so this is approximate."
+ },
+ "truncation": {
+  "max_seq_length_tokens": 128,
+  "chunks_measured": 238,
+  "share_over_budget": 0.416,
+  "median_chunk_tokens": 105,
+  "share_over_budget_by_type": {
+   "function": 0.527,
+   "module": 0.469,
+   "class_skeleton": 0.333,
+   "method": 0.304
+  },
+  "longest_chunk_tokens": 1328,
+  "source": ".claude/rules/open-questions.md, embedding truncation (measured over this repository, not the benchmark repositories)",
+  "model": "flax-sentence-embeddings/st-codesearch-distilroberta-base"
+ }
+}

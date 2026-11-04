@@ -304,6 +304,7 @@ def power_block(comparisons, n):
         ],
         "curves": [{"cell": r["cell"], "sd_pp": r["sd_pp"], "points": [[d, power_at(d, r["sd_pp"], n)] for d in grid]}
                    for r in rows if r["sd_pp"]],
+        "median_curve": {"sd_pp": median_sd, "points": [[d, power_at(d, median_sd, n)] for d in grid]} if median_sd else None,
         "n_curve": {"delta_pp": MIN_GAIN_PP, "sd_pp": median_sd, "points": [[k, power_at(MIN_GAIN_PP, median_sd, k)] for k in ns]} if median_sd else None,
         "basis": "two-sided paired test, normal approximation, 80% power at alpha 0.05, using the observed SD of the per-instance "
                  "differences. The SD is itself estimated from 18 instances, and a t-based calculation would need slightly more.",

@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>repolace retrieval report</title>
+<meta name="description" content="Does a smarter way of embedding code find the lines a bug fix changes? A grid of eight retrieval strategies on 18 real bugs, with intervals over instances, and a pre-registered rule that no strategy has met.">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="/benchmark/fonts/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/benchmark/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon.png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+<script src="/benchmark/js/theme-init.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the report</a>
+
+<header class="topbar">
+  <a class="mark" href="/" title="repolace home"><span class="wm">repolace</span> <span class="wm-sub">retrieval</span></a>
+  <nav aria-label="Sections">
+    <a href="#grid">Grid</a>
+    <a href="#gains">Gains</a>
+    <a href="#bugs">Bugs</a>
+    <a href="#power">Power</a>
+    <a href="#repos">Repos</a>
+    <a href="#passfail">Pass/fail</a>
+    <a href="#method">Method</a>
+    <a href="/benchmark/">Benchmark</a>
+  </nav>
+  <details class="menu">
+    <summary>Sections</summary>
+    <div class="panel">
+      <a href="#grid">The grid</a>
+      <a href="#gains">Gains over the baseline</a>
+      <a href="#bugs">Bug by bug</a>
+      <a href="#power">What 18 bugs can show</a>
+      <a href="#repos">By repository</a>
+      <a href="#passfail">Retrieval and pass/fail</a>
+      <a href="#method">Method</a>
+      <a href="/benchmark/">Benchmark report</a>
+      <a href="/">Home</a>
+    </div>
+  </details>
+  <button class="iconbtn" id="theme" type="button" aria-label="Switch colour theme" title="Switch colour theme">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7Z"/></svg>
+  </button>
+</header>
+
+<main id="main">
+  <div class="wrap">
+    <section class="hero" aria-labelledby="headline">
+      <div id="banner"></div>
+      <h1 id="headline">No retrieval strategy has yet beaten the plain baseline at finding the code a fix changes.</h1>
+      <p class="sub" id="hero-sub">Eight ways of embedding code and queries, scored on where the lines a real fix changed land in the top 20 results. No model writes anything here: it is retrieval alone.</p>
+      <dl class="kv" id="hero-kv"></dl>
+      <noscript><div class="nojs">This report draws its charts with JavaScript. The numbers are all in <a href="data/retrieval.json">data/retrieval.json</a>.</div></noscript>
+    </section>
+  </div>
+
+  <div class="wrap">
+    <section class="story" id="grid" aria-labelledby="grid-h">
+      <h2 id="grid-h">The grid, as measured</h2>
+      <div class="pair">
+        <div class="measure" id="grid-text"></div>
+        <aside class="note" id="grid-note"></aside>
+      </div>
+      <div class="legend-host" id="legend"></div>
+      <div id="fig-curves"></div>
+      <div id="fig-table"></div>
+    </section>
+
+    <section class="story" id="gains" aria-labelledby="gains-h">
+      <h2 id="gains-h">Gain over the baseline, against the bar</h2>
+      <div class="pair">
+        <div class="measure" id="gains-text"></div>
+        <aside class="note" id="gains-note"></aside>
+      </div>
+      <div class="rule-box" id="prereg"></div>
+      <div id="fig-forest"></div>
+    </section>
+
+    <section class="story" id="bugs" aria-labelledby="bugs-h">
+      <h2 id="bugs-h">Bug by bug</h2>
+      <div class="pair">
+        <div class="measure" id="bugs-text"></div>
+        <aside class="note" id="bugs-note"></aside>
+      </div>
+      <div id="fig-heat"></div>
+      <div id="fig-strip"></div>
+      <div id="fig-bins"></div>
+    </section>
+
+    <section class="story" id="power" aria-labelledby="power-h">
+      <h2 id="power-h">What 18 bugs can show</h2>
+      <div class="pair">
+        <div class="measure" id="power-text"></div>
+        <aside class="note" id="power-note"></aside>
+      </div>
+      <div id="fig-power"></div>
+      <div id="fig-npower"></div>
+    </section>
+
+    <section class="story" id="repos" aria-labelledby="repos-h">
+      <h2 id="repos-h">By repository</h2>
+      <div class="pair">
+        <div class="measure" id="repos-text"></div>
+        <aside class="note" id="repos-note"></aside>
+      </div>
+      <div id="fig-repos"></div>
+    </section>
+
+    <section class="story" id="passfail" aria-labelledby="pf-h">
+      <h2 id="pf-h">Does finding the code predict a pass?</h2>
+      <div class="pair">
+        <div class="measure" id="pf-text"></div>
+        <aside class="note" id="pf-note"></aside>
+      </div>
+      <div class="exploratory" id="pf-box"></div>
+      <div id="fig-sweep"></div>
+    </section>
+
+    <section class="story" id="method" aria-labelledby="met-h">
+      <h2 id="met-h">Method, caveats and data</h2>
+      <div class="pair">
+        <div class="measure" id="met-text"></div>
+        <aside class="note" id="met-note"></aside>
+      </div>
+      <h3>The 128-token ceiling</h3>
+      <div class="measure" id="trunc-text"></div>
+      <dl class="kv" id="trunc-kv"></dl>
+      <h3>What is scored, and what is not</h3>
+      <div id="denominators"></div>
+      <h3>Every test, with its formula</h3>
+      <div class="methods" id="methods"></div>
+      <h3>Data and regeneration</h3>
+      <div class="downloads" id="downloads"></div>
+      <pre class="cmd" id="regen"></pre>
+    </section>
+
+    <footer class="foot" id="foot"></footer>
+  </div>
+</main>
+
+<div class="tip" id="tip" role="tooltip"></div>
+
+<script defer src="/benchmark/js/vendor/d3.min.js"></script>
+<script defer type="module" src="js/main.js"></script>
+</body>
+</html>
