@@ -1,0 +1,53 @@
+# The site host's stack, copied to /opt/repolace/ and driven by deploy.sh. Nothing is published on a host
+# port: cloudflared reaches `site` over the compose network, and `site` reaches `site-db` the same way.
+# `IMAGE` comes from /opt/repolace/.env (written by deploy.sh). Secret files (site.env, the database
+# password, the tunnel credentials) are rendered by deploy.sh and are not in the repository.
+name: repolace-site
+
+services:
+  site:
+    image: ${IMAGE:?IMAGE is set by deploy.sh}
+    restart: unless-stopped
+    command: ["uv", "run", "--project", "api", "uvicorn", "repolace_api.site.main:app", "--host", "0.0.0.0", "--port", "8100"]
+    env_file:
+      - site.env
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8100/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      site-db:
+        condition: service_healthy
+
+  site-db:
+    image: postgres:16
+    container_name: repolace-site-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: repolace
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_admin_password
+    volumes:
+      - site-db-data:/var/lib/postgresql/data
+      - ./secrets/pg_admin_password:/run/secrets/pg_admin_password:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d repolace"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  cloudflared:
+    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:2026.10.7}
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "--config", "/etc/cloudflared/config.yml", "run"]
+    volumes:
+      - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      - ./cloudflared/credentials.json:/etc/cloudflared/credentials.json:ro
+    depends_on:
+      - site
+
+volumes:
+  site-db-data:

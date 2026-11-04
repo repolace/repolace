@@ -1,0 +1,7 @@
+# Ingress for the locally managed tunnel `repolace-site`. The tunnel id is not a secret; the credentials
+# file is rendered next to this file at deploy time from Secrets Manager (repolace-tunnel-credentials).
+# Everything goes to the site container, which enforces its own Host allowlist.
+tunnel: 5babc1c9-6e2b-489f-9e65-890ac7ec3cbd
+credentials-file: /etc/cloudflared/credentials.json
+ingress:
+  - service: http://site:8100

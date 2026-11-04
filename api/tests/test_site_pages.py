@@ -60,6 +60,20 @@ async def test_wrong_host_is_refused_but_health_is_not():
     assert health.status_code == 200
 
 
+async def test_health_reports_the_build_sha(monkeypatch):
+    monkeypatch.setenv("REPOLACE_GIT_SHA", "0123456789abcdef0123456789abcdef01234567")
+    async with site_client() as client:
+        health = await client.get("/healthz")
+    assert health.json() == {"status": "ok", "sha": "0123456789abcdef0123456789abcdef01234567"}
+
+
+async def test_health_sha_defaults_to_unknown(monkeypatch):
+    monkeypatch.delenv("REPOLACE_GIT_SHA", raising=False)
+    async with site_client() as client:
+        health = await client.get("/healthz")
+    assert health.json() == {"status": "ok", "sha": "unknown"}
+
+
 async def test_every_response_carries_security_headers_including_404():
     async with site_client() as client:
         for path in ("/", "/nope"):
