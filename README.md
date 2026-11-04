@@ -18,10 +18,10 @@ The design, with the reasoning behind each decision, is in [CLAUDE.md](CLAUDE.md
 | Task pipeline | Done — `repolace-run-task` runs `run_task` end to end (checkout lifecycle, index, baseline, agent stage, score, PR gate, squash, push, PR, terminal write). `--agent llm` (the real agent) is the default; `stub` and `gold` remain |
 | Verify sandbox | Done — rootless locked-down Docker container from a prepared per-repo image, byte-identical tree export (no `.git`), pytest report parsing, scored runs plus unscored probes and scratch scripts, hidden-test overlay for benchmark instances |
 | Git hardening | Done — credential helper scoped to host, hooks and fsmonitor disabled, global/system git config pinned to `/dev/null`, path traversal guards, symlink refusal |
-| LiteLLM gateway | Done — stage routing, per-task budget (default $2, 150 calls, one hour), refuses an unpriced model rather than record it as free, every call recorded in `llm_calls`. The Phase 1 headline model is Gemini 3.1 Pro on Vertex AI (`vertex-gemini-3-1-pro-preview`), priced in `gateway/models.toml`; Sonnet 5.5 is a later comparison column |
+| LiteLLM gateway | Done — stage routing, per-task budget (default $2, overridable per run with `REPOLACE_TASK_MAX_USD`; 150 calls, one hour), refuses an unpriced model rather than record it as free, every call recorded in `llm_calls`. The Phase 1 headline model is Gemini 3.1 Pro on Vertex AI (`vertex-gemini-3-1-pro-preview`), priced in `gateway/models.toml`; Sonnet 5.5 is a later comparison column |
 | Agent | Built and wired into `repolace-run-task`; run against Gemini 3.1 Pro on Vertex AI in the benchmark ([BENCHMARK/](BENCHMARK/)) — a LangGraph graph (`localize → agent → verify`, retry edge), nine tools, and a no-oracle feedback filter, in `agents/` |
 | Retry loop | Built and wired in, not yet exercised by a real run — up to 3 scored attempts inside the graph |
-| Benchmark harness | Built and used — `eval/harness/` (`repolace-eval`): instance selection, private benchmark repos, gold validation, sweep runner, report, retrieval eval. Sweeps 4 and 4b are written up in [BENCHMARK/](BENCHMARK/); the retrieval grid is still running |
+| Benchmark harness | Built and used — `eval/harness/` (`repolace-eval`): instance selection, private benchmark repos, gold validation, sweep runner, report, retrieval eval. Sweeps 4 and 4b are written up in [BENCHMARK/](BENCHMARK/); the retrieval grid is measured (`eval/runs/retrieval-1`): no cell met the switch rule, so the default index strategy stays `truncate` |
 | Celery worker dispatch | Implemented, not yet exercised by a real run — `worker/repolace_worker/tasks.py` runs `run_task` as the Celery task `repolace.run_task`, the API publishes product tasks after commit (`api/repolace_api/publisher.py`), and `worker/repolace_worker/maintenance.py` holds the maintenance jobs. `infra/docker-compose.yml` defines a `worker` (task role, `env_file`, rootless docker socket) and a `worker-maintenance` (beat), checked with `docker compose config` only, not run. The benchmark runner still uses the `repolace-run-task` CLI |
 | Observability (OTel + Grafana) | Not started — structured JSON logging with task IDs only |
 | UI | Built — server-rendered Jinja2 + HTMX under `/ui` (`api/repolace_api/ui/`): task list, new-task flow, task detail with stage strip, diff and test runs. No auth until Phase 4, so localhost or a private tunnel only. Not yet viewed against the full compose stack |
@@ -266,7 +266,7 @@ When a task starts, repolace checks the repo's `indexed_commit_sha` against the 
 
 **Git runs in a sanitized environment** — `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM` pinned to `/dev/null`, an allowlisted environment, hooks and fsmonitor disabled on every invocation, and a credential helper that releases the token only over `https` to the expected host. The checkout's own `.git/config` is not pinned; the sandbox never receives it, and the export reads blobs directly so no filter or attribute it names ever runs.
 
-**Model calls run on the host, through the gateway, and the provider key lives only there.** Every call is attributed to a task, priced and recorded; an unpriced call is an error rather than zero, and a per-task budget (default $2) is enforced in the gateway rather than trusted to the agent. The key is handed to LiteLLM per call and never exported into `os.environ`, so nothing the host spawns can inherit it.
+**Model calls run on the host, through the gateway, and the provider key lives only there.** Every call is attributed to a task, priced and recorded; an unpriced call is an error rather than zero, and a per-task budget (default $2, `REPOLACE_TASK_MAX_USD` overrides it) is enforced in the gateway rather than trusted to the agent. The key is handed to LiteLLM per call and never exported into `os.environ`, so nothing the host spawns can inherit it.
 
 **The agent's authority comes from its tools, not its prompt.** Issue text, retrieved code and test output are framed as delimited data, but the real bound is code: every path goes through one confinement function that refuses symlinks, `.git*` and (for writes) any dotfile, test or configuration file; `grep` runs resource-limited with model strings never placed before `--`; scratch scripts and test probes run in the sandbox with no network. **One known limit:** any other file is writable, including ones CI or a build executes (`Makefile`, `setup.py`). Benchmark repositories are private with Actions disabled; in product mode, do not push an agent branch to a repository whose push-triggered CI has secrets without deciding that deliberately.
 
@@ -274,7 +274,7 @@ When a task starts, repolace checks the repo's `indexed_commit_sha` against the 
 
 ## What comes next
 
-**Phase 1 completion:** gold validation, a dry run and sweeps 4 and 4b are done ([BENCHMARK/](BENCHMARK/)). Left: the retrieval grid result, confirming Vertex prices in the Cloud console (`gateway/models.toml` uses AI Studio rates), a run that opens real PRs, and deciding whether any variant (early-edit nudge, role split, mixed models) earns a place on `main`. Benchmark repos must contain no tracked symlinks or submodules — the export refuses both.
+**Phase 1 completion:** gold validation, a dry run and sweeps 4 and 4b are done ([BENCHMARK/](BENCHMARK/)). Left: confirming Vertex prices in the Cloud console (`gateway/models.toml` uses AI Studio rates), a run that opens real PRs, and deciding whether any variant (early-edit nudge, role split, mixed models) earns a place on `main`. Benchmark repos must contain no tracked symlinks or submodules — the export refuses both.
 
 **Phase 2:** Split into specialized agents (planner/editor/reviewer/debugger), async queue dispatch, merge-conflict resolution sub-loop, basic UI.
 
@@ -300,6 +300,7 @@ The gateway can call Gemini through Google Vertex AI with a Vertex API key. Lite
 | Model key | Vertex model | Used for | Price (per M tokens) |
 |---|---|---|---|
 | `vertex-gemini-3-1-pro-preview` | `gemini-3.1-pro-preview` | the agent (editing, debugging); the `resolve` stage follows `agent` | $2.00 in, $12.00 out, $0.20 cached |
+| `vertex-gemini-3-1-pro-preview-priority` | `gemini-3.1-pro-preview` (Priority PayGo) | the same agent at 1.8x the price, for sweeps that cannot wait out a 429 spell | $3.60 in, $21.60 out, $0.36 cached |
 | `vertex-gemini-3-8-flash` | `gemini-3.8-flash` | cheap steps (planning, review, summaries) once the role split lands; selectable for a whole-agent run today | $0.75 in, $3.75 out, $0.075 cached |
 
 Neither is a default; the shipped `agent` stage is still `claude-sonnet-5-5`. A planner/editor/reviewer/debugger role table is deliberately not built yet (Phase 1 is one agent, and the role split is on `phase-2/agents`).

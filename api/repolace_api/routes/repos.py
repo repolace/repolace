@@ -32,7 +32,8 @@ from repolace_api.schemas import (
 router = APIRouter(prefix="/repos", tags=["repos"])
 log = structlog.get_logger()
 
-#: Mirrors `repolace_gateway.budget.DEFAULT_MAX_USD` (the per-task cap). Not
+#: Mirrors `repolace_gateway.budget.DEFAULT_MAX_USD` (the default per-task cap; a run that sets
+#: `REPOLACE_TASK_MAX_USD` is not reflected here, because the API process never sees it). Not
 #: imported: the gateway package pulls LiteLLM, which the API image must not
 #: carry (see the dependency direction in CLAUDE.md, "Architecture"; the cap is described in
 #: .claude/rules/api-and-ui.md). Change both together.

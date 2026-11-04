@@ -19,7 +19,7 @@ paths:
 | attempts | 3 (`AgentLimits.max_attempts`) | a retry happens only on a *fresh*, not-clean scored attempt, with attempts left and no infrastructure fault |
 | steps (model calls) per attempt | 40 | `STEP_CAP` when reached |
 | tool calls executed per model reply | 8 (`MAX_TOOL_CALLS_PER_REPLY`); the rest are answered "not executed", never run | the injection audit scripted a single reply of 3,000 calls and all were executed, each `run_python` up to 120 s |
-| task cost | $2.00 (`DEFAULT_MAX_USD`) | the gateway, not the agent |
+| task cost | $2.00 (`DEFAULT_MAX_USD`; `REPOLACE_TASK_MAX_USD` replaces it for one run, because the `-priority` Vertex entry bills 1.8x) | the gateway, not the agent |
 | model calls per task | 150 (`DEFAULT_MAX_CALLS`) | the gateway; 3 attempts x 40 steps is at most 120 |
 | wall clock per task | 3600 s (`DEFAULT_MAX_WALL_SECONDS`) | the gateway; **started when the agent stage starts** (`_agent_budget`), not at the task's start, so a clone, an index that waited twenty minutes for another task's lock and a baseline run cannot eat the cap and charge an instrument limit to the agent |
 

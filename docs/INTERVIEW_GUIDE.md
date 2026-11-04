@@ -680,7 +680,7 @@ gold validation (it was accepted by `gold-5`/`gold-6`), so a 0 there is the leas
 - Gemini 3.1 Pro is a **Preview** model on Vertex's Dynamic Shared Quota: shared global capacity, no per-project quota
   you can raise. Per the 2026-10-25 session, the Cloud console showed no quota near its limit.
 - The lost rows all read `LLMCallError: provider quota exhausted ... RESOURCE_EXHAUSTED, HTTP 429` after 8 retries
-  (the retry window had already been lengthened in #50 to about 3-6 minutes, after `sweep-2` lost three tasks).
+  (the retry window had already been lengthened in #50 to about 3-6 minutes, after `sweep-2` lost three tasks, and later to 21 tries over about 15-30 minutes).
 - Per the session, a bare "say ok" probe sometimes passes and real tasks then get 429s, so a probe is an unreliable
   health signal. `scripts/wait_for_pro_then_run.sh` therefore asks for three successes in a row.
 - The runner stops dispatching after two provider refusals in one invocation, and a failed row is **never re-queued**
@@ -857,7 +857,7 @@ points wide even before the substitution).
 `CLAUDE.md` "Phase 1 status", `README.md` (agent and harness rows, migrations count, compose worker description,
 "What comes next"), `.claude/rules/benchmark.md`, `.claude/rules/open-questions.md` and `docs/PHASE1_TESTING.md`
 all said no real run or sweep had happened. They now state the sweep-4 and sweep-4b results and point to
-`BENCHMARK/REPORT.md`. Still open: confirm Vertex prices in the Cloud console, the retrieval grid result, and a run
+`BENCHMARK/REPORT.md`. Still open: confirm Vertex prices in the Cloud console, and a run
 that opens real PRs.
 
 ---
