@@ -270,6 +270,8 @@ class RepolaceSiteStack(Stack):
                     "ecr:CompleteLayerUpload",
                     "ecr:PutImage",
                     "ecr:DescribeImages",
+                    "ecr:BatchGetImage",
+                    "ecr:GetDownloadUrlForLayer",
                 ],
                 resources=[repo.repository_arn],
             )
