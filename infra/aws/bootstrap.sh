@@ -23,7 +23,8 @@ done
 [[ -e "${device}" ]] || { echo "data volume ${DATA_VOLUME_ID} did not appear" >&2; exit 1; }
 # A volume that already holds a filesystem (a replacement instance, a restored volume) is never formatted.
 if ! blkid "${device}" >/dev/null 2>&1; then
-  mkfs.xfs -L repolace-data "${device}"
+  # an XFS label is at most 12 characters
+  mkfs.xfs -L repolace-db "${device}"
 fi
 mkdir -p "${DATA_MOUNT}"
 uuid="$(blkid -s UUID -o value "${device}")"
