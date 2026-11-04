@@ -74,7 +74,9 @@ if [[ ! -s "${APP_DIR}/secrets/pg_admin_password" ]]; then
 fi
 # The postgres entrypoint reads this file as the postgres user inside the container.
 chmod 0444 "${APP_DIR}/secrets/pg_admin_password"
-printf 'IMAGE=%s\n' "${image}" > "${APP_DIR}/.env"
+# compose.site.yml needs IMAGE for every command. It is passed in the environment, so .env is written only
+# once a version has been proven (below) and always names an image that actually served traffic.
+export IMAGE="${image}"
 
 # --- 4. Database: start, apply init.sql, set the INSERT-only role's password -----------------------
 log "starting site-db"
@@ -136,7 +138,7 @@ rollback() {
     log "no previous version recorded; leaving the failed one in place"
     return
   fi
-  printf 'IMAGE=%s\n' "${ECR_REPO_URI}:${previous_sha}" > "${APP_DIR}/.env"
+  export IMAGE="${ECR_REPO_URI}:${previous_sha}"
   docker pull --quiet "${ECR_REPO_URI}:${previous_sha}" >/dev/null || true
   compose up -d --remove-orphans site cloudflared >/dev/null || true
   if wait_for_sha "${previous_sha}"; then
@@ -153,6 +155,7 @@ if ! compose up -d --remove-orphans site cloudflared >/dev/null || ! wait_for_sh
 fi
 
 printf '%s\n' "${sha}" > current_sha
+printf 'IMAGE=%s\n' "${image}" > "${APP_DIR}/.env"
 # Keep this deploy and the previous one; drop the rest.
 docker image prune --all --force --filter "until=72h" >/dev/null 2>&1 || true
 log "deployed ${sha}"

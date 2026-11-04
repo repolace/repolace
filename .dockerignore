@@ -9,3 +9,6 @@ node_modules
 infra
 # The site host copies its compose file and scripts out of the image on every deploy (infra/aws/deploy.sh).
 !infra/aws
+infra/aws/cdk.out
+infra/aws/.venv
+infra/aws/**/__pycache__

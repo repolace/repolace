@@ -40,7 +40,7 @@ services:
       start_period: 10s
 
   cloudflared:
-    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:2025.11.1}
+    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:2026.10.7}
     restart: unless-stopped
     command: ["tunnel", "--no-autoupdate", "--config", "/etc/cloudflared/config.yml", "run"]
     volumes:

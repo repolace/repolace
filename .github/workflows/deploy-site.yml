@@ -36,8 +36,8 @@ jobs:
     if: vars.SITE_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       - run: uv sync --frozen --package repolace-api
       - run: uv run ruff check .
       - run: uv run pytest api/tests/test_site_pages.py api/tests/test_site_design.py api/tests/test_site_waitlist.py -m "not db and not docker"
@@ -51,14 +51,27 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           role-to-assume: ${{ vars.AWS_BUILD_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-      - uses: aws-actions/amazon-ecr-login@v2
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
+      # The repository is IMMUTABLE-tagged: a re-run of the same sha must not try to push again.
+      - name: Skip the build when this sha is already in ECR
+        id: exists
+        env:
+          REPOSITORY_URI: ${{ vars.ECR_REPOSITORY_URI }}
+        run: |
+          if aws ecr describe-images --repository-name "${REPOSITORY_URI#*/}" --image-ids "imageTag=${GITHUB_SHA}" >/dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.exists.outputs.found != 'true'
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - if: steps.exists.outputs.found != 'true'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: api/Dockerfile
@@ -78,7 +91,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
@@ -88,16 +101,18 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          # executionTimeout (1200 s) bounds the script; the poll window (150 x 10 s) outlasts it, so the
+          # job always sees a terminal status.
           command_id="$(aws ssm send-command \
             --instance-ids "${INSTANCE_ID}" \
             --document-name AWS-RunShellScript \
             --comment "deploy-site ${SHA}" \
-            --timeout-seconds 900 \
-            --parameters "commands=[\"/opt/repolace/deploy.sh ${SHA}\"]" \
+            --timeout-seconds 300 \
+            --parameters "commands=[\"/opt/repolace/deploy.sh ${SHA}\"],executionTimeout=[\"1200\"]" \
             --query Command.CommandId --output text)"
           echo "SSM command: ${command_id}"
           status=Pending
-          for _ in $(seq 1 120); do
+          for _ in $(seq 1 150); do
             sleep 10
             status="$(aws ssm get-command-invocation --command-id "${command_id}" --instance-id "${INSTANCE_ID}" \
               --query Status --output text 2>/dev/null || echo Pending)"
