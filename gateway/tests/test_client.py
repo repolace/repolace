@@ -168,6 +168,35 @@ class TestASuccessfulCall:
             "fallback_from": None,
         }
 
+    async def test_an_openrouter_call_is_pinned_to_its_endpoint_with_fallbacks_off(self):
+        raw = raw_config()
+        raw["models"]["routed"] = {
+            "provider": "openrouter",
+            "litellm_model": "openrouter/deepseek/deepseek-x",
+            "openrouter_provider": "wafer/mxfp4",
+            "supports_prompt_caching": False,
+            "price": {"input": 0.25, "output": 5.0},
+        }
+        raw["stages"]["agent"]["model"] = "routed"
+        h = make_harness(
+            make_response(),
+            config=parse_config(raw),
+            settings=make_settings(openrouter_api_key="sk-or-test-key-1234"),
+        )
+        with task_scope(TASK_ID, TaskBudget()):
+            await h.client.complete("agent", MESSAGES, TOOLS)
+
+        sent = h.acompletion.calls[0]
+        assert sent["extra_body"] == {"provider": {"order": ["wafer/mxfp4"], "allow_fallbacks": False}}
+        assert sent["api_key"] == "sk-or-test-key-1234"
+        assert "api_key" not in h.recorder.records[0].request["params"]
+
+    async def test_a_caller_cannot_override_the_pinned_endpoint(self):
+        h = make_harness(make_response())
+        with task_scope(TASK_ID, TaskBudget()), pytest.raises(TypeError, match="extra_body"):
+            await h.client.complete("agent", MESSAGES, TOOLS, extra_body={"provider": {"order": ["x"]}})
+        assert h.acompletion.calls == []
+
     async def test_the_assistant_message_can_be_appended_straight_to_the_history(self):
         h = make_harness(
             make_response(None, tool_calls=[("call_1", "read_file", "{}")]), make_response("done")

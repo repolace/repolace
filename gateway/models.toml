@@ -13,8 +13,10 @@
 [gateway]
 # Sized for Vertex's Dynamic Shared Quota: a 429 there means the shared pool was congested,
 # and sweep-2 lost three tasks to calls that gave up after ~15-30 s. These waits (2, 4, 8, 16,
-# 32, 64, 120, 120 s, with jitter) ride out a spell of a few minutes. A 429 is not billed.
-max_attempts = 9            # total tries per model, the first included
+# 32, 64, then 120 s each, with jitter) ride out a spell of 15-30 minutes: 21 tries, 20 waits,
+# 1,806 s nominal, about 900-1,800 s with jitter. Spells lasted hours on 2026-10-28/29, and the
+# earlier 9 tries (~3-6 min) lost rows. The waits count against the task's wall clock. A 429 is not billed.
+max_attempts = 21           # total tries per model, the first included
 base_delay_seconds = 2.0    # backoff doubles from here, with jitter
 max_delay_seconds = 120.0
 request_timeout_seconds = 180.0
@@ -87,7 +89,7 @@ supports_prompt_caching = true   # priced by LiteLLM's map; no [price] needed
 # --- comparison models (WP8) -----------------------------------------------
 # Placeholders. Uncomment, fill in, and point a one-run sweep at one with
 #   GATEWAY_STAGE_MODELS='{"agent": "<key>"}'
-# The provider must be one of: anthropic, openai, gemini, minimax, vertex_ai, and litellm_model must
+# The provider must be one of: anthropic, openai, gemini, minimax, vertex_ai, bedrock, openrouter, nvidia_nim, and litellm_model must
 # start with "<provider>/" (checked at load -- otherwise one vendor's key would
 # be sent to another vendor's API).
 #
@@ -184,3 +186,62 @@ input = 2.00
 output = 12.00
 cache_read = 0.20
 cache_write = 0.0
+
+# The same model on Priority PayGo (1.8x the standard rates), for when the shared pool answers 429 to
+# standard traffic. Priority is a separate model in a report: the same agent, a different bill. Rates
+# are from the Cloud console's pricing page as read by a browser session on 2026-10-29, not yet
+# re-checked against an invoice.
+[models.vertex-gemini-3-1-pro-preview-priority]
+provider = "vertex_ai"
+litellm_model = "vertex_ai/gemini-3.1-pro-preview"
+supports_prompt_caching = true
+request_type = "priority"
+[models.vertex-gemini-3-1-pro-preview-priority.price]
+input = 3.60
+output = 21.60
+cache_read = 0.36
+cache_write = 0.0
+
+# --- DeepSeek V4 Pro (0813 checkpoint) through OpenRouter, pinned to Wafer --------------------
+# One key (OPENROUTER_API_KEY) reaches many hosts, so the call is pinned to one endpoint tag with
+# fallbacks off (`openrouter_provider`, sent as `provider.order` and `allow_fallbacks = false`):
+# another host would be another price and another quantisation, a different model in a benchmark.
+# "wafer/mxfp4" is the MXFP4-quantised endpoint, so this is NOT the full-precision model.
+#
+# PRICE: $0.25 in / $5.00 out per M tokens, as listed for the Wafer endpoint on its OpenRouter page
+# (user-reported 2026-10-25; confirm on the page before quoting a cost). No cache rate is known for
+# this endpoint. `supports_prompt_caching` is false (the gateway sends no markers), and `cache_read`
+# is set equal to `input` as an upper bound: a response that reports cached tokens against a price
+# with no cache_read rate is refused as unpriced, and a guessed discount would understate cost.
+# Output includes reasoning tokens. Select per sweep with
+#   repolace-eval enqueue/run --model openrouter-deepseek-v4-pro-wafer
+[models.openrouter-deepseek-v4-pro-wafer]
+provider = "openrouter"
+litellm_model = "openrouter/deepseek/deepseek-v4-pro-0813"
+openrouter_provider = "wafer/mxfp4"
+supports_prompt_caching = false
+[models.openrouter-deepseek-v4-pro-wafer.price]
+input = 0.25
+output = 5.00
+cache_read = 0.25
+
+# --- DeepSeek V4.1 Flash on NVIDIA's hosted API ----------------------------------------------
+# NVIDIA's OpenAI-compatible endpoint (integrate.api.nvidia.com/v1), through LiteLLM's `nvidia_nim/`
+# route; the key is NVIDIA_API_KEY. This is the FLASH model named in NVIDIA's sample, not V4 Pro,
+# and Flash-tier models scored well below Pro in our runs (Gemini 3.8 Flash passed 26% of its
+# finished tasks against Pro's 69%), so treat it as a comparison column, not a headline candidate.
+#
+# PRICE: the hosted trial endpoint is free but rate-limited (the limits are NVIDIA's and not
+# recorded here; expect throttling, so run with `-k 1`). It is priced at 0 because that is what the
+# endpoint charges, which makes every cost figure for this model a floor of zero and NOT comparable
+# with a paid model's: for a cost comparison, re-price its token counts at the DeepSeek list rate.
+# `supports_prompt_caching` is false (no markers are sent) and `cache_read` is 0 so that a response
+# reporting cached tokens is not refused as unpriced.
+[models.nvidia-deepseek-v4-1-flash]
+provider = "nvidia_nim"
+litellm_model = "nvidia_nim/deepseek-ai/deepseek-v4.1-flash"
+supports_prompt_caching = false
+[models.nvidia-deepseek-v4-1-flash.price]
+input = 0
+output = 0
+cache_read = 0

@@ -18,6 +18,7 @@ Every table in `models.toml` rejects unknown keys. A misspelt
 setting that fails open is the kind this repo has been bitten by before.
 """
 
+import re
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
@@ -44,6 +45,10 @@ PROVIDER_KEY_FIELDS: Mapping[str, str] = {
     "minimax": "minimax_api_key",
     #: A Vertex AI API key (not an AI Studio one): see `repolace_gateway.vertex`.
     "vertex_ai": "google_api_key",
+    #: One OpenRouter key reaches many hosts; the model entry pins which one (`openrouter_provider`).
+    "openrouter": "openrouter_api_key",
+    #: NVIDIA's hosted OpenAI-compatible API (integrate.api.nvidia.com), LiteLLM's `nvidia_nim/` route.
+    "nvidia_nim": "nvidia_api_key",
 }
 
 #: Providers that authenticate with the AWS credential chain rather than one API key.
@@ -67,6 +72,8 @@ REQUIRED_STAGES = ("agent", "cheap")
 OPTIONAL_STAGE_FALLBACKS = {"resolve": "agent"}
 
 _MILLION = Decimal(1_000_000)
+#: An OpenRouter endpoint tag: provider slug, optionally a quantisation after a slash.
+_OPENROUTER_TAG = re.compile(r"[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)?")
 #: Anything shorter is not a credential, and replacing it everywhere in a stored
 #: prompt would corrupt the record instead of protecting it.
 _MIN_SECRET_LENGTH = 8
@@ -82,6 +89,8 @@ class GatewaySettings(BaseSettings):
     gemini_api_key: SecretStr | None = None
     minimax_api_key: SecretStr | None = None
     google_api_key: SecretStr | None = None
+    openrouter_api_key: SecretStr | None = None
+    nvidia_api_key: SecretStr | None = None
     #: Aliased so the environment names carry a `GATEWAY_` prefix: bare
     #: `MODELS_PATH` and `STAGE_MODELS` are too generic to claim in a shared `.env`.
     #: (The provider keys keep their standard names, which other tooling expects.)
@@ -199,6 +208,13 @@ class ModelConfig:
     supports_prompt_caching: bool
     #: None means LiteLLM's own price map must cover the model.
     price: Price | None = None
+    #: The one OpenRouter endpoint tag the call is pinned to (for example "wafer/mxfp4"), with
+    #: fallbacks off. Set exactly when `provider` is "openrouter": an unpinned call can land on
+    #: another host with another price and quantisation, which is a different model in a benchmark.
+    openrouter_provider: str | None = None
+    #: Set only for `vertex_ai`: "priority" sends Vertex's Priority PayGo headers, which bill at a
+    #: higher rate and are throttled after standard traffic, so the entry carries its own price.
+    request_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -318,7 +334,11 @@ def _parse_price(table: Mapping[str, Any], supports_caching: bool, where: str) -
 
 def _parse_model(key: str, table: Mapping[str, Any]) -> ModelConfig:
     where = f"models.{key}"
-    _reject_unknown(table, {"provider", "litellm_model", "supports_prompt_caching", "price"}, where)
+    _reject_unknown(
+        table,
+        {"provider", "litellm_model", "supports_prompt_caching", "price", "openrouter_provider", "request_type"},
+        where,
+    )
     provider = _require(table, "provider", str, where)
     litellm_model = _require(table, "litellm_model", str, where)
     supports_caching = _require(table, "supports_prompt_caching", bool, where)
@@ -336,6 +356,18 @@ def _parse_model(key: str, table: Mapping[str, Any]) -> ModelConfig:
         )
     if provider == "vertex_ai" and not is_valid_model_id(litellm_model.split("/", 1)[1]):
         raise ConfigError(f"{where}.litellm_model: {litellm_model!r} is not a plain Vertex model id")
+    openrouter_provider = table.get("openrouter_provider")
+    if provider == "openrouter":
+        if not isinstance(openrouter_provider, str) or not _OPENROUTER_TAG.fullmatch(openrouter_provider):
+            raise ConfigError(
+                f"{where}.openrouter_provider: an openrouter model must name the endpoint tag it is pinned to, "
+                f"like \"wafer/mxfp4\"; got {openrouter_provider!r}"
+            )
+    elif openrouter_provider is not None:
+        raise ConfigError(f"{where}.openrouter_provider: only valid when provider is \"openrouter\"")
+    request_type = table.get("request_type")
+    if request_type is not None and (provider != "vertex_ai" or request_type != "priority"):
+        raise ConfigError(f"{where}.request_type: only \"priority\" is accepted, and only for provider \"vertex_ai\"")
     price_table = table.get("price")
     if price_table is not None and not isinstance(price_table, dict):
         raise ConfigError(f"{where}.price: expected a table")
@@ -346,6 +378,8 @@ def _parse_model(key: str, table: Mapping[str, Any]) -> ModelConfig:
         litellm_model=litellm_model,
         supports_prompt_caching=supports_caching,
         price=price,
+        openrouter_provider=openrouter_provider,
+        request_type=request_type,
     )
 
 

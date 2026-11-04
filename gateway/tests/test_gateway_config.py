@@ -134,6 +134,53 @@ class TestRejectingWhatFailsOpen:
         with pytest.raises(ConfigError, match="unknown provider 'mistral'"):
             parse_config(raw)
 
+    def openrouter_raw(self, **overrides):
+        model = {
+            "provider": "openrouter",
+            "litellm_model": "openrouter/deepseek/deepseek-x",
+            "openrouter_provider": "wafer/mxfp4",
+            "supports_prompt_caching": False,
+            "price": {"input": 0.25, "output": 5.0},
+        }
+        model.update(overrides)
+        return self.broken(lambda r: r["models"].update(routed=model))
+
+    def test_an_openrouter_model_is_accepted_when_it_is_pinned_to_an_endpoint(self):
+        config = parse_config(self.openrouter_raw())
+        assert config.models["routed"].openrouter_provider == "wafer/mxfp4"
+
+    def test_an_openrouter_model_without_a_pinned_endpoint_is_rejected(self):
+        raw = self.openrouter_raw()
+        del raw["models"]["routed"]["openrouter_provider"]
+        with pytest.raises(ConfigError, match="pinned to"):
+            parse_config(raw)
+
+    @pytest.mark.parametrize("tag", ["", "Wafer/mxfp4", "wafer/mx fp4", "wafer/../x", 3])
+    def test_a_malformed_endpoint_tag_is_rejected(self, tag):
+        with pytest.raises(ConfigError, match="openrouter_provider"):
+            parse_config(self.openrouter_raw(openrouter_provider=tag))
+
+    def test_an_endpoint_tag_on_another_provider_is_rejected(self):
+        raw = self.broken(lambda r: r["models"]["main"].update(openrouter_provider="wafer/mxfp4"))
+        with pytest.raises(ConfigError, match="only valid when provider"):
+            parse_config(raw)
+
+    def test_the_shipped_openrouter_model_is_pinned_and_priced(self):
+        model = load_config(DEFAULT_MODELS_PATH).models["openrouter-deepseek-v4-pro-wafer"]
+        assert model.openrouter_provider == "wafer/mxfp4"
+        assert model.litellm_model == "openrouter/deepseek/deepseek-v4-pro-0813"
+        assert model.price is not None and model.price.cache_read is not None
+
+    def test_the_shipped_nvidia_model_is_keyed_by_the_nvidia_key_and_priced_at_zero(self):
+        config = load_config(DEFAULT_MODELS_PATH)
+        model = config.models["nvidia-deepseek-v4-1-flash"]
+        assert model.provider == "nvidia_nim"
+        assert model.litellm_model == "nvidia_nim/deepseek-ai/deepseek-v4.1-flash"
+        assert model.price is not None and model.price.input == 0 and model.price.output == 0
+        assert make_settings(nvidia_api_key="nvapi-test-key-1234").call_kwargs("nvidia_nim") == {
+            "api_key": "nvapi-test-key-1234"
+        }
+
     def test_a_bedrock_model_is_accepted_when_its_route_names_bedrock(self):
         raw = self.broken(
             lambda r: r["models"]["main"].update(provider="bedrock", litellm_model="bedrock/global.anthropic.claude-sonnet-5-5")

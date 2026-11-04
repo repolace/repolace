@@ -111,6 +111,8 @@ _RESERVED_KWARGS = frozenset(
         "api_base",
         "base_url",
         "custom_llm_provider",
+        "extra_body",
+        "vertex_request_type",
         "num_retries",
         "fallbacks",
         "stream",
@@ -574,6 +576,11 @@ class LLMClient:
         if route.stage.max_tokens is not None:
             kwargs["max_tokens"] = route.stage.max_tokens
         kwargs.update(extra)
+        if model.openrouter_provider:
+            # After `extra`, and `extra_body` is reserved: nothing a caller passes can unpin the host.
+            kwargs["extra_body"] = {"provider": {"order": [model.openrouter_provider], "allow_fallbacks": False}}
+        if model.request_type:
+            kwargs["vertex_request_type"] = model.request_type
         return kwargs, cached
 
     @staticmethod
