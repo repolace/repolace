@@ -1,0 +1,87 @@
+{
+  "sweep-e1": {
+    "generation_1": {
+      "tasks": 3,
+      "task_cost_usd": 0.8322,
+      "of_which_calls_still_in_db_usd": 0.0,
+      "note": "task rows only were archived; 'still in db' is spend already inside the DB totals"
+    },
+    "generation_2": {
+      "tasks": 2,
+      "calls": 63,
+      "llm_cost_usd": 1.2189,
+      "note": "llm_calls archived then deleted: not in the DB totals"
+    },
+    "added_back_usd": 2.0511,
+    "task_ids": [
+      "d31642d9-4f5f-43c4-ba29-2fa2e8f38d2d",
+      "1a7ecb59-1093-4d24-9c31-f11c687b8780",
+      "a7e92b8d-8b2c-46c4-8f55-da81f9934a7e",
+      "d9b5aa6f-0c95-4dc6-a2f6-70e28c68665a",
+      "dc4666a9-fcd1-41db-88d8-59b1fdcfd0ee"
+    ]
+  },
+  "sweep-r2": {
+    "generation_1": {
+      "tasks": 5,
+      "task_cost_usd": 2.233,
+      "of_which_calls_still_in_db_usd": 0.0,
+      "note": "task rows only were archived; 'still in db' is spend already inside the DB totals"
+    },
+    "generation_2": {
+      "tasks": 10,
+      "calls": 35,
+      "llm_cost_usd": 0.3922,
+      "note": "llm_calls archived then deleted: not in the DB totals"
+    },
+    "added_back_usd": 2.6252,
+    "task_ids": [
+      "b9d68754-61ba-4a90-840d-2260f5049a76",
+      "2e437859-54f1-40ba-9504-07548471a659",
+      "2c77f515-78b7-4fa8-a720-1820477077be",
+      "522de65c-2920-4dfa-9b42-a8930622f67a",
+      "c4fc2a81-71df-4441-8c18-a7c8bd1ce7b0",
+      "db4df188-1355-4419-b80b-6ee419c8fe30",
+      "522de65c-2920-4dfa-9b42-a8930622f67a",
+      "2c77f515-78b7-4fa8-a720-1820477077be",
+      "c4fc2a81-71df-4441-8c18-a7c8bd1ce7b0",
+      "cb0c618c-bb8d-4e84-b332-86899848fc34",
+      "3c3ee2a8-3262-42e2-8ff4-17d0f8c768e2",
+      "4d580a57-6231-463b-8afb-cb98dd1d39bd",
+      "8839c891-404a-44c2-bbdd-ccdf93f8b1c3",
+      "1af81255-aaf1-4082-aa2f-5b8af2036efd",
+      "3f56e06a-5c7d-4959-bee0-5ebf5ba56e01",
+      "8839c891-404a-44c2-bbdd-ccdf93f8b1c3",
+      "3f56e06a-5c7d-4959-bee0-5ebf5ba56e01"
+    ]
+  },
+  "sweep-m1": {
+    "generation_1": {
+      "tasks": 3,
+      "task_cost_usd": 0.9623,
+      "of_which_calls_still_in_db_usd": 0.0,
+      "note": "task rows only were archived; 'still in db' is spend already inside the DB totals"
+    },
+    "generation_2": {
+      "tasks": 9,
+      "calls": 34,
+      "llm_cost_usd": 0.258,
+      "note": "llm_calls archived then deleted: not in the DB totals"
+    },
+    "added_back_usd": 1.2203,
+    "task_ids": [
+      "0aa850be-00ea-44e3-8732-1cf553c574c8",
+      "f5861681-1a09-4dc8-bfac-1eeb83027386",
+      "cfe1cc7e-dcbd-4a06-8a88-95df62b0d9b2",
+      "f5861681-1a09-4dc8-bfac-1eeb83027386",
+      "b73c0d96-949d-47b7-9bbf-6cbdb08d32e6",
+      "0aa850be-00ea-44e3-8732-1cf553c574c8",
+      "a0b979ca-e32e-43ab-8e83-cd61475d7106",
+      "18287b0f-29ff-4821-a691-637c055ab45a",
+      "daf81c33-f395-4df8-80dd-e4c44ce41846",
+      "bee87297-7913-4ded-95ab-4621c9ffdcaa",
+      "e083bf26-ed93-4b02-9398-41affd2a172a",
+      "9a4ee37b-14a3-494f-ab2f-b0f6da10cc12"
+    ]
+  }
+}

@@ -1,0 +1,55 @@
+task_id,run,instance_id,run_index,status,outcome,stop_reason,score_reason,error_head,cost_usd,started_at,completed_at,latency_s,retry_count,changed_files_n,scored_attempts
+96e61be5-e012-4fd4-8da6-712faede5a6d,sweep-r1,mwaskom__seaborn-3069,0,completed,failed,step_cap,"2 expected fail-to-pass test(s) still not passing: tests/_core/test_plot.py::TestScaling::test_nominal_x_axis_tweaks, tests/_core/test_plot.py::TestScaling::test_nominal_y_axis_tweaks",,0.7103,2026-10-25 10:50:13.661277+00,2026-10-25 11:17:46.370276+00,1652.7,0,2,1
+3d1ba61d-bd23-4abb-931e-27e4ae29745e,sweep-r1,mwaskom__seaborn-3069,1,queued,,,,,,,,,0,0,0
+e4a1f3eb-78cc-4777-96fd-dbde32fd31c1,sweep-r1,mwaskom__seaborn-3069,2,queued,,,,,,,,,0,0,0
+4d9a82ac-4904-48ad-9c29-e0d770c19220,sweep-r1,mwaskom__seaborn-3187,0,completed,failed,no_change,agent produced no change,,1.1948,2026-10-25 11:18:12.254625+00,2026-10-25 11:34:54.688624+00,1002.4,0,0,0
+299cfefe-e5db-41cd-ab4d-dd7f95625fc0,sweep-r1,mwaskom__seaborn-3187,1,queued,,,,,,,,,0,0,0
+3b9d8209-6bdb-427c-979a-c3b012dd1d66,sweep-r1,mwaskom__seaborn-3187,2,queued,,,,,,,,,0,0,0
+15b1f4f0-094c-4ae0-8c70-864216fcae84,sweep-r1,pallets__flask-5014,0,completed,passed,step_cap,"all 1 expected tests pass, no regressions",,0.5226,2026-10-25 11:31:04.856961+00,2026-10-25 11:37:37.067605+00,392.2,0,1,1
+5bdda256-41a2-4229-8236-cc1348f09268,sweep-r1,pallets__flask-5014,1,queued,,,,,,,,,0,0,0
+234c2728-78eb-411d-88aa-04d457b6573a,sweep-r1,pallets__flask-5014,2,queued,,,,,,,,,0,0,0
+4dbabbb4-ee19-4a19-96cf-96ea496d0eaf,sweep-r1,pylint-dev__pylint-4551,0,completed,failed,no_change,agent produced no change,,0.4212,2026-10-25 11:33:20.81699+00,2026-10-25 11:49:42.339143+00,981.5,0,0,0
+7087341c-8e9d-4ea4-9063-2d95eb72c0dd,sweep-r1,pylint-dev__pylint-4551,1,queued,,,,,,,,,0,0,0
+c8178135-bb99-44b8-b5b4-21bc9d45caf8,sweep-r1,pylint-dev__pylint-4551,2,queued,,,,,,,,,0,0,0
+df62e0c8-a399-4a78-bf49-6c5eab7781eb,sweep-r1,pylint-dev__pylint-4604,0,completed,failed,no_change,agent produced no change,,1.3587,2026-10-25 11:36:07.683933+00,2026-10-25 11:55:31.749438+00,1164.1,0,0,0
+5b7414e0-6c7e-475c-bf16-5180056eca83,sweep-r1,pylint-dev__pylint-4604,1,queued,,,,,,,,,0,0,0
+c00a1065-9d4e-4593-b7be-3fedd2a64b2e,sweep-r1,pylint-dev__pylint-4604,2,queued,,,,,,,,,0,0,0
+a8e26a30-248f-48e6-9840-0d1f57c9b11d,sweep-r1,pylint-dev__pylint-4970,0,completed,failed,no_change,agent produced no change,,0.9897,2026-10-25 11:38:54.972606+00,2026-10-25 11:58:51.773857+00,1196.8,0,0,0
+93f66be1-eb9b-492d-8f7f-b26999125d85,sweep-r1,pylint-dev__pylint-4970,1,queued,,,,,,,,,0,0,0
+b87d2d51-b197-4386-a674-799297adf806,sweep-r1,pylint-dev__pylint-4970,2,queued,,,,,,,,,0,0,0
+c0168159-b9c2-4858-a6fa-45eefd3b313b,sweep-r1,pytest-dev__pytest-5631,0,completed,passed,step_cap,"all 1 expected tests pass, no regressions",,1.1793,2026-10-25 11:50:41.867812+00,2026-10-25 12:07:55.743505+00,1033.9,0,1,1
+26fbf35d-5a2e-44f0-a5ee-44623bcdf3f0,sweep-r1,pytest-dev__pytest-5631,1,queued,,,,,,,,,0,0,0
+d5ea39c3-3b2a-495e-8cc2-1bc2e10d211b,sweep-r1,pytest-dev__pytest-5631,2,queued,,,,,,,,,0,0,0
+26704e9c-0ca6-4978-8e40-126620a914b8,sweep-r1,pytest-dev__pytest-6202,0,failed,,,,runner: interrupted,,2026-10-25 11:56:30.559282+00,2026-10-25 12:13:39.882825+00,1029.3,0,0,0
+b8f3d776-516b-40f6-b0bf-57e56d0a4d4b,sweep-r1,pytest-dev__pytest-6202,1,queued,,,,,,,,,0,0,0
+c3f0c6f9-5628-4663-996a-10a6a399cc2d,sweep-r1,pytest-dev__pytest-6202,2,queued,,,,,,,,,0,0,0
+5c50e958-a930-495b-adbd-7ecd74f2140a,sweep-r1,pytest-dev__pytest-7236,0,failed,,,,runner: interrupted,,2026-10-25 11:59:50.344095+00,2026-10-25 12:13:39.918098+00,829.6,0,0,0
+25cf8ac5-46ae-4738-8360-969fb1e76ce4,sweep-r1,pytest-dev__pytest-7236,1,queued,,,,,,,,,0,0,0
+7f0fb3cd-0f7d-4010-9938-d078a6e53c0f,sweep-r1,pytest-dev__pytest-7236,2,queued,,,,,,,,,0,0,0
+e27b7262-fdba-4e7b-9d26-878f69ae66a7,sweep-r1,pytest-dev__pytest-7432,0,failed,,,,runner: interrupted,,2026-10-25 12:08:58.191433+00,2026-10-25 12:13:39.819762+00,281.6,0,0,0
+b7ee964f-38bd-4ac1-a659-b7679936a5f6,sweep-r1,pytest-dev__pytest-7432,1,queued,,,,,,,,,0,0,0
+5e172900-d530-43d7-9e33-a504d4e76b3d,sweep-r1,pytest-dev__pytest-7432,2,queued,,,,,,,,,0,0,0
+bb7e85c5-05e7-45c0-937f-8c8e71c54f9e,sweep-r1,pytest-dev__pytest-7571,0,queued,,,,,,,,,0,0,0
+e1eacd8b-db1a-466c-8b3d-d9b4f948c717,sweep-r1,pytest-dev__pytest-7571,1,queued,,,,,,,,,0,0,0
+db12bf96-f4ea-4df1-a669-76d596f8a2c7,sweep-r1,pytest-dev__pytest-7571,2,queued,,,,,,,,,0,0,0
+201203e4-12fd-4e14-86da-8e405756ef1f,sweep-r1,pytest-dev__pytest-7982,0,queued,,,,,,,,,0,0,0
+804d5f9e-9b14-4e2e-b9c5-0e27d555ca93,sweep-r1,pytest-dev__pytest-7982,1,queued,,,,,,,,,0,0,0
+878fdbe4-8008-4629-bcf5-8299b23ff46d,sweep-r1,pytest-dev__pytest-7982,2,queued,,,,,,,,,0,0,0
+6acfc76f-91bd-45da-915b-b6272851ac6a,sweep-r1,sphinx-doc__sphinx-7462,0,queued,,,,,,,,,0,0,0
+7841bdb0-5310-446c-abed-9e2f268eed12,sweep-r1,sphinx-doc__sphinx-7462,1,queued,,,,,,,,,0,0,0
+6dd4f18a-05b5-43dd-8342-fe8ae5316b4b,sweep-r1,sphinx-doc__sphinx-7462,2,queued,,,,,,,,,0,0,0
+ef117737-9944-4ac1-84db-63f742f25977,sweep-r1,sphinx-doc__sphinx-7590,0,queued,,,,,,,,,0,0,0
+60230327-7ca9-471e-9296-3d0571ec6880,sweep-r1,sphinx-doc__sphinx-7590,1,queued,,,,,,,,,0,0,0
+469b4da5-d220-4de6-8004-d344e9822fbe,sweep-r1,sphinx-doc__sphinx-7590,2,queued,,,,,,,,,0,0,0
+cb48ada7-f924-4c75-b0c8-2d8cb7ac57a9,sweep-r1,sphinx-doc__sphinx-9230,0,queued,,,,,,,,,0,0,0
+caacf3ea-af7f-430c-a690-43eb7ababe37,sweep-r1,sphinx-doc__sphinx-9230,1,queued,,,,,,,,,0,0,0
+e6b55c9a-676f-418f-ad6e-fb8fb382e8c2,sweep-r1,sphinx-doc__sphinx-9230,2,queued,,,,,,,,,0,0,0
+b5b09f02-535e-45bc-96dc-2d1eaf8d4d07,sweep-r1,sphinx-doc__sphinx-9320,0,queued,,,,,,,,,0,0,0
+53d02c86-415e-4ac3-bce4-17d80a59c75c,sweep-r1,sphinx-doc__sphinx-9320,1,queued,,,,,,,,,0,0,0
+5dfcb6f3-3e63-48f1-a3b1-da7836d5f4f9,sweep-r1,sphinx-doc__sphinx-9320,2,queued,,,,,,,,,0,0,0
+1a89de15-fe7b-4741-94e7-0068b0d85862,sweep-r1,sphinx-doc__sphinx-9367,0,queued,,,,,,,,,0,0,0
+a7be0c80-68bd-4cd3-8d46-6379a222f813,sweep-r1,sphinx-doc__sphinx-9367,1,queued,,,,,,,,,0,0,0
+21035ac9-b8d1-4183-93da-e1441d7cfe29,sweep-r1,sphinx-doc__sphinx-9367,2,queued,,,,,,,,,0,0,0
+4c197af8-3a97-478e-ab67-5fc451732be8,sweep-r1,sphinx-doc__sphinx-9602,0,queued,,,,,,,,,0,0,0
+d7367e48-aa6b-4d21-9513-a3fd5668ee0a,sweep-r1,sphinx-doc__sphinx-9602,1,queued,,,,,,,,,0,0,0
+429da171-3df1-4322-80d4-ca1443eb91a5,sweep-r1,sphinx-doc__sphinx-9602,2,queued,,,,,,,,,0,0,0

@@ -1,0 +1,105 @@
+{
+  "sweep-4": {
+    "rows_in_db": 54,
+    "by_status_outcome": {
+      "completed/failed": 13,
+      "failed/-": 12,
+      "completed/passed": 29
+    },
+    "grid": {
+      "instances": 18,
+      "runs_per_instance": 3,
+      "planned": 54,
+      "rows_subset": false
+    },
+    "manifest_source": "repolace/eval/runs/sweep-4/manifest.json"
+  },
+  "sweep-4b": {
+    "rows_in_db": 12,
+    "by_status_outcome": {
+      "completed/passed": 6,
+      "completed/failed": 6
+    },
+    "grid": {
+      "instances": 11,
+      "runs_per_instance": 3,
+      "planned": 33,
+      "rows_subset": true
+    },
+    "manifest_source": "repolace/eval/runs/sweep-4b/manifest.json"
+  },
+  "sweep-5": {
+    "rows_in_db": 54,
+    "by_status_outcome": {
+      "completed/failed": 23,
+      "queued/-": 20,
+      "completed/passed": 8,
+      "failed/-": 3
+    },
+    "grid": {
+      "instances": 18,
+      "runs_per_instance": 3,
+      "planned": 54,
+      "rows_subset": false
+    },
+    "manifest_source": "repolace/eval/runs/sweep-5/manifest.json"
+  },
+  "sweep-r1": {
+    "rows_in_db": 54,
+    "by_status_outcome": {
+      "completed/failed": 5,
+      "queued/-": 44,
+      "completed/passed": 2,
+      "failed/-": 3
+    },
+    "grid": {
+      "instances": 18,
+      "runs_per_instance": 3,
+      "planned": 54,
+      "rows_subset": false
+    },
+    "manifest_source": "repolace-roles/eval/runs/sweep-r1/manifest.json"
+  },
+  "sweep-r2": {
+    "rows_in_db": 54,
+    "by_status_outcome": {
+      "completed/failed": 24,
+      "completed/passed": 30
+    },
+    "grid": {
+      "instances": 18,
+      "runs_per_instance": 3,
+      "planned": 54,
+      "rows_subset": false
+    },
+    "manifest_source": "repolace-roles/eval/runs/sweep-r2/manifest.json"
+  },
+  "sweep-e1": {
+    "rows_in_db": 54,
+    "by_status_outcome": {
+      "completed/failed": 23,
+      "completed/passed": 31
+    },
+    "grid": {
+      "instances": 18,
+      "runs_per_instance": 3,
+      "planned": 54,
+      "rows_subset": false
+    },
+    "manifest_source": "repolace-early/eval/runs/sweep-e1/manifest.json"
+  },
+  "sweep-m1": {
+    "rows_in_db": 54,
+    "by_status_outcome": {
+      "completed/failed": 31,
+      "completed/passed": 23
+    },
+    "grid": {
+      "instances": 18,
+      "runs_per_instance": 3,
+      "planned": 54,
+      "rows_subset": false
+    },
+    "manifest_source": "repolace-mixed/eval/runs/sweep-m1/manifest.json"
+  }
+}

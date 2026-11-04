@@ -1,0 +1,5362 @@
+{
+ "meta": {
+  "generated_at": "2026-11-02T16:53:28+00:00",
+  "seed": 20261025,
+  "bootstrap_resamples": 20000,
+  "permutations": 20000,
+  "sample": true,
+  "report_commit": "2bad9d9",
+  "disclosures": [
+   "The 18 instances are a filtered subset of SWE-bench Verified (allowlisted repositories, a simple-fix filter, a round-robin cap, gold-validation pruning and a fixed seed). The result is not the published Verified score.",
+   "These public instances were probably seen in training; the number does not predict performance on unseen issues.",
+   "Tiny sample: 18 instances, 3 runs each. The runs of one instance are strongly correlated, so 54 rows carry far less evidence than 54 independent trials.",
+   "The six pytest instances pass in every run and make up a third of the instances; without them the baseline rate is lower.",
+   "Every run used --no-pr: no pull request was opened, so nothing here measures PR opening.",
+   "35/54 is a hand-stated substitution of sweep-4 (29/54 officially, 12 rows lost to Vertex 429) and sweep-4b (the re-run of those rows).",
+   "e1, r2 and m1 had their rows lost to 429 archived and re-run in place; the baseline used a separate re-run. Spend on those archived attempts is added back and shown both ways.",
+   "Sweep-5 and r1 are partial and are shown for completeness only: never compared on a rate.",
+   "Model prices are Google AI Studio list rates, not billed Vertex rates."
+  ],
+  "rules": "Generated under .claude/rules/benchmark.md: no run is pooled, intervals are over instances, comparisons use run_index 0 and exact McNemar, partial runs are marked and never compared on a rate."
+ },
+ "runs": [
+  {
+   "id": "sweep-4",
+   "label": "Single agent, Gemini 3.1 Pro",
+   "short": "sweep-4",
+   "kind": "baseline-official",
+   "planned": 54,
+   "finished": 54,
+   "passed": 29,
+   "partial": false,
+   "partial_mark": null,
+   "buckets": {
+    "unfinished": 0,
+    "harness_error": 12,
+    "inadmissible": 0,
+    "passed_with_test_edit": 0,
+    "passed": 29,
+    "failed": 13
+   },
+   "headline": {
+    "passed": 29,
+    "planned": 54,
+    "rate": 0.5370370370370371,
+    "ci_bootstrap_instances": [
+     0.3333333333333333,
+     0.7222222222222222
+    ],
+    "se": 0.09826553594858861,
+    "n_resamples": 20000,
+    "wilson_rows_context_only": [
+     0.4060535592270908,
+     0.6631009897307583
+    ],
+    "definition": "passed / planned; every planned row that is not a pass counts as a non-pass"
+   },
+   "secondary_admissible": {
+    "passed": 29,
+    "admissible": 42,
+    "rate": 0.6904761904761905,
+    "wilson_rows_context_only": [
+     0.5397400594207429,
+     0.8092889721690051
+    ],
+    "note": "excludes harness errors and unfinished rows; a labelled secondary, never the headline"
+   },
+   "bootstrap_samples": [
+    0.14815,
+    0.25926,
+    0.27778,
+    0.27778,
+    0.2963,
+    0.31481,
+    0.31481,
+    0.31481,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.35185,
+    0.35185,
+    0.35185,
+    0.35185,
+    0.35185,
+    0.35185,
+    0.35185,
+    0.37037,
+    0.37037,
+    0.37037,
+    0.37037,
+    0.37037,
+    0.37037,
+    0.37037,
+    0.37037,
+    0.37037,
+    0.38889,
+    0.38889,
+    0.38889,
+    0.38889,
+    0.38889,
+    0.38889,
+    0.38889,
+    0.38889,
+    0.38889,
+    0.38889,
+    0.38889,
+    0.38889,
+    0.38889,
+    0.40741,
+    0.40741,
+    0.40741,
+    0.40741,
+    0.40741,
+    0.40741,
+    0.40741,
+    0.40741,
+    0.40741,
+    0.40741,
+    0.40741,
+    0.40741,
+    0.40741,
+    0.40741,
+    0.40741,
+    0.40741,
+    0.42593,
+    0.42593,
+    0.42593,
+    0.42593,
+    0.42593,
+    0.42593,
+    0.42593,
+    0.42593,
+    0.42593,
+    0.42593,
+    0.42593,
+    0.42593,
+    0.42593,
+    0.42593,
+    0.42593,
+    0.42593,
+    0.42593,
+    0.42593,
+    0.42593,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.75926,
+    0.75926,
+    0.75926,
+    0.77778,
+    0.77778,
+    0.81481
+   ],
+   "clustering": {
+    "icc_oneway": 0.570827489481066,
+    "design_effect_3_runs": 2.1416549789621318,
+    "effective_n_rows": 25.21414538310413,
+    "cochran_q_run_index": {
+     "q": 4.333333333333333,
+     "df": 2,
+     "p": 0.11455884399268772
+    },
+    "reading": "runs of one instance are correlated, so the rows carry less evidence than their count"
+   },
+   "pass_at_k": {
+    "pass_at_1": 0.537037037037037,
+    "pass_at_3": 0.6666666666666666
+   },
+   "per_run_index": [
+    0.6666666666666666,
+    0.5,
+    0.4444444444444444
+   ],
+   "stop_reasons": {
+    "step_cap": {
+     "n": 21,
+     "passed": 10
+    },
+    "submitted": {
+     "n": 21,
+     "passed": 19
+    }
+   },
+   "stop_reason_shares_of_completed": {
+    "step_cap": 0.5,
+    "submitted": 0.5
+   },
+   "behaviour": {
+    "completed_rows": 42,
+    "step_cap_share": 0.5,
+    "submitted_share": 0.5,
+    "no_change_share": 0.0,
+    "first_edit_call": {
+     "n": 42,
+     "mean": 13.738095238095237,
+     "min": 2,
+     "p10": 5.1000000000000005,
+     "median": 11.0,
+     "p90": 28.0,
+     "max": 35
+    },
+    "never_edited": 0,
+    "first_edit_passed": {
+     "n": 29,
+     "mean": 10.241379310344827,
+     "min": 2,
+     "p10": 5.0,
+     "median": 9.0,
+     "p90": 15.0,
+     "max": 28
+    },
+    "first_edit_failed": {
+     "n": 13,
+     "mean": 21.53846153846154,
+     "min": 5,
+     "p10": 7.2,
+     "median": 23.0,
+     "p90": 33.8,
+     "max": 35
+    },
+    "first_edit_ecdf": [
+     [
+      2,
+      0.023809523809523808
+     ],
+     [
+      4,
+      0.047619047619047616
+     ],
+     [
+      5,
+      0.07142857142857142
+     ],
+     [
+      5,
+      0.09523809523809523
+     ],
+     [
+      5,
+      0.11904761904761904
+     ],
+     [
+      6,
+      0.14285714285714285
+     ],
+     [
+      6,
+      0.16666666666666666
+     ],
+     [
+      6,
+      0.19047619047619047
+     ],
+     [
+      7,
+      0.21428571428571427
+     ],
+     [
+      7,
+      0.23809523809523808
+     ],
+     [
+      7,
+      0.2619047619047619
+     ],
+     [
+      7,
+      0.2857142857142857
+     ],
+     [
+      8,
+      0.30952380952380953
+     ],
+     [
+      8,
+      0.3333333333333333
+     ],
+     [
+      8,
+      0.35714285714285715
+     ],
+     [
+      8,
+      0.38095238095238093
+     ],
+     [
+      9,
+      0.40476190476190477
+     ],
+     [
+      9,
+      0.42857142857142855
+     ],
+     [
+      10,
+      0.4523809523809524
+     ],
+     [
+      10,
+      0.47619047619047616
+     ],
+     [
+      11,
+      0.5
+     ],
+     [
+      11,
+      0.5238095238095238
+     ],
+     [
+      12,
+      0.5476190476190477
+     ],
+     [
+      12,
+      0.5714285714285714
+     ],
+     [
+      12,
+      0.5952380952380952
+     ],
+     [
+      13,
+      0.6190476190476191
+     ],
+     [
+      13,
+      0.6428571428571429
+     ],
+     [
+      14,
+      0.6666666666666666
+     ],
+     [
+      14,
+      0.6904761904761905
+     ],
+     [
+      15,
+      0.7142857142857143
+     ],
+     [
+      15,
+      0.7380952380952381
+     ],
+     [
+      19,
+      0.7619047619047619
+     ],
+     [
+      21,
+      0.7857142857142857
+     ],
+     [
+      23,
+      0.8095238095238095
+     ],
+     [
+      23,
+      0.8333333333333334
+     ],
+     [
+      24,
+      0.8571428571428571
+     ],
+     [
+      28,
+      0.8809523809523809
+     ],
+     [
+      28,
+      0.9047619047619048
+     ],
+     [
+      30,
+      0.9285714285714286
+     ],
+     [
+      33,
+      0.9523809523809523
+     ],
+     [
+      34,
+      0.9761904761904762
+     ],
+     [
+      35,
+      1.0
+     ]
+    ],
+    "auc_passed_edits_earlier": 0.7944297082228117,
+    "tool_mix": {
+     "edit": 0.07225630538513975,
+     "run": 0.6591683708248125,
+     "read": 0.25426039536468986,
+     "submit": 0.014314928425357873,
+     "tool_calls": 1467
+    }
+   },
+   "cost": {
+    "total_usd_in_db": 28.671611,
+    "archived_added_back_usd": 0.0,
+    "total_usd_with_archived": 28.671611,
+    "per_task": {
+     "n": 42,
+     "mean": 0.6826574047619047,
+     "min": 0.1729732,
+     "p10": 0.35265502,
+     "median": 0.6409849000000001,
+     "p90": 0.9690426999999999,
+     "max": 1.798474
+    },
+    "per_pass": {
+     "usd": 1.1140233655172413,
+     "ci_bootstrap_instances": [
+      0.7653899159233449,
+      1.845820868249998
+     ]
+    },
+    "per_pass_with_archived_usd": 0.9886762413793103,
+    "rows_at_or_above_cap": 0,
+    "censoring": "each task is capped at $2.00; per-task cost is a lower bound where the cap binds",
+    "price_basis": "AI Studio list rates, not billed Vertex rates (priority rates came from a browser read)"
+   },
+   "latency_s": {
+    "n": 42,
+    "mean": 1215.1309523809523,
+    "min": 309.7,
+    "p10": 735.83,
+    "median": 1110.9,
+    "p90": 1753.8,
+    "max": 2350.0,
+    "rows_near_agent_wall_clock": 0,
+    "censoring": "agent wall clock is 3,600 s and a runner kills at 11,700 s; sweep contention is included"
+   },
+   "tokens": {
+    "input": 30396433,
+    "cached_input": 20876995,
+    "output": 454778,
+    "cache_hit_share": 0.6868238454163356,
+    "calls": 1465
+   },
+   "lost_rows": [
+    {
+     "instance_id": "mwaskom__seaborn-3069",
+     "run_index": 1,
+     "bucket": "harness_error",
+     "error": "agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-preview failed after 8 retries: VertexAPIError: Vertex quota or rate limit"
+    },
+    {
+     "instance_id": "mwaskom__seaborn-3187",
+     "run_index": 1,
+     "bucket": "harness_error",
+     "error": "agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-preview failed after 8 retries: VertexAPIError: Vertex quota or rate limit"
+    },
+    {
+     "instance_id": "pallets__flask-5014",
+     "run_index": 1,
+     "bucket": "harness_error",
+     "error": "agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-preview failed after 8 retries: VertexAPIError: Vertex quota or rate limit"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4551",
+     "run_index": 1,
+     "bucket": "harness_error",
+     "error": "agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-preview failed after 8 retries: VertexAPIError: Vertex quota or rate limit"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4604",
+     "run_index": 1,
+     "bucket": "harness_error",
+     "error": "agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-preview failed after 8 retries: VertexAPIError: Vertex quota or rate limit"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4970",
+     "run_index": 1,
+     "bucket": "harness_error",
+     "error": "agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-preview failed after 8 retries: VertexAPIError: Vertex quota or rate limit"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-7590",
+     "run_index": 2,
+     "bucket": "harness_error",
+     "error": "agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-preview failed after 8 retries: VertexAPIError: Vertex quota or rate limit"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9230",
+     "run_index": 2,
+     "bucket": "harness_error",
+     "error": "agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-preview failed after 8 retries: VertexAPIError: Vertex quota or rate limit"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9320",
+     "run_index": 2,
+     "bucket": "harness_error",
+     "error": "agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-preview failed after 8 retries: VertexAPIError: Vertex quota or rate limit"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9367",
+     "run_index": 2,
+     "bucket": "harness_error",
+     "error": "agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-preview failed after 8 retries: VertexAPIError: Vertex quota or rate limit"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9602",
+     "run_index": 0,
+     "bucket": "harness_error",
+     "error": "agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-preview failed after 8 retries: VertexAPIError: Vertex quota or rate limit"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9602",
+     "run_index": 2,
+     "bucket": "harness_error",
+     "error": "agent: LLMCallError: provider quota exhausted: agent call to vertex_ai/gemini-3.1-pro-preview failed after 8 retries: VertexAPIError: Vertex quota or rate limit"
+    }
+   ],
+   "instances": [
+    {
+     "instance_id": "mwaskom__seaborn-3069",
+     "repo": "mwaskom",
+     "planned": 3,
+     "passes": 0,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 1,
+       "bucket": "harness_error",
+       "stop_reason": null
+      },
+      {
+       "run_index": 2,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 2.7770126
+    },
+    {
+     "instance_id": "mwaskom__seaborn-3187",
+     "repo": "mwaskom",
+     "planned": 3,
+     "passes": 0,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 1,
+       "bucket": "harness_error",
+       "stop_reason": null
+      },
+      {
+       "run_index": 2,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 2.4389474
+    },
+    {
+     "instance_id": "pallets__flask-5014",
+     "repo": "pallets",
+     "planned": 3,
+     "passes": 2,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 1,
+       "bucket": "harness_error",
+       "stop_reason": null
+      },
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 1.4959854000000001
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4551",
+     "repo": "pylint",
+     "planned": 3,
+     "passes": 0,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 1,
+       "bucket": "harness_error",
+       "stop_reason": null
+      },
+      {
+       "run_index": 2,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 1.2226038
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4604",
+     "repo": "pylint",
+     "planned": 3,
+     "passes": 0,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 1,
+       "bucket": "harness_error",
+       "stop_reason": null
+      },
+      {
+       "run_index": 2,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 2.1535968
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4970",
+     "repo": "pylint",
+     "planned": 3,
+     "passes": 2,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 1,
+       "bucket": "harness_error",
+       "stop_reason": null
+      },
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 1.285215
+    },
+    {
+     "instance_id": "pytest-dev__pytest-5631",
+     "repo": "pytest",
+     "planned": 3,
+     "passes": 3,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      }
+     ],
+     "cost_usd": 0.7444755999999999
+    },
+    {
+     "instance_id": "pytest-dev__pytest-6202",
+     "repo": "pytest",
+     "planned": 3,
+     "passes": 3,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 1.509145
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7236",
+     "repo": "pytest",
+     "planned": 3,
+     "passes": 3,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 2.2023048
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7432",
+     "repo": "pytest",
+     "planned": 3,
+     "passes": 3,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 1.7867202
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7571",
+     "repo": "pytest",
+     "planned": 3,
+     "passes": 3,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      }
+     ],
+     "cost_usd": 1.9975016
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7982",
+     "repo": "pytest",
+     "planned": 3,
+     "passes": 3,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      }
+     ],
+     "cost_usd": 2.5462376
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-7462",
+     "repo": "sphinx",
+     "planned": 3,
+     "passes": 1,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 1,
+       "bucket": "failed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 2,
+       "bucket": "failed",
+       "stop_reason": "submitted"
+      }
+     ],
+     "cost_usd": 1.7368654000000001
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-7590",
+     "repo": "sphinx",
+     "planned": 3,
+     "passes": 0,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 1,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 2,
+       "bucket": "harness_error",
+       "stop_reason": null
+      }
+     ],
+     "cost_usd": 2.128564
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9230",
+     "repo": "sphinx",
+     "planned": 3,
+     "passes": 2,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 2,
+       "bucket": "harness_error",
+       "stop_reason": null
+      }
+     ],
+     "cost_usd": 2.9739874
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9320",
+     "repo": "sphinx",
+     "planned": 3,
+     "passes": 2,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 2,
+       "bucket": "harness_error",
+       "stop_reason": null
+      }
+     ],
+     "cost_usd": 0.8038996
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9367",
+     "repo": "sphinx",
+     "planned": 3,
+     "passes": 2,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 2,
+       "bucket": "harness_error",
+       "stop_reason": null
+      }
+     ],
+     "cost_usd": 1.0667728
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9602",
+     "repo": "sphinx",
+     "planned": 3,
+     "passes": 0,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "harness_error",
+       "stop_reason": null
+      },
+      {
+       "run_index": 1,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 2,
+       "bucket": "harness_error",
+       "stop_reason": null
+      }
+     ],
+     "cost_usd": 1.4368425999999999
+    }
+   ],
+   "tasks": [
+    {
+     "instance_id": "mwaskom__seaborn-3069",
+     "run_index": 0,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 1.1788,
+     "latency_s": 1750.2,
+     "first_edit": 19,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-23 19:52:14.353481+00"
+    },
+    {
+     "instance_id": "mwaskom__seaborn-3069",
+     "run_index": 1,
+     "bucket": "harness_error",
+     "stop_reason": null,
+     "cost": 0.7378,
+     "latency_s": 1659.0,
+     "first_edit": 27,
+     "scored_attempts": 0,
+     "calls": 31,
+     "started_at": "2026-10-23 21:56:06.744434+00"
+    },
+    {
+     "instance_id": "mwaskom__seaborn-3069",
+     "run_index": 2,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.8604,
+     "latency_s": 1683.0,
+     "first_edit": 7,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 08:38:20.57929+00"
+    },
+    {
+     "instance_id": "mwaskom__seaborn-3187",
+     "run_index": 0,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 1.7985,
+     "latency_s": 2350.0,
+     "first_edit": 34,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-23 19:52:14.355048+00"
+    },
+    {
+     "instance_id": "mwaskom__seaborn-3187",
+     "run_index": 1,
+     "bucket": "harness_error",
+     "stop_reason": null,
+     "cost": 0.0269,
+     "latency_s": 1080.5,
+     "first_edit": null,
+     "scored_attempts": 0,
+     "calls": 3,
+     "started_at": "2026-10-23 22:02:12.663923+00"
+    },
+    {
+     "instance_id": "mwaskom__seaborn-3187",
+     "run_index": 2,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.6136,
+     "latency_s": 1765.2,
+     "first_edit": 35,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 08:45:11.107783+00"
+    },
+    {
+     "instance_id": "pallets__flask-5014",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.8166,
+     "latency_s": 730.7,
+     "first_edit": 10,
+     "scored_attempts": 1,
+     "calls": 23,
+     "started_at": "2026-10-23 19:52:14.380791+00"
+    },
+    {
+     "instance_id": "pallets__flask-5014",
+     "run_index": 1,
+     "bucket": "harness_error",
+     "stop_reason": null,
+     "cost": 0.145,
+     "latency_s": 762.4,
+     "first_edit": 5,
+     "scored_attempts": 0,
+     "calls": 12,
+     "started_at": "2026-10-23 22:10:21.312815+00"
+    },
+    {
+     "instance_id": "pallets__flask-5014",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 0.5344,
+     "latency_s": 309.7,
+     "first_edit": 6,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 09:06:41.934794+00"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4551",
+     "run_index": 0,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.6307,
+     "latency_s": 1743.5,
+     "first_edit": 33,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-23 20:04:43.366551+00"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4551",
+     "run_index": 1,
+     "bucket": "harness_error",
+     "stop_reason": null,
+     "cost": 0.0171,
+     "latency_s": 1023.3,
+     "first_edit": null,
+     "scored_attempts": 0,
+     "calls": 2,
+     "started_at": "2026-10-23 22:24:44.462804+00"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4551",
+     "run_index": 2,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.5748,
+     "latency_s": 1754.2,
+     "first_edit": 28,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 09:12:10.620612+00"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4604",
+     "run_index": 0,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.6555,
+     "latency_s": 2031.0,
+     "first_edit": 30,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-23 20:21:43.790701+00"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4604",
+     "run_index": 1,
+     "bucket": "harness_error",
+     "stop_reason": null,
+     "cost": 0.0,
+     "latency_s": 892.8,
+     "first_edit": null,
+     "scored_attempts": 0,
+     "calls": 1,
+     "started_at": "2026-10-23 22:24:44.558544+00"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4604",
+     "run_index": 2,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 1.4981,
+     "latency_s": 1788.0,
+     "first_edit": 21,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 09:14:55.188472+00"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4970",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 0.6745,
+     "latency_s": 1548.1,
+     "first_edit": 28,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-23 20:31:53.093558+00"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4970",
+     "run_index": 1,
+     "bucket": "harness_error",
+     "stop_reason": null,
+     "cost": 0.0,
+     "latency_s": 760.3,
+     "first_edit": null,
+     "scored_attempts": 0,
+     "calls": 1,
+     "started_at": "2026-10-23 22:39:52.836106+00"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4970",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 0.6107,
+     "latency_s": 1588.5,
+     "first_edit": 15,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 09:41:50.854424+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-5631",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.173,
+     "latency_s": 729.2,
+     "first_edit": 7,
+     "scored_attempts": 1,
+     "calls": 15,
+     "started_at": "2026-10-23 20:34:05.195339+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-5631",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.2709,
+     "latency_s": 869.8,
+     "first_edit": 6,
+     "scored_attempts": 1,
+     "calls": 20,
+     "started_at": "2026-10-24 07:02:14.107565+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-5631",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.3006,
+     "latency_s": 1073.4,
+     "first_edit": 9,
+     "scored_attempts": 1,
+     "calls": 20,
+     "started_at": "2026-10-24 09:45:02.761186+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-6202",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.5315,
+     "latency_s": 1390.0,
+     "first_edit": 12,
+     "scored_attempts": 1,
+     "calls": 35,
+     "started_at": "2026-10-23 20:46:32.710793+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-6202",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.5259,
+     "latency_s": 1312.5,
+     "first_edit": 10,
+     "scored_attempts": 1,
+     "calls": 37,
+     "started_at": "2026-10-24 07:02:14.106919+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-6202",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 0.4518,
+     "latency_s": 1677.0,
+     "first_edit": 8,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 10:03:16.387006+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7236",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.7834,
+     "latency_s": 1232.2,
+     "first_edit": 12,
+     "scored_attempts": 1,
+     "calls": 34,
+     "started_at": "2026-10-23 20:55:51.967383+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7236",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.7016,
+     "latency_s": 1105.8,
+     "first_edit": 13,
+     "scored_attempts": 1,
+     "calls": 33,
+     "started_at": "2026-10-24 07:17:11.132024+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7236",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 0.7172,
+     "latency_s": 1258.9,
+     "first_edit": 23,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 10:08:42.971053+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7432",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 0.7132,
+     "latency_s": 1116.0,
+     "first_edit": 4,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-23 20:58:00.343351+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7432",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.4818,
+     "latency_s": 1136.5,
+     "first_edit": 11,
+     "scored_attempts": 1,
+     "calls": 31,
+     "started_at": "2026-10-24 07:24:26.191325+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7432",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 0.5917,
+     "latency_s": 1159.7,
+     "first_edit": 5,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 10:30:02.544008+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7571",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.3026,
+     "latency_s": 984.5,
+     "first_edit": 14,
+     "scored_attempts": 1,
+     "calls": 30,
+     "started_at": "2026-10-23 21:09:57.811911+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7571",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.9801,
+     "latency_s": 962.6,
+     "first_edit": 7,
+     "scored_attempts": 1,
+     "calls": 23,
+     "started_at": "2026-10-24 07:35:58.038062+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7571",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.7148,
+     "latency_s": 1482.0,
+     "first_edit": 11,
+     "scored_attempts": 1,
+     "calls": 34,
+     "started_at": "2026-10-24 10:31:33.346714+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7982",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.5093,
+     "latency_s": 1316.0,
+     "first_edit": 8,
+     "scored_attempts": 1,
+     "calls": 33,
+     "started_at": "2026-10-23 21:16:45.438396+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7982",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 1.4224,
+     "latency_s": 1035.2,
+     "first_edit": 5,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 07:43:41.231289+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7982",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.6145,
+     "latency_s": 1105.4,
+     "first_edit": 6,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 10:49:38.807666+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-7462",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 0.6493,
+     "latency_s": 799.4,
+     "first_edit": 8,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-23 21:16:54.345308+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-7462",
+     "run_index": 1,
+     "bucket": "failed",
+     "stop_reason": "submitted",
+     "cost": 0.4464,
+     "latency_s": 671.7,
+     "first_edit": 5,
+     "scored_attempts": 1,
+     "calls": 27,
+     "started_at": "2026-10-24 07:52:22.89413+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-7462",
+     "run_index": 2,
+     "bucket": "failed",
+     "stop_reason": "submitted",
+     "cost": 0.6411,
+     "latency_s": 789.1,
+     "first_edit": 8,
+     "scored_attempts": 1,
+     "calls": 37,
+     "started_at": "2026-10-24 10:56:32.386119+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-7590",
+     "run_index": 0,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.8625,
+     "latency_s": 997.0,
+     "first_edit": 23,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-23 21:26:40.368979+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-7590",
+     "run_index": 1,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.6409,
+     "latency_s": 973.9,
+     "first_edit": 13,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 08:01:14.777392+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-7590",
+     "run_index": 2,
+     "bucket": "harness_error",
+     "stop_reason": null,
+     "cost": 0.6252,
+     "latency_s": 926.6,
+     "first_edit": 22,
+     "scored_attempts": 0,
+     "calls": 37,
+     "started_at": "2026-10-24 11:08:23.783041+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9230",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.7292,
+     "latency_s": 1057.4,
+     "first_edit": 12,
+     "scored_attempts": 1,
+     "calls": 30,
+     "started_at": "2026-10-23 21:30:31.738273+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9230",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 0.8699,
+     "latency_s": 1249.8,
+     "first_edit": 9,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 08:03:52.453611+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9230",
+     "run_index": 2,
+     "bucket": "harness_error",
+     "stop_reason": null,
+     "cost": 1.3749,
+     "latency_s": 824.6,
+     "first_edit": 31,
+     "scored_attempts": 0,
+     "calls": 32,
+     "started_at": "2026-10-24 11:10:00.998345+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9320",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.3612,
+     "latency_s": 1013.7,
+     "first_edit": 7,
+     "scored_attempts": 1,
+     "calls": 19,
+     "started_at": "2026-10-23 21:38:57.7549+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9320",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.4427,
+     "latency_s": 672.3,
+     "first_edit": 14,
+     "scored_attempts": 1,
+     "calls": 30,
+     "started_at": "2026-10-24 08:17:44.657216+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9320",
+     "run_index": 2,
+     "bucket": "harness_error",
+     "stop_reason": null,
+     "cost": 0.0,
+     "latency_s": 477.0,
+     "first_edit": null,
+     "scored_attempts": 0,
+     "calls": 1,
+     "started_at": "2026-10-24 12:20:59.540899+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9367",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.3517,
+     "latency_s": 1102.6,
+     "first_edit": 2,
+     "scored_attempts": 1,
+     "calls": 34,
+     "started_at": "2026-10-23 21:43:32.360538+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9367",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.7151,
+     "latency_s": 782.0,
+     "first_edit": 15,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 08:25:01.265626+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9367",
+     "run_index": 2,
+     "bucket": "harness_error",
+     "stop_reason": null,
+     "cost": 0.0,
+     "latency_s": 424.2,
+     "first_edit": null,
+     "scored_attempts": 0,
+     "calls": 1,
+     "started_at": "2026-10-24 12:29:12.791252+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9602",
+     "run_index": 0,
+     "bucket": "harness_error",
+     "stop_reason": null,
+     "cost": 0.7082,
+     "latency_s": 1297.1,
+     "first_edit": null,
+     "scored_attempts": 0,
+     "calls": 24,
+     "started_at": "2026-10-23 21:48:25.843764+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9602",
+     "run_index": 1,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.7286,
+     "latency_s": 937.8,
+     "first_edit": 24,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 08:29:13.926608+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9602",
+     "run_index": 2,
+     "bucket": "harness_error",
+     "stop_reason": null,
+     "cost": 0.0,
+     "latency_s": 493.7,
+     "first_edit": null,
+     "scored_attempts": 0,
+     "calls": 1,
+     "started_at": "2026-10-24 14:26:28.771221+00"
+    }
+   ],
+   "power": {
+    "instances": 18,
+    "one_instance_moves_the_rate_pp": 5.6,
+    "bootstrap_se_pp": 9.8
+   },
+   "code_versions": {
+    "9": 54
+   },
+   "manifest": {
+    "git_sha": "f02ccb3c57be22c4d487776c3fa259457154b1d1",
+    "created_at": "2026-10-23T19:51:50+00:00",
+    "model": "vertex-gemini-3-1-pro-preview",
+    "roles": null,
+    "stage_models": {
+     "agent": "vertex-gemini-3-1-pro-preview"
+    },
+    "limits": {
+     "budget_wall_clock_seconds": 3600.0,
+     "max_attempts": 3,
+     "max_steps_per_attempt": 40,
+     "runner_wall_clock_seconds": 11700.0,
+     "task_call_cap": 150,
+     "task_cost_cap_usd": 2.0
+    },
+    "runs_per_instance": 3,
+    "n_instances": 18
+   },
+   "headline_note": "Official sweep-4 headline: 12 of the 54 rows were lost to Vertex 429 and count as non-passes."
+  },
+  {
+   "id": "sweep-4b",
+   "label": "Re-run of the 12 rows sweep-4 lost to 429",
+   "short": "sweep-4b",
+   "kind": "baseline-rerun",
+   "planned": 12,
+   "finished": 12,
+   "passed": 6,
+   "partial": false,
+   "partial_mark": null,
+   "buckets": {
+    "unfinished": 0,
+    "harness_error": 0,
+    "inadmissible": 0,
+    "passed_with_test_edit": 0,
+    "passed": 6,
+    "failed": 6
+   },
+   "headline": {
+    "passed": 6,
+    "planned": 12,
+    "rate": 0.5,
+    "ci_bootstrap_instances": [
+     0.25,
+     0.75
+    ],
+    "se": 0.13364404809928293,
+    "n_resamples": 20000,
+    "wilson_rows_context_only": [
+     0.25378159616252394,
+     0.7462184038374761
+    ],
+    "definition": "passed / planned; every planned row that is not a pass counts as a non-pass"
+   },
+   "secondary_admissible": {
+    "passed": 6,
+    "admissible": 12,
+    "rate": 0.5,
+    "wilson_rows_context_only": [
+     0.25378159616252394,
+     0.7462184038374761
+    ],
+    "note": "excludes harness errors and unfinished rows; a labelled secondary, never the headline"
+   },
+   "bootstrap_samples": [
+    0.0,
+    0.15385,
+    0.16667,
+    0.16667,
+    0.18182,
+    0.18182,
+    0.18182,
+    0.18182,
+    0.23077,
+    0.23077,
+    0.25,
+    0.25,
+    0.25,
+    0.25,
+    0.25,
+    0.25,
+    0.25,
+    0.25,
+    0.25,
+    0.27273,
+    0.27273,
+    0.27273,
+    0.27273,
+    0.27273,
+    0.27273,
+    0.27273,
+    0.27273,
+    0.27273,
+    0.27273,
+    0.27273,
+    0.27273,
+    0.27273,
+    0.27273,
+    0.28571,
+    0.30769,
+    0.30769,
+    0.30769,
+    0.30769,
+    0.30769,
+    0.30769,
+    0.30769,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.33333,
+    0.35714,
+    0.35714,
+    0.35714,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.36364,
+    0.38462,
+    0.38462,
+    0.38462,
+    0.38462,
+    0.38462,
+    0.38462,
+    0.38462,
+    0.38462,
+    0.38462,
+    0.38462,
+    0.38462,
+    0.38462,
+    0.38462,
+    0.38462,
+    0.38462,
+    0.38462,
+    0.38462,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.41667,
+    0.42857,
+    0.42857,
+    0.42857,
+    0.42857,
+    0.42857,
+    0.42857,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.45455,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46154,
+    0.46667,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.53333,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.53846,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.54545,
+    0.5625,
+    0.57143,
+    0.57143,
+    0.57143,
+    0.57143,
+    0.57143,
+    0.57143,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.58333,
+    0.6,
+    0.61538,
+    0.61538,
+    0.61538,
+    0.61538,
+    0.61538,
+    0.61538,
+    0.61538,
+    0.61538,
+    0.61538,
+    0.61538,
+    0.61538,
+    0.61538,
+    0.61538,
+    0.61538,
+    0.61538,
+    0.61538,
+    0.61538,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.63636,
+    0.64286,
+    0.64286,
+    0.64286,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.69231,
+    0.69231,
+    0.69231,
+    0.69231,
+    0.69231,
+    0.69231,
+    0.69231,
+    0.71429,
+    0.72727,
+    0.72727,
+    0.72727,
+    0.72727,
+    0.72727,
+    0.72727,
+    0.72727,
+    0.72727,
+    0.72727,
+    0.72727,
+    0.72727,
+    0.72727,
+    0.72727,
+    0.72727,
+    0.75,
+    0.75,
+    0.75,
+    0.75,
+    0.75,
+    0.75,
+    0.75,
+    0.75,
+    0.76923,
+    0.78571,
+    0.81818,
+    0.81818,
+    0.81818,
+    0.81818,
+    0.83333,
+    0.83333,
+    0.90909
+   ],
+   "stop_reasons": {
+    "step_cap": {
+     "n": 7,
+     "passed": 1
+    },
+    "submitted": {
+     "n": 5,
+     "passed": 5
+    }
+   },
+   "stop_reason_shares_of_completed": {
+    "step_cap": 0.5833333333333334,
+    "submitted": 0.4166666666666667
+   },
+   "behaviour": {
+    "completed_rows": 12,
+    "step_cap_share": 0.5833333333333334,
+    "submitted_share": 0.4166666666666667,
+    "no_change_share": 0.0,
+    "first_edit_call": {
+     "n": 12,
+     "mean": 17.25,
+     "min": 3,
+     "p10": 6.1,
+     "median": 19.0,
+     "p90": 25.0,
+     "max": 33
+    },
+    "never_edited": 0,
+    "first_edit_passed": {
+     "n": 6,
+     "mean": 10.666666666666666,
+     "min": 3,
+     "p10": 4.5,
+     "median": 8.5,
+     "p90": 19.0,
+     "max": 20
+    },
+    "first_edit_failed": {
+     "n": 6,
+     "mean": 23.833333333333332,
+     "min": 11,
+     "p10": 17.5,
+     "median": 25.0,
+     "p90": 29.0,
+     "max": 33
+    },
+    "first_edit_ecdf": [
+     [
+      3,
+      0.08333333333333333
+     ],
+     [
+      6,
+      0.16666666666666666
+     ],
+     [
+      7,
+      0.25
+     ],
+     [
+      10,
+      0.3333333333333333
+     ],
+     [
+      11,
+      0.4166666666666667
+     ],
+     [
+      18,
+      0.5
+     ],
+     [
+      20,
+      0.5833333333333334
+     ],
+     [
+      24,
+      0.6666666666666666
+     ],
+     [
+      25,
+      0.75
+     ],
+     [
+      25,
+      0.8333333333333334
+     ],
+     [
+      25,
+      0.9166666666666666
+     ],
+     [
+      33,
+      1.0
+     ]
+    ],
+    "auc_passed_edits_earlier": 0.9444444444444444,
+    "tool_mix": {
+     "edit": 0.08333333333333333,
+     "run": 0.5857142857142857,
+     "read": 0.319047619047619,
+     "submit": 0.011904761904761904,
+     "tool_calls": 420
+    }
+   },
+   "cost": {
+    "total_usd_in_db": 11.8679644,
+    "archived_added_back_usd": 0.0,
+    "total_usd_with_archived": 11.8679644,
+    "per_task": {
+     "n": 12,
+     "mean": 0.9889970333333333,
+     "min": 0.173309,
+     "p10": 0.38255582,
+     "median": 0.9692194,
+     "p90": 1.6711852600000001,
+     "max": 1.8215316
+    },
+    "per_pass": {
+     "usd": 1.9779940666666667,
+     "ci_bootstrap_instances": [
+      1.002450751111111,
+      4.869625259999995
+     ]
+    },
+    "per_pass_with_archived_usd": 1.9779940666666667,
+    "rows_at_or_above_cap": 0,
+    "censoring": "each task is capped at $2.00; per-task cost is a lower bound where the cap binds",
+    "price_basis": "AI Studio list rates, not billed Vertex rates (priority rates came from a browser read)"
+   },
+   "latency_s": {
+    "n": 12,
+    "mean": 1132.5833333333333,
+    "min": 177.1,
+    "p10": 641.53,
+    "median": 872.25,
+    "p90": 1936.27,
+    "max": 2153.0,
+    "rows_near_agent_wall_clock": 0,
+    "censoring": "agent wall clock is 3,600 s and a runner kills at 11,700 s; sweep contention is included"
+   },
+   "tokens": {
+    "input": 10038659,
+    "cached_input": 5501652,
+    "output": 141135,
+    "cache_hit_share": 0.5480465070085556,
+    "calls": 420
+   },
+   "lost_rows": [],
+   "instances": [
+    {
+     "instance_id": "mwaskom__seaborn-3069",
+     "repo": "mwaskom",
+     "planned": 1,
+     "passes": 1,
+     "outcomes": [
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 1.4409166
+    },
+    {
+     "instance_id": "mwaskom__seaborn-3187",
+     "repo": "mwaskom",
+     "planned": 1,
+     "passes": 0,
+     "outcomes": [
+      {
+       "run_index": 1,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 1.685246
+    },
+    {
+     "instance_id": "pallets__flask-5014",
+     "repo": "pallets",
+     "planned": 1,
+     "passes": 1,
+     "outcomes": [
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      }
+     ],
+     "cost_usd": 0.173309
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4551",
+     "repo": "pylint",
+     "planned": 1,
+     "passes": 0,
+     "outcomes": [
+      {
+       "run_index": 1,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 1.5446386
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4604",
+     "repo": "pylint",
+     "planned": 1,
+     "passes": 0,
+     "outcomes": [
+      {
+       "run_index": 1,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 1.8215316
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4970",
+     "repo": "pylint",
+     "planned": 1,
+     "passes": 0,
+     "outcomes": [
+      {
+       "run_index": 1,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 0.9274574
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-7590",
+     "repo": "sphinx",
+     "planned": 1,
+     "passes": 0,
+     "outcomes": [
+      {
+       "run_index": 2,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 0.6245626
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9230",
+     "repo": "sphinx",
+     "planned": 1,
+     "passes": 1,
+     "outcomes": [
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      }
+     ],
+     "cost_usd": 1.0109814
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9320",
+     "repo": "sphinx",
+     "planned": 1,
+     "passes": 1,
+     "outcomes": [
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      }
+     ],
+     "cost_usd": 0.3720872
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9367",
+     "repo": "sphinx",
+     "planned": 1,
+     "passes": 1,
+     "outcomes": [
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      }
+     ],
+     "cost_usd": 0.4767734
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9602",
+     "repo": "sphinx",
+     "planned": 2,
+     "passes": 1,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      }
+     ],
+     "cost_usd": 1.7904605999999998
+    }
+   ],
+   "tasks": [
+    {
+     "instance_id": "mwaskom__seaborn-3069",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 1.4409,
+     "latency_s": 1944.7,
+     "first_edit": 18,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-25 07:20:10.933348+00"
+    },
+    {
+     "instance_id": "mwaskom__seaborn-3187",
+     "run_index": 1,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 1.6852,
+     "latency_s": 2153.0,
+     "first_edit": 33,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-25 07:53:08.052741+00"
+    },
+    {
+     "instance_id": "pallets__flask-5014",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.1733,
+     "latency_s": 177.1,
+     "first_edit": 6,
+     "scored_attempts": 1,
+     "calls": 20,
+     "started_at": "2026-10-25 08:29:38.28843+00"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4551",
+     "run_index": 1,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 1.5446,
+     "latency_s": 1654.4,
+     "first_edit": 25,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-25 08:32:58.569377+00"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4604",
+     "run_index": 1,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 1.8215,
+     "latency_s": 1860.4,
+     "first_edit": 25,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-25 09:00:51.991153+00"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4970",
+     "run_index": 1,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.9275,
+     "latency_s": 1319.9,
+     "first_edit": 11,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-25 09:32:17.038502+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-7590",
+     "run_index": 2,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.6246,
+     "latency_s": 741.1,
+     "first_edit": 25,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-25 09:54:34.981865+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9230",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 1.011,
+     "latency_s": 834.4,
+     "first_edit": 10,
+     "scored_attempts": 1,
+     "calls": 26,
+     "started_at": "2026-10-25 10:07:20.630375+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9320",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.3721,
+     "latency_s": 645.4,
+     "first_edit": 7,
+     "scored_attempts": 1,
+     "calls": 24,
+     "started_at": "2026-10-25 10:21:33.525612+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9367",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.4768,
+     "latency_s": 709.4,
+     "first_edit": 3,
+     "scored_attempts": 1,
+     "calls": 36,
+     "started_at": "2026-10-25 10:32:36.898451+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9602",
+     "run_index": 0,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.6268,
+     "latency_s": 641.1,
+     "first_edit": 24,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-25 07:09:09.988328+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9602",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 1.1637,
+     "latency_s": 910.1,
+     "first_edit": 20,
+     "scored_attempts": 1,
+     "calls": 34,
+     "started_at": "2026-10-25 10:44:48.420944+00"
+    }
+   ],
+   "power": {
+    "instances": 11,
+    "one_instance_moves_the_rate_pp": 9.1,
+    "bootstrap_se_pp": 13.4
+   },
+   "code_versions": {
+    "9": 12
+   },
+   "manifest": {
+    "git_sha": "f02ccb3c57be22c4d487776c3fa259457154b1d1",
+    "created_at": "2026-10-24T16:41:37+00:00",
+    "model": "vertex-gemini-3-1-pro-preview",
+    "roles": null,
+    "stage_models": {
+     "agent": "vertex-gemini-3-1-pro-preview"
+    },
+    "limits": {
+     "budget_wall_clock_seconds": 3600.0,
+     "max_attempts": 3,
+     "max_steps_per_attempt": 40,
+     "runner_wall_clock_seconds": 11700.0,
+     "task_call_cap": 150,
+     "task_cost_cap_usd": 2.0
+    },
+    "runs_per_instance": 3,
+    "n_instances": 11
+   },
+   "headline_note": "A subset: only the rows sweep-4 lost. Its rate is not comparable to a full run."
+  },
+  {
+   "id": "baseline",
+   "label": "Baseline: sweep-4 with its 12 lost rows replaced by their sweep-4b re-runs",
+   "short": "baseline",
+   "kind": "baseline-substitution",
+   "planned": 54,
+   "finished": 54,
+   "passed": 35,
+   "partial": false,
+   "partial_mark": null,
+   "buckets": {
+    "unfinished": 0,
+    "harness_error": 0,
+    "inadmissible": 0,
+    "passed_with_test_edit": 0,
+    "passed": 35,
+    "failed": 19
+   },
+   "headline": {
+    "passed": 35,
+    "planned": 54,
+    "rate": 0.6481481481481481,
+    "ci_bootstrap_instances": [
+     0.4444444444444444,
+     0.8333333333333334
+    ],
+    "se": 0.0994222561962146,
+    "n_resamples": 20000,
+    "wilson_rows_context_only": [
+     0.5148483061425126,
+     0.7617698896888838
+    ],
+    "definition": "passed / planned; every planned row that is not a pass counts as a non-pass"
+   },
+   "secondary_admissible": {
+    "passed": 35,
+    "admissible": 54,
+    "rate": 0.6481481481481481,
+    "wilson_rows_context_only": [
+     0.5148483061425126,
+     0.7617698896888838
+    ],
+    "note": "excludes harness errors and unfinished rows; a labelled secondary, never the headline"
+   },
+   "bootstrap_samples": [
+    0.22222,
+    0.35185,
+    0.37037,
+    0.38889,
+    0.40741,
+    0.40741,
+    0.42593,
+    0.42593,
+    0.42593,
+    0.42593,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.44444,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.46296,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.48148,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.51852,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.53704,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.55556,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.57407,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.59259,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.61111,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.62963,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.64815,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.66667,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.68519,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.7037,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.72222,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.74074,
+    0.75926,
+    0.75926,
+    0.75926,
+    0.75926,
+    0.75926,
+    0.75926,
+    0.75926,
+    0.75926,
+    0.75926,
+    0.75926,
+    0.75926,
+    0.75926,
+    0.75926,
+    0.75926,
+    0.75926,
+    0.75926,
+    0.75926,
+    0.75926,
+    0.75926,
+    0.75926,
+    0.77778,
+    0.77778,
+    0.77778,
+    0.77778,
+    0.77778,
+    0.77778,
+    0.77778,
+    0.77778,
+    0.77778,
+    0.77778,
+    0.77778,
+    0.77778,
+    0.77778,
+    0.77778,
+    0.77778,
+    0.77778,
+    0.7963,
+    0.7963,
+    0.7963,
+    0.7963,
+    0.7963,
+    0.7963,
+    0.7963,
+    0.7963,
+    0.7963,
+    0.7963,
+    0.7963,
+    0.7963,
+    0.7963,
+    0.81481,
+    0.81481,
+    0.81481,
+    0.81481,
+    0.81481,
+    0.81481,
+    0.81481,
+    0.81481,
+    0.81481,
+    0.81481,
+    0.83333,
+    0.83333,
+    0.83333,
+    0.83333,
+    0.83333,
+    0.83333,
+    0.85185,
+    0.85185,
+    0.85185,
+    0.85185,
+    0.85185,
+    0.87037,
+    0.87037,
+    0.88889,
+    0.88889,
+    0.90741
+   ],
+   "clustering": {
+    "icc_oneway": 0.6894977168949772,
+    "design_effect_3_runs": 2.3789954337899544,
+    "effective_n_rows": 22.698656429942417,
+    "cochran_q_run_index": {
+     "q": 0.5,
+     "df": 2,
+     "p": 0.7788007830714049
+    },
+    "reading": "runs of one instance are correlated, so the rows carry less evidence than their count"
+   },
+   "pass_at_k": {
+    "pass_at_1": 0.6481481481481481,
+    "pass_at_3": 0.7777777777777778
+   },
+   "per_run_index": [
+    0.6666666666666666,
+    0.6111111111111112,
+    0.6666666666666666
+   ],
+   "stop_reasons": {
+    "step_cap": {
+     "n": 28,
+     "passed": 11
+    },
+    "submitted": {
+     "n": 26,
+     "passed": 24
+    }
+   },
+   "stop_reason_shares_of_completed": {
+    "step_cap": 0.5185185185185185,
+    "submitted": 0.48148148148148145
+   },
+   "behaviour": {
+    "completed_rows": 54,
+    "step_cap_share": 0.5185185185185185,
+    "submitted_share": 0.48148148148148145,
+    "no_change_share": 0.0,
+    "first_edit_call": {
+     "n": 54,
+     "mean": 14.518518518518519,
+     "min": 2,
+     "p10": 5.300000000000001,
+     "median": 11.5,
+     "p90": 28.0,
+     "max": 35
+    },
+    "never_edited": 0,
+    "first_edit_passed": {
+     "n": 35,
+     "mean": 10.314285714285715,
+     "min": 2,
+     "p10": 5.0,
+     "median": 9.0,
+     "p90": 16.800000000000004,
+     "max": 28
+    },
+    "first_edit_failed": {
+     "n": 19,
+     "mean": 22.263157894736842,
+     "min": 5,
+     "p10": 7.8,
+     "median": 24.0,
+     "p90": 33.2,
+     "max": 35
+    },
+    "first_edit_ecdf": [
+     [
+      2,
+      0.018518518518518517
+     ],
+     [
+      3,
+      0.037037037037037035
+     ],
+     [
+      4,
+      0.05555555555555555
+     ],
+     [
+      5,
+      0.07407407407407407
+     ],
+     [
+      5,
+      0.09259259259259259
+     ],
+     [
+      5,
+      0.1111111111111111
+     ],
+     [
+      6,
+      0.12962962962962962
+     ],
+     [
+      6,
+      0.14814814814814814
+     ],
+     [
+      6,
+      0.16666666666666666
+     ],
+     [
+      6,
+      0.18518518518518517
+     ],
+     [
+      7,
+      0.2037037037037037
+     ],
+     [
+      7,
+      0.2222222222222222
+     ],
+     [
+      7,
+      0.24074074074074073
+     ],
+     [
+      7,
+      0.25925925925925924
+     ],
+     [
+      7,
+      0.2777777777777778
+     ],
+     [
+      8,
+      0.2962962962962963
+     ],
+     [
+      8,
+      0.3148148148148148
+     ],
+     [
+      8,
+      0.3333333333333333
+     ],
+     [
+      8,
+      0.35185185185185186
+     ],
+     [
+      9,
+      0.37037037037037035
+     ],
+     [
+      9,
+      0.3888888888888889
+     ],
+     [
+      10,
+      0.4074074074074074
+     ],
+     [
+      10,
+      0.42592592592592593
+     ],
+     [
+      10,
+      0.4444444444444444
+     ],
+     [
+      11,
+      0.46296296296296297
+     ],
+     [
+      11,
+      0.48148148148148145
+     ],
+     [
+      11,
+      0.5
+     ],
+     [
+      12,
+      0.5185185185185185
+     ],
+     [
+      12,
+      0.5370370370370371
+     ],
+     [
+      12,
+      0.5555555555555556
+     ],
+     [
+      13,
+      0.5740740740740741
+     ],
+     [
+      13,
+      0.5925925925925926
+     ],
+     [
+      14,
+      0.6111111111111112
+     ],
+     [
+      14,
+      0.6296296296296297
+     ],
+     [
+      15,
+      0.6481481481481481
+     ],
+     [
+      15,
+      0.6666666666666666
+     ],
+     [
+      18,
+      0.6851851851851852
+     ],
+     [
+      19,
+      0.7037037037037037
+     ],
+     [
+      20,
+      0.7222222222222222
+     ],
+     [
+      21,
+      0.7407407407407407
+     ],
+     [
+      23,
+      0.7592592592592593
+     ],
+     [
+      23,
+      0.7777777777777778
+     ],
+     [
+      24,
+      0.7962962962962963
+     ],
+     [
+      24,
+      0.8148148148148148
+     ],
+     [
+      25,
+      0.8333333333333334
+     ],
+     [
+      25,
+      0.8518518518518519
+     ],
+     [
+      25,
+      0.8703703703703703
+     ],
+     [
+      28,
+      0.8888888888888888
+     ],
+     [
+      28,
+      0.9074074074074074
+     ],
+     [
+      30,
+      0.9259259259259259
+     ],
+     [
+      33,
+      0.9444444444444444
+     ],
+     [
+      33,
+      0.9629629629629629
+     ],
+     [
+      34,
+      0.9814814814814815
+     ],
+     [
+      35,
+      1.0
+     ]
+    ],
+    "auc_passed_edits_earlier": 0.8360902255639098,
+    "tool_mix": {
+     "edit": 0.07472178060413355,
+     "run": 0.6428192898781134,
+     "read": 0.2686804451510334,
+     "submit": 0.01377848436671966,
+     "tool_calls": 1887
+    }
+   },
+   "cost": {
+    "total_usd_in_db": 40.5395754,
+    "archived_added_back_usd": 0.0,
+    "total_usd_with_archived": 40.5395754,
+    "per_task": {
+     "n": 54,
+     "mean": 0.7507328777777778,
+     "min": 0.1729732,
+     "p10": 0.35456226,
+     "median": 0.6452286,
+     "p90": 1.43535682,
+     "max": 1.8215316
+    },
+    "per_pass": {
+     "usd": 1.1582735828571427,
+     "ci_bootstrap_instances": [
+      0.771219696525974,
+      1.9297657759749998
+     ]
+    },
+    "per_pass_with_archived_usd": 1.1582735828571427,
+    "rows_at_or_above_cap": 0,
+    "censoring": "each task is capped at $2.00; per-task cost is a lower bound where the cap binds",
+    "price_basis": "AI Studio list rates, not billed Vertex rates (priority rates came from a browser read)"
+   },
+   "latency_s": {
+    "n": 54,
+    "mean": 1196.787037037037,
+    "min": 177.1,
+    "p10": 683.43,
+    "median": 1105.6,
+    "p90": 1781.16,
+    "max": 2350.0,
+    "rows_near_agent_wall_clock": 0,
+    "censoring": "agent wall clock is 3,600 s and a runner kills at 11,700 s; sweep contention is included"
+   },
+   "tokens": {
+    "input": 40435092,
+    "cached_input": 26378647,
+    "output": 595913,
+    "cache_hit_share": 0.6523701491763639,
+    "calls": 1885
+   },
+   "lost_rows": [],
+   "instances": [
+    {
+     "instance_id": "mwaskom__seaborn-3069",
+     "repo": "mwaskom",
+     "planned": 3,
+     "passes": 1,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 2,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 3.4801324
+    },
+    {
+     "instance_id": "mwaskom__seaborn-3187",
+     "repo": "mwaskom",
+     "planned": 3,
+     "passes": 0,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 1,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 2,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 4.0972964
+    },
+    {
+     "instance_id": "pallets__flask-5014",
+     "repo": "pallets",
+     "planned": 3,
+     "passes": 3,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 1.5243112
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4551",
+     "repo": "pylint",
+     "planned": 3,
+     "passes": 0,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 1,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 2,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 2.7501544
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4604",
+     "repo": "pylint",
+     "planned": 3,
+     "passes": 0,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 1,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 2,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 3.9751284
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4970",
+     "repo": "pylint",
+     "planned": 3,
+     "passes": 2,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 1,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 2.2126723999999998
+    },
+    {
+     "instance_id": "pytest-dev__pytest-5631",
+     "repo": "pytest",
+     "planned": 3,
+     "passes": 3,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      }
+     ],
+     "cost_usd": 0.7444755999999999
+    },
+    {
+     "instance_id": "pytest-dev__pytest-6202",
+     "repo": "pytest",
+     "planned": 3,
+     "passes": 3,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 1.509145
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7236",
+     "repo": "pytest",
+     "planned": 3,
+     "passes": 3,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 2.2023048
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7432",
+     "repo": "pytest",
+     "planned": 3,
+     "passes": 3,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 1.7867202
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7571",
+     "repo": "pytest",
+     "planned": 3,
+     "passes": 3,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      }
+     ],
+     "cost_usd": 1.9975016
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7982",
+     "repo": "pytest",
+     "planned": 3,
+     "passes": 3,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      }
+     ],
+     "cost_usd": 2.5462376
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-7462",
+     "repo": "sphinx",
+     "planned": 3,
+     "passes": 1,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 1,
+       "bucket": "failed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 2,
+       "bucket": "failed",
+       "stop_reason": "submitted"
+      }
+     ],
+     "cost_usd": 1.7368654000000001
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-7590",
+     "repo": "sphinx",
+     "planned": 3,
+     "passes": 0,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 1,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 2,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      }
+     ],
+     "cost_usd": 2.127897
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9230",
+     "repo": "sphinx",
+     "planned": 3,
+     "passes": 3,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      }
+     ],
+     "cost_usd": 2.6101107999999997
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9320",
+     "repo": "sphinx",
+     "planned": 3,
+     "passes": 3,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      }
+     ],
+     "cost_usd": 1.1759868
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9367",
+     "repo": "sphinx",
+     "planned": 3,
+     "passes": 3,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 1,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      },
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      }
+     ],
+     "cost_usd": 1.5435462
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9602",
+     "repo": "sphinx",
+     "planned": 3,
+     "passes": 1,
+     "outcomes": [
+      {
+       "run_index": 0,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 1,
+       "bucket": "failed",
+       "stop_reason": "step_cap"
+      },
+      {
+       "run_index": 2,
+       "bucket": "passed",
+       "stop_reason": "submitted"
+      }
+     ],
+     "cost_usd": 2.5190892
+    }
+   ],
+   "tasks": [
+    {
+     "instance_id": "mwaskom__seaborn-3069",
+     "run_index": 0,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 1.1788,
+     "latency_s": 1750.2,
+     "first_edit": 19,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-23 19:52:14.353481+00"
+    },
+    {
+     "instance_id": "mwaskom__seaborn-3069",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 1.4409,
+     "latency_s": 1944.7,
+     "first_edit": 18,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-25 07:20:10.933348+00"
+    },
+    {
+     "instance_id": "mwaskom__seaborn-3069",
+     "run_index": 2,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.8604,
+     "latency_s": 1683.0,
+     "first_edit": 7,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 08:38:20.57929+00"
+    },
+    {
+     "instance_id": "mwaskom__seaborn-3187",
+     "run_index": 0,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 1.7985,
+     "latency_s": 2350.0,
+     "first_edit": 34,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-23 19:52:14.355048+00"
+    },
+    {
+     "instance_id": "mwaskom__seaborn-3187",
+     "run_index": 1,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 1.6852,
+     "latency_s": 2153.0,
+     "first_edit": 33,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-25 07:53:08.052741+00"
+    },
+    {
+     "instance_id": "mwaskom__seaborn-3187",
+     "run_index": 2,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.6136,
+     "latency_s": 1765.2,
+     "first_edit": 35,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 08:45:11.107783+00"
+    },
+    {
+     "instance_id": "pallets__flask-5014",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.8166,
+     "latency_s": 730.7,
+     "first_edit": 10,
+     "scored_attempts": 1,
+     "calls": 23,
+     "started_at": "2026-10-23 19:52:14.380791+00"
+    },
+    {
+     "instance_id": "pallets__flask-5014",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.1733,
+     "latency_s": 177.1,
+     "first_edit": 6,
+     "scored_attempts": 1,
+     "calls": 20,
+     "started_at": "2026-10-25 08:29:38.28843+00"
+    },
+    {
+     "instance_id": "pallets__flask-5014",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 0.5344,
+     "latency_s": 309.7,
+     "first_edit": 6,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 09:06:41.934794+00"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4551",
+     "run_index": 0,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.6307,
+     "latency_s": 1743.5,
+     "first_edit": 33,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-23 20:04:43.366551+00"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4551",
+     "run_index": 1,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 1.5446,
+     "latency_s": 1654.4,
+     "first_edit": 25,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-25 08:32:58.569377+00"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4551",
+     "run_index": 2,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.5748,
+     "latency_s": 1754.2,
+     "first_edit": 28,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 09:12:10.620612+00"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4604",
+     "run_index": 0,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.6555,
+     "latency_s": 2031.0,
+     "first_edit": 30,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-23 20:21:43.790701+00"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4604",
+     "run_index": 1,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 1.8215,
+     "latency_s": 1860.4,
+     "first_edit": 25,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-25 09:00:51.991153+00"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4604",
+     "run_index": 2,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 1.4981,
+     "latency_s": 1788.0,
+     "first_edit": 21,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 09:14:55.188472+00"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4970",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 0.6745,
+     "latency_s": 1548.1,
+     "first_edit": 28,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-23 20:31:53.093558+00"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4970",
+     "run_index": 1,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.9275,
+     "latency_s": 1319.9,
+     "first_edit": 11,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-25 09:32:17.038502+00"
+    },
+    {
+     "instance_id": "pylint-dev__pylint-4970",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 0.6107,
+     "latency_s": 1588.5,
+     "first_edit": 15,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 09:41:50.854424+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-5631",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.173,
+     "latency_s": 729.2,
+     "first_edit": 7,
+     "scored_attempts": 1,
+     "calls": 15,
+     "started_at": "2026-10-23 20:34:05.195339+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-5631",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.2709,
+     "latency_s": 869.8,
+     "first_edit": 6,
+     "scored_attempts": 1,
+     "calls": 20,
+     "started_at": "2026-10-24 07:02:14.107565+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-5631",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.3006,
+     "latency_s": 1073.4,
+     "first_edit": 9,
+     "scored_attempts": 1,
+     "calls": 20,
+     "started_at": "2026-10-24 09:45:02.761186+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-6202",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.5315,
+     "latency_s": 1390.0,
+     "first_edit": 12,
+     "scored_attempts": 1,
+     "calls": 35,
+     "started_at": "2026-10-23 20:46:32.710793+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-6202",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.5259,
+     "latency_s": 1312.5,
+     "first_edit": 10,
+     "scored_attempts": 1,
+     "calls": 37,
+     "started_at": "2026-10-24 07:02:14.106919+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-6202",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 0.4518,
+     "latency_s": 1677.0,
+     "first_edit": 8,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 10:03:16.387006+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7236",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.7834,
+     "latency_s": 1232.2,
+     "first_edit": 12,
+     "scored_attempts": 1,
+     "calls": 34,
+     "started_at": "2026-10-23 20:55:51.967383+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7236",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.7016,
+     "latency_s": 1105.8,
+     "first_edit": 13,
+     "scored_attempts": 1,
+     "calls": 33,
+     "started_at": "2026-10-24 07:17:11.132024+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7236",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 0.7172,
+     "latency_s": 1258.9,
+     "first_edit": 23,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 10:08:42.971053+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7432",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 0.7132,
+     "latency_s": 1116.0,
+     "first_edit": 4,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-23 20:58:00.343351+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7432",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.4818,
+     "latency_s": 1136.5,
+     "first_edit": 11,
+     "scored_attempts": 1,
+     "calls": 31,
+     "started_at": "2026-10-24 07:24:26.191325+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7432",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 0.5917,
+     "latency_s": 1159.7,
+     "first_edit": 5,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 10:30:02.544008+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7571",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.3026,
+     "latency_s": 984.5,
+     "first_edit": 14,
+     "scored_attempts": 1,
+     "calls": 30,
+     "started_at": "2026-10-23 21:09:57.811911+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7571",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.9801,
+     "latency_s": 962.6,
+     "first_edit": 7,
+     "scored_attempts": 1,
+     "calls": 23,
+     "started_at": "2026-10-24 07:35:58.038062+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7571",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.7148,
+     "latency_s": 1482.0,
+     "first_edit": 11,
+     "scored_attempts": 1,
+     "calls": 34,
+     "started_at": "2026-10-24 10:31:33.346714+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7982",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.5093,
+     "latency_s": 1316.0,
+     "first_edit": 8,
+     "scored_attempts": 1,
+     "calls": 33,
+     "started_at": "2026-10-23 21:16:45.438396+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7982",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 1.4224,
+     "latency_s": 1035.2,
+     "first_edit": 5,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 07:43:41.231289+00"
+    },
+    {
+     "instance_id": "pytest-dev__pytest-7982",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.6145,
+     "latency_s": 1105.4,
+     "first_edit": 6,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 10:49:38.807666+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-7462",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 0.6493,
+     "latency_s": 799.4,
+     "first_edit": 8,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-23 21:16:54.345308+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-7462",
+     "run_index": 1,
+     "bucket": "failed",
+     "stop_reason": "submitted",
+     "cost": 0.4464,
+     "latency_s": 671.7,
+     "first_edit": 5,
+     "scored_attempts": 1,
+     "calls": 27,
+     "started_at": "2026-10-24 07:52:22.89413+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-7462",
+     "run_index": 2,
+     "bucket": "failed",
+     "stop_reason": "submitted",
+     "cost": 0.6411,
+     "latency_s": 789.1,
+     "first_edit": 8,
+     "scored_attempts": 1,
+     "calls": 37,
+     "started_at": "2026-10-24 10:56:32.386119+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-7590",
+     "run_index": 0,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.8625,
+     "latency_s": 997.0,
+     "first_edit": 23,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-23 21:26:40.368979+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-7590",
+     "run_index": 1,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.6409,
+     "latency_s": 973.9,
+     "first_edit": 13,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 08:01:14.777392+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-7590",
+     "run_index": 2,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.6246,
+     "latency_s": 741.1,
+     "first_edit": 25,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-25 09:54:34.981865+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9230",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.7292,
+     "latency_s": 1057.4,
+     "first_edit": 12,
+     "scored_attempts": 1,
+     "calls": 30,
+     "started_at": "2026-10-23 21:30:31.738273+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9230",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "step_cap",
+     "cost": 0.8699,
+     "latency_s": 1249.8,
+     "first_edit": 9,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 08:03:52.453611+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9230",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 1.011,
+     "latency_s": 834.4,
+     "first_edit": 10,
+     "scored_attempts": 1,
+     "calls": 26,
+     "started_at": "2026-10-25 10:07:20.630375+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9320",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.3612,
+     "latency_s": 1013.7,
+     "first_edit": 7,
+     "scored_attempts": 1,
+     "calls": 19,
+     "started_at": "2026-10-23 21:38:57.7549+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9320",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.4427,
+     "latency_s": 672.3,
+     "first_edit": 14,
+     "scored_attempts": 1,
+     "calls": 30,
+     "started_at": "2026-10-24 08:17:44.657216+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9320",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.3721,
+     "latency_s": 645.4,
+     "first_edit": 7,
+     "scored_attempts": 1,
+     "calls": 24,
+     "started_at": "2026-10-25 10:21:33.525612+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9367",
+     "run_index": 0,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.3517,
+     "latency_s": 1102.6,
+     "first_edit": 2,
+     "scored_attempts": 1,
+     "calls": 34,
+     "started_at": "2026-10-23 21:43:32.360538+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9367",
+     "run_index": 1,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.7151,
+     "latency_s": 782.0,
+     "first_edit": 15,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 08:25:01.265626+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9367",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 0.4768,
+     "latency_s": 709.4,
+     "first_edit": 3,
+     "scored_attempts": 1,
+     "calls": 36,
+     "started_at": "2026-10-25 10:32:36.898451+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9602",
+     "run_index": 0,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.6268,
+     "latency_s": 641.1,
+     "first_edit": 24,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-25 07:09:09.988328+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9602",
+     "run_index": 1,
+     "bucket": "failed",
+     "stop_reason": "step_cap",
+     "cost": 0.7286,
+     "latency_s": 937.8,
+     "first_edit": 24,
+     "scored_attempts": 1,
+     "calls": 40,
+     "started_at": "2026-10-24 08:29:13.926608+00"
+    },
+    {
+     "instance_id": "sphinx-doc__sphinx-9602",
+     "run_index": 2,
+     "bucket": "passed",
+     "stop_reason": "submitted",
+     "cost": 1.1637,
+     "latency_s": 910.1,
+     "first_edit": 20,
+     "scored_attempts": 1,
+     "calls": 34,
+     "started_at": "2026-10-25 10:44:48.420944+00"
+    }
+   ],
+   "power": {
+    "instances": 18,
+    "one_instance_moves_the_rate_pp": 5.6,
+    "bootstrap_se_pp": 9.9
+   },
+   "code_versions": {
+    "9": 54
+   },
+   "manifest": {
+    "git_sha": "f02ccb3c57be22c4d487776c3fa259457154b1d1",
+    "created_at": "2026-10-23T19:51:50+00:00",
+    "model": "vertex-gemini-3-1-pro-preview",
+    "roles": null,
+    "stage_models": {
+     "agent": "vertex-gemini-3-1-pro-preview"
+    },
+    "limits": {
+     "budget_wall_clock_seconds": 3600.0,
+     "max_attempts": 3,
+     "max_steps_per_attempt": 40,
+     "runner_wall_clock_seconds": 11700.0,
+     "task_call_cap": 150,
+     "task_cost_cap_usd": 2.0
+    },
+    "runs_per_instance": 3,
+    "n_instances": 18
+   },
+   "substitution": {
+    "hand_stated": true,
+    "substituted_cells": [
+     "mwaskom__seaborn-3069#1",
+     "mwaskom__seaborn-3187#1",
+     "pallets__flask-5014#1",
+     "pylint-dev__pylint-4551#1",
+     "pylint-dev__pylint-4604#1",
+     "pylint-dev__pylint-4970#1",
+     "sphinx-doc__sphinx-7590#2",
+     "sphinx-doc__sphinx-9230#2",
+     "sphinx-doc__sphinx-9320#2",
+     "sphinx-doc__sphinx-9367#2",
+     "sphinx-doc__sphinx-9602#0",
+     "sphinx-doc__sphinx-9602#2"
+    ],
+    "statement": "Hand-stated substitution of sweep-4 and sweep-4b, not a pooled run and not produced by `repolace-eval report`. Each of the 54 cells holds exactly one row."
+   }
+  }
+ ],
+ "comparisons": [],
+ "difficulty": null,
+ "cost_effectiveness": null,
+ "cost_curves": null,
+ "failure_flow": {
+  "sweep-4": [
+   {
+    "stop_reason": "lost",
+    "bucket": "harness_error",
+    "n": 12
+   },
+   {
+    "stop_reason": "step_cap",
+    "bucket": "failed",
+    "n": 11
+   },
+   {
+    "stop_reason": "step_cap",
+    "bucket": "passed",
+    "n": 10
+   },
+   {
+    "stop_reason": "submitted",
+    "bucket": "failed",
+    "n": 2
+   },
+   {
+    "stop_reason": "submitted",
+    "bucket": "passed",
+    "n": 19
+   }
+  ],
+  "baseline": [
+   {
+    "stop_reason": "step_cap",
+    "bucket": "failed",
+    "n": 17
+   },
+   {
+    "stop_reason": "step_cap",
+    "bucket": "passed",
+    "n": 11
+   },
+   {
+    "stop_reason": "submitted",
+    "bucket": "failed",
+    "n": 2
+   },
+   {
+    "stop_reason": "submitted",
+    "bucket": "passed",
+    "n": 24
+   }
+  ]
+ },
+ "retrieval": null,
+ "power": {
+  "instances": 18,
+  "one_instance_moves_the_rate_pp": 5.6,
+  "bootstrap_se_pp": 9.9,
+  "approx_minimum_detectable_gap_pp_two_independent_runs": 39,
+  "basis": "80% power, two-sided alpha 0.05, normal approximation with the instance-bootstrap standard error",
+  "mcnemar_exact_examples": {
+   "8:0": 0.0078125,
+   "7:1": 0.0703125,
+   "6:2": 0.2890625
+  },
+  "mcnemar_needs": [
+   {
+    "discordant": 1,
+    "needs_split_at_least": null
+   },
+   {
+    "discordant": 2,
+    "needs_split_at_least": null
+   },
+   {
+    "discordant": 3,
+    "needs_split_at_least": null
+   },
+   {
+    "discordant": 4,
+    "needs_split_at_least": null
+   },
+   {
+    "discordant": 5,
+    "needs_split_at_least": null
+   },
+   {
+    "discordant": 6,
+    "needs_split_at_least": "6:0"
+   },
+   {
+    "discordant": 7,
+    "needs_split_at_least": "7:0"
+   },
+   {
+    "discordant": 8,
+    "needs_split_at_least": "8:0"
+   },
+   {
+    "discordant": 9,
+    "needs_split_at_least": "8:1"
+   },
+   {
+    "discordant": 10,
+    "needs_split_at_least": "9:1"
+   },
+   {
+    "discordant": 11,
+    "needs_split_at_least": "10:1"
+   },
+   {
+    "discordant": 12,
+    "needs_split_at_least": "10:2"
+   },
+   {
+    "discordant": 13,
+    "needs_split_at_least": "11:2"
+   },
+   {
+    "discordant": 14,
+    "needs_split_at_least": "12:2"
+   },
+   {
+    "discordant": 15,
+    "needs_split_at_least": "12:3"
+   },
+   {
+    "discordant": 16,
+    "needs_split_at_least": "13:3"
+   },
+   {
+    "discordant": 17,
+    "needs_split_at_least": "13:4"
+   },
+   {
+    "discordant": 18,
+    "needs_split_at_least": "14:4"
+   }
+  ],
+  "reading": "with 18 instances a comparison of two configurations needs a gap of about 40 points to be called clearly different"
+ },
+ "methods": [
+  {
+   "id": "headline",
+   "name": "Headline pass rate",
+   "role": "primary",
+   "formula": "passed / planned",
+   "detail": "planned is the manifest grid (instances x runs); every planned row that is not a pass is a non-pass."
+  },
+  {
+   "id": "boot",
+   "name": "Bootstrap over instances",
+   "role": "primary",
+   "formula": "resample the 18 instances with replacement 20,000 times; rate = sum passes / sum planned; 2.5th and 97.5th percentiles",
+   "detail": "Runs of one instance are not independent, so rows are never resampled."
+  },
+  {
+   "id": "wilson",
+   "name": "Wilson interval over rows",
+   "role": "context",
+   "formula": "Wilson score, z = 1.96",
+   "detail": "Shown only to display how much clustering widens the interval."
+  },
+  {
+   "id": "icc",
+   "name": "Intraclass correlation and design effect",
+   "role": "descriptive",
+   "formula": "ICC(1) = (MSB - MSW) / (MSB + (m - 1) MSW); design effect = 1 + (m - 1) ICC; effective n = rows / design effect",
+   "detail": "m = 3 runs per instance."
+  },
+  {
+   "id": "cochran",
+   "name": "Cochran's Q across run indexes",
+   "role": "descriptive",
+   "formula": "Q = (k - 1) [k sum C_j^2 - T^2] / [k T - sum R_i^2]",
+   "detail": "Tests whether run 0, 1 and 2 differ in pass rate."
+  },
+  {
+   "id": "passk",
+   "name": "pass@k",
+   "role": "descriptive",
+   "formula": "1 - C(n - c, k) / C(n, k)",
+   "detail": "Unbiased, per instance, averaged."
+  },
+  {
+   "id": "mcnemar",
+   "name": "Exact McNemar test (pre-registered)",
+   "role": "primary",
+   "formula": "two-sided binomial test of min(b, c) in b + c discordant pairs at p = 0.5",
+   "detail": "On run_index 0, over the instances scored in both runs; discordant counts always shown."
+  },
+  {
+   "id": "holm",
+   "name": "Holm correction",
+   "role": "primary",
+   "formula": "p(i) adjusted = max over j<=i of (m - j + 1) p(j)",
+   "detail": "Across the three variants (e1, r2, m1)."
+  },
+  {
+   "id": "pairedboot",
+   "name": "Paired cluster bootstrap of the difference",
+   "role": "exploratory",
+   "formula": "resample instances; difference in passes out of 3 per instance",
+   "detail": "Context, not a verdict."
+  },
+  {
+   "id": "sign",
+   "name": "Exact sign test and Wilcoxon signed-rank",
+   "role": "exploratory",
+   "formula": "binomial test on instances better vs worse; Wilcoxon on per-instance pass-count differences",
+   "detail": "Ties dropped."
+  },
+  {
+   "id": "perm",
+   "name": "Sign-flip permutation test",
+   "role": "exploratory",
+   "formula": "20,000 random sign flips of the instance differences",
+   "detail": "Exchangeability of the paired differences under the null."
+  },
+  {
+   "id": "cmh",
+   "name": "Mantel-Haenszel odds ratio",
+   "role": "exploratory",
+   "formula": "sum(a d / n) / sum(b c / n) over instance strata; Robins-Breslow-Greenland variance",
+   "detail": "Only instances where both condition and outcome vary inform it; the six always-passing pytest instances do not, so it is often undefined."
+  },
+  {
+   "id": "h",
+   "name": "Cohen's h",
+   "role": "exploratory",
+   "formula": "2 asin(sqrt p1) - 2 asin(sqrt p2)",
+   "detail": "Effect size between two rates."
+  },
+  {
+   "id": "mde",
+   "name": "Minimum detectable gap",
+   "role": "descriptive",
+   "formula": "2.8 sqrt(2) SE",
+   "detail": "80% power, alpha 0.05, bootstrap SE."
+  },
+  {
+   "id": "auc",
+   "name": "AUC for first-edit step",
+   "role": "descriptive",
+   "formula": "P(first edit of a passing task < first edit of a failing task)",
+   "detail": "Descriptive: hard instances need more investigation before the first edit."
+  },
+  {
+   "id": "dropped",
+   "name": "Not computed, and why",
+   "role": "note",
+   "formula": "Rasch ranking; pooled beta-binomial posterior",
+   "detail": "Eighteen items and a handful of runs cannot support a difficulty model; a pooled posterior overstates certainty at an ICC of about 0.7."
+  }
+ ],
+ "code_versions": {
+  "source": "site/data/code_versions.json",
+  "baseline_claim_check": {
+   "plan_said": "the baseline ran on the shortest retry window",
+   "found": "sweep-4's manifest sha f02ccb3c57 is the merge of PR #50 (b661a30), which already set max_attempts = 9; sweep-4, sweep-4b, r2 and m1 all ran on 9 attempts. The plan's claim is WRONG: the baseline did not run on a shorter window than r2 and m1. Only e1 rows started after the window commit ran on 21."
+  },
+  "e1_retry_window_commit": {
+   "sha": "1336c5999b",
+   "committed_at": "2026-10-29T22:07:24+05:30",
+   "from": 9,
+   "to": 21
+  }
+ }
+}
