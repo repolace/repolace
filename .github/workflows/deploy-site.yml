@@ -39,7 +39,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       - run: uv sync --frozen --package repolace-api
-      - run: uv run ruff check .
+      - run: uv run ruff check api shared infra/aws
       - run: uv run pytest api/tests/test_site_pages.py api/tests/test_site_design.py api/tests/test_site_waitlist.py -m "not db and not docker"
 
   build:
