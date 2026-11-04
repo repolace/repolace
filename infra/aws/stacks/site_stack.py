@@ -66,6 +66,9 @@ class RepolaceSiteStack(Stack):
             raise ValueError("context 'architecture' must be arm64 or x86_64")
         instance_type = ctx("instance_type", "t4g.small" if architecture == "arm64" else "t3a.small")
         github_repo = ctx("github_repo", "repolace/repolace")
+        # The OIDC subject prefix. GitHub issues `repo:<owner>/<repo>` by default, but a repository with immutable subjects
+        # (`gh api repos/<owner>/<repo>/actions/oidc/customization/sub`) issues `repo:<owner>@<id>/<repo>@<id>` instead.
+        sub_prefix = ctx("github_sub_prefix", f"repo:{github_repo}")
         create_oidc = ctx("create_oidc_provider", "true").lower() != "false"
         ami_id = ctx("ami_id")
         if not re.fullmatch(r"ami-[0-9a-f]{8,17}", ami_id):
@@ -253,7 +256,7 @@ class RepolaceSiteStack(Stack):
         build_role = github_role(
             "BuildRole",
             "repolace-site-build",
-            f"repo:{github_repo}:ref:refs/heads/main",
+            f"{sub_prefix}:ref:refs/heads/main",
             "GitHub Actions build job: push images to the repolace-site ECR repo",
         )
         build_role.add_to_policy(iam.PolicyStatement(sid="EcrLogin", actions=["ecr:GetAuthorizationToken"], resources=["*"]))
@@ -277,7 +280,7 @@ class RepolaceSiteStack(Stack):
         deploy_role = github_role(
             "DeployRole",
             "repolace-site-deploy",
-            f"repo:{github_repo}:environment:production",
+            f"{sub_prefix}:environment:production",
             "GitHub Actions deploy job: run deploy.sh on the site host through SSM",
             {f"{GITHUB_OIDC_HOST}:job_workflow_ref": f"{github_repo}/{DEPLOY_WORKFLOW}@refs/heads/main"},
         )

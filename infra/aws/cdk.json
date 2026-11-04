@@ -1,12 +1,24 @@
 {
   "app": "python3 app.py",
   "watch": {
-    "include": ["**"],
-    "exclude": ["README.md", "cdk*.json", "requirements*.txt", "**/__pycache__", "tests", ".venv", "cdk.out"]
+    "include": [
+      "**"
+    ],
+    "exclude": [
+      "README.md",
+      "cdk*.json",
+      "requirements*.txt",
+      "**/__pycache__",
+      "tests",
+      ".venv",
+      "cdk.out"
+    ]
   },
   "context": {
     "architecture": "arm64",
     "github_repo": "repolace/repolace",
-    "create_oidc_provider": "true"
+    "create_oidc_provider": "true",
+    "github_sub_prefix": "repo:repolace@319966794/repolace@1343131202",
+    "ami_id": "ami-0951c836c26e34fc8"
   }
 }

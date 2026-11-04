@@ -136,6 +136,16 @@ def test_two_oidc_roles_with_distinct_subjects(template):
     }
 
 
+def test_immutable_subject_prefix_is_used_when_configured():
+    prefix = "repo:repolace@319966794/repolace@1343131202"
+    subjects = set()
+    for res in synth(github_sub_prefix=prefix).find_resources("AWS::IAM::Role").values():
+        for stmt in res["Properties"]["AssumeRolePolicyDocument"]["Statement"]:
+            if stmt["Action"] == "sts:AssumeRoleWithWebIdentity":
+                subjects.add(stmt["Condition"]["StringEquals"]["token.actions.githubusercontent.com:sub"])
+    assert subjects == {f"{prefix}:ref:refs/heads/main", f"{prefix}:environment:production"}
+
+
 def test_oidc_provider_is_optional():
     assert synth().find_resources("Custom::AWSCDKOpenIdConnectProvider")
     assert not synth(create_oidc_provider="false").find_resources("Custom::AWSCDKOpenIdConnectProvider")

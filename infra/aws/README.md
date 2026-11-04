@@ -40,6 +40,9 @@ Data safety: Postgres and every docker volume live on a **separate 20 GB encrypt
 if the stack is deleted, never deleted with the instance, daily snapshots kept 7). The stack has termination protection on, and the
 instance's user data is only a small bootstrap, so editing `deploy.sh` or `compose.site.yml` never changes the instance.
 
+- `github_sub_prefix` (default `repo:<github_repo>`): the OIDC subject prefix the two roles trust. `repolace/repolace` uses GitHub's immutable subjects, so `cdk.json` sets `repo:repolace@319966794/repolace@1343131202`
+  (see `gh api repos/repolace/repolace/actions/oidc/customization/sub`). A role that trusts the wrong prefix fails with "Not authorized to perform sts:AssumeRoleWithWebIdentity".
+
 The stack is environment-agnostic, so `cdk synth` needs no credentials:
 
 ```
