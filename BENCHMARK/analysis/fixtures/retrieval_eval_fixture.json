@@ -1,0 +1,3223 @@
+{
+ "strategies": [
+  "truncate",
+  "head_tail",
+  "windows",
+  "signature_docstring"
+ ],
+ "query_strategies": [
+  "truncate",
+  "head_tail"
+ ],
+ "plans": [
+  {
+   "repo": "mwaskom/seaborn",
+   "instances": 2,
+   "first_index_chunks": 2500,
+   "skip_reason": null
+  },
+  {
+   "repo": "pallets/flask",
+   "instances": 1,
+   "first_index_chunks": 1500,
+   "skip_reason": null
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "instances": 3,
+   "first_index_chunks": 3500,
+   "skip_reason": null
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "instances": 6,
+   "first_index_chunks": 6500,
+   "skip_reason": null
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "instances": 6,
+   "first_index_chunks": 6500,
+   "skip_reason": null
+  }
+ ],
+ "results": [
+  {
+   "repo": "mwaskom/seaborn",
+   "strategy": "truncate",
+   "query_strategy": "truncate",
+   "instance_id": "mwaskom__seaborn-3069",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 1.0
+    },
+    "file_rr": 0.08333333333333333,
+    "chunk_rr": 0.08333333333333333,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 470
+  },
+  {
+   "repo": "mwaskom/seaborn",
+   "strategy": "truncate",
+   "query_strategy": "head_tail",
+   "instance_id": "mwaskom__seaborn-3069",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.05263157894736842,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 414
+  },
+  {
+   "repo": "mwaskom/seaborn",
+   "strategy": "head_tail",
+   "query_strategy": "truncate",
+   "instance_id": "mwaskom__seaborn-3069",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 427
+  },
+  {
+   "repo": "mwaskom/seaborn",
+   "strategy": "head_tail",
+   "query_strategy": "head_tail",
+   "instance_id": "mwaskom__seaborn-3069",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 0.25,
+    "chunk_rr": 0.2,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 470
+  },
+  {
+   "repo": "mwaskom/seaborn",
+   "strategy": "windows",
+   "query_strategy": "truncate",
+   "instance_id": "mwaskom__seaborn-3069",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 467
+  },
+  {
+   "repo": "mwaskom/seaborn",
+   "strategy": "windows",
+   "query_strategy": "head_tail",
+   "instance_id": "mwaskom__seaborn-3069",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 457
+  },
+  {
+   "repo": "mwaskom/seaborn",
+   "strategy": "signature_docstring",
+   "query_strategy": "truncate",
+   "instance_id": "mwaskom__seaborn-3069",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.08333333333333333,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 427
+  },
+  {
+   "repo": "mwaskom/seaborn",
+   "strategy": "signature_docstring",
+   "query_strategy": "head_tail",
+   "instance_id": "mwaskom__seaborn-3069",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 404
+  },
+  {
+   "repo": "mwaskom/seaborn",
+   "strategy": "truncate",
+   "query_strategy": "truncate",
+   "instance_id": "mwaskom__seaborn-3187",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.5,
+     "10": 0.5,
+     "20": 0.5
+    },
+    "file_rr": 0.25,
+    "chunk_rr": 0.25,
+    "unreachable_hunks": 1
+   },
+   "chunks_written": 470
+  },
+  {
+   "repo": "mwaskom/seaborn",
+   "strategy": "truncate",
+   "query_strategy": "head_tail",
+   "instance_id": "mwaskom__seaborn-3187",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.5,
+     "10": 0.5,
+     "20": 0.5
+    },
+    "file_rr": 0.25,
+    "chunk_rr": 0.25,
+    "unreachable_hunks": 1
+   },
+   "chunks_written": 413
+  },
+  {
+   "repo": "mwaskom/seaborn",
+   "strategy": "head_tail",
+   "query_strategy": "truncate",
+   "instance_id": "mwaskom__seaborn-3187",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 1
+   },
+   "chunks_written": 468
+  },
+  {
+   "repo": "mwaskom/seaborn",
+   "strategy": "head_tail",
+   "query_strategy": "head_tail",
+   "instance_id": "mwaskom__seaborn-3187",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 1
+   },
+   "chunks_written": 478
+  },
+  {
+   "repo": "mwaskom/seaborn",
+   "strategy": "windows",
+   "query_strategy": "truncate",
+   "instance_id": "mwaskom__seaborn-3187",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.5,
+     "10": 0.5,
+     "20": 0.5
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 1
+   },
+   "chunks_written": 439
+  },
+  {
+   "repo": "mwaskom/seaborn",
+   "strategy": "windows",
+   "query_strategy": "head_tail",
+   "instance_id": "mwaskom__seaborn-3187",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 1
+   },
+   "chunks_written": 437
+  },
+  {
+   "repo": "mwaskom/seaborn",
+   "strategy": "signature_docstring",
+   "query_strategy": "truncate",
+   "instance_id": "mwaskom__seaborn-3187",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.5,
+     "10": 0.5,
+     "20": 0.5
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 1
+   },
+   "chunks_written": 411
+  },
+  {
+   "repo": "mwaskom/seaborn",
+   "strategy": "signature_docstring",
+   "query_strategy": "head_tail",
+   "instance_id": "mwaskom__seaborn-3187",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.06666666666666667,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 1
+   },
+   "chunks_written": 469
+  },
+  {
+   "repo": "pallets/flask",
+   "strategy": "truncate",
+   "query_strategy": "truncate",
+   "instance_id": "pallets__flask-5014",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 471
+  },
+  {
+   "repo": "pallets/flask",
+   "strategy": "truncate",
+   "query_strategy": "head_tail",
+   "instance_id": "pallets__flask-5014",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.3333333333333333,
+     "10": 0.3333333333333333,
+     "20": 0.3333333333333333
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 402
+  },
+  {
+   "repo": "pallets/flask",
+   "strategy": "head_tail",
+   "query_strategy": "truncate",
+   "instance_id": "pallets__flask-5014",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.3333333333333333,
+     "20": 0.3333333333333333
+    },
+    "file_rr": 0.125,
+    "chunk_rr": 0.125,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 401
+  },
+  {
+   "repo": "pallets/flask",
+   "strategy": "head_tail",
+   "query_strategy": "head_tail",
+   "instance_id": "pallets__flask-5014",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.6666666666666666,
+     "10": 0.6666666666666666,
+     "20": 1.0
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 418
+  },
+  {
+   "repo": "pallets/flask",
+   "strategy": "windows",
+   "query_strategy": "truncate",
+   "instance_id": "pallets__flask-5014",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.6666666666666666,
+     "20": 0.6666666666666666
+    },
+    "file_rr": 0.25,
+    "chunk_rr": 0.16666666666666666,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 408
+  },
+  {
+   "repo": "pallets/flask",
+   "strategy": "windows",
+   "query_strategy": "head_tail",
+   "instance_id": "pallets__flask-5014",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.6666666666666666,
+     "10": 0.6666666666666666,
+     "20": 0.6666666666666666
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 444
+  },
+  {
+   "repo": "pallets/flask",
+   "strategy": "signature_docstring",
+   "query_strategy": "truncate",
+   "instance_id": "pallets__flask-5014",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.6666666666666666,
+     "10": 0.6666666666666666,
+     "20": 0.6666666666666666
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 402
+  },
+  {
+   "repo": "pallets/flask",
+   "strategy": "signature_docstring",
+   "query_strategy": "head_tail",
+   "instance_id": "pallets__flask-5014",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.6666666666666666,
+     "10": 0.6666666666666666,
+     "20": 0.6666666666666666
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 409
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "truncate",
+   "query_strategy": "truncate",
+   "instance_id": "pylint-dev__pylint-4551",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 407
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "truncate",
+   "query_strategy": "head_tail",
+   "instance_id": "pylint-dev__pylint-4551",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.3333333333333333,
+     "20": 0.3333333333333333
+    },
+    "file_rr": 0.1111111111111111,
+    "chunk_rr": 0.1111111111111111,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 423
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "head_tail",
+   "query_strategy": "truncate",
+   "instance_id": "pylint-dev__pylint-4551",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 401
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "head_tail",
+   "query_strategy": "head_tail",
+   "instance_id": "pylint-dev__pylint-4551",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 422
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "windows",
+   "query_strategy": "truncate",
+   "instance_id": "pylint-dev__pylint-4551",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.3333333333333333,
+     "10": 0.3333333333333333,
+     "20": 0.3333333333333333
+    },
+    "file_rr": 0.25,
+    "chunk_rr": 0.2,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 457
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "windows",
+   "query_strategy": "head_tail",
+   "instance_id": "pylint-dev__pylint-4551",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.3333333333333333,
+     "10": 0.3333333333333333,
+     "20": 0.3333333333333333
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 406
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "signature_docstring",
+   "query_strategy": "truncate",
+   "instance_id": "pylint-dev__pylint-4551",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.07692307692307693,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 431
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "signature_docstring",
+   "query_strategy": "head_tail",
+   "instance_id": "pylint-dev__pylint-4551",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.07692307692307693,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 439
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "truncate",
+   "query_strategy": "truncate",
+   "instance_id": "pylint-dev__pylint-4604",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.5,
+     "10": 0.5,
+     "20": 0.5
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 414
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "truncate",
+   "query_strategy": "head_tail",
+   "instance_id": "pylint-dev__pylint-4604",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.5,
+     "10": 0.5,
+     "20": 0.5
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 400
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "head_tail",
+   "query_strategy": "truncate",
+   "instance_id": "pylint-dev__pylint-4604",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.5,
+     "10": 0.5,
+     "20": 0.5
+    },
+    "file_rr": 0.25,
+    "chunk_rr": 0.25,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 419
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "head_tail",
+   "query_strategy": "head_tail",
+   "instance_id": "pylint-dev__pylint-4604",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.5,
+     "20": 0.5
+    },
+    "file_rr": 0.1111111111111111,
+    "chunk_rr": 0.1111111111111111,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 435
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "windows",
+   "query_strategy": "truncate",
+   "instance_id": "pylint-dev__pylint-4604",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 430
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "windows",
+   "query_strategy": "head_tail",
+   "instance_id": "pylint-dev__pylint-4604",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 425
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "signature_docstring",
+   "query_strategy": "truncate",
+   "instance_id": "pylint-dev__pylint-4604",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 468
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "signature_docstring",
+   "query_strategy": "head_tail",
+   "instance_id": "pylint-dev__pylint-4604",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 420
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "truncate",
+   "query_strategy": "truncate",
+   "instance_id": "pylint-dev__pylint-4970",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 415
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "truncate",
+   "query_strategy": "head_tail",
+   "instance_id": "pylint-dev__pylint-4970",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 451
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "head_tail",
+   "query_strategy": "truncate",
+   "instance_id": "pylint-dev__pylint-4970",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 432
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "head_tail",
+   "query_strategy": "head_tail",
+   "instance_id": "pylint-dev__pylint-4970",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 422
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "windows",
+   "query_strategy": "truncate",
+   "instance_id": "pylint-dev__pylint-4970",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 458
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "windows",
+   "query_strategy": "head_tail",
+   "instance_id": "pylint-dev__pylint-4970",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 0.14285714285714285,
+    "chunk_rr": 0.14285714285714285,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 416
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "signature_docstring",
+   "query_strategy": "truncate",
+   "instance_id": "pylint-dev__pylint-4970",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 465
+  },
+  {
+   "repo": "pylint-dev/pylint",
+   "strategy": "signature_docstring",
+   "query_strategy": "head_tail",
+   "instance_id": "pylint-dev__pylint-4970",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 0.16666666666666666,
+    "chunk_rr": 0.16666666666666666,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 434
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "truncate",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-5631",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.3333333333333333,
+     "10": 0.3333333333333333,
+     "20": 0.3333333333333333
+    },
+    "file_rr": 0.3333333333333333,
+    "chunk_rr": 0.3333333333333333,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 437
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "truncate",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-5631",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.3333333333333333,
+     "10": 0.6666666666666666,
+     "20": 0.6666666666666666
+    },
+    "file_rr": 0.25,
+    "chunk_rr": 0.2,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 475
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "head_tail",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-5631",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.3333333333333333,
+     "10": 0.3333333333333333,
+     "20": 0.3333333333333333
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 0.5,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 425
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "head_tail",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-5631",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.6666666666666666,
+     "10": 0.6666666666666666,
+     "20": 0.6666666666666666
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 0.5,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 408
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "windows",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-5631",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.3333333333333333,
+     "10": 0.3333333333333333,
+     "20": 0.3333333333333333
+    },
+    "file_rr": 0.3333333333333333,
+    "chunk_rr": 0.3333333333333333,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 475
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "windows",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-5631",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 461
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "signature_docstring",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-5631",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 452
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "signature_docstring",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-5631",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.6666666666666666,
+     "10": 0.6666666666666666,
+     "20": 0.6666666666666666
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 457
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "truncate",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-6202",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 477
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "truncate",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-6202",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 402
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "head_tail",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-6202",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 455
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "head_tail",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-6202",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 411
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "windows",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-6202",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 474
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "windows",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-6202",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 0.3333333333333333,
+    "chunk_rr": 0.3333333333333333,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 448
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "signature_docstring",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-6202",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 479
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "signature_docstring",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-6202",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 477
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "truncate",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-7236",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": null,
+     "10": null,
+     "20": null
+    },
+    "file_rr": 0.0,
+    "chunk_rr": null,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 443
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "truncate",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-7236",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": null,
+     "10": null,
+     "20": null
+    },
+    "file_rr": 0.0,
+    "chunk_rr": null,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 438
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "head_tail",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-7236",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": null,
+     "10": null,
+     "20": null
+    },
+    "file_rr": 0.09090909090909091,
+    "chunk_rr": null,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 430
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "head_tail",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-7236",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": null,
+     "10": null,
+     "20": null
+    },
+    "file_rr": 1.0,
+    "chunk_rr": null,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 453
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "windows",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-7236",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": null,
+     "10": null,
+     "20": null
+    },
+    "file_rr": 0.0,
+    "chunk_rr": null,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 450
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "windows",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-7236",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": null,
+     "10": null,
+     "20": null
+    },
+    "file_rr": 0.0,
+    "chunk_rr": null,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 456
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "signature_docstring",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-7236",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": null,
+     "10": null,
+     "20": null
+    },
+    "file_rr": 1.0,
+    "chunk_rr": null,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 417
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "signature_docstring",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-7236",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": null,
+     "10": null,
+     "20": null
+    },
+    "file_rr": 0.0,
+    "chunk_rr": null,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 439
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "truncate",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-7432",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 450
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "truncate",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-7432",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 461
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "head_tail",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-7432",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.07692307692307693,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 466
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "head_tail",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-7432",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.058823529411764705,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 420
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "windows",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-7432",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 0.2,
+    "chunk_rr": 0.2,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 454
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "windows",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-7432",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 424
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "signature_docstring",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-7432",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.06666666666666667,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 407
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "signature_docstring",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-7432",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 441
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "truncate",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-7571",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.3333333333333333,
+     "10": 0.3333333333333333,
+     "20": 0.3333333333333333
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 0.5,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 401
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "truncate",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-7571",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 437
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "head_tail",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-7571",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.3333333333333333,
+     "10": 0.3333333333333333,
+     "20": 0.3333333333333333
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 464
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "head_tail",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-7571",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.3333333333333333,
+     "10": 0.3333333333333333,
+     "20": 0.3333333333333333
+    },
+    "file_rr": 0.3333333333333333,
+    "chunk_rr": 0.3333333333333333,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 480
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "windows",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-7571",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 450
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "windows",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-7571",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 471
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "signature_docstring",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-7571",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.6666666666666666,
+     "10": 0.6666666666666666,
+     "20": 0.6666666666666666
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 410
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "signature_docstring",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-7571",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 451
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "truncate",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-7982",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.05263157894736842,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 456
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "truncate",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-7982",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 0.3333333333333333,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 435
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "head_tail",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-7982",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.1,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 407
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "head_tail",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-7982",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.07142857142857142,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 468
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "windows",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-7982",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 0.14285714285714285,
+    "chunk_rr": 0.14285714285714285,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 412
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "windows",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-7982",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 0.5,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 441
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "signature_docstring",
+   "query_strategy": "truncate",
+   "instance_id": "pytest-dev__pytest-7982",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 408
+  },
+  {
+   "repo": "pytest-dev/pytest",
+   "strategy": "signature_docstring",
+   "query_strategy": "head_tail",
+   "instance_id": "pytest-dev__pytest-7982",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 469
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "truncate",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-7462",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 465
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "truncate",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-7462",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 471
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "head_tail",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-7462",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 428
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "head_tail",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-7462",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 420
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "windows",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-7462",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 441
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "windows",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-7462",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 456
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "signature_docstring",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-7462",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 409
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "signature_docstring",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-7462",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 420
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "truncate",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-7590",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 0.3333333333333333,
+    "chunk_rr": 0.3333333333333333,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 404
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "truncate",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-7590",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 413
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "head_tail",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-7590",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 403
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "head_tail",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-7590",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 418
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "windows",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-7590",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 404
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "windows",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-7590",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 405
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "signature_docstring",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-7590",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 427
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "signature_docstring",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-7590",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 419
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "truncate",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-9230",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 0.16666666666666666,
+    "chunk_rr": 0.16666666666666666,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 422
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "truncate",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-9230",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 467
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "head_tail",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-9230",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 413
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "head_tail",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-9230",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.05,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 471
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "windows",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-9230",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 408
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "windows",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-9230",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 414
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "signature_docstring",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-9230",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 436
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "signature_docstring",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-9230",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 400
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "truncate",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-9320",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.06666666666666667,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 404
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "truncate",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-9320",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.1,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 465
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "head_tail",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-9320",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 474
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "head_tail",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-9320",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 433
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "windows",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-9320",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.5,
+     "10": 0.5,
+     "20": 0.5
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 0.5,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 477
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "windows",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-9320",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 400
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "signature_docstring",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-9320",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 429
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "signature_docstring",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-9320",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.5,
+     "10": 0.5,
+     "20": 0.5
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 0.5,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 454
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "truncate",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-9367",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 424
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "truncate",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-9367",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.1111111111111111,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 448
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "head_tail",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-9367",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 466
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "head_tail",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-9367",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 429
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "windows",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-9367",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 0.5,
+    "chunk_rr": 0.5,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 445
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "windows",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-9367",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 0.25,
+    "chunk_rr": 0.25,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 446
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "signature_docstring",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-9367",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 410
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "signature_docstring",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-9367",
+   "metrics": {
+    "file_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "chunk_recall": {
+     "5": 0.0,
+     "10": 0.0,
+     "20": 0.0
+    },
+    "file_rr": 0.0,
+    "chunk_rr": 0.0,
+    "unreachable_hunks": 0
+   },
+   "chunks_written": 424
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "truncate",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-9602",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.6666666666666666,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 461
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "truncate",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-9602",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.6666666666666666,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 452
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "head_tail",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-9602",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.3333333333333333,
+     "10": 0.3333333333333333,
+     "20": 0.3333333333333333
+    },
+    "file_rr": 0.25,
+    "chunk_rr": 0.25,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 443
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "head_tail",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-9602",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.3333333333333333,
+     "10": 0.3333333333333333,
+     "20": 0.3333333333333333
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 426
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "windows",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-9602",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 459
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "windows",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-9602",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.3333333333333333,
+     "10": 0.3333333333333333,
+     "20": 0.3333333333333333
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 1.0,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 471
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "signature_docstring",
+   "query_strategy": "truncate",
+   "instance_id": "sphinx-doc__sphinx-9602",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.6666666666666666,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 1.0,
+    "chunk_rr": 0.3333333333333333,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 424
+  },
+  {
+   "repo": "sphinx-doc/sphinx",
+   "strategy": "signature_docstring",
+   "query_strategy": "head_tail",
+   "instance_id": "sphinx-doc__sphinx-9602",
+   "metrics": {
+    "file_recall": {
+     "5": 1.0,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "chunk_recall": {
+     "5": 0.6666666666666666,
+     "10": 1.0,
+     "20": 1.0
+    },
+    "file_rr": 0.3333333333333333,
+    "chunk_rr": 0.3333333333333333,
+    "unreachable_hunks": 2
+   },
+   "chunks_written": 401
+  }
+ ],
+ "skipped_instances": [],
+ "dropped_targets": [
+  [
+   "pylint-dev__pylint-4604",
+   "tests/synthetic.py",
+   "synthetic fixture"
+  ]
+ ],
+ "_synthetic": "SYNTHETIC FIXTURE: seeded random numbers, not a measurement"
+}
