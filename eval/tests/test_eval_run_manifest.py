@@ -161,3 +161,28 @@ class TestPath:
         (runs / "sonnet-1").symlink_to(outside)
         with pytest.raises(ManifestError, match="outside the tree"):
             manifest_path(runs, "sonnet-1")
+
+
+def test_rows_limit_the_planned_grid_to_those_pairs() -> None:
+    subset = manifest(rows=(("psf__requests-1001", 1), ("psf__requests-1002", 2)))
+    assert subset.planned_pairs() == {("psf__requests-1001", 1), ("psf__requests-1002", 2)}
+    assert manifest().planned_pairs() == {(i, r) for i in manifest().instance_ids for r in range(3)}
+
+
+def test_rows_round_trip_through_the_file(tmp_path: Path) -> None:
+    subset = manifest(rows=(("psf__requests-1001", 1), ("psf__requests-1002", 2)))
+    path = dump_manifest(subset, tmp_path)
+    assert json.loads(path.read_text())["rows"] == ["psf__requests-1001#1", "psf__requests-1002#2"]
+    assert load_manifest(path) == subset
+    assert "rows" not in json.loads(dump_manifest(manifest(), tmp_path / "other").read_text())
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [[], "psf__requests-1001#1", ["psf__requests-1001"], ["psf__requests-1001#x"], ["psf__requests-9999#0"],
+     ["psf__requests-1001#3"], ["psf__requests-1001#1", "psf__requests-1001#1"]],
+)
+def test_malformed_rows_are_refused(tmp_path: Path, rows) -> None:
+    path = write(tmp_path, document(rows=rows))
+    with pytest.raises(ManifestError):
+        load_manifest(path)

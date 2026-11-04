@@ -20,6 +20,14 @@ Keys, all required, no others::
     instance_ids        list  distinct, valid instance ids
     agent               str   "llm", "gold" or "stub"
 
+One key is optional::
+
+    rows                list  "<instance_id>#<run_index>" strings: a run that planned only these
+                              pairs (a re-run of rows that failed for a reason outside the agent)
+                              instead of the whole `instance_ids x range(runs_per_instance)` grid.
+                              Absent means the whole grid. Every row's instance must be in
+                              `instance_ids` and its run index below `runs_per_instance`.
+
 Unknown and missing keys are errors, not defaults: a manifest that silently stopped
 applying (a typo'd `instance_ids`) would turn the planned grid into the observed one
 and the anchoring into theatre.
@@ -49,6 +57,7 @@ _KEYS = frozenset({
     "eval_run_id", "created_at", "git_sha", "model", "stage_models", "limits",
     "runs_per_instance", "instance_ids", "agent",
 })
+_OPTIONAL_KEYS = frozenset({"rows"})
 #: A run id is a directory name and appears in a file name; hold it to the same
 #: shape an instance id has, minus nothing a shell would treat specially.
 _RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
@@ -70,9 +79,13 @@ class RunManifest:
     runs_per_instance: int
     instance_ids: tuple[str, ...]
     agent: str
+    #: Set only for a run that planned a subset of the grid; None means the whole grid.
+    rows: tuple[tuple[str, int], ...] | None = None
 
     def planned_pairs(self) -> frozenset[tuple[str, int]]:
         """The expected grid: every `(instance_id, run_index)` the run was meant to produce."""
+        if self.rows is not None:
+            return frozenset(self.rows)
         return frozenset((i, r) for i in self.instance_ids for r in range(self.runs_per_instance))
 
 
@@ -102,9 +115,11 @@ def _string_map(value: object, name: str, where: str) -> dict[str, str]:
 def _from_mapping(data: object, where: str) -> RunManifest:
     if not isinstance(data, dict):
         raise ManifestError(f"{where}: top level must be a JSON object, got {type(data).__name__}")
-    unknown = sorted(set(data) - _KEYS)
+    unknown = sorted(set(data) - _KEYS - _OPTIONAL_KEYS)
     if unknown:
-        raise ManifestError(f"{where}: unknown key(s) {', '.join(unknown)}; known keys are {', '.join(sorted(_KEYS))}")
+        raise ManifestError(
+            f"{where}: unknown key(s) {', '.join(unknown)}; known keys are {', '.join(sorted(_KEYS | _OPTIONAL_KEYS))}"
+        )
     missing = sorted(_KEYS - set(data))
     if missing:
         raise ManifestError(f"{where}: missing key(s) {', '.join(missing)}")
@@ -154,11 +169,31 @@ def _from_mapping(data: object, where: str) -> RunManifest:
     if agent not in AGENTS:
         raise ManifestError(f"{where}: agent must be one of {', '.join(AGENTS)}, got {agent!r}")
 
+    rows = _parse_rows(data["rows"], ids, runs, where) if "rows" in data else None
+
     return RunManifest(
         eval_run_id=run_id, created_at=created, git_sha=data["git_sha"], model=data["model"],
         stage_models=_string_map(data["stage_models"], "stage_models", where), limits=dict(limits),
-        runs_per_instance=runs, instance_ids=tuple(ids), agent=agent,
+        runs_per_instance=runs, instance_ids=tuple(ids), agent=agent, rows=rows,
     )
+
+
+def _parse_rows(value: object, ids: list[str], runs: int, where: str) -> tuple[tuple[str, int], ...]:
+    if not isinstance(value, list) or not value or not all(isinstance(item, str) for item in value):
+        raise ManifestError(f"{where}: rows must be a non-empty list of '<instance_id>#<run_index>' strings")
+    parsed: list[tuple[str, int]] = []
+    for item in value:
+        instance_id, separator, index = item.rpartition("#")
+        if not separator or not index.isdigit():
+            raise ManifestError(f"{where}: row {item!r} is not '<instance_id>#<run_index>'")
+        if instance_id not in ids:
+            raise ManifestError(f"{where}: row {item!r} names an instance that is not in instance_ids")
+        if int(index) >= runs:
+            raise ManifestError(f"{where}: row {item!r} has a run index outside range(runs_per_instance={runs})")
+        parsed.append((instance_id, int(index)))
+    if len(set(parsed)) != len(parsed):
+        raise ManifestError(f"{where}: rows repeats a pair; a repeated row would double its weight")
+    return tuple(sorted(parsed))
 
 
 def load_manifest(path: Path) -> RunManifest:
@@ -186,12 +221,15 @@ def load_manifest(path: Path) -> RunManifest:
 
 
 def _document(manifest: RunManifest) -> dict[str, Any]:
-    return {
+    document = {
         "eval_run_id": manifest.eval_run_id, "created_at": manifest.created_at, "git_sha": manifest.git_sha,
         "model": manifest.model, "stage_models": dict(manifest.stage_models), "limits": dict(manifest.limits),
         "runs_per_instance": manifest.runs_per_instance, "instance_ids": list(manifest.instance_ids),
         "agent": manifest.agent,
     }
+    if manifest.rows is not None:
+        document["rows"] = [f"{instance_id}#{index}" for instance_id, index in manifest.rows]
+    return document
 
 
 def dump_manifest(manifest: RunManifest, runs_dir: Path) -> Path:

@@ -206,13 +206,13 @@ def code_limits() -> dict[str, object]:
     from repolace_agents.contracts import AgentLimits
     from repolace_gateway.budget import (
         DEFAULT_MAX_CALLS,
-        DEFAULT_MAX_USD,
         DEFAULT_MAX_WALL_SECONDS,
+        default_max_usd,
     )
 
     agent = AgentLimits.from_env()
     return {
-        "task_cost_cap_usd": float(DEFAULT_MAX_USD),
+        "task_cost_cap_usd": float(default_max_usd()),
         "task_call_cap": DEFAULT_MAX_CALLS,
         "budget_wall_clock_seconds": float(DEFAULT_MAX_WALL_SECONDS),
         "max_steps_per_attempt": agent.max_steps_per_attempt,
@@ -228,6 +228,7 @@ def build_manifest(
     runs: int,
     inputs: ManifestInputs,
     created_at: datetime,
+    rows: Sequence[tuple[str, int]] | None = None,
 ) -> RunManifest:
     if inputs.agent not in AGENTS:
         raise ManifestError(f"--agent must be one of {', '.join(AGENTS)}, got {inputs.agent!r}")
@@ -245,6 +246,7 @@ def build_manifest(
         runs_per_instance=runs,
         instance_ids=tuple(sorted(set(instance_ids))),
         agent=inputs.agent,
+        rows=tuple(sorted(set(rows))) if rows is not None else None,
     )
 
 
@@ -333,6 +335,7 @@ async def enqueue_tasks(
     runs: int,
     manifest: ManifestInputs,
     open_pr_on_failure: bool = False,
+    rows: Sequence[tuple[str, int]] | None = None,
 ) -> EnqueueResult:
     try:
         check_eval_run_id(eval_run_id)
@@ -342,13 +345,19 @@ async def enqueue_tasks(
         raise EnqueueError(f"--runs must be at least 1, got {runs!r}")
 
     chosen, problems = _resolve_instances(instances_requested, instances, bench_repos)
+    if rows is not None:
+        for instance_id, run_index in rows:
+            if instance_id not in chosen:
+                problems.append(f"row {instance_id}#{run_index}: instance is not among the selected instances")
+            elif not 0 <= run_index < runs:
+                problems.append(f"row {instance_id}#{run_index}: run index outside range(--runs={runs})")
 
     repo_rows: dict[str, RegisteredRepo] = {}
     if not problems:
         wanted = sorted({bench_repos[instance_id] for instance_id in chosen})
         async with factory() as session:
-            rows = (await session.execute(select(RegisteredRepo).where(RegisteredRepo.full_name.in_(wanted)))).scalars()
-            by_full_name = {row.full_name: row for row in rows}
+            found = (await session.execute(select(RegisteredRepo).where(RegisteredRepo.full_name.in_(wanted)))).scalars()
+            by_full_name = {row.full_name: row for row in found}
         for instance_id in chosen:
             full_name = bench_repos[instance_id]
             row = by_full_name.get(full_name)
@@ -373,6 +382,7 @@ async def enqueue_tasks(
         runs=runs,
         inputs=manifest,
         created_at=manifest.clock(),
+        rows=rows,
     )
     manifest_created = ensure_manifest(manifest.runs_dir, document)
 
@@ -395,6 +405,7 @@ async def enqueue_tasks(
         }
         for run_index in range(runs)
         for instance_id in chosen
+        if rows is None or (instance_id, run_index) in set(rows)
     ]
     try:
         async with factory() as session:
@@ -421,6 +432,18 @@ async def enqueue_tasks(
     return EnqueueResult(created=created, already_present=len(values) - created, manifest_created=manifest_created)
 
 
+def _parse_row_pairs(text: str) -> list[tuple[str, int]]:
+    pairs: list[tuple[str, int]] = []
+    for item in (part.strip() for part in text.split(",")):
+        instance_id, separator, index = item.rpartition("#")
+        if not separator or not instance_id or not index.isdigit():
+            raise ValueError(f"--rows entry {item!r} is not '<instance_id>#<run_index>'")
+        pairs.append((instance_id, int(index)))
+    if len(set(pairs)) != len(pairs):
+        raise ValueError("--rows repeats a pair")
+    return pairs
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="repolace-eval enqueue", description="Enqueue benchmark tasks for one run.", allow_abbrev=False
@@ -428,6 +451,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--eval-run-id", required=True)
     parser.add_argument("--instances", default="all", help="comma-separated instance ids, or 'all'")
     parser.add_argument("--runs", type=int, default=3, help="runs per instance (run_index 0..N-1)")
+    parser.add_argument(
+        "--rows",
+        help="comma-separated '<instance_id>#<run_index>' pairs: plan only these rows (a re-run of rows that "
+        "failed outside the agent). Selects their instances; --runs must exceed the largest run index",
+    )
     parser.add_argument("--open-pr-on-failure", action="store_true")
     parser.add_argument("--agent", choices=AGENTS, default="llm", help="recorded in the run manifest; `run` must match")
     parser.add_argument("--model", help="headline model id, required for --agent llm; recorded in the manifest, `run` must match")
@@ -462,6 +490,18 @@ def main(
     except (ValueError, InstanceError, BenchRepoError) as exc:
         print(f"repolace-eval enqueue: {exc}", file=sys.stderr)
         return 2
+    rows = None
+    if args.rows:
+        try:
+            rows = _parse_row_pairs(args.rows)
+        except ValueError as exc:
+            print(f"repolace-eval enqueue: {exc}", file=sys.stderr)
+            return 2
+        if args.instances != "all":
+            print("repolace-eval enqueue: --rows selects the instances itself; drop --instances", file=sys.stderr)
+            return 2
+        args.instances = ",".join(sorted({instance_id for instance_id, _ in rows}))
+        args.runs = max(index for _, index in rows) + 1
     # The file-only checks, so a typo is reported without opening the database.
     # `enqueue_tasks` repeats them: it is also called without this entry point.
     _chosen, problems = _resolve_instances(args.instances, instances, bench_repos)
@@ -484,6 +524,7 @@ def main(
                 runs=args.runs,
                 manifest=inputs,
                 open_pr_on_failure=args.open_pr_on_failure,
+                rows=rows,
             )
 
     try:

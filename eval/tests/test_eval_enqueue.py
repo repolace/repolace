@@ -111,6 +111,27 @@ class TestRows:
         assert a0.outcome is None and a0.started_at is None and a0.completed_at is None
         assert a0.retry_count == 0
 
+    async def test_rows_enqueue_only_those_pairs_and_the_manifest_plans_only_them(self, db_session, db_session_factory):
+        await self.seed_repos(db_session, "a", "b")
+
+        result = await self.enqueue(db_session_factory, runs=3, rows=[("a", 1), ("b", 2)])
+
+        assert (result.created, result.already_present) == (2, 0)
+        assert [(r.instance_id, r.run_index) for r in await self.all_tasks(db_session)] == [("a", 1), ("b", 2)]
+        assert read_manifest(self.inputs.runs_dir / "run-1" / "manifest.json")["rows"] == ["a#1", "b#2"]
+
+    async def test_a_row_outside_the_selected_instances_or_runs_is_refused_with_nothing_inserted(
+        self, db_session, db_session_factory
+    ):
+        await self.seed_repos(db_session, "a")
+
+        with pytest.raises(EnqueueError, match="not among the selected instances"):
+            await self.enqueue(db_session_factory, ids=("a",), instances_requested="a", runs=3, rows=[("b", 0)])
+        with pytest.raises(EnqueueError, match="run index outside"):
+            await self.enqueue(db_session_factory, ids=("a",), instances_requested="a", runs=3, rows=[("a", 3)])
+
+        assert await self.all_tasks(db_session) == []
+
     async def test_open_pr_on_failure_defaults_off(self, db_session, db_session_factory):
         await self.seed_repos(db_session, "a")
 
