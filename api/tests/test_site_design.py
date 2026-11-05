@@ -109,7 +109,7 @@ async def test_site_assets_are_versioned_so_a_deploy_is_not_hidden_by_browser_ca
 
 async def test_every_page_and_the_report_carry_the_favicon_and_it_is_served():
     async with client() as c:
-        for path in ("/", "/pricing", "/waitlist", "/privacy", "/terms", "/benchmark/"):
+        for path in ("/", "/pricing", "/waitlist", "/privacy", "/terms", "/benchmark/", "/retrieval/"):
             html = (await c.get(path)).text
             assert 'rel="icon" type="image/svg+xml"' in html and 'rel="apple-touch-icon"' in html, path
         icon = await c.get("/assets/favicon.svg")
@@ -137,3 +137,21 @@ def test_logo_files_are_outlined_and_self_contained():
         assert "http://" not in svg.replace("http://www.w3.org/2000/svg", ""), name
     assert 'fill="currentColor"' in (static / "repolace-wordmark.svg").read_text()
     assert 'fill="#2a78d6"' in (static / "favicon.svg").read_text()
+
+
+def test_retrieval_report_takes_its_tokens_from_the_benchmark_stylesheet():
+    """The retrieval page imports the report's stylesheet, so the shared tokens cannot drift; it may add tokens but never redefine them."""
+    css = (SITE / "retrieval_site" / "style.css").read_text()
+    assert '@import url("/benchmark/style.css");' in css
+    own = set(re.findall(r"(--[\w-]+):", css))
+    assert not own & set(SHARED), sorted(own & set(SHARED))
+    for name in ("--s-baseline", "--s-e1", "--s-r2", "--s-m1"):
+        assert name in declarations(REPORT_CSS, "light") and f"var({name})" in css
+
+
+async def test_retrieval_report_shares_the_top_bar_theme_and_logo_links():
+    async with client() as c:
+        html = (await c.get("/retrieval/")).text
+    assert 'class="topbar"' in html and 'id="theme"' in html
+    for link in ('href="/"', 'href="/benchmark/"', "/benchmark/js/theme-init.js"):
+        assert link in html, link

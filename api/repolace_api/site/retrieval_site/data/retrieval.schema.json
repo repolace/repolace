@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "repolace retrieval report",
+  "description": "Written by BENCHMARK/analysis/retrieval_stats.py. Fractions are 0..1; '_pp' fields are percentage points; 'ci' pairs are [lo, hi], 95% percentile bootstrap over INSTANCES. status 'awaiting' carries only the aggregate grid; status 'ready' carries every panel. 'synthetic' is true only for test output, and the page shows a banner when it is.",
+  "type": "object",
+  "required": ["status", "synthetic", "meta", "design", "truncation"],
+  "properties": {
+    "status": {"enum": ["ready", "awaiting"]},
+    "synthetic": {"type": "boolean"},
+    "meta": {"type": "object", "required": ["source", "generated_at", "seed", "bootstrap_resamples", "permutations", "instances", "interval"]},
+    "design": {
+      "type": "object",
+      "required": ["baseline", "cells", "comparisons", "primary_metric", "min_gain_pp", "preregistered"],
+      "properties": {"cells": {"type": "array", "items": {"type": "string"}}, "comparisons": {"type": "integer"}, "min_gain_pp": {"type": "number"}}
+    },
+    "truncation": {"type": "object", "required": ["max_seq_length_tokens", "share_over_budget", "source"]}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "ready"}}},
+      "then": {
+        "required": ["cells", "denominators", "comparisons", "switch_rule", "power", "distributions", "heatmap", "repos", "unreachable", "sweep_link"],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["key", "strategy", "query_strategy", "is_baseline", "metrics"],
+              "properties": {
+                "metrics": {
+                  "type": "object",
+                  "required": ["chunk_mrr", "file_mrr", "chunk_r5", "chunk_r10", "chunk_r20", "file_r5", "file_r10", "file_r20"],
+                  "additionalProperties": {"type": "object", "required": ["label", "mean", "ci", "scored", "skipped"]}
+                }
+              }
+            }
+          },
+          "denominators": {"type": "object", "required": ["instances", "cells"]},
+          "comparisons": {
+            "type": "object",
+            "required": ["chunk_mrr", "file_mrr"],
+            "additionalProperties": {
+              "type": "object",
+              "required": ["label", "rows"],
+              "properties": {"rows": {"type": "array", "items": {"type": "object", "required": ["cell", "metric", "paired", "mean_pp", "ci_pp", "sd_pp", "dz", "p", "p_holm", "wins", "losses", "ties", "meets_switch_rule", "diffs_pp"]}}}
+            }
+          },
+          "switch_rule": {"type": "object", "required": ["metric", "min_gain_pp", "comparisons", "met", "any_met", "default_stays", "largest_gain_cell", "largest_gain_pp"]},
+          "power": {"type": "object", "required": ["n", "alpha", "target_power", "median_sd_pp", "mde_pp_median_sd", "per_comparison", "curves", "basis"]},
+          "distributions": {"type": "object", "required": ["rank_bins", "cells"]},
+          "heatmap": {"type": "object", "required": ["cells", "rows"], "properties": {"rows": {"type": "array", "items": {"type": "object", "required": ["instance", "repo", "chunk_rr", "file_rr"]}}}},
+          "repos": {"type": "object", "required": ["repos", "description_only", "top_two", "top_two_instances", "total_instances", "note"]},
+          "unreachable": {"type": "object", "required": ["total_hunks", "instances_with_any", "instances", "per_instance", "meaning"]},
+          "sweep_link": {"type": "object", "required": ["run", "exploratory", "available"]}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "awaiting"}}},
+      "then": {
+        "required": ["awaiting", "aggregate"],
+        "properties": {
+          "awaiting": {"type": "object", "required": ["reason"]},
+          "aggregate": {"type": "object", "required": ["plan", "instances", "cells", "deltas"], "properties": {"cells": {"type": "array", "items": {"type": "object", "required": ["key", "strategy", "query_strategy", "file_scored", "chunk_scored", "instances", "chunk_mrr", "file_mrr"]}}}}
+        }
+      }
+    }
+  ]
+}

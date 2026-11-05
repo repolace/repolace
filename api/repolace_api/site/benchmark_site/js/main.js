@@ -205,7 +205,8 @@ function footer(D) {
     `<p>Generated ${esc(m.generated_at.slice(0, 16).replace("T", " "))} UTC from report commit <code>${esc(m.report_commit || "")}</code>. Seed ${m.seed}, ${m.bootstrap_resamples.toLocaleString("en-US")} bootstrap resamples, ${m.permutations.toLocaleString("en-US")} permutations.</p>` +
     `<p>${esc(m.rules)}</p>` +
     `<p>Fonts: Fraunces, Geist and Geist Mono under the SIL Open Font License (see <a href="fonts/LICENSE-Fraunces.txt">licences</a>). Charts: D3 7.8.5 (ISC licence), served from this site.</p>` +
-    `<p><a href="/">repolace home</a> · <a href="/pricing">Pricing</a> · <a href="/waitlist">Join the waitlist</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>`;
+    `<p>The retrieval grid behind the agent's context has its own page: <a href="/retrieval/">read the retrieval report</a>.</p>` +
+    `<p><a href="/">repolace home</a> · <a href="/retrieval/">Retrieval</a> · <a href="/pricing">Pricing</a> · <a href="/waitlist">Join the waitlist</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>`;
 }
 
 main().catch((e) => console.error(e));

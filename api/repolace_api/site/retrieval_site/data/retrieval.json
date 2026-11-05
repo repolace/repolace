@@ -1,0 +1,7977 @@
+{
+ "status": "ready",
+ "synthetic": false,
+ "meta": {
+  "source": "repolace-eval retrieval report",
+  "generated_at": "2026-11-04T14:06:32+00:00",
+  "seed": 20261104,
+  "bootstrap_resamples": 10000,
+  "permutations": 20000,
+  "instances": 18,
+  "interval": "95% percentile bootstrap over instances",
+  "ks": [
+   5,
+   10,
+   20
+  ],
+  "skipped_instances": [],
+  "dropped_targets": [],
+  "plans": [
+   {
+    "repo": "mwaskom/seaborn",
+    "instances": 2,
+    "first_index_chunks": 2637,
+    "skip_reason": null
+   },
+   {
+    "repo": "pallets/flask",
+    "instances": 1,
+    "first_index_chunks": 972,
+    "skip_reason": null
+   },
+   {
+    "repo": "pylint-dev/pylint",
+    "instances": 3,
+    "first_index_chunks": 6503,
+    "skip_reason": null
+   },
+   {
+    "repo": "pytest-dev/pytest",
+    "instances": 6,
+    "first_index_chunks": 4055,
+    "skip_reason": null
+   },
+   {
+    "repo": "sphinx-doc/sphinx",
+    "instances": 6,
+    "first_index_chunks": 6462,
+    "skip_reason": null
+   }
+  ],
+  "chunks_written": 55712
+ },
+ "design": {
+  "strategies": [
+   "truncate",
+   "head_tail",
+   "windows",
+   "signature_docstring"
+  ],
+  "query_strategies": [
+   "head_tail",
+   "truncate"
+  ],
+  "baseline": "truncate / truncate",
+  "cells": [
+   "truncate / truncate",
+   "truncate / head_tail",
+   "head_tail / truncate",
+   "head_tail / head_tail",
+   "windows / truncate",
+   "windows / head_tail",
+   "signature_docstring / truncate",
+   "signature_docstring / head_tail"
+  ],
+  "comparisons": 7,
+  "primary_metric": "chunk_mrr",
+  "min_gain_pp": 10.0,
+  "preregistered": "The switch rule was written down before any number existed: a cell replaces truncate / truncate only if its paired chunk-MRR gain is at least 10 percentage points and the 95% interval over instances excludes zero."
+ },
+ "cells": [
+  {
+   "key": "truncate / truncate",
+   "strategy": "truncate",
+   "query_strategy": "truncate",
+   "is_baseline": true,
+   "metrics": {
+    "chunk_mrr": {
+     "label": "chunk MRR",
+     "mean": 0.07738095238095238,
+     "ci": [
+      0.005555555555555556,
+      0.19920634920634922
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.2370315877460972
+    },
+    "file_mrr": {
+     "label": "file MRR",
+     "mean": 0.326724763979666,
+     "ci": [
+      0.1401171023965142,
+      0.5341321713870734
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.43847306413632386
+    },
+    "chunk_r5": {
+     "label": "chunk R@5",
+     "mean": 0.08333333333333333,
+     "ci": [
+      0.0,
+      0.2222222222222222
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.2572478777137633
+    },
+    "chunk_r10": {
+     "label": "chunk R@10",
+     "mean": 0.09126984126984126,
+     "ci": [
+      0.0,
+      0.23015873015873017
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.25672883985290434
+    },
+    "chunk_r20": {
+     "label": "chunk R@20",
+     "mean": 0.14682539682539683,
+     "ci": [
+      0.015873015873015872,
+      0.3134920634920635
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.3327576060484366
+    },
+    "file_r5": {
+     "label": "file R@5",
+     "mean": 0.3888888888888889,
+     "ci": [
+      0.16666666666666666,
+      0.6111111111111112
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.5016313257045503
+    },
+    "file_r10": {
+     "label": "file R@10",
+     "mean": 0.4444444444444444,
+     "ci": [
+      0.2222222222222222,
+      0.6666666666666666
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.5113099925649136
+    },
+    "file_r20": {
+     "label": "file R@20",
+     "mean": 0.5555555555555556,
+     "ci": [
+      0.3333333333333333,
+      0.7777777777777778
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.48169092143287245
+    }
+   }
+  },
+  {
+   "key": "truncate / head_tail",
+   "strategy": "truncate",
+   "query_strategy": "head_tail",
+   "is_baseline": false,
+   "metrics": {
+    "chunk_mrr": {
+     "label": "chunk MRR",
+     "mean": 0.03668091168091168,
+     "ci": [
+      0.008547008547008548,
+      0.07407407407407407
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.07660206887372675
+    },
+    "file_mrr": {
+     "label": "file MRR",
+     "mean": 0.2212047212047212,
+     "ci": [
+      0.06908831908831908,
+      0.4060922873422872
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.3741855221112987
+    },
+    "chunk_r5": {
+     "label": "chunk R@5",
+     "mean": 0.027777777777777776,
+     "ci": [
+      0.0,
+      0.08333333333333333
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.11785113019775792
+    },
+    "chunk_r10": {
+     "label": "chunk R@10",
+     "mean": 0.07738095238095238,
+     "ci": [
+      0.0,
+      0.20238095238095238
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.23950040538101616
+    },
+    "chunk_r20": {
+     "label": "chunk R@20",
+     "mean": 0.13293650793650794,
+     "ci": [
+      0.013888888888888888,
+      0.29365079365079366
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.3221992524458181
+    },
+    "file_r5": {
+     "label": "file R@5",
+     "mean": 0.2592592592592593,
+     "ci": [
+      0.09259259259259259,
+      0.462962962962963
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.4361980055807473
+    },
+    "file_r10": {
+     "label": "file R@10",
+     "mean": 0.3148148148148148,
+     "ci": [
+      0.1111111111111111,
+      0.537037037037037
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.46402927311060715
+    },
+    "file_r20": {
+     "label": "file R@20",
+     "mean": 0.39814814814814814,
+     "ci": [
+      0.19444444444444445,
+      0.6111111111111112
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.47533575642511705
+    }
+   }
+  },
+  {
+   "key": "head_tail / truncate",
+   "strategy": "head_tail",
+   "query_strategy": "truncate",
+   "is_baseline": false,
+   "metrics": {
+    "chunk_mrr": {
+     "label": "chunk MRR",
+     "mean": 0.08055555555555555,
+     "ci": [
+      0.0,
+      0.20277777777777778
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.24079457249653874
+    },
+    "file_mrr": {
+     "label": "file MRR",
+     "mean": 0.25056707425128477,
+     "ci": [
+      0.10107002037923091,
+      0.4343281499202551
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.36763086953530194
+    },
+    "chunk_r5": {
+     "label": "chunk R@5",
+     "mean": 0.09126984126984126,
+     "ci": [
+      0.0,
+      0.2222222222222222
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.25672883985290434
+    },
+    "chunk_r10": {
+     "label": "chunk R@10",
+     "mean": 0.11904761904761904,
+     "ci": [
+      0.0,
+      0.28571428571428575
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.32224452922376484
+    },
+    "chunk_r20": {
+     "label": "chunk R@20",
+     "mean": 0.11904761904761904,
+     "ci": [
+      0.0,
+      0.28571428571428575
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.32224452922376484
+    },
+    "file_r5": {
+     "label": "file R@5",
+     "mean": 0.2962962962962963,
+     "ci": [
+      0.1111111111111111,
+      0.5
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.4557388440460214
+    },
+    "file_r10": {
+     "label": "file R@10",
+     "mean": 0.3703703703703704,
+     "ci": [
+      0.16666666666666666,
+      0.5925925925925926
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.483571799035135
+    },
+    "file_r20": {
+     "label": "file R@20",
+     "mean": 0.6111111111111112,
+     "ci": [
+      0.3888888888888889,
+      0.8055555555555556
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.4714045207910317
+    }
+   }
+  },
+  {
+   "key": "head_tail / head_tail",
+   "strategy": "head_tail",
+   "query_strategy": "head_tail",
+   "is_baseline": false,
+   "metrics": {
+    "chunk_mrr": {
+     "label": "chunk MRR",
+     "mean": 0.03869047619047619,
+     "ci": [
+      0.0,
+      0.10119047619047619
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.11975020269050808
+    },
+    "file_mrr": {
+     "label": "file MRR",
+     "mean": 0.18135439360929556,
+     "ci": [
+      0.05277596223674657,
+      0.3424686819172113
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.3236670426796936
+    },
+    "chunk_r5": {
+     "label": "chunk R@5",
+     "mean": 0.027777777777777776,
+     "ci": [
+      0.0,
+      0.08333333333333333
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.11785113019775792
+    },
+    "chunk_r10": {
+     "label": "chunk R@10",
+     "mean": 0.06349206349206349,
+     "ci": [
+      0.0,
+      0.18253968253968253
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.23612631278103752
+    },
+    "chunk_r20": {
+     "label": "chunk R@20",
+     "mean": 0.11904761904761904,
+     "ci": [
+      0.0,
+      0.28571428571428575
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.32224452922376484
+    },
+    "file_r5": {
+     "label": "file R@5",
+     "mean": 0.24074074074074073,
+     "ci": [
+      0.05555555555555555,
+      0.4444444444444444
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.4248114623029776
+    },
+    "file_r10": {
+     "label": "file R@10",
+     "mean": 0.2592592592592593,
+     "ci": [
+      0.09259259259259259,
+      0.462962962962963
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.4361980055807473
+    },
+    "file_r20": {
+     "label": "file R@20",
+     "mean": 0.48148148148148145,
+     "ci": [
+      0.2777777777777778,
+      0.6944444444444444
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.471019228923806
+    }
+   }
+  },
+  {
+   "key": "windows / truncate",
+   "strategy": "windows",
+   "query_strategy": "truncate",
+   "is_baseline": false,
+   "metrics": {
+    "chunk_mrr": {
+     "label": "chunk MRR",
+     "mean": 0.12251600977091173,
+     "ci": [
+      0.006535947712418301,
+      0.28609625668449196
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.32035164341631817
+    },
+    "file_mrr": {
+     "label": "file MRR",
+     "mean": 0.26491602533269204,
+     "ci": [
+      0.11235732824274491,
+      0.4443547578964245
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.37280290211259953
+    },
+    "chunk_r5": {
+     "label": "chunk R@5",
+     "mean": 0.06349206349206349,
+     "ci": [
+      0.0,
+      0.18253968253968253
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.23612631278103752
+    },
+    "chunk_r10": {
+     "label": "chunk R@10",
+     "mean": 0.06613756613756613,
+     "ci": [
+      0.0,
+      0.18783068783068782
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.23733148589553524
+    },
+    "chunk_r20": {
+     "label": "chunk R@20",
+     "mean": 0.19113756613756616,
+     "ci": [
+      0.03505291005291005,
+      0.3716931216931217
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.37894411614506973
+    },
+    "file_r5": {
+     "label": "file R@5",
+     "mean": 0.3148148148148148,
+     "ci": [
+      0.1111111111111111,
+      0.537037037037037
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.46402927311060715
+    },
+    "file_r10": {
+     "label": "file R@10",
+     "mean": 0.4166666666666667,
+     "ci": [
+      0.19444444444444445,
+      0.6388888888888888
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.49259218307188896
+    },
+    "file_r20": {
+     "label": "file R@20",
+     "mean": 0.5833333333333334,
+     "ci": [
+      0.3611111111111111,
+      0.8055555555555556
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.492592183071889
+    }
+   }
+  },
+  {
+   "key": "windows / head_tail",
+   "strategy": "windows",
+   "query_strategy": "head_tail",
+   "is_baseline": false,
+   "metrics": {
+    "chunk_mrr": {
+     "label": "chunk MRR",
+     "mean": 0.11746550472040668,
+     "ci": [
+      0.0030864197530864196,
+      0.2839506172839506
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.3215934610269147
+    },
+    "file_mrr": {
+     "label": "file MRR",
+     "mean": 0.24822530864197534,
+     "ci": [
+      0.0948225308641976,
+      0.42746913580246915
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.37253480605920686
+    },
+    "chunk_r5": {
+     "label": "chunk R@5",
+     "mean": 0.06349206349206349,
+     "ci": [
+      0.0,
+      0.18253968253968253
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.23612631278103752
+    },
+    "chunk_r10": {
+     "label": "chunk R@10",
+     "mean": 0.06613756613756613,
+     "ci": [
+      0.0,
+      0.18783068783068782
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.23733148589553524
+    },
+    "chunk_r20": {
+     "label": "chunk R@20",
+     "mean": 0.17724867724867727,
+     "ci": [
+      0.010582010582010581,
+      0.35449735449735453
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.3812343338793253
+    },
+    "file_r5": {
+     "label": "file R@5",
+     "mean": 0.28703703703703703,
+     "ci": [
+      0.1111111111111111,
+      0.48148148148148145
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.4346343800244076
+    },
+    "file_r10": {
+     "label": "file R@10",
+     "mean": 0.3703703703703704,
+     "ci": [
+      0.17592592592592593,
+      0.5743055555555522
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.45213927070781473
+    },
+    "file_r20": {
+     "label": "file R@20",
+     "mean": 0.48148148148148145,
+     "ci": [
+      0.2777777777777778,
+      0.6944444444444444
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.471019228923806
+    }
+   }
+  },
+  {
+   "key": "signature_docstring / truncate",
+   "strategy": "signature_docstring",
+   "query_strategy": "truncate",
+   "is_baseline": false,
+   "metrics": {
+    "chunk_mrr": {
+     "label": "chunk MRR",
+     "mean": 0.12222222222222223,
+     "ci": [
+      0.0,
+      0.2888888888888889
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.3227739248079803
+    },
+    "file_mrr": {
+     "label": "file MRR",
+     "mean": 0.2993716931216931,
+     "ci": [
+      0.13319527116402122,
+      0.4891906415343914
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.40431092400762725
+    },
+    "chunk_r5": {
+     "label": "chunk R@5",
+     "mean": 0.11904761904761904,
+     "ci": [
+      0.0,
+      0.28571428571428575
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.32224452922376484
+    },
+    "chunk_r10": {
+     "label": "chunk R@10",
+     "mean": 0.11904761904761904,
+     "ci": [
+      0.0,
+      0.28571428571428575
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.32224452922376484
+    },
+    "chunk_r20": {
+     "label": "chunk R@20",
+     "mean": 0.11904761904761904,
+     "ci": [
+      0.0,
+      0.28571428571428575
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.32224452922376484
+    },
+    "file_r5": {
+     "label": "file R@5",
+     "mean": 0.2962962962962963,
+     "ci": [
+      0.1111111111111111,
+      0.5
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.4557388440460214
+    },
+    "file_r10": {
+     "label": "file R@10",
+     "mean": 0.42592592592592593,
+     "ci": [
+      0.2222222222222222,
+      0.6388888888888888
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.46520155945815017
+    },
+    "file_r20": {
+     "label": "file R@20",
+     "mean": 0.6111111111111112,
+     "ci": [
+      0.3888888888888889,
+      0.8055555555555556
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.4714045207910317
+    }
+   }
+  },
+  {
+   "key": "signature_docstring / head_tail",
+   "strategy": "signature_docstring",
+   "query_strategy": "head_tail",
+   "is_baseline": false,
+   "metrics": {
+    "chunk_mrr": {
+     "label": "chunk MRR",
+     "mean": 0.0654320987654321,
+     "ci": [
+      0.0,
+      0.18271604938271604
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.23511269532834467
+    },
+    "file_mrr": {
+     "label": "file MRR",
+     "mean": 0.21086721920055254,
+     "ci": [
+      0.06112794612794613,
+      0.3919760101010101
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.36993126269004156
+    },
+    "chunk_r5": {
+     "label": "chunk R@5",
+     "mean": 0.027777777777777776,
+     "ci": [
+      0.0,
+      0.08333333333333333
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.11785113019775792
+    },
+    "chunk_r10": {
+     "label": "chunk R@10",
+     "mean": 0.06349206349206349,
+     "ci": [
+      0.0,
+      0.18253968253968253
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.23612631278103752
+    },
+    "chunk_r20": {
+     "label": "chunk R@20",
+     "mean": 0.11904761904761904,
+     "ci": [
+      0.0,
+      0.28571428571428575
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.32224452922376484
+    },
+    "file_r5": {
+     "label": "file R@5",
+     "mean": 0.1851851851851852,
+     "ci": [
+      0.037037037037037035,
+      0.3703703703703704
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.3830087666400944
+    },
+    "file_r10": {
+     "label": "file R@10",
+     "mean": 0.3703703703703704,
+     "ci": [
+      0.16666666666666666,
+      0.5925925925925926
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.483571799035135
+    },
+    "file_r20": {
+     "label": "file R@20",
+     "mean": 0.45370370370370366,
+     "ci": [
+      0.2314814814814815,
+      0.6759259259259259
+     ],
+     "scored": 18,
+     "skipped": 0,
+     "sd": 0.4844158113502585
+    }
+   }
+  }
+ ],
+ "denominators": {
+  "instances": 18,
+  "cells": [
+   {
+    "key": "truncate / truncate",
+    "file_scored": 18,
+    "chunk_scored": 18
+   },
+   {
+    "key": "truncate / head_tail",
+    "file_scored": 18,
+    "chunk_scored": 18
+   },
+   {
+    "key": "head_tail / truncate",
+    "file_scored": 18,
+    "chunk_scored": 18
+   },
+   {
+    "key": "head_tail / head_tail",
+    "file_scored": 18,
+    "chunk_scored": 18
+   },
+   {
+    "key": "windows / truncate",
+    "file_scored": 18,
+    "chunk_scored": 18
+   },
+   {
+    "key": "windows / head_tail",
+    "file_scored": 18,
+    "chunk_scored": 18
+   },
+   {
+    "key": "signature_docstring / truncate",
+    "file_scored": 18,
+    "chunk_scored": 18
+   },
+   {
+    "key": "signature_docstring / head_tail",
+    "file_scored": 18,
+    "chunk_scored": 18
+   }
+  ]
+ },
+ "comparisons": {
+  "chunk_mrr": {
+   "label": "chunk MRR",
+   "rows": [
+    {
+     "cell": "truncate / head_tail",
+     "strategy": "truncate",
+     "query_strategy": "head_tail",
+     "metric": "chunk_mrr",
+     "paired": 18,
+     "mean_pp": -4.070004070004071,
+     "ci_pp": [
+      -16.256613756613756,
+      3.0596255596255593
+     ],
+     "sd_pp": 24.27480712516931,
+     "dz": -0.1676637037327514,
+     "p": 1.0,
+     "wins": 4,
+     "losses": 1,
+     "ties": 13,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 16.666666666666664,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 2.6923076923076925,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 2.380952380952381,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 4.999999999999999,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "head_tail / truncate",
+     "strategy": "head_tail",
+     "query_strategy": "truncate",
+     "metric": "chunk_mrr",
+     "paired": 18,
+     "mean_pp": 0.3174603174603175,
+     "ci_pp": [
+      -0.5555555555555557,
+      1.2698412698412702
+     ],
+     "sd_pp": 2.180650230436861,
+     "dz": 0.1455805763938213,
+     "p": 0.7543122843857807,
+     "wins": 2,
+     "losses": 1,
+     "ties": 15,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": -5.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 5.714285714285716,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 4.999999999999999,
+      "sphinx-doc__sphinx-9367": 0.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "head_tail / head_tail",
+     "strategy": "head_tail",
+     "query_strategy": "head_tail",
+     "metric": "chunk_mrr",
+     "paired": 18,
+     "mean_pp": -3.869047619047619,
+     "ci_pp": [
+      -16.646825396825395,
+      4.920634920634921
+     ],
+     "sd_pp": 25.015676357545285,
+     "dz": -0.15466492145756547,
+     "p": 0.8737063146842657,
+     "wins": 2,
+     "losses": 2,
+     "ties": 14,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 2.1428571428571423,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": -1.785714285714285,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 30.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "windows / truncate",
+     "strategy": "windows",
+     "query_strategy": "truncate",
+     "metric": "chunk_mrr",
+     "paired": 18,
+     "mean_pp": 4.513505738995936,
+     "ci_pp": [
+      -10.645342312008978,
+      19.683577134557527
+     ],
+     "sd_pp": 35.75667493923824,
+     "dz": 0.12622834048931542,
+     "p": 0.6598670066496675,
+     "wins": 4,
+     "losses": 2,
+     "ties": 12,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 5.555555555555555,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 5.88235294117647,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": -5.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 85.71428571428572,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 80.0,
+      "sphinx-doc__sphinx-9367": -90.9090909090909,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "windows / head_tail",
+     "strategy": "windows",
+     "query_strategy": "head_tail",
+     "metric": "chunk_mrr",
+     "paired": 18,
+     "mean_pp": 4.008455233945431,
+     "ci_pp": [
+      -12.01684562713972,
+      19.45512371615312
+     ],
+     "sd_pp": 37.174177195755504,
+     "dz": 0.1078290237020528,
+     "p": 0.8146092695365231,
+     "wins": 4,
+     "losses": 1,
+     "ties": 13,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 5.88235294117647,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.5555555555555549,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 85.71428571428572,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 80.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "signature_docstring / truncate",
+     "strategy": "signature_docstring",
+     "query_strategy": "truncate",
+     "metric": "chunk_mrr",
+     "paired": 18,
+     "mean_pp": 4.484126984126984,
+     "ci_pp": [
+      -0.5555555555555556,
+      13.690476190476192
+     ],
+     "sd_pp": 18.935991181824853,
+     "dz": 0.2368044503754807,
+     "p": 0.495875206239688,
+     "wins": 2,
+     "losses": 1,
+     "ties": 15,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": -5.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 5.714285714285716,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 80.0,
+      "sphinx-doc__sphinx-9367": 0.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "signature_docstring / head_tail",
+     "strategy": "signature_docstring",
+     "query_strategy": "head_tail",
+     "metric": "chunk_mrr",
+     "paired": 18,
+     "mean_pp": -1.1948853615520278,
+     "ci_pp": [
+      -16.750440917107586,
+      13.156966490299823
+     ],
+     "sd_pp": 31.047550215571572,
+     "dz": -0.03848565678308319,
+     "p": 0.752012399380031,
+     "wins": 2,
+     "losses": 2,
+     "ties": 14,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 1.6666666666666663,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": -3.1746031746031744,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 80.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    }
+   ]
+  },
+  "file_mrr": {
+   "label": "file MRR",
+   "rows": [
+    {
+     "cell": "truncate / head_tail",
+     "strategy": "truncate",
+     "query_strategy": "head_tail",
+     "metric": "file_mrr",
+     "paired": 18,
+     "mean_pp": -10.552004277494474,
+     "ci_pp": [
+      -25.98060363746638,
+      0.6742640075973406
+     ],
+     "sd_pp": 30.132246012894736,
+     "dz": -0.3501897692252635,
+     "p": 0.18754062296885154,
+     "wins": 3,
+     "losses": 4,
+     "ties": 11,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.4761904761904759,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": -83.33333333333334,
+      "pytest-dev__pytest-7571": -16.666666666666664,
+      "pytest-dev__pytest-7982": 2.1367521367521376,
+      "sphinx-doc__sphinx-7462": -5.88235294117647,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 13.33333333333333,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "head_tail / truncate",
+     "strategy": "head_tail",
+     "query_strategy": "truncate",
+     "metric": "file_mrr",
+     "paired": 18,
+     "mean_pp": -7.615768972838116,
+     "ci_pp": [
+      -20.40979106510582,
+      0.90280905025487
+     ],
+     "sd_pp": 24.614336801993822,
+     "dz": -0.30940378504210686,
+     "p": 0.34068296585170743,
+     "wins": 4,
+     "losses": 4,
+     "ties": 10,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": -93.33333333333333,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": -8.333333333333332,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 1.6666666666666663,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 5.0,
+      "pytest-dev__pytest-7432": -50.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": -0.29239766081871343,
+      "sphinx-doc__sphinx-7462": 3.2085561497326207,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 4.999999999999999,
+      "sphinx-doc__sphinx-9367": 0.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "head_tail / head_tail",
+     "strategy": "head_tail",
+     "query_strategy": "head_tail",
+     "metric": "file_mrr",
+     "paired": 18,
+     "mean_pp": -14.537037037037038,
+     "ci_pp": [
+      -31.91902687000726,
+      0.30895969498910236
+     ],
+     "sd_pp": 36.631090017197856,
+     "dz": -0.3968496987180036,
+     "p": 0.15824208789560523,
+     "wins": 4,
+     "losses": 6,
+     "ties": 8,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": -94.44444444444444,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": -8.333333333333332,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 1.6666666666666663,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 6.666666666666667,
+      "pytest-dev__pytest-7432": -80.0,
+      "pytest-dev__pytest-7571": -16.666666666666664,
+      "pytest-dev__pytest-7982": 0.32679738562091526,
+      "sphinx-doc__sphinx-7462": -0.8823529411764702,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 30.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "windows / truncate",
+     "strategy": "windows",
+     "query_strategy": "truncate",
+     "metric": "file_mrr",
+     "paired": 18,
+     "mean_pp": -6.180873864697393,
+     "ci_pp": [
+      -24.215932079902664,
+      10.965340260683398
+     ],
+     "sd_pp": 39.489040736451614,
+     "dz": -0.15652124613378973,
+     "p": 0.5382230888455577,
+     "wins": 5,
+     "losses": 6,
+     "ties": 7,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": -94.44444444444444,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 16.666666666666668,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 10.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 6.25,
+      "pytest-dev__pytest-7432": -50.0,
+      "pytest-dev__pytest-7571": -2.380952380952381,
+      "pytest-dev__pytest-7982": -5.555555555555555,
+      "sphinx-doc__sphinx-7462": -5.88235294117647,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 80.0,
+      "sphinx-doc__sphinx-9367": -90.9090909090909,
+      "sphinx-doc__sphinx-9602": 25.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "windows / head_tail",
+     "strategy": "windows",
+     "query_strategy": "head_tail",
+     "metric": "file_mrr",
+     "paired": 18,
+     "mean_pp": -7.849945533769062,
+     "ci_pp": [
+      -28.683925653594766,
+      10.902777777777779
+     ],
+     "sd_pp": 43.67364670406759,
+     "dz": -0.17974101377336893,
+     "p": 0.5241737913104345,
+     "wins": 5,
+     "losses": 5,
+     "ties": 8,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": -100.0,
+      "mwaskom__seaborn-3187": 10.0,
+      "pallets__flask-5014": 16.666666666666668,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 26.666666666666668,
+      "pylint-dev__pylint-4970": -75.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": -10.416666666666666,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": -5.88235294117647,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 80.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 16.666666666666664
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "signature_docstring / truncate",
+     "strategy": "signature_docstring",
+     "query_strategy": "truncate",
+     "metric": "file_mrr",
+     "paired": 18,
+     "mean_pp": -2.7353070857972814,
+     "ci_pp": [
+      -19.840728420998026,
+      13.323064179375443
+     ],
+     "sd_pp": 37.06936318719289,
+     "dz": -0.0737888879284094,
+     "p": 0.8439578021098945,
+     "wins": 6,
+     "losses": 3,
+     "ties": 9,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": -93.75,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": -8.333333333333332,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 3.333333333333334,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 7.142857142857142,
+      "pytest-dev__pytest-7432": -83.33333333333334,
+      "pytest-dev__pytest-7571": 33.333333333333336,
+      "pytest-dev__pytest-7982": 1.5873015873015872,
+      "sphinx-doc__sphinx-7462": 10.784313725490195,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 80.0,
+      "sphinx-doc__sphinx-9367": 0.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "signature_docstring / head_tail",
+     "strategy": "signature_docstring",
+     "query_strategy": "head_tail",
+     "metric": "file_mrr",
+     "paired": 18,
+     "mean_pp": -11.58575447791134,
+     "ci_pp": [
+      -31.257843962500825,
+      6.495477652340383
+     ],
+     "sd_pp": 41.6901324721303,
+     "dz": -0.2779015990332095,
+     "p": 0.19989000549972502,
+     "wins": 4,
+     "losses": 6,
+     "ties": 8,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": -83.33333333333334,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": -8.333333333333332,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 1.0256410256410262,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 11.11111111111111,
+      "pytest-dev__pytest-7432": -90.0,
+      "pytest-dev__pytest-7571": -16.666666666666664,
+      "pytest-dev__pytest-7982": 3.535353535353536,
+      "sphinx-doc__sphinx-7462": -5.88235294117647,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 80.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    }
+   ]
+  },
+  "chunk_r5": {
+   "label": "chunk R@5",
+   "rows": [
+    {
+     "cell": "truncate / head_tail",
+     "strategy": "truncate",
+     "query_strategy": "head_tail",
+     "metric": "chunk_r5",
+     "paired": 18,
+     "mean_pp": -5.555555555555555,
+     "ci_pp": [
+      -16.666666666666664,
+      0.0
+     ],
+     "sd_pp": 23.570226039551585,
+     "dz": -0.23570226039551584,
+     "p": 1.0,
+     "wins": 0,
+     "losses": 1,
+     "ties": 17,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "head_tail / truncate",
+     "strategy": "head_tail",
+     "query_strategy": "truncate",
+     "metric": "chunk_r5",
+     "paired": 18,
+     "mean_pp": 0.7936507936507936,
+     "ci_pp": [
+      0.0,
+      2.380952380952381
+     ],
+     "sd_pp": 3.367175148507369,
+     "dz": 0.23570226039551584,
+     "p": 1.0,
+     "wins": 1,
+     "losses": 0,
+     "ties": 17,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 14.285714285714285,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": 0.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "head_tail / head_tail",
+     "strategy": "head_tail",
+     "query_strategy": "head_tail",
+     "metric": "chunk_r5",
+     "paired": 18,
+     "mean_pp": -5.555555555555555,
+     "ci_pp": [
+      -16.666666666666664,
+      0.0
+     ],
+     "sd_pp": 23.570226039551585,
+     "dz": -0.23570226039551584,
+     "p": 1.0,
+     "wins": 0,
+     "losses": 1,
+     "ties": 17,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "windows / truncate",
+     "strategy": "windows",
+     "query_strategy": "truncate",
+     "metric": "chunk_r5",
+     "paired": 18,
+     "mean_pp": -1.984126984126984,
+     "ci_pp": [
+      -15.873015873015872,
+      8.333333333333332
+     ],
+     "sd_pp": 27.260421595557915,
+     "dz": -0.07278416356004917,
+     "p": 1.0,
+     "wins": 2,
+     "losses": 1,
+     "ties": 15,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 14.285714285714285,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 50.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "windows / head_tail",
+     "strategy": "windows",
+     "query_strategy": "head_tail",
+     "metric": "chunk_r5",
+     "paired": 18,
+     "mean_pp": -1.984126984126984,
+     "ci_pp": [
+      -15.873015873015872,
+      8.333333333333332
+     ],
+     "sd_pp": 27.260421595557915,
+     "dz": -0.07278416356004917,
+     "p": 1.0,
+     "wins": 2,
+     "losses": 1,
+     "ties": 15,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 14.285714285714285,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 50.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "signature_docstring / truncate",
+     "strategy": "signature_docstring",
+     "query_strategy": "truncate",
+     "metric": "chunk_r5",
+     "paired": 18,
+     "mean_pp": 3.571428571428571,
+     "ci_pp": [
+      0.0,
+      9.920634920634921
+     ],
+     "sd_pp": 12.064751273412798,
+     "dz": 0.2960217322754892,
+     "p": 0.5026748662566871,
+     "wins": 2,
+     "losses": 0,
+     "ties": 16,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 14.285714285714285,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 50.0,
+      "sphinx-doc__sphinx-9367": 0.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "signature_docstring / head_tail",
+     "strategy": "signature_docstring",
+     "query_strategy": "head_tail",
+     "metric": "chunk_r5",
+     "paired": 18,
+     "mean_pp": -5.555555555555555,
+     "ci_pp": [
+      -16.666666666666664,
+      0.0
+     ],
+     "sd_pp": 23.570226039551585,
+     "dz": -0.23570226039551584,
+     "p": 1.0,
+     "wins": 0,
+     "losses": 1,
+     "ties": 17,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    }
+   ]
+  },
+  "chunk_r10": {
+   "label": "chunk R@10",
+   "rows": [
+    {
+     "cell": "truncate / head_tail",
+     "strategy": "truncate",
+     "query_strategy": "head_tail",
+     "metric": "chunk_r10",
+     "paired": 18,
+     "mean_pp": -1.3888888888888888,
+     "ci_pp": [
+      -15.277777777777779,
+      9.722222222222223
+     ],
+     "sd_pp": 27.749168273468687,
+     "dz": -0.05005155020148197,
+     "p": 1.0,
+     "wins": 2,
+     "losses": 1,
+     "ties": 15,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 25.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 50.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "head_tail / truncate",
+     "strategy": "head_tail",
+     "query_strategy": "truncate",
+     "metric": "chunk_r10",
+     "paired": 18,
+     "mean_pp": 2.7777777777777777,
+     "ci_pp": [
+      0.0,
+      8.333333333333332
+     ],
+     "sd_pp": 11.785113019775793,
+     "dz": 0.23570226039551584,
+     "p": 1.0,
+     "wins": 1,
+     "losses": 0,
+     "ties": 17,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 50.0,
+      "sphinx-doc__sphinx-9367": 0.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "head_tail / head_tail",
+     "strategy": "head_tail",
+     "query_strategy": "head_tail",
+     "metric": "chunk_r10",
+     "paired": 18,
+     "mean_pp": -2.7777777777777777,
+     "ci_pp": [
+      -16.666666666666664,
+      8.333333333333332
+     ],
+     "sd_pp": 26.96524027348052,
+     "dz": -0.10301327744925143,
+     "p": 1.0,
+     "wins": 1,
+     "losses": 1,
+     "ties": 16,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 50.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "windows / truncate",
+     "strategy": "windows",
+     "query_strategy": "truncate",
+     "metric": "chunk_r10",
+     "paired": 18,
+     "mean_pp": -2.513227513227513,
+     "ci_pp": [
+      -16.402116402116405,
+      8.333333333333332
+     ],
+     "sd_pp": 27.017404098059224,
+     "dz": -0.09302253851279699,
+     "p": 1.0,
+     "wins": 2,
+     "losses": 1,
+     "ties": 15,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 4.761904761904762,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 50.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "windows / head_tail",
+     "strategy": "windows",
+     "query_strategy": "head_tail",
+     "metric": "chunk_r10",
+     "paired": 18,
+     "mean_pp": -2.513227513227513,
+     "ci_pp": [
+      -16.402116402116405,
+      8.333333333333332
+     ],
+     "sd_pp": 27.017404098059224,
+     "dz": -0.09302253851279699,
+     "p": 1.0,
+     "wins": 2,
+     "losses": 1,
+     "ties": 15,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 4.761904761904762,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 50.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "signature_docstring / truncate",
+     "strategy": "signature_docstring",
+     "query_strategy": "truncate",
+     "metric": "chunk_r10",
+     "paired": 18,
+     "mean_pp": 2.7777777777777777,
+     "ci_pp": [
+      0.0,
+      8.333333333333332
+     ],
+     "sd_pp": 11.785113019775793,
+     "dz": 0.23570226039551584,
+     "p": 1.0,
+     "wins": 1,
+     "losses": 0,
+     "ties": 17,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 50.0,
+      "sphinx-doc__sphinx-9367": 0.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "signature_docstring / head_tail",
+     "strategy": "signature_docstring",
+     "query_strategy": "head_tail",
+     "metric": "chunk_r10",
+     "paired": 18,
+     "mean_pp": -2.7777777777777777,
+     "ci_pp": [
+      -16.666666666666664,
+      8.333333333333332
+     ],
+     "sd_pp": 26.96524027348052,
+     "dz": -0.10301327744925143,
+     "p": 1.0,
+     "wins": 1,
+     "losses": 1,
+     "ties": 16,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 50.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    }
+   ]
+  },
+  "chunk_r20": {
+   "label": "chunk R@20",
+   "rows": [
+    {
+     "cell": "truncate / head_tail",
+     "strategy": "truncate",
+     "query_strategy": "head_tail",
+     "metric": "chunk_r20",
+     "paired": 18,
+     "mean_pp": -1.3888888888888888,
+     "ci_pp": [
+      -15.312499999999693,
+      9.722222222222223
+     ],
+     "sd_pp": 27.749168273468687,
+     "dz": -0.05005155020148197,
+     "p": 1.0,
+     "wins": 2,
+     "losses": 1,
+     "ties": 15,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 25.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 50.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "head_tail / truncate",
+     "strategy": "head_tail",
+     "query_strategy": "truncate",
+     "metric": "chunk_r20",
+     "paired": 18,
+     "mean_pp": -2.7777777777777777,
+     "ci_pp": [
+      -16.666666666666664,
+      8.333333333333332
+     ],
+     "sd_pp": 26.96524027348052,
+     "dz": -0.10301327744925143,
+     "p": 1.0,
+     "wins": 1,
+     "losses": 1,
+     "ties": 16,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": -100.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 50.0,
+      "sphinx-doc__sphinx-9367": 0.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "head_tail / head_tail",
+     "strategy": "head_tail",
+     "query_strategy": "head_tail",
+     "metric": "chunk_r20",
+     "paired": 18,
+     "mean_pp": -2.7777777777777777,
+     "ci_pp": [
+      -16.666666666666664,
+      8.333333333333332
+     ],
+     "sd_pp": 26.96524027348052,
+     "dz": -0.10301327744925143,
+     "p": 1.0,
+     "wins": 1,
+     "losses": 1,
+     "ties": 16,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 50.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "windows / truncate",
+     "strategy": "windows",
+     "query_strategy": "truncate",
+     "metric": "chunk_r20",
+     "paired": 18,
+     "mean_pp": 4.431216931216932,
+     "ci_pp": [
+      -12.235449735449738,
+      21.097883597883595
+     ],
+     "sd_pp": 36.61744476107335,
+     "dz": 0.12101382169428693,
+     "p": 0.6264186790660466,
+     "wins": 4,
+     "losses": 1,
+     "ties": 13,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 25.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 100.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": -100.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 4.761904761904762,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 50.0,
+      "sphinx-doc__sphinx-9367": 0.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "windows / head_tail",
+     "strategy": "windows",
+     "query_strategy": "head_tail",
+     "metric": "chunk_r20",
+     "paired": 18,
+     "mean_pp": 3.0423280423280423,
+     "ci_pp": [
+      -13.624338624338625,
+      19.70899470899471
+     ],
+     "sd_pp": 36.263798232699536,
+     "dz": 0.08389435719904088,
+     "p": 0.7557622118894055,
+     "wins": 3,
+     "losses": 1,
+     "ties": 14,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 100.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 4.761904761904762,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 50.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "signature_docstring / truncate",
+     "strategy": "signature_docstring",
+     "query_strategy": "truncate",
+     "metric": "chunk_r20",
+     "paired": 18,
+     "mean_pp": -2.7777777777777777,
+     "ci_pp": [
+      -16.666666666666664,
+      8.333333333333332
+     ],
+     "sd_pp": 26.96524027348052,
+     "dz": -0.10301327744925143,
+     "p": 1.0,
+     "wins": 1,
+     "losses": 1,
+     "ties": 16,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": -100.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 50.0,
+      "sphinx-doc__sphinx-9367": 0.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "signature_docstring / head_tail",
+     "strategy": "signature_docstring",
+     "query_strategy": "head_tail",
+     "metric": "chunk_r20",
+     "paired": 18,
+     "mean_pp": -2.7777777777777777,
+     "ci_pp": [
+      -16.666666666666664,
+      8.333333333333332
+     ],
+     "sd_pp": 26.96524027348052,
+     "dz": -0.10301327744925143,
+     "p": 1.0,
+     "wins": 1,
+     "losses": 1,
+     "ties": 16,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 50.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    }
+   ]
+  },
+  "file_r5": {
+   "label": "file R@5",
+   "rows": [
+    {
+     "cell": "truncate / head_tail",
+     "strategy": "truncate",
+     "query_strategy": "head_tail",
+     "metric": "file_r5",
+     "paired": 18,
+     "mean_pp": -12.962962962962965,
+     "ci_pp": [
+      -29.629629629629626,
+      0.0
+     ],
+     "sd_pp": 32.617587959553376,
+     "dz": -0.3974224881078688,
+     "p": 0.24908754562271887,
+     "wins": 0,
+     "losses": 3,
+     "ties": 15,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": -100.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": -33.333333333333336,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "head_tail / truncate",
+     "strategy": "head_tail",
+     "query_strategy": "truncate",
+     "metric": "file_r5",
+     "paired": 18,
+     "mean_pp": -9.25925925925926,
+     "ci_pp": [
+      -24.07407407407408,
+      0.0
+     ],
+     "sd_pp": 27.54806982445438,
+     "dz": -0.3361128136476491,
+     "p": 0.49347532623368834,
+     "wins": 0,
+     "losses": 2,
+     "ties": 16,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": -100.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": -66.66666666666667,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": 0.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "head_tail / head_tail",
+     "strategy": "head_tail",
+     "query_strategy": "head_tail",
+     "metric": "file_r5",
+     "paired": 18,
+     "mean_pp": -14.814814814814817,
+     "ci_pp": [
+      -31.48148148148148,
+      0.0
+     ],
+     "sd_pp": 34.72058819684556,
+     "dz": -0.42668674651545146,
+     "p": 0.2496375181240938,
+     "wins": 0,
+     "losses": 3,
+     "ties": 15,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": -100.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": -66.66666666666667,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "windows / truncate",
+     "strategy": "windows",
+     "query_strategy": "truncate",
+     "metric": "file_r5",
+     "paired": 18,
+     "mean_pp": -7.407407407407408,
+     "ci_pp": [
+      -27.77777777777778,
+      11.11111111111111
+     ],
+     "sd_pp": 42.09475081857417,
+     "dz": -0.17596985997928546,
+     "p": 0.6179691015449228,
+     "wins": 1,
+     "losses": 3,
+     "ties": 14,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": -100.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": -33.333333333333336,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 100.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "windows / head_tail",
+     "strategy": "windows",
+     "query_strategy": "head_tail",
+     "metric": "file_r5",
+     "paired": 18,
+     "mean_pp": -10.185185185185187,
+     "ci_pp": [
+      -27.77777777777778,
+      3.7037037037037033
+     ],
+     "sd_pp": 35.76378973905921,
+     "dz": -0.28479043355020894,
+     "p": 0.36893155342232886,
+     "wins": 1,
+     "losses": 3,
+     "ties": 14,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": -100.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 50.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": -33.333333333333336,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "signature_docstring / truncate",
+     "strategy": "signature_docstring",
+     "query_strategy": "truncate",
+     "metric": "file_r5",
+     "paired": 18,
+     "mean_pp": -9.25925925925926,
+     "ci_pp": [
+      -29.629629629629633,
+      11.11111111111111
+     ],
+     "sd_pp": 43.99280326699252,
+     "dz": -0.21047213570512374,
+     "p": 0.6260686965651717,
+     "wins": 1,
+     "losses": 3,
+     "ties": 14,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": -100.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": -100.0,
+      "pytest-dev__pytest-7571": 100.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": -66.66666666666667,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": 0.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "signature_docstring / head_tail",
+     "strategy": "signature_docstring",
+     "query_strategy": "head_tail",
+     "metric": "file_r5",
+     "paired": 18,
+     "mean_pp": -20.370370370370374,
+     "ci_pp": [
+      -38.88888888888889,
+      -3.703703703703704
+     ],
+     "sd_pp": 39.83444315278758,
+     "dz": -0.5113758034030625,
+     "p": 0.12769361531923404,
+     "wins": 0,
+     "losses": 4,
+     "ties": 14,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": -100.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": -100.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": -66.66666666666667,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 0.8938553072346382,
+     "meets_switch_rule": false
+    }
+   ]
+  },
+  "file_r10": {
+   "label": "file R@10",
+   "rows": [
+    {
+     "cell": "truncate / head_tail",
+     "strategy": "truncate",
+     "query_strategy": "head_tail",
+     "metric": "file_r10",
+     "paired": 18,
+     "mean_pp": -12.962962962962965,
+     "ci_pp": [
+      -29.629629629629626,
+      0.0
+     ],
+     "sd_pp": 32.617587959553376,
+     "dz": -0.3974224881078688,
+     "p": 0.24613769311534422,
+     "wins": 0,
+     "losses": 3,
+     "ties": 15,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": -100.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": -33.333333333333336,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "head_tail / truncate",
+     "strategy": "head_tail",
+     "query_strategy": "truncate",
+     "metric": "file_r10",
+     "paired": 18,
+     "mean_pp": -7.407407407407408,
+     "ci_pp": [
+      -20.370370370370374,
+      0.0
+     ],
+     "sd_pp": 24.402816604698653,
+     "dz": -0.30354723093649544,
+     "p": 0.49382530873456326,
+     "wins": 0,
+     "losses": 2,
+     "ties": 16,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": -100.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": -33.333333333333336,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": 0.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "head_tail / head_tail",
+     "strategy": "head_tail",
+     "query_strategy": "head_tail",
+     "metric": "file_r10",
+     "paired": 18,
+     "mean_pp": -18.51851851851852,
+     "ci_pp": [
+      -37.03703703703704,
+      -3.703703703703704
+     ],
+     "sd_pp": 38.300876664009444,
+     "dz": -0.48350116580804003,
+     "p": 0.1231438428078596,
+     "wins": 0,
+     "losses": 4,
+     "ties": 14,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": -100.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": -100.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": -33.333333333333336,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 0.8620068996550172,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "windows / truncate",
+     "strategy": "windows",
+     "query_strategy": "truncate",
+     "metric": "file_r10",
+     "paired": 18,
+     "mean_pp": -2.7777777777777777,
+     "ci_pp": [
+      -22.22222222222222,
+      16.666666666666664
+     ],
+     "sd_pp": 43.63020480403261,
+     "dz": -0.06366639327627076,
+     "p": 1.0,
+     "wins": 2,
+     "losses": 2,
+     "ties": 14,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": -100.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 50.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 100.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "windows / head_tail",
+     "strategy": "windows",
+     "query_strategy": "head_tail",
+     "metric": "file_r10",
+     "paired": 18,
+     "mean_pp": -7.407407407407408,
+     "ci_pp": [
+      -30.555555555555557,
+      14.814814814814813
+     ],
+     "sd_pp": 51.520102752753914,
+     "dz": -0.14377703093791788,
+     "p": 0.6590670466476676,
+     "wins": 3,
+     "losses": 4,
+     "ties": 11,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": -100.0,
+      "mwaskom__seaborn-3187": 50.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 50.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": -100.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": -33.333333333333336,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 100.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "signature_docstring / truncate",
+     "strategy": "signature_docstring",
+     "query_strategy": "truncate",
+     "metric": "file_r10",
+     "paired": 18,
+     "mean_pp": -1.851851851851852,
+     "ci_pp": [
+      -16.666666666666664,
+      11.11111111111111
+     ],
+     "sd_pp": 30.725906597498454,
+     "dz": -0.06027004755663159,
+     "p": 1.0,
+     "wins": 2,
+     "losses": 2,
+     "ties": 14,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": -100.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 50.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 50.0,
+      "sphinx-doc__sphinx-7590": -33.333333333333336,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": 0.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "signature_docstring / head_tail",
+     "strategy": "signature_docstring",
+     "query_strategy": "head_tail",
+     "metric": "file_r10",
+     "paired": 18,
+     "mean_pp": -7.407407407407408,
+     "ci_pp": [
+      -25.92592592592593,
+      11.11111111111111
+     ],
+     "sd_pp": 42.09475081857417,
+     "dz": -0.17596985997928546,
+     "p": 0.6243687815609219,
+     "wins": 1,
+     "losses": 3,
+     "ties": 14,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 100.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": -100.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": -33.333333333333336,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    }
+   ]
+  },
+  "file_r20": {
+   "label": "file R@20",
+   "rows": [
+    {
+     "cell": "truncate / head_tail",
+     "strategy": "truncate",
+     "query_strategy": "head_tail",
+     "metric": "file_r20",
+     "paired": 18,
+     "mean_pp": -15.74074074074074,
+     "ci_pp": [
+      -32.407407407407405,
+      -1.851851851851852
+     ],
+     "sd_pp": 33.56401659331825,
+     "dz": -0.4689766702080086,
+     "p": 0.1256437178141093,
+     "wins": 0,
+     "losses": 4,
+     "ties": 14,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": -100.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": -50.0,
+      "sphinx-doc__sphinx-7590": -33.333333333333336,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 0.879506024698765,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "head_tail / truncate",
+     "strategy": "head_tail",
+     "query_strategy": "truncate",
+     "metric": "file_r20",
+     "paired": 18,
+     "mean_pp": 5.555555555555555,
+     "ci_pp": [
+      0.0,
+      16.666666666666664
+     ],
+     "sd_pp": 23.570226039551585,
+     "dz": 0.23570226039551584,
+     "p": 1.0,
+     "wins": 1,
+     "losses": 0,
+     "ties": 17,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 100.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": 0.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "head_tail / head_tail",
+     "strategy": "head_tail",
+     "query_strategy": "head_tail",
+     "metric": "file_r20",
+     "paired": 18,
+     "mean_pp": -7.407407407407408,
+     "ci_pp": [
+      -27.77777777777778,
+      11.11111111111111
+     ],
+     "sd_pp": 42.09475081857417,
+     "dz": -0.17596985997928546,
+     "p": 0.6221188940552972,
+     "wins": 1,
+     "losses": 3,
+     "ties": 14,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 100.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": -100.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": -33.333333333333336,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "windows / truncate",
+     "strategy": "windows",
+     "query_strategy": "truncate",
+     "metric": "file_r20",
+     "paired": 18,
+     "mean_pp": 2.7777777777777777,
+     "ci_pp": [
+      -16.666666666666664,
+      22.22222222222222
+     ],
+     "sd_pp": 43.63020480403261,
+     "dz": 0.06366639327627076,
+     "p": 1.0,
+     "wins": 2,
+     "losses": 2,
+     "ties": 14,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 100.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": -100.0,
+      "sphinx-doc__sphinx-7462": -50.0,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": 0.0,
+      "sphinx-doc__sphinx-9602": 100.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "windows / head_tail",
+     "strategy": "windows",
+     "query_strategy": "head_tail",
+     "metric": "file_r20",
+     "paired": 18,
+     "mean_pp": -7.407407407407408,
+     "ci_pp": [
+      -27.77777777777778,
+      13.88888888888889
+     ],
+     "sd_pp": 45.45421535497752,
+     "dz": -0.1629641464396382,
+     "p": 0.6215189240537973,
+     "wins": 2,
+     "losses": 4,
+     "ties": 12,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": -100.0,
+      "mwaskom__seaborn-3187": 50.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 0.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": -50.0,
+      "sphinx-doc__sphinx-7590": -33.333333333333336,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 100.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "signature_docstring / truncate",
+     "strategy": "signature_docstring",
+     "query_strategy": "truncate",
+     "metric": "file_r20",
+     "paired": 18,
+     "mean_pp": 5.555555555555555,
+     "ci_pp": [
+      0.0,
+      16.666666666666664
+     ],
+     "sd_pp": 23.570226039551585,
+     "dz": 0.23570226039551584,
+     "p": 1.0,
+     "wins": 1,
+     "losses": 0,
+     "ties": 17,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 100.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": 0.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": 0.0,
+      "sphinx-doc__sphinx-7590": 0.0,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": 0.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    },
+    {
+     "cell": "signature_docstring / head_tail",
+     "strategy": "signature_docstring",
+     "query_strategy": "head_tail",
+     "metric": "file_r20",
+     "paired": 18,
+     "mean_pp": -10.185185185185187,
+     "ci_pp": [
+      -30.555555555555557,
+      9.25925925925926
+     ],
+     "sd_pp": 43.21208107251124,
+     "dz": -0.23570226039551587,
+     "p": 0.4391780410979451,
+     "wins": 1,
+     "losses": 4,
+     "ties": 13,
+     "diffs_pp": {
+      "mwaskom__seaborn-3069": 0.0,
+      "mwaskom__seaborn-3187": 0.0,
+      "pallets__flask-5014": 0.0,
+      "pylint-dev__pylint-4551": 0.0,
+      "pylint-dev__pylint-4604": 0.0,
+      "pylint-dev__pylint-4970": 0.0,
+      "pytest-dev__pytest-5631": 0.0,
+      "pytest-dev__pytest-6202": 0.0,
+      "pytest-dev__pytest-7236": 100.0,
+      "pytest-dev__pytest-7432": 0.0,
+      "pytest-dev__pytest-7571": -100.0,
+      "pytest-dev__pytest-7982": 0.0,
+      "sphinx-doc__sphinx-7462": -50.0,
+      "sphinx-doc__sphinx-7590": -33.333333333333336,
+      "sphinx-doc__sphinx-9230": 0.0,
+      "sphinx-doc__sphinx-9320": 0.0,
+      "sphinx-doc__sphinx-9367": -100.0,
+      "sphinx-doc__sphinx-9602": 0.0
+     },
+     "p_holm": 1.0,
+     "meets_switch_rule": false
+    }
+   ]
+  }
+ },
+ "switch_rule": {
+  "metric": "chunk_mrr",
+  "min_gain_pp": 10.0,
+  "rule": "mean paired gain >= min_gain_pp AND the 95% interval excludes 0",
+  "comparisons": 7,
+  "met": [],
+  "any_met": false,
+  "default_stays": "truncate / truncate",
+  "largest_gain_cell": "windows / truncate",
+  "largest_gain_pp": 4.513505738995936,
+  "largest_gain_ci_pp": [
+   -10.645342312008978,
+   19.683577134557527
+  ],
+  "cells_with_interval_excluding_zero_but_below_threshold": []
+ },
+ "power": {
+  "n": 18,
+  "alpha": 0.05,
+  "target_power": 0.8,
+  "holm_alpha": 0.0071428571428571435,
+  "median_sd_pp": 25.015676357545285,
+  "mde_pp_median_sd": 16.518850940446487,
+  "mde_pp_median_sd_holm": 20.823972664166703,
+  "power_at_min_gain_median_sd": 0.3960291718604608,
+  "per_comparison": [
+   {
+    "cell": "truncate / head_tail",
+    "sd_pp": 24.27480712516931,
+    "mde_pp": 16.02962537480271,
+    "mde_pp_holm": 20.2072457597164,
+    "power_at_min_gain": 0.4160764271907001,
+    "observed_pp": -4.070004070004071
+   },
+   {
+    "cell": "head_tail / truncate",
+    "sd_pp": 2.180650230436861,
+    "mde_pp": 1.4399705046940217,
+    "mde_pp_holm": 1.8152537688643948,
+    "power_at_min_gain": 1.0,
+    "observed_pp": 0.3174603174603175
+   },
+   {
+    "cell": "head_tail / head_tail",
+    "sd_pp": 25.015676357545285,
+    "mde_pp": 16.518850940446487,
+    "mde_pp_holm": 20.823972664166703,
+    "power_at_min_gain": 0.3960291718604608,
+    "observed_pp": -3.869047619047619
+   },
+   {
+    "cell": "windows / truncate",
+    "sd_pp": 35.75667493923824,
+    "mde_pp": 23.611561606613083,
+    "mde_pp_holm": 29.76517647789303,
+    "power_at_min_gain": 0.22045931767193155,
+    "observed_pp": 4.513505738995936
+   },
+   {
+    "cell": "windows / head_tail",
+    "sd_pp": 37.174177195755504,
+    "mde_pp": 24.547595002171967,
+    "mde_pp_holm": 30.945157695239043,
+    "power_at_min_gain": 0.2074489029189116,
+    "observed_pp": 4.008455233945431
+   },
+   {
+    "cell": "signature_docstring / truncate",
+    "sd_pp": 18.935991181824853,
+    "mde_pp": 12.504191822414034,
+    "mde_pp_holm": 15.76301824117124,
+    "power_at_min_gain": 0.6104866222609707,
+    "observed_pp": 4.484126984126984
+   },
+   {
+    "cell": "signature_docstring / head_tail",
+    "sd_pp": 31.047550215571572,
+    "mde_pp": 20.501938334454067,
+    "mde_pp_holm": 25.845127180956535,
+    "power_at_min_gain": 0.27687436041232166,
+    "observed_pp": -1.1948853615520278
+   }
+  ],
+  "curves": [
+   {
+    "cell": "truncate / head_tail",
+    "sd_pp": 24.27480712516931,
+    "points": [
+     [
+      0.0,
+      0.050000000000000044
+     ],
+     [
+      0.5,
+      0.05087524331233284
+     ],
+     [
+      1.0,
+      0.05350652107773374
+     ],
+     [
+      1.5,
+      0.05791003948873091
+     ],
+     [
+      2.0,
+      0.0641113686724768
+     ],
+     [
+      2.5,
+      0.07214334304292125
+     ],
+     [
+      3.0,
+      0.08204324151927977
+     ],
+     [
+      3.5,
+      0.09384936361945123
+     ],
+     [
+      4.0,
+      0.10759714509704016
+     ],
+     [
+      4.5,
+      0.12331498008428632
+     ],
+     [
+      5.0,
+      0.14101993448154282
+     ],
+     [
+      5.5,
+      0.1607135464659204
+     ],
+     [
+      6.0,
+      0.18237791345520055
+     ],
+     [
+      6.5,
+      0.20597225985361506
+     ],
+     [
+      7.0,
+      0.23143016595079402
+     ],
+     [
+      7.5,
+      0.2586576154080612
+     ],
+     [
+      8.0,
+      0.2875319873292025
+     ],
+     [
+      8.5,
+      0.3179020800197446
+     ],
+     [
+      9.0,
+      0.3495892087923134
+     ],
+     [
+      9.5,
+      0.38238937168151893
+     ],
+     [
+      10.0,
+      0.4160764271907001
+     ],
+     [
+      10.5,
+      0.45040617994647275
+     ],
+     [
+      11.0,
+      0.485121226179701
+     ],
+     [
+      11.5,
+      0.5199563739242656
+     ],
+     [
+      12.0,
+      0.5546444250100893
+     ],
+     [
+      12.5,
+      0.5889220890636955
+     ],
+     [
+      13.0,
+      0.6225357948691286
+     ],
+     [
+      13.5,
+      0.6552471718556688
+     ],
+     [
+      14.0,
+      0.6868379936298805
+     ],
+     [
+      14.5,
+      0.7171144050523904
+     ],
+     [
+      15.0,
+      0.7459102924014489
+     ],
+     [
+      15.5,
+      0.7730897001812151
+     ],
+     [
+      16.0,
+      0.7985482453213526
+     ],
+     [
+      16.5,
+      0.8222135269726459
+     ],
+     [
+      17.0,
+      0.8440445750420684
+     ],
+     [
+      17.5,
+      0.8640304205530829
+     ],
+     [
+      18.0,
+      0.8821879038609312
+     ],
+     [
+      18.5,
+      0.8985588612864258
+     ],
+     [
+      19.0,
+      0.9132068460947562
+     ],
+     [
+      19.5,
+      0.9262135458334494
+     ],
+     [
+      20.0,
+      0.9376750553598509
+     ],
+     [
+      20.5,
+      0.9476981544544345
+     ],
+     [
+      21.0,
+      0.9563967221467897
+     ],
+     [
+      21.5,
+      0.9638883984431148
+     ],
+     [
+      22.0,
+      0.9702915798100047
+     ],
+     [
+      22.5,
+      0.9757228092798723
+     ],
+     [
+      23.0,
+      0.9802945969885086
+     ],
+     [
+      23.5,
+      0.9841136836829243
+     ],
+     [
+      24.0,
+      0.9872797392924049
+     ],
+     [
+      24.5,
+      0.9898844717504496
+     ],
+     [
+      25.0,
+      0.992011108271293
+     ],
+     [
+      25.5,
+      0.993734202297899
+     ],
+     [
+      26.0,
+      0.9951197141637788
+     ],
+     [
+      26.5,
+      0.9962253117601971
+     ],
+     [
+      27.0,
+      0.997100838643632
+     ],
+     [
+      27.5,
+      0.99778890044685
+     ],
+     [
+      28.0,
+      0.998325525538894
+     ],
+     [
+      28.5,
+      0.998740862007192
+     ],
+     [
+      29.0,
+      0.999059879661961
+     ],
+     [
+      29.5,
+      0.999303052426801
+     ],
+     [
+      30.0,
+      0.9994870028152343
+     ]
+    ]
+   },
+   {
+    "cell": "head_tail / truncate",
+    "sd_pp": 2.180650230436861,
+    "points": [
+     [
+      0.0,
+      0.050000000000000044
+     ],
+     [
+      0.5,
+      0.16345914263545303
+     ],
+     [
+      1.0,
+      0.4943108750505606
+     ],
+     [
+      1.5,
+      0.8310734470666281
+     ],
+     [
+      2.0,
+      0.9732712297311851
+     ],
+     [
+      2.5,
+      0.9981578525508888
+     ],
+     [
+      3.0,
+      0.9999470784947613
+     ],
+     [
+      3.5,
+      0.9999993813966893
+     ],
+     [
+      4.0,
+      0.999999997099168
+     ],
+     [
+      4.5,
+      0.9999999999945908
+     ],
+     [
+      5.0,
+      0.999999999999996
+     ],
+     [
+      5.5,
+      1.0
+     ],
+     [
+      6.0,
+      1.0
+     ],
+     [
+      6.5,
+      1.0
+     ],
+     [
+      7.0,
+      1.0
+     ],
+     [
+      7.5,
+      1.0
+     ],
+     [
+      8.0,
+      1.0
+     ],
+     [
+      8.5,
+      1.0
+     ],
+     [
+      9.0,
+      1.0
+     ],
+     [
+      9.5,
+      1.0
+     ],
+     [
+      10.0,
+      1.0
+     ],
+     [
+      10.5,
+      1.0
+     ],
+     [
+      11.0,
+      1.0
+     ],
+     [
+      11.5,
+      1.0
+     ],
+     [
+      12.0,
+      1.0
+     ],
+     [
+      12.5,
+      1.0
+     ],
+     [
+      13.0,
+      1.0
+     ],
+     [
+      13.5,
+      1.0
+     ],
+     [
+      14.0,
+      1.0
+     ],
+     [
+      14.5,
+      1.0
+     ],
+     [
+      15.0,
+      1.0
+     ],
+     [
+      15.5,
+      1.0
+     ],
+     [
+      16.0,
+      1.0
+     ],
+     [
+      16.5,
+      1.0
+     ],
+     [
+      17.0,
+      1.0
+     ],
+     [
+      17.5,
+      1.0
+     ],
+     [
+      18.0,
+      1.0
+     ],
+     [
+      18.5,
+      1.0
+     ],
+     [
+      19.0,
+      1.0
+     ],
+     [
+      19.5,
+      1.0
+     ],
+     [
+      20.0,
+      1.0
+     ],
+     [
+      20.5,
+      1.0
+     ],
+     [
+      21.0,
+      1.0
+     ],
+     [
+      21.5,
+      1.0
+     ],
+     [
+      22.0,
+      1.0
+     ],
+     [
+      22.5,
+      1.0
+     ],
+     [
+      23.0,
+      1.0
+     ],
+     [
+      23.5,
+      1.0
+     ],
+     [
+      24.0,
+      1.0
+     ],
+     [
+      24.5,
+      1.0
+     ],
+     [
+      25.0,
+      1.0
+     ],
+     [
+      25.5,
+      1.0
+     ],
+     [
+      26.0,
+      1.0
+     ],
+     [
+      26.5,
+      1.0
+     ],
+     [
+      27.0,
+      1.0
+     ],
+     [
+      27.5,
+      1.0
+     ],
+     [
+      28.0,
+      1.0
+     ],
+     [
+      28.5,
+      1.0
+     ],
+     [
+      29.0,
+      1.0
+     ],
+     [
+      29.5,
+      1.0
+     ],
+     [
+      30.0,
+      1.0
+     ]
+    ]
+   },
+   {
+    "cell": "head_tail / head_tail",
+    "sd_pp": 25.015676357545285,
+    "points": [
+     [
+      0.0,
+      0.050000000000000044
+     ],
+     [
+      0.5,
+      0.05082414263628082
+     ],
+     [
+      1.0,
+      0.05330149356255137
+     ],
+     [
+      1.5,
+      0.05744645649984231
+     ],
+     [
+      2.0,
+      0.0632818336040406
+     ],
+     [
+      2.5,
+      0.07083706711890048
+     ],
+     [
+      3.0,
+      0.08014587198110401
+     ],
+     [
+      3.5,
+      0.09124335092463343
+     ],
+     [
+      4.0,
+      0.10416270574374081
+     ],
+     [
+      4.5,
+      0.11893167727042808
+     ],
+     [
+      5.0,
+      0.1355688614545119
+     ],
+     [
+      5.5,
+      0.15408005885629167
+     ],
+     [
+      6.0,
+      0.17445481909190036
+     ],
+     [
+      6.5,
+      0.19666333966606314
+     ],
+     [
+      7.0,
+      0.2206538697606703
+     ],
+     [
+      7.5,
+      0.24635075378892413
+     ],
+     [
+      8.0,
+      0.27365322709954953
+     ],
+     [
+      8.5,
+      0.3024350477467018
+     ],
+     [
+      9.0,
+      0.3325450147593565
+     ],
+     [
+      9.5,
+      0.36380838626280093
+     ],
+     [
+      10.0,
+      0.3960291718604608
+     ],
+     [
+      10.5,
+      0.42899323484120855
+     ],
+     [
+      11.0,
+      0.4624721031068169
+     ],
+     [
+      11.5,
+      0.49622735525526085
+     ],
+     [
+      12.0,
+      0.5300154218689176
+     ],
+     [
+      12.5,
+      0.5635926232864656
+     ],
+     [
+      13.0,
+      0.5967202550914767
+     ],
+     [
+      13.5,
+      0.6291695318130118
+     ],
+     [
+      14.0,
+      0.6607262079141616
+     ],
+     [
+      14.5,
+      0.6911947124753344
+     ],
+     [
+      15.0,
+      0.720401658954116
+     ],
+     [
+      15.5,
+      0.7481986224604347
+     ],
+     [
+      16.0,
+      0.7744641122222488
+     ],
+     [
+      16.5,
+      0.7991047042306589
+     ],
+     [
+      17.0,
+      0.8220553362933329
+     ],
+     [
+      17.5,
+      0.8432788028420025
+     ],
+     [
+      18.0,
+      0.8627645180215626
+     ],
+     [
+      18.5,
+      0.8805266413717705
+     ],
+     [
+      19.0,
+      0.8966016797620159
+     ],
+     [
+      19.5,
+      0.9110456915884971
+     ],
+     [
+      20.0,
+      0.9239312244974656
+     ],
+     [
+      20.5,
+      0.935344116404657
+     ],
+     [
+      21.0,
+      0.945380282064795
+     ],
+     [
+      21.5,
+      0.9541425949251785
+     ],
+     [
+      22.0,
+      0.9617379576887914
+     ],
+     [
+      22.5,
+      0.9682746362234502
+     ],
+     [
+      23.0,
+      0.9738599114881694
+     ],
+     [
+      23.5,
+      0.9785980842194292
+     ],
+     [
+      24.0,
+      0.9825888482819889
+     ],
+     [
+      24.5,
+      0.9859260316868195
+     ],
+     [
+      25.0,
+      0.9886966899231928
+     ],
+     [
+      25.5,
+      0.990980524812584
+     ],
+     [
+      26.0,
+      0.9928495937096421
+     ],
+     [
+      26.5,
+      0.9943682684888477
+     ],
+     [
+      27.0,
+      0.9955934011382914
+     ],
+     [
+      27.5,
+      0.996574652585384
+     ],
+     [
+      28.0,
+      0.9973549431757637
+     ],
+     [
+      28.5,
+      0.9979709865518626
+     ],
+     [
+      29.0,
+      0.9984538730669339
+     ],
+     [
+      29.5,
+      0.9988296738887976
+     ],
+     [
+      30.0,
+      0.9991200422114509
+     ]
+    ]
+   },
+   {
+    "cell": "windows / truncate",
+    "sd_pp": 35.75667493923824,
+    "points": [
+     [
+      0.0,
+      0.050000000000000044
+     ],
+     [
+      0.5,
+      0.050403274978042756
+     ],
+     [
+      1.0,
+      0.05161428677305835
+     ],
+     [
+      1.5,
+      0.05363655292469982
+     ],
+     [
+      2.0,
+      0.05647579331309677
+     ],
+     [
+      2.5,
+      0.06013971888874503
+     ],
+     [
+      3.0,
+      0.06463774138019679
+     ],
+     [
+      3.5,
+      0.06998060939035478
+     ],
+     [
+      4.0,
+      0.07617997772890717
+     ],
+     [
+      4.5,
+      0.08324791818000721
+     ],
+     [
+      5.0,
+      0.09119638114869588
+     ],
+     [
+      5.5,
+      0.10003661874357461
+     ],
+     [
+      6.0,
+      0.10977858081285025
+     ],
+     [
+      6.5,
+      0.12043029623178575
+     ],
+     [
+      7.0,
+      0.1319972523179806
+     ],
+     [
+      7.5,
+      0.14448178560436276
+     ],
+     [
+      8.0,
+      0.15788249730830756
+     ],
+     [
+      8.5,
+      0.17219370668251466
+     ],
+     [
+      9.0,
+      0.18740495500743426
+     ],
+     [
+      9.5,
+      0.20350057228020035
+     ],
+     [
+      10.0,
+      0.22045931767193155
+     ],
+     [
+      10.5,
+      0.23825410357214793
+     ],
+     [
+      11.0,
+      0.25685181153208564
+     ],
+     [
+      11.5,
+      0.27621320668227584
+     ],
+     [
+      12.0,
+      0.29629295526627797
+     ],
+     [
+      12.5,
+      0.31703974784195194
+     ],
+     [
+      13.0,
+      0.338396528500806
+     ],
+     [
+      13.5,
+      0.360300828197089
+     ],
+     [
+      14.0,
+      0.38268519801772455
+     ],
+     [
+      14.5,
+      0.40547773602064063
+     ],
+     [
+      15.0,
+      0.4286026991816316
+     ],
+     [
+      15.5,
+      0.4519811900761253
+     ],
+     [
+      16.0,
+      0.4755319062360013
+     ],
+     [
+      16.5,
+      0.49917193871115406
+     ],
+     [
+      17.0,
+      0.5228176052716696
+     ],
+     [
+      17.5,
+      0.5463853029410906
+     ],
+     [
+      18.0,
+      0.5697923641758726
+     ],
+     [
+      18.5,
+      0.5929579010112209
+     ],
+     [
+      19.0,
+      0.615803621877923
+     ],
+     [
+      19.5,
+      0.6382546065457955
+     ],
+     [
+      20.0,
+      0.660240025743088
+     ],
+     [
+      20.5,
+      0.6816937934033955
+     ],
+     [
+      21.0,
+      0.7025551411590956
+     ],
+     [
+      21.5,
+      0.7227691065823283
+     ],
+     [
+      22.0,
+      0.7422869287147094
+     ],
+     [
+      22.5,
+      0.7610663465654324
+     ],
+     [
+      23.0,
+      0.7790717984327676
+     ],
+     [
+      23.5,
+      0.7962745220555072
+     ],
+     [
+      24.0,
+      0.8126525576706995
+     ],
+     [
+      24.5,
+      0.8281906579886631
+     ],
+     [
+      25.0,
+      0.8428801108487236
+     ],
+     [
+      25.5,
+      0.8567184818498541
+     ],
+     [
+      26.0,
+      0.8697092855285636
+     ],
+     [
+      26.5,
+      0.8818615946603408
+     ],
+     [
+      27.0,
+      0.893189597978627
+     ],
+     [
+      27.5,
+      0.9037121170339371
+     ],
+     [
+      28.0,
+      0.9134520930616652
+     ],
+     [
+      28.5,
+      0.9224360546047287
+     ],
+     [
+      29.0,
+      0.9306935762681726
+     ],
+     [
+      29.5,
+      0.9382567383948082
+     ],
+     [
+      30.0,
+      0.9451595966760831
+     ]
+    ]
+   },
+   {
+    "cell": "windows / head_tail",
+    "sd_pp": 37.174177195755504,
+    "points": [
+     [
+      0.0,
+      0.050000000000000044
+     ],
+     [
+      0.5,
+      0.05037309961566244
+     ],
+     [
+      1.0,
+      0.0514934148507637
+     ],
+     [
+      1.5,
+      0.0533639607702594
+     ],
+     [
+      2.0,
+      0.05598964939732165
+     ],
+     [
+      2.5,
+      0.05937712210814505
+     ],
+     [
+      3.0,
+      0.06353451900801604
+     ],
+     [
+      3.5,
+      0.0684711892612197
+     ],
+     [
+      4.0,
+      0.07419734740858958
+     ],
+     [
+      4.5,
+      0.0807236817103072
+     ],
+     [
+      5.0,
+      0.08806092148318528
+     ],
+     [
+      5.5,
+      0.09621937124553898
+     ],
+     [
+      6.0,
+      0.10520842022270482
+     ],
+     [
+      6.5,
+      0.11503603638581017
+     ],
+     [
+      7.0,
+      0.12570825467920155
+     ],
+     [
+      7.5,
+      0.13722866942233714
+     ],
+     [
+      8.0,
+      0.14959794103558888
+     ],
+     [
+      8.5,
+      0.1628133272239366
+     ],
+     [
+      9.0,
+      0.17686824854832367
+     ],
+     [
+      9.5,
+      0.19175189791526076
+     ],
+     [
+      10.0,
+      0.2074489029189116
+     ],
+     [
+      10.5,
+      0.22393904917881347
+     ],
+     [
+      11.0,
+      0.24119707183798395
+     ],
+     [
+      11.5,
+      0.2591925212331813
+     ],
+     [
+      12.0,
+      0.27788970743953806
+     ],
+     [
+      12.5,
+      0.2972477269489516
+     ],
+     [
+      13.0,
+      0.3172205731935644
+     ],
+     [
+      13.5,
+      0.337757331004776
+     ],
+     [
+      14.0,
+      0.358802453440372
+     ],
+     [
+      14.5,
+      0.38029611775594896
+     ],
+     [
+      15.0,
+      0.40217465568173594
+     ],
+     [
+      15.5,
+      0.4243710516322816
+     ],
+     [
+      16.0,
+      0.4468155010633728
+     ],
+     [
+      16.5,
+      0.46943601993475503
+     ],
+     [
+      17.0,
+      0.49215909517195366
+     ],
+     [
+      17.5,
+      0.5149103651742419
+     ],
+     [
+      18.0,
+      0.5376153188113721
+     ],
+     [
+      18.5,
+      0.5602000010052922
+     ],
+     [
+      19.0,
+      0.582591712913813
+     ],
+     [
+      19.5,
+      0.6047196949226505
+     ],
+     [
+      20.0,
+      0.6265157811043895
+     ],
+     [
+      20.5,
+      0.6479150145042947
+     ],
+     [
+      21.0,
+      0.6688562135430784
+     ],
+     [
+      21.5,
+      0.6892824809590106
+     ],
+     [
+      22.0,
+      0.7091416480140389
+     ],
+     [
+      22.5,
+      0.7283866481244585
+     ],
+     [
+      23.0,
+      0.7469758156066812
+     ],
+     [
+      23.5,
+      0.7648731068115573
+     ],
+     [
+      24.0,
+      0.7820482425148505
+     ],
+     [
+      24.5,
+      0.7984767719961325
+     ],
+     [
+      25.0,
+      0.8141400607349507
+     ],
+     [
+      25.5,
+      0.8290252050464154
+     ],
+     [
+      26.0,
+      0.8431248782373707
+     ],
+     [
+      26.5,
+      0.8564371139632254
+     ],
+     [
+      27.0,
+      0.8689650333842169
+     ],
+     [
+      27.5,
+      0.8807165234442492
+     ],
+     [
+      28.0,
+      0.8917038741176928
+     ],
+     [
+      28.5,
+      0.901943382787909
+     ],
+     [
+      29.0,
+      0.9114549340399085
+     ],
+     [
+      29.5,
+      0.9202615630780058
+     ],
+     [
+      30.0,
+      0.928389010731802
+     ]
+    ]
+   },
+   {
+    "cell": "signature_docstring / truncate",
+    "sd_pp": 18.935991181824853,
+    "points": [
+     [
+      0.0,
+      0.050000000000000044
+     ],
+     [
+      0.5,
+      0.05143884090292372
+     ],
+     [
+      1.0,
+      0.05577021954979633
+     ],
+     [
+      1.5,
+      0.06303677542754266
+     ],
+     [
+      2.0,
+      0.07330327318429242
+     ],
+     [
+      2.5,
+      0.08664758877392476
+     ],
+     [
+      3.0,
+      0.10314894674389408
+     ],
+     [
+      3.5,
+      0.12287421949321092
+     ],
+     [
+      4.0,
+      0.14586326275239053
+     ],
+     [
+      4.5,
+      0.17211437059560336
+     ],
+     [
+      5.0,
+      0.20157097513722955
+     ],
+     [
+      5.5,
+      0.23411068046193118
+     ],
+     [
+      6.0,
+      0.2695376018377068
+     ],
+     [
+      6.5,
+      0.30757878117505655
+     ],
+     [
+      7.0,
+      0.3478851774494291
+     ],
+     [
+      7.5,
+      0.39003740428121514
+     ],
+     [
+      8.0,
+      0.4335560314929303
+     ],
+     [
+      8.5,
+      0.4779159140206456
+     ],
+     [
+      9.0,
+      0.5225636929495634
+     ],
+     [
+      9.5,
+      0.5669373608271343
+     ],
+     [
+      10.0,
+      0.6104866222609707
+     ],
+     [
+      10.5,
+      0.6526927275630172
+     ],
+     [
+      11.0,
+      0.6930865169628053
+     ],
+     [
+      11.5,
+      0.7312635786731594
+     ],
+     [
+      12.0,
+      0.766895677562434
+     ],
+     [
+      12.5,
+      0.7997379251389234
+     ],
+     [
+      13.0,
+      0.829631503301891
+     ],
+     [
+      13.5,
+      0.8565020898189074
+     ],
+     [
+      14.0,
+      0.8803544314461902
+     ],
+     [
+      14.5,
+      0.9012637459537133
+     ],
+     [
+      15.0,
+      0.9193647906822171
+     ],
+     [
+      15.5,
+      0.9348395061108876
+     ],
+     [
+      16.0,
+      0.9479041313275327
+     ],
+     [
+      16.5,
+      0.9587966055298248
+     ],
+     [
+      17.0,
+      0.9677649329048292
+     ],
+     [
+      17.5,
+      0.9750570177477713
+     ],
+     [
+      18.0,
+      0.9809122932011581
+     ],
+     [
+      18.5,
+      0.9855552892347281
+     ],
+     [
+      19.0,
+      0.9891911283910955
+     ],
+     [
+      19.5,
+      0.9920028115641033
+     ],
+     [
+      20.0,
+      0.9941500658135984
+     ],
+     [
+      20.5,
+      0.9957694725043755
+     ],
+     [
+      21.0,
+      0.9969755737218309
+     ],
+     [
+      21.5,
+      0.9978626622215738
+     ],
+     [
+      22.0,
+      0.9985069880000544
+     ],
+     [
+      22.5,
+      0.9989691555274913
+     ],
+     [
+      23.0,
+      0.9992965329382968
+     ],
+     [
+      23.5,
+      0.999525542359652
+     ],
+     [
+      24.0,
+      0.9996837448607007
+     ],
+     [
+      24.5,
+      0.9997916715099523
+     ],
+     [
+      25.0,
+      0.9998643823887068
+     ],
+     [
+      25.5,
+      0.999912757885788
+     ],
+     [
+      26.0,
+      0.9999445417599655
+     ],
+     [
+      26.5,
+      0.9999651643670296
+     ],
+     [
+      27.0,
+      0.9999783784077272
+     ],
+     [
+      27.5,
+      0.9999867398856792
+     ],
+     [
+      28.0,
+      0.9999919648796111
+     ],
+     [
+      28.5,
+      0.9999951892421077
+     ],
+     [
+      29.0,
+      0.9999971542181416
+     ],
+     [
+      29.5,
+      0.9999983367857438
+     ],
+     [
+      30.0,
+      0.9999990396152969
+     ]
+    ]
+   },
+   {
+    "cell": "signature_docstring / head_tail",
+    "sd_pp": 31.047550215571572,
+    "points": [
+     [
+      0.0,
+      0.050000000000000044
+     ],
+     [
+      0.5,
+      0.0505349284850421
+     ],
+     [
+      1.0,
+      0.052141797760346
+     ],
+     [
+      1.5,
+      0.0548267590029452
+     ],
+     [
+      2.0,
+      0.05859973234050109
+     ],
+     [
+      2.5,
+      0.06347391761902971
+     ],
+     [
+      3.0,
+      0.06946512638403346
+     ],
+     [
+      3.5,
+      0.07659095167059787
+     ],
+     [
+      4.0,
+      0.08486979648523668
+     ],
+     [
+      4.5,
+      0.09431978579232941
+     ],
+     [
+      5.0,
+      0.10495759029692314
+     ],
+     [
+      5.5,
+      0.11679719324536408
+     ],
+     [
+      6.0,
+      0.12984863374639782
+     ],
+     [
+      6.5,
+      0.1441167616516717
+     ],
+     [
+      7.0,
+      0.15960003973771364
+     ],
+     [
+      7.5,
+      0.17628942872704362
+     ],
+     [
+      8.0,
+      0.19416738951973767
+     ],
+     [
+      8.5,
+      0.21320703485001546
+     ],
+     [
+      9.0,
+      0.23337145943797427
+     ],
+     [
+      9.5,
+      0.2546132736123931
+     ],
+     [
+      10.0,
+      0.27687436041232166
+     ],
+     [
+      10.5,
+      0.3000858704471046
+     ],
+     [
+      11.0,
+      0.32416846245757003
+     ],
+     [
+      11.5,
+      0.34903279075951965
+     ],
+     [
+      12.0,
+      0.3745802337757687
+     ],
+     [
+      12.5,
+      0.40070385090562505
+     ],
+     [
+      13.0,
+      0.4272895482816351
+     ],
+     [
+      13.5,
+      0.4542174277629487
+     ],
+     [
+      14.0,
+      0.48136328804146766
+     ],
+     [
+      14.5,
+      0.5086002421972722
+     ],
+     [
+      15.0,
+      0.5358004126072841
+     ],
+     [
+      15.5,
+      0.5628366619178689
+     ],
+     [
+      16.0,
+      0.589584317922003
+     ],
+     [
+      16.5,
+      0.6159228506657667
+     ],
+     [
+      17.0,
+      0.6417374619236602
+     ],
+     [
+      17.5,
+      0.6669205502501043
+     ],
+     [
+      18.0,
+      0.6913730190079195
+     ],
+     [
+      18.5,
+      0.7150053999218988
+     ],
+     [
+      19.0,
+      0.737738770599573
+     ],
+     [
+      19.5,
+      0.7595054508688398
+     ],
+     [
+      20.0,
+      0.7802494694558235
+     ],
+     [
+      20.5,
+      0.7999267992155237
+     ],
+     [
+      21.0,
+      0.8185053655903923
+     ],
+     [
+      21.5,
+      0.835964838984725
+     ],
+     [
+      22.0,
+      0.8522962271107464
+     ],
+     [
+      22.5,
+      0.8675012879261973
+     ],
+     [
+      23.0,
+      0.8815917874248171
+     ],
+     [
+      23.5,
+      0.8945886291861025
+     ],
+     [
+      24.0,
+      0.9065208842095409
+     ],
+     [
+      24.5,
+      0.9174247501647823
+     ],
+     [
+      25.0,
+      0.9273424688361236
+     ],
+     [
+      25.5,
+      0.9363212293147571
+     ],
+     [
+      26.0,
+      0.9444120825108517
+     ],
+     [
+      26.5,
+      0.9516688899554286
+     ],
+     [
+      27.0,
+      0.9581473267876632
+     ],
+     [
+      27.5,
+      0.963903955430096
+     ],
+     [
+      28.0,
+      0.9689953828935235
+     ],
+     [
+      28.5,
+      0.9734775110676284
+     ],
+     [
+      29.0,
+      0.977404885871261
+     ],
+     [
+      29.5,
+      0.980830147868168
+     ],
+     [
+      30.0,
+      0.98380358398938
+     ]
+    ]
+   }
+  ],
+  "median_curve": {
+   "sd_pp": 25.015676357545285,
+   "points": [
+    [
+     0.0,
+     0.050000000000000044
+    ],
+    [
+     0.5,
+     0.05082414263628082
+    ],
+    [
+     1.0,
+     0.05330149356255137
+    ],
+    [
+     1.5,
+     0.05744645649984231
+    ],
+    [
+     2.0,
+     0.0632818336040406
+    ],
+    [
+     2.5,
+     0.07083706711890048
+    ],
+    [
+     3.0,
+     0.08014587198110401
+    ],
+    [
+     3.5,
+     0.09124335092463343
+    ],
+    [
+     4.0,
+     0.10416270574374081
+    ],
+    [
+     4.5,
+     0.11893167727042808
+    ],
+    [
+     5.0,
+     0.1355688614545119
+    ],
+    [
+     5.5,
+     0.15408005885629167
+    ],
+    [
+     6.0,
+     0.17445481909190036
+    ],
+    [
+     6.5,
+     0.19666333966606314
+    ],
+    [
+     7.0,
+     0.2206538697606703
+    ],
+    [
+     7.5,
+     0.24635075378892413
+    ],
+    [
+     8.0,
+     0.27365322709954953
+    ],
+    [
+     8.5,
+     0.3024350477467018
+    ],
+    [
+     9.0,
+     0.3325450147593565
+    ],
+    [
+     9.5,
+     0.36380838626280093
+    ],
+    [
+     10.0,
+     0.3960291718604608
+    ],
+    [
+     10.5,
+     0.42899323484120855
+    ],
+    [
+     11.0,
+     0.4624721031068169
+    ],
+    [
+     11.5,
+     0.49622735525526085
+    ],
+    [
+     12.0,
+     0.5300154218689176
+    ],
+    [
+     12.5,
+     0.5635926232864656
+    ],
+    [
+     13.0,
+     0.5967202550914767
+    ],
+    [
+     13.5,
+     0.6291695318130118
+    ],
+    [
+     14.0,
+     0.6607262079141616
+    ],
+    [
+     14.5,
+     0.6911947124753344
+    ],
+    [
+     15.0,
+     0.720401658954116
+    ],
+    [
+     15.5,
+     0.7481986224604347
+    ],
+    [
+     16.0,
+     0.7744641122222488
+    ],
+    [
+     16.5,
+     0.7991047042306589
+    ],
+    [
+     17.0,
+     0.8220553362933329
+    ],
+    [
+     17.5,
+     0.8432788028420025
+    ],
+    [
+     18.0,
+     0.8627645180215626
+    ],
+    [
+     18.5,
+     0.8805266413717705
+    ],
+    [
+     19.0,
+     0.8966016797620159
+    ],
+    [
+     19.5,
+     0.9110456915884971
+    ],
+    [
+     20.0,
+     0.9239312244974656
+    ],
+    [
+     20.5,
+     0.935344116404657
+    ],
+    [
+     21.0,
+     0.945380282064795
+    ],
+    [
+     21.5,
+     0.9541425949251785
+    ],
+    [
+     22.0,
+     0.9617379576887914
+    ],
+    [
+     22.5,
+     0.9682746362234502
+    ],
+    [
+     23.0,
+     0.9738599114881694
+    ],
+    [
+     23.5,
+     0.9785980842194292
+    ],
+    [
+     24.0,
+     0.9825888482819889
+    ],
+    [
+     24.5,
+     0.9859260316868195
+    ],
+    [
+     25.0,
+     0.9886966899231928
+    ],
+    [
+     25.5,
+     0.990980524812584
+    ],
+    [
+     26.0,
+     0.9928495937096421
+    ],
+    [
+     26.5,
+     0.9943682684888477
+    ],
+    [
+     27.0,
+     0.9955934011382914
+    ],
+    [
+     27.5,
+     0.996574652585384
+    ],
+    [
+     28.0,
+     0.9973549431757637
+    ],
+    [
+     28.5,
+     0.9979709865518626
+    ],
+    [
+     29.0,
+     0.9984538730669339
+    ],
+    [
+     29.5,
+     0.9988296738887976
+    ],
+    [
+     30.0,
+     0.9991200422114509
+    ]
+   ]
+  },
+  "n_curve": {
+   "delta_pp": 10.0,
+   "sd_pp": 25.015676357545285,
+   "points": [
+    [
+     6,
+     0.1649956972706083
+    ],
+    [
+     8,
+     0.2044654112104512
+    ],
+    [
+     10,
+     0.24389465218166745
+    ],
+    [
+     12,
+     0.28299264346601444
+    ],
+    [
+     14,
+     0.3215127300620412
+    ],
+    [
+     16,
+     0.3592483539348147
+    ],
+    [
+     18,
+     0.3960291718604608
+    ],
+    [
+     20,
+     0.4317173503802906
+    ],
+    [
+     22,
+     0.4662040621141042
+    ],
+    [
+     24,
+     0.49940619922488244
+    ],
+    [
+     26,
+     0.531263312925911
+    ],
+    [
+     28,
+     0.5617347823536238
+    ],
+    [
+     30,
+     0.5907972116986002
+    ],
+    [
+     32,
+     0.6184420510205311
+    ],
+    [
+     34,
+     0.6446734335195067
+    ],
+    [
+     36,
+     0.6695062200639235
+    ],
+    [
+     38,
+     0.692964240370312
+    ],
+    [
+     40,
+     0.7150787192935198
+    ],
+    [
+     42,
+     0.7358868761318145
+    ],
+    [
+     44,
+     0.7554306846075723
+    ],
+    [
+     46,
+     0.7737557811880178
+    ],
+    [
+     48,
+     0.7909105096090985
+    ],
+    [
+     50,
+     0.8069450898143926
+    ],
+    [
+     52,
+     0.8219108999824537
+    ],
+    [
+     54,
+     0.8358598608590331
+    ],
+    [
+     56,
+     0.8488439122092772
+    ],
+    [
+     58,
+     0.8609145718381337
+    ],
+    [
+     60,
+     0.8721225682775702
+    ],
+    [
+     62,
+     0.8825175388930201
+    ],
+    [
+     64,
+     0.8921477858077806
+    ],
+    [
+     66,
+     0.9010600826744404
+    ],
+    [
+     68,
+     0.9092995259303496
+    ],
+    [
+     70,
+     0.9169094247549838
+    ],
+    [
+     72,
+     0.9239312244974656
+    ],
+    [
+     74,
+     0.930404458860413
+    ],
+    [
+     76,
+     0.9363667266104594
+    ],
+    [
+     78,
+     0.9418536890358917
+    ],
+    [
+     80,
+     0.9468990847880312
+    ],
+    [
+     82,
+     0.9515347591259702
+    ],
+    [
+     84,
+     0.9557907049350878
+    ],
+    [
+     86,
+     0.9596951132097511
+    ],
+    [
+     88,
+     0.963274430981254
+    ],
+    [
+     90,
+     0.9665534249350258
+    ],
+    [
+     92,
+     0.9695552491981422
+    ],
+    [
+     94,
+     0.9723015159909841
+    ],
+    [
+     96,
+     0.9748123680272434
+    ],
+    [
+     98,
+     0.9771065517161033
+    ],
+    [
+     100,
+     0.9792014903710168
+    ]
+   ]
+  },
+  "basis": "two-sided paired test, normal approximation, 80% power at alpha 0.05, using the observed SD of the per-instance differences. The SD is itself estimated from 18 instances, and a t-based calculation would need slightly more."
+ },
+ "distributions": {
+  "rank_bins": [
+   "1",
+   "2",
+   "3-5",
+   "6-10",
+   "11-20",
+   "miss"
+  ],
+  "cells": [
+   {
+    "key": "truncate / truncate",
+    "chunk_mrr": {
+     "values": [
+      {
+       "instance": "mwaskom__seaborn-3069",
+       "rr": 0.0
+      },
+      {
+       "instance": "mwaskom__seaborn-3187",
+       "rr": 0.0
+      },
+      {
+       "instance": "pallets__flask-5014",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4551",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4604",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4970",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-5631",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-6202",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7236",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7432",
+       "rr": 0.05
+      },
+      {
+       "instance": "pytest-dev__pytest-7571",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7982",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7462",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7590",
+       "rr": 0.14285714285714285
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9230",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9320",
+       "rr": 0.2
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9367",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9602",
+       "rr": 0.0
+      }
+     ],
+     "bins": {
+      "1": 1,
+      "2": 0,
+      "3-5": 1,
+      "6-10": 1,
+      "11-20": 1,
+      "miss": 14
+     },
+     "share_miss": 0.7777777777777778,
+     "share_rank1": 0.05555555555555555,
+     "median": 0.0
+    },
+    "file_mrr": {
+     "values": [
+      {
+       "instance": "mwaskom__seaborn-3069",
+       "rr": 1.0
+      },
+      {
+       "instance": "mwaskom__seaborn-3187",
+       "rr": 0.0
+      },
+      {
+       "instance": "pallets__flask-5014",
+       "rr": 0.3333333333333333
+      },
+      {
+       "instance": "pylint-dev__pylint-4551",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4604",
+       "rr": 0.06666666666666667
+      },
+      {
+       "instance": "pylint-dev__pylint-4970",
+       "rr": 1.0
+      },
+      {
+       "instance": "pytest-dev__pytest-5631",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-6202",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7236",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7432",
+       "rr": 1.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7571",
+       "rr": 0.16666666666666666
+      },
+      {
+       "instance": "pytest-dev__pytest-7982",
+       "rr": 0.05555555555555555
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7462",
+       "rr": 0.058823529411764705
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7590",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9230",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9320",
+       "rr": 0.2
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9367",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9602",
+       "rr": 0.0
+      }
+     ],
+     "bins": {
+      "1": 5,
+      "2": 0,
+      "3-5": 2,
+      "6-10": 1,
+      "11-20": 3,
+      "miss": 7
+     },
+     "share_miss": 0.3888888888888889,
+     "share_rank1": 0.2777777777777778,
+     "median": 0.06274509803921569
+    }
+   },
+   {
+    "key": "truncate / head_tail",
+    "chunk_mrr": {
+     "values": [
+      {
+       "instance": "mwaskom__seaborn-3069",
+       "rr": 0.16666666666666666
+      },
+      {
+       "instance": "mwaskom__seaborn-3187",
+       "rr": 0.0
+      },
+      {
+       "instance": "pallets__flask-5014",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4551",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4604",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4970",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-5631",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-6202",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7236",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7432",
+       "rr": 0.07692307692307693
+      },
+      {
+       "instance": "pytest-dev__pytest-7571",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7982",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7462",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7590",
+       "rr": 0.16666666666666666
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9230",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9320",
+       "rr": 0.25
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9367",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9602",
+       "rr": 0.0
+      }
+     ],
+     "bins": {
+      "1": 0,
+      "2": 0,
+      "3-5": 1,
+      "6-10": 2,
+      "11-20": 1,
+      "miss": 14
+     },
+     "share_miss": 0.7777777777777778,
+     "share_rank1": 0.0,
+     "median": 0.0
+    },
+    "file_mrr": {
+     "values": [
+      {
+       "instance": "mwaskom__seaborn-3069",
+       "rr": 1.0
+      },
+      {
+       "instance": "mwaskom__seaborn-3187",
+       "rr": 0.0
+      },
+      {
+       "instance": "pallets__flask-5014",
+       "rr": 0.3333333333333333
+      },
+      {
+       "instance": "pylint-dev__pylint-4551",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4604",
+       "rr": 0.07142857142857142
+      },
+      {
+       "instance": "pylint-dev__pylint-4970",
+       "rr": 1.0
+      },
+      {
+       "instance": "pytest-dev__pytest-5631",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-6202",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7236",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7432",
+       "rr": 0.16666666666666666
+      },
+      {
+       "instance": "pytest-dev__pytest-7571",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7982",
+       "rr": 0.07692307692307693
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7462",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7590",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9230",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9320",
+       "rr": 0.3333333333333333
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9367",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9602",
+       "rr": 0.0
+      }
+     ],
+     "bins": {
+      "1": 3,
+      "2": 0,
+      "3-5": 2,
+      "6-10": 1,
+      "11-20": 2,
+      "miss": 10
+     },
+     "share_miss": 0.5555555555555556,
+     "share_rank1": 0.16666666666666666,
+     "median": 0.0
+    }
+   },
+   {
+    "key": "head_tail / truncate",
+    "chunk_mrr": {
+     "values": [
+      {
+       "instance": "mwaskom__seaborn-3069",
+       "rr": 0.0
+      },
+      {
+       "instance": "mwaskom__seaborn-3187",
+       "rr": 0.0
+      },
+      {
+       "instance": "pallets__flask-5014",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4551",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4604",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4970",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-5631",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-6202",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7236",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7432",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7571",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7982",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7462",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7590",
+       "rr": 0.2
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9230",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9320",
+       "rr": 0.25
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9367",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9602",
+       "rr": 0.0
+      }
+     ],
+     "bins": {
+      "1": 1,
+      "2": 0,
+      "3-5": 2,
+      "6-10": 0,
+      "11-20": 0,
+      "miss": 15
+     },
+     "share_miss": 0.8333333333333334,
+     "share_rank1": 0.05555555555555555,
+     "median": 0.0
+    },
+    "file_mrr": {
+     "values": [
+      {
+       "instance": "mwaskom__seaborn-3069",
+       "rr": 0.06666666666666667
+      },
+      {
+       "instance": "mwaskom__seaborn-3187",
+       "rr": 0.0
+      },
+      {
+       "instance": "pallets__flask-5014",
+       "rr": 0.25
+      },
+      {
+       "instance": "pylint-dev__pylint-4551",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4604",
+       "rr": 0.08333333333333333
+      },
+      {
+       "instance": "pylint-dev__pylint-4970",
+       "rr": 1.0
+      },
+      {
+       "instance": "pytest-dev__pytest-5631",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-6202",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7236",
+       "rr": 0.05
+      },
+      {
+       "instance": "pytest-dev__pytest-7432",
+       "rr": 0.5
+      },
+      {
+       "instance": "pytest-dev__pytest-7571",
+       "rr": 0.16666666666666666
+      },
+      {
+       "instance": "pytest-dev__pytest-7982",
+       "rr": 0.05263157894736842
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7462",
+       "rr": 0.09090909090909091
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7590",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9230",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9320",
+       "rr": 0.25
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9367",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9602",
+       "rr": 0.0
+      }
+     ],
+     "bins": {
+      "1": 3,
+      "2": 1,
+      "3-5": 2,
+      "6-10": 1,
+      "11-20": 5,
+      "miss": 6
+     },
+     "share_miss": 0.3333333333333333,
+     "share_rank1": 0.16666666666666666,
+     "median": 0.075
+    }
+   },
+   {
+    "key": "head_tail / head_tail",
+    "chunk_mrr": {
+     "values": [
+      {
+       "instance": "mwaskom__seaborn-3069",
+       "rr": 0.0
+      },
+      {
+       "instance": "mwaskom__seaborn-3187",
+       "rr": 0.0
+      },
+      {
+       "instance": "pallets__flask-5014",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4551",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4604",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4970",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-5631",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-6202",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7236",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7432",
+       "rr": 0.07142857142857142
+      },
+      {
+       "instance": "pytest-dev__pytest-7571",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7982",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7462",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7590",
+       "rr": 0.125
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9230",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9320",
+       "rr": 0.5
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9367",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9602",
+       "rr": 0.0
+      }
+     ],
+     "bins": {
+      "1": 0,
+      "2": 1,
+      "3-5": 0,
+      "6-10": 1,
+      "11-20": 1,
+      "miss": 15
+     },
+     "share_miss": 0.8333333333333334,
+     "share_rank1": 0.0,
+     "median": 0.0
+    },
+    "file_mrr": {
+     "values": [
+      {
+       "instance": "mwaskom__seaborn-3069",
+       "rr": 0.05555555555555555
+      },
+      {
+       "instance": "mwaskom__seaborn-3187",
+       "rr": 0.0
+      },
+      {
+       "instance": "pallets__flask-5014",
+       "rr": 0.25
+      },
+      {
+       "instance": "pylint-dev__pylint-4551",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4604",
+       "rr": 0.08333333333333333
+      },
+      {
+       "instance": "pylint-dev__pylint-4970",
+       "rr": 1.0
+      },
+      {
+       "instance": "pytest-dev__pytest-5631",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-6202",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7236",
+       "rr": 0.06666666666666667
+      },
+      {
+       "instance": "pytest-dev__pytest-7432",
+       "rr": 0.2
+      },
+      {
+       "instance": "pytest-dev__pytest-7571",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7982",
+       "rr": 0.058823529411764705
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7462",
+       "rr": 0.05
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7590",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9230",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9320",
+       "rr": 0.5
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9367",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9602",
+       "rr": 0.0
+      }
+     ],
+     "bins": {
+      "1": 2,
+      "2": 1,
+      "3-5": 2,
+      "6-10": 0,
+      "11-20": 5,
+      "miss": 8
+     },
+     "share_miss": 0.4444444444444444,
+     "share_rank1": 0.1111111111111111,
+     "median": 0.05277777777777778
+    }
+   },
+   {
+    "key": "windows / truncate",
+    "chunk_mrr": {
+     "values": [
+      {
+       "instance": "mwaskom__seaborn-3069",
+       "rr": 0.05555555555555555
+      },
+      {
+       "instance": "mwaskom__seaborn-3187",
+       "rr": 0.0
+      },
+      {
+       "instance": "pallets__flask-5014",
+       "rr": 0.058823529411764705
+      },
+      {
+       "instance": "pylint-dev__pylint-4551",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4604",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4970",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-5631",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-6202",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7236",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7432",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7571",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7982",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7462",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7590",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9230",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9320",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9367",
+       "rr": 0.09090909090909091
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9602",
+       "rr": 0.0
+      }
+     ],
+     "bins": {
+      "1": 2,
+      "2": 0,
+      "3-5": 0,
+      "6-10": 0,
+      "11-20": 3,
+      "miss": 13
+     },
+     "share_miss": 0.7222222222222222,
+     "share_rank1": 0.1111111111111111,
+     "median": 0.0
+    },
+    "file_mrr": {
+     "values": [
+      {
+       "instance": "mwaskom__seaborn-3069",
+       "rr": 0.05555555555555555
+      },
+      {
+       "instance": "mwaskom__seaborn-3187",
+       "rr": 0.0
+      },
+      {
+       "instance": "pallets__flask-5014",
+       "rr": 0.5
+      },
+      {
+       "instance": "pylint-dev__pylint-4551",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4604",
+       "rr": 0.16666666666666666
+      },
+      {
+       "instance": "pylint-dev__pylint-4970",
+       "rr": 1.0
+      },
+      {
+       "instance": "pytest-dev__pytest-5631",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-6202",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7236",
+       "rr": 0.0625
+      },
+      {
+       "instance": "pytest-dev__pytest-7432",
+       "rr": 0.5
+      },
+      {
+       "instance": "pytest-dev__pytest-7571",
+       "rr": 0.14285714285714285
+      },
+      {
+       "instance": "pytest-dev__pytest-7982",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7462",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7590",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9230",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9320",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9367",
+       "rr": 0.09090909090909091
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9602",
+       "rr": 0.25
+      }
+     ],
+     "bins": {
+      "1": 3,
+      "2": 2,
+      "3-5": 1,
+      "6-10": 2,
+      "11-20": 3,
+      "miss": 7
+     },
+     "share_miss": 0.3888888888888889,
+     "share_rank1": 0.16666666666666666,
+     "median": 0.07670454545454546
+    }
+   },
+   {
+    "key": "windows / head_tail",
+    "chunk_mrr": {
+     "values": [
+      {
+       "instance": "mwaskom__seaborn-3069",
+       "rr": 0.0
+      },
+      {
+       "instance": "mwaskom__seaborn-3187",
+       "rr": 0.0
+      },
+      {
+       "instance": "pallets__flask-5014",
+       "rr": 0.058823529411764705
+      },
+      {
+       "instance": "pylint-dev__pylint-4551",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4604",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4970",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-5631",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-6202",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7236",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7432",
+       "rr": 0.05555555555555555
+      },
+      {
+       "instance": "pytest-dev__pytest-7571",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7982",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7462",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7590",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9230",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9320",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9367",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9602",
+       "rr": 0.0
+      }
+     ],
+     "bins": {
+      "1": 2,
+      "2": 0,
+      "3-5": 0,
+      "6-10": 0,
+      "11-20": 2,
+      "miss": 14
+     },
+     "share_miss": 0.7777777777777778,
+     "share_rank1": 0.1111111111111111,
+     "median": 0.0
+    },
+    "file_mrr": {
+     "values": [
+      {
+       "instance": "mwaskom__seaborn-3069",
+       "rr": 0.0
+      },
+      {
+       "instance": "mwaskom__seaborn-3187",
+       "rr": 0.1
+      },
+      {
+       "instance": "pallets__flask-5014",
+       "rr": 0.5
+      },
+      {
+       "instance": "pylint-dev__pylint-4551",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4604",
+       "rr": 0.3333333333333333
+      },
+      {
+       "instance": "pylint-dev__pylint-4970",
+       "rr": 0.25
+      },
+      {
+       "instance": "pytest-dev__pytest-5631",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-6202",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7236",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7432",
+       "rr": 1.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7571",
+       "rr": 0.0625
+      },
+      {
+       "instance": "pytest-dev__pytest-7982",
+       "rr": 0.05555555555555555
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7462",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7590",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9230",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9320",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9367",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9602",
+       "rr": 0.16666666666666666
+      }
+     ],
+     "bins": {
+      "1": 3,
+      "2": 1,
+      "3-5": 2,
+      "6-10": 2,
+      "11-20": 2,
+      "miss": 8
+     },
+     "share_miss": 0.4444444444444444,
+     "share_rank1": 0.16666666666666666,
+     "median": 0.059027777777777776
+    }
+   },
+   {
+    "key": "signature_docstring / truncate",
+    "chunk_mrr": {
+     "values": [
+      {
+       "instance": "mwaskom__seaborn-3069",
+       "rr": 0.0
+      },
+      {
+       "instance": "mwaskom__seaborn-3187",
+       "rr": 0.0
+      },
+      {
+       "instance": "pallets__flask-5014",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4551",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4604",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4970",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-5631",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-6202",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7236",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7432",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7571",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7982",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7462",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7590",
+       "rr": 0.2
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9230",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9320",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9367",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9602",
+       "rr": 0.0
+      }
+     ],
+     "bins": {
+      "1": 2,
+      "2": 0,
+      "3-5": 1,
+      "6-10": 0,
+      "11-20": 0,
+      "miss": 15
+     },
+     "share_miss": 0.8333333333333334,
+     "share_rank1": 0.1111111111111111,
+     "median": 0.0
+    },
+    "file_mrr": {
+     "values": [
+      {
+       "instance": "mwaskom__seaborn-3069",
+       "rr": 0.0625
+      },
+      {
+       "instance": "mwaskom__seaborn-3187",
+       "rr": 0.0
+      },
+      {
+       "instance": "pallets__flask-5014",
+       "rr": 0.25
+      },
+      {
+       "instance": "pylint-dev__pylint-4551",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4604",
+       "rr": 0.1
+      },
+      {
+       "instance": "pylint-dev__pylint-4970",
+       "rr": 1.0
+      },
+      {
+       "instance": "pytest-dev__pytest-5631",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-6202",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7236",
+       "rr": 0.07142857142857142
+      },
+      {
+       "instance": "pytest-dev__pytest-7432",
+       "rr": 0.16666666666666666
+      },
+      {
+       "instance": "pytest-dev__pytest-7571",
+       "rr": 0.5
+      },
+      {
+       "instance": "pytest-dev__pytest-7982",
+       "rr": 0.07142857142857142
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7462",
+       "rr": 0.16666666666666666
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7590",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9230",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9320",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9367",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9602",
+       "rr": 0.0
+      }
+     ],
+     "bins": {
+      "1": 4,
+      "2": 1,
+      "3-5": 1,
+      "6-10": 3,
+      "11-20": 3,
+      "miss": 6
+     },
+     "share_miss": 0.3333333333333333,
+     "share_rank1": 0.2222222222222222,
+     "median": 0.08571428571428572
+    }
+   },
+   {
+    "key": "signature_docstring / head_tail",
+    "chunk_mrr": {
+     "values": [
+      {
+       "instance": "mwaskom__seaborn-3069",
+       "rr": 0.0
+      },
+      {
+       "instance": "mwaskom__seaborn-3187",
+       "rr": 0.0
+      },
+      {
+       "instance": "pallets__flask-5014",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4551",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4604",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4970",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-5631",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-6202",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7236",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7432",
+       "rr": 0.06666666666666667
+      },
+      {
+       "instance": "pytest-dev__pytest-7571",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7982",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7462",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7590",
+       "rr": 0.1111111111111111
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9230",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9320",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9367",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9602",
+       "rr": 0.0
+      }
+     ],
+     "bins": {
+      "1": 1,
+      "2": 0,
+      "3-5": 0,
+      "6-10": 1,
+      "11-20": 1,
+      "miss": 15
+     },
+     "share_miss": 0.8333333333333334,
+     "share_rank1": 0.05555555555555555,
+     "median": 0.0
+    },
+    "file_mrr": {
+     "values": [
+      {
+       "instance": "mwaskom__seaborn-3069",
+       "rr": 0.16666666666666666
+      },
+      {
+       "instance": "mwaskom__seaborn-3187",
+       "rr": 0.0
+      },
+      {
+       "instance": "pallets__flask-5014",
+       "rr": 0.25
+      },
+      {
+       "instance": "pylint-dev__pylint-4551",
+       "rr": 0.0
+      },
+      {
+       "instance": "pylint-dev__pylint-4604",
+       "rr": 0.07692307692307693
+      },
+      {
+       "instance": "pylint-dev__pylint-4970",
+       "rr": 1.0
+      },
+      {
+       "instance": "pytest-dev__pytest-5631",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-6202",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7236",
+       "rr": 0.1111111111111111
+      },
+      {
+       "instance": "pytest-dev__pytest-7432",
+       "rr": 0.1
+      },
+      {
+       "instance": "pytest-dev__pytest-7571",
+       "rr": 0.0
+      },
+      {
+       "instance": "pytest-dev__pytest-7982",
+       "rr": 0.09090909090909091
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7462",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-7590",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9230",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9320",
+       "rr": 1.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9367",
+       "rr": 0.0
+      },
+      {
+       "instance": "sphinx-doc__sphinx-9602",
+       "rr": 0.0
+      }
+     ],
+     "bins": {
+      "1": 3,
+      "2": 0,
+      "3-5": 1,
+      "6-10": 3,
+      "11-20": 2,
+      "miss": 9
+     },
+     "share_miss": 0.5,
+     "share_rank1": 0.16666666666666666,
+     "median": 0.038461538461538464
+    }
+   }
+  ]
+ },
+ "heatmap": {
+  "cells": [
+   "truncate / truncate",
+   "truncate / head_tail",
+   "head_tail / truncate",
+   "head_tail / head_tail",
+   "windows / truncate",
+   "windows / head_tail",
+   "signature_docstring / truncate",
+   "signature_docstring / head_tail"
+  ],
+  "rows": [
+   {
+    "instance": "sphinx-doc__sphinx-9320",
+    "repo": "sphinx-doc/sphinx",
+    "chunk_rr": {
+     "truncate / truncate": 0.2,
+     "truncate / head_tail": 0.25,
+     "head_tail / truncate": 0.25,
+     "head_tail / head_tail": 0.5,
+     "windows / truncate": 1.0,
+     "windows / head_tail": 1.0,
+     "signature_docstring / truncate": 1.0,
+     "signature_docstring / head_tail": 1.0
+    },
+    "file_rr": {
+     "truncate / truncate": 0.2,
+     "truncate / head_tail": 0.3333333333333333,
+     "head_tail / truncate": 0.25,
+     "head_tail / head_tail": 0.5,
+     "windows / truncate": 1.0,
+     "windows / head_tail": 1.0,
+     "signature_docstring / truncate": 1.0,
+     "signature_docstring / head_tail": 1.0
+    },
+    "mean_chunk_rr": 0.65
+   },
+   {
+    "instance": "sphinx-doc__sphinx-9367",
+    "repo": "sphinx-doc/sphinx",
+    "chunk_rr": {
+     "truncate / truncate": 1.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 1.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.09090909090909091,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 1.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "file_rr": {
+     "truncate / truncate": 1.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 1.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.09090909090909091,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 1.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "mean_chunk_rr": 0.38636363636363635
+   },
+   {
+    "instance": "sphinx-doc__sphinx-7590",
+    "repo": "sphinx-doc/sphinx",
+    "chunk_rr": {
+     "truncate / truncate": 0.14285714285714285,
+     "truncate / head_tail": 0.16666666666666666,
+     "head_tail / truncate": 0.2,
+     "head_tail / head_tail": 0.125,
+     "windows / truncate": 1.0,
+     "windows / head_tail": 1.0,
+     "signature_docstring / truncate": 0.2,
+     "signature_docstring / head_tail": 0.1111111111111111
+    },
+    "file_rr": {
+     "truncate / truncate": 1.0,
+     "truncate / head_tail": 1.0,
+     "head_tail / truncate": 1.0,
+     "head_tail / head_tail": 1.0,
+     "windows / truncate": 1.0,
+     "windows / head_tail": 1.0,
+     "signature_docstring / truncate": 1.0,
+     "signature_docstring / head_tail": 1.0
+    },
+    "mean_chunk_rr": 0.3682043650793651
+   },
+   {
+    "instance": "pytest-dev__pytest-7432",
+    "repo": "pytest-dev/pytest",
+    "chunk_rr": {
+     "truncate / truncate": 0.05,
+     "truncate / head_tail": 0.07692307692307693,
+     "head_tail / truncate": 0.0,
+     "head_tail / head_tail": 0.07142857142857142,
+     "windows / truncate": 0.0,
+     "windows / head_tail": 0.05555555555555555,
+     "signature_docstring / truncate": 0.0,
+     "signature_docstring / head_tail": 0.06666666666666667
+    },
+    "file_rr": {
+     "truncate / truncate": 1.0,
+     "truncate / head_tail": 0.16666666666666666,
+     "head_tail / truncate": 0.5,
+     "head_tail / head_tail": 0.2,
+     "windows / truncate": 0.5,
+     "windows / head_tail": 1.0,
+     "signature_docstring / truncate": 0.16666666666666666,
+     "signature_docstring / head_tail": 0.1
+    },
+    "mean_chunk_rr": 0.04007173382173382
+   },
+   {
+    "instance": "mwaskom__seaborn-3069",
+    "repo": "mwaskom/seaborn",
+    "chunk_rr": {
+     "truncate / truncate": 0.0,
+     "truncate / head_tail": 0.16666666666666666,
+     "head_tail / truncate": 0.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.05555555555555555,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 0.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "file_rr": {
+     "truncate / truncate": 1.0,
+     "truncate / head_tail": 1.0,
+     "head_tail / truncate": 0.06666666666666667,
+     "head_tail / head_tail": 0.05555555555555555,
+     "windows / truncate": 0.05555555555555555,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 0.0625,
+     "signature_docstring / head_tail": 0.16666666666666666
+    },
+    "mean_chunk_rr": 0.027777777777777776
+   },
+   {
+    "instance": "pallets__flask-5014",
+    "repo": "pallets/flask",
+    "chunk_rr": {
+     "truncate / truncate": 0.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.058823529411764705,
+     "windows / head_tail": 0.058823529411764705,
+     "signature_docstring / truncate": 0.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "file_rr": {
+     "truncate / truncate": 0.3333333333333333,
+     "truncate / head_tail": 0.3333333333333333,
+     "head_tail / truncate": 0.25,
+     "head_tail / head_tail": 0.25,
+     "windows / truncate": 0.5,
+     "windows / head_tail": 0.5,
+     "signature_docstring / truncate": 0.25,
+     "signature_docstring / head_tail": 0.25
+    },
+    "mean_chunk_rr": 0.014705882352941176
+   },
+   {
+    "instance": "mwaskom__seaborn-3187",
+    "repo": "mwaskom/seaborn",
+    "chunk_rr": {
+     "truncate / truncate": 0.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.0,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 0.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "file_rr": {
+     "truncate / truncate": 0.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.0,
+     "windows / head_tail": 0.1,
+     "signature_docstring / truncate": 0.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "mean_chunk_rr": 0.0
+   },
+   {
+    "instance": "pylint-dev__pylint-4551",
+    "repo": "pylint-dev/pylint",
+    "chunk_rr": {
+     "truncate / truncate": 0.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.0,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 0.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "file_rr": {
+     "truncate / truncate": 0.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.0,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 0.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "mean_chunk_rr": 0.0
+   },
+   {
+    "instance": "pylint-dev__pylint-4604",
+    "repo": "pylint-dev/pylint",
+    "chunk_rr": {
+     "truncate / truncate": 0.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.0,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 0.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "file_rr": {
+     "truncate / truncate": 0.06666666666666667,
+     "truncate / head_tail": 0.07142857142857142,
+     "head_tail / truncate": 0.08333333333333333,
+     "head_tail / head_tail": 0.08333333333333333,
+     "windows / truncate": 0.16666666666666666,
+     "windows / head_tail": 0.3333333333333333,
+     "signature_docstring / truncate": 0.1,
+     "signature_docstring / head_tail": 0.07692307692307693
+    },
+    "mean_chunk_rr": 0.0
+   },
+   {
+    "instance": "pylint-dev__pylint-4970",
+    "repo": "pylint-dev/pylint",
+    "chunk_rr": {
+     "truncate / truncate": 0.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.0,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 0.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "file_rr": {
+     "truncate / truncate": 1.0,
+     "truncate / head_tail": 1.0,
+     "head_tail / truncate": 1.0,
+     "head_tail / head_tail": 1.0,
+     "windows / truncate": 1.0,
+     "windows / head_tail": 0.25,
+     "signature_docstring / truncate": 1.0,
+     "signature_docstring / head_tail": 1.0
+    },
+    "mean_chunk_rr": 0.0
+   },
+   {
+    "instance": "pytest-dev__pytest-5631",
+    "repo": "pytest-dev/pytest",
+    "chunk_rr": {
+     "truncate / truncate": 0.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.0,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 0.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "file_rr": {
+     "truncate / truncate": 0.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.0,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 0.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "mean_chunk_rr": 0.0
+   },
+   {
+    "instance": "pytest-dev__pytest-6202",
+    "repo": "pytest-dev/pytest",
+    "chunk_rr": {
+     "truncate / truncate": 0.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.0,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 0.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "file_rr": {
+     "truncate / truncate": 0.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.0,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 0.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "mean_chunk_rr": 0.0
+   },
+   {
+    "instance": "pytest-dev__pytest-7236",
+    "repo": "pytest-dev/pytest",
+    "chunk_rr": {
+     "truncate / truncate": 0.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.0,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 0.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "file_rr": {
+     "truncate / truncate": 0.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.05,
+     "head_tail / head_tail": 0.06666666666666667,
+     "windows / truncate": 0.0625,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 0.07142857142857142,
+     "signature_docstring / head_tail": 0.1111111111111111
+    },
+    "mean_chunk_rr": 0.0
+   },
+   {
+    "instance": "pytest-dev__pytest-7571",
+    "repo": "pytest-dev/pytest",
+    "chunk_rr": {
+     "truncate / truncate": 0.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.0,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 0.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "file_rr": {
+     "truncate / truncate": 0.16666666666666666,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.16666666666666666,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.14285714285714285,
+     "windows / head_tail": 0.0625,
+     "signature_docstring / truncate": 0.5,
+     "signature_docstring / head_tail": 0.0
+    },
+    "mean_chunk_rr": 0.0
+   },
+   {
+    "instance": "pytest-dev__pytest-7982",
+    "repo": "pytest-dev/pytest",
+    "chunk_rr": {
+     "truncate / truncate": 0.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.0,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 0.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "file_rr": {
+     "truncate / truncate": 0.05555555555555555,
+     "truncate / head_tail": 0.07692307692307693,
+     "head_tail / truncate": 0.05263157894736842,
+     "head_tail / head_tail": 0.058823529411764705,
+     "windows / truncate": 0.0,
+     "windows / head_tail": 0.05555555555555555,
+     "signature_docstring / truncate": 0.07142857142857142,
+     "signature_docstring / head_tail": 0.09090909090909091
+    },
+    "mean_chunk_rr": 0.0
+   },
+   {
+    "instance": "sphinx-doc__sphinx-7462",
+    "repo": "sphinx-doc/sphinx",
+    "chunk_rr": {
+     "truncate / truncate": 0.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.0,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 0.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "file_rr": {
+     "truncate / truncate": 0.058823529411764705,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.09090909090909091,
+     "head_tail / head_tail": 0.05,
+     "windows / truncate": 0.0,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 0.16666666666666666,
+     "signature_docstring / head_tail": 0.0
+    },
+    "mean_chunk_rr": 0.0
+   },
+   {
+    "instance": "sphinx-doc__sphinx-9230",
+    "repo": "sphinx-doc/sphinx",
+    "chunk_rr": {
+     "truncate / truncate": 0.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.0,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 0.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "file_rr": {
+     "truncate / truncate": 0.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.0,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 0.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "mean_chunk_rr": 0.0
+   },
+   {
+    "instance": "sphinx-doc__sphinx-9602",
+    "repo": "sphinx-doc/sphinx",
+    "chunk_rr": {
+     "truncate / truncate": 0.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.0,
+     "windows / head_tail": 0.0,
+     "signature_docstring / truncate": 0.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "file_rr": {
+     "truncate / truncate": 0.0,
+     "truncate / head_tail": 0.0,
+     "head_tail / truncate": 0.0,
+     "head_tail / head_tail": 0.0,
+     "windows / truncate": 0.25,
+     "windows / head_tail": 0.16666666666666666,
+     "signature_docstring / truncate": 0.0,
+     "signature_docstring / head_tail": 0.0
+    },
+    "mean_chunk_rr": 0.0
+   }
+  ]
+ },
+ "repos": {
+  "repos": [
+   {
+    "repo": "mwaskom/seaborn",
+    "instances": 2,
+    "share": 0.1111111111111111,
+    "instance_ids": [
+     "mwaskom__seaborn-3069",
+     "mwaskom__seaborn-3187"
+    ],
+    "cells": [
+     {
+      "cell": "truncate / truncate",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.5,
+      "scored": 2,
+      "delta_pp": null,
+      "baseline_scored": 2
+     },
+     {
+      "cell": "truncate / head_tail",
+      "chunk_mrr": 0.08333333333333333,
+      "file_mrr": 0.5,
+      "scored": 2,
+      "delta_pp": 8.333333333333332,
+      "baseline_scored": 2
+     },
+     {
+      "cell": "head_tail / truncate",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.03333333333333333,
+      "scored": 2,
+      "delta_pp": 0.0,
+      "baseline_scored": 2
+     },
+     {
+      "cell": "head_tail / head_tail",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.027777777777777776,
+      "scored": 2,
+      "delta_pp": 0.0,
+      "baseline_scored": 2
+     },
+     {
+      "cell": "windows / truncate",
+      "chunk_mrr": 0.027777777777777776,
+      "file_mrr": 0.027777777777777776,
+      "scored": 2,
+      "delta_pp": 2.7777777777777777,
+      "baseline_scored": 2
+     },
+     {
+      "cell": "windows / head_tail",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.05,
+      "scored": 2,
+      "delta_pp": 0.0,
+      "baseline_scored": 2
+     },
+     {
+      "cell": "signature_docstring / truncate",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.03125,
+      "scored": 2,
+      "delta_pp": 0.0,
+      "baseline_scored": 2
+     },
+     {
+      "cell": "signature_docstring / head_tail",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.08333333333333333,
+      "scored": 2,
+      "delta_pp": 0.0,
+      "baseline_scored": 2
+     }
+    ]
+   },
+   {
+    "repo": "pallets/flask",
+    "instances": 1,
+    "share": 0.05555555555555555,
+    "instance_ids": [
+     "pallets__flask-5014"
+    ],
+    "cells": [
+     {
+      "cell": "truncate / truncate",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.3333333333333333,
+      "scored": 1,
+      "delta_pp": null,
+      "baseline_scored": 1
+     },
+     {
+      "cell": "truncate / head_tail",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.3333333333333333,
+      "scored": 1,
+      "delta_pp": 0.0,
+      "baseline_scored": 1
+     },
+     {
+      "cell": "head_tail / truncate",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.25,
+      "scored": 1,
+      "delta_pp": 0.0,
+      "baseline_scored": 1
+     },
+     {
+      "cell": "head_tail / head_tail",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.25,
+      "scored": 1,
+      "delta_pp": 0.0,
+      "baseline_scored": 1
+     },
+     {
+      "cell": "windows / truncate",
+      "chunk_mrr": 0.058823529411764705,
+      "file_mrr": 0.5,
+      "scored": 1,
+      "delta_pp": 5.88235294117647,
+      "baseline_scored": 1
+     },
+     {
+      "cell": "windows / head_tail",
+      "chunk_mrr": 0.058823529411764705,
+      "file_mrr": 0.5,
+      "scored": 1,
+      "delta_pp": 5.88235294117647,
+      "baseline_scored": 1
+     },
+     {
+      "cell": "signature_docstring / truncate",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.25,
+      "scored": 1,
+      "delta_pp": 0.0,
+      "baseline_scored": 1
+     },
+     {
+      "cell": "signature_docstring / head_tail",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.25,
+      "scored": 1,
+      "delta_pp": 0.0,
+      "baseline_scored": 1
+     }
+    ]
+   },
+   {
+    "repo": "pylint-dev/pylint",
+    "instances": 3,
+    "share": 0.16666666666666666,
+    "instance_ids": [
+     "pylint-dev__pylint-4551",
+     "pylint-dev__pylint-4604",
+     "pylint-dev__pylint-4970"
+    ],
+    "cells": [
+     {
+      "cell": "truncate / truncate",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.35555555555555557,
+      "scored": 3,
+      "delta_pp": null,
+      "baseline_scored": 3
+     },
+     {
+      "cell": "truncate / head_tail",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.35714285714285715,
+      "scored": 3,
+      "delta_pp": 0.0,
+      "baseline_scored": 3
+     },
+     {
+      "cell": "head_tail / truncate",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.3611111111111111,
+      "scored": 3,
+      "delta_pp": 0.0,
+      "baseline_scored": 3
+     },
+     {
+      "cell": "head_tail / head_tail",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.3611111111111111,
+      "scored": 3,
+      "delta_pp": 0.0,
+      "baseline_scored": 3
+     },
+     {
+      "cell": "windows / truncate",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.3888888888888889,
+      "scored": 3,
+      "delta_pp": 0.0,
+      "baseline_scored": 3
+     },
+     {
+      "cell": "windows / head_tail",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.19444444444444442,
+      "scored": 3,
+      "delta_pp": 0.0,
+      "baseline_scored": 3
+     },
+     {
+      "cell": "signature_docstring / truncate",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.3666666666666667,
+      "scored": 3,
+      "delta_pp": 0.0,
+      "baseline_scored": 3
+     },
+     {
+      "cell": "signature_docstring / head_tail",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.358974358974359,
+      "scored": 3,
+      "delta_pp": 0.0,
+      "baseline_scored": 3
+     }
+    ]
+   },
+   {
+    "repo": "pytest-dev/pytest",
+    "instances": 6,
+    "share": 0.3333333333333333,
+    "instance_ids": [
+     "pytest-dev__pytest-5631",
+     "pytest-dev__pytest-6202",
+     "pytest-dev__pytest-7236",
+     "pytest-dev__pytest-7432",
+     "pytest-dev__pytest-7571",
+     "pytest-dev__pytest-7982"
+    ],
+    "cells": [
+     {
+      "cell": "truncate / truncate",
+      "chunk_mrr": 0.008333333333333333,
+      "file_mrr": 0.20370370370370372,
+      "scored": 6,
+      "delta_pp": null,
+      "baseline_scored": 6
+     },
+     {
+      "cell": "truncate / head_tail",
+      "chunk_mrr": 0.012820512820512822,
+      "file_mrr": 0.0405982905982906,
+      "scored": 6,
+      "delta_pp": 0.4487179487179488,
+      "baseline_scored": 6
+     },
+     {
+      "cell": "head_tail / truncate",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.12821637426900584,
+      "scored": 6,
+      "delta_pp": -0.8333333333333334,
+      "baseline_scored": 6
+     },
+     {
+      "cell": "head_tail / head_tail",
+      "chunk_mrr": 0.011904761904761904,
+      "file_mrr": 0.0542483660130719,
+      "scored": 6,
+      "delta_pp": 0.35714285714285704,
+      "baseline_scored": 6
+     },
+     {
+      "cell": "windows / truncate",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.1175595238095238,
+      "scored": 6,
+      "delta_pp": -0.8333333333333334,
+      "baseline_scored": 6
+     },
+     {
+      "cell": "windows / head_tail",
+      "chunk_mrr": 0.009259259259259259,
+      "file_mrr": 0.1863425925925926,
+      "scored": 6,
+      "delta_pp": 0.0925925925925925,
+      "baseline_scored": 6
+     },
+     {
+      "cell": "signature_docstring / truncate",
+      "chunk_mrr": 0.0,
+      "file_mrr": 0.1349206349206349,
+      "scored": 6,
+      "delta_pp": -0.8333333333333334,
+      "baseline_scored": 6
+     },
+     {
+      "cell": "signature_docstring / head_tail",
+      "chunk_mrr": 0.011111111111111112,
+      "file_mrr": 0.05033670033670034,
+      "scored": 6,
+      "delta_pp": 0.2777777777777777,
+      "baseline_scored": 6
+     }
+    ]
+   },
+   {
+    "repo": "sphinx-doc/sphinx",
+    "instances": 6,
+    "share": 0.3333333333333333,
+    "instance_ids": [
+     "sphinx-doc__sphinx-7462",
+     "sphinx-doc__sphinx-7590",
+     "sphinx-doc__sphinx-9230",
+     "sphinx-doc__sphinx-9320",
+     "sphinx-doc__sphinx-9367",
+     "sphinx-doc__sphinx-9602"
+    ],
+    "cells": [
+     {
+      "cell": "truncate / truncate",
+      "chunk_mrr": 0.22380952380952382,
+      "file_mrr": 0.3764705882352941,
+      "scored": 6,
+      "delta_pp": null,
+      "baseline_scored": 6
+     },
+     {
+      "cell": "truncate / head_tail",
+      "chunk_mrr": 0.06944444444444443,
+      "file_mrr": 0.2222222222222222,
+      "scored": 6,
+      "delta_pp": -15.436507936507937,
+      "baseline_scored": 6
+     },
+     {
+      "cell": "head_tail / truncate",
+      "chunk_mrr": 0.24166666666666667,
+      "file_mrr": 0.39015151515151514,
+      "scored": 6,
+      "delta_pp": 1.785714285714286,
+      "baseline_scored": 6
+     },
+     {
+      "cell": "head_tail / head_tail",
+      "chunk_mrr": 0.10416666666666667,
+      "file_mrr": 0.25833333333333336,
+      "scored": 6,
+      "delta_pp": -11.964285714285715,
+      "baseline_scored": 6
+     },
+     {
+      "cell": "windows / truncate",
+      "chunk_mrr": 0.34848484848484845,
+      "file_mrr": 0.39015151515151514,
+      "scored": 6,
+      "delta_pp": 12.46753246753247,
+      "baseline_scored": 6
+     },
+     {
+      "cell": "windows / head_tail",
+      "chunk_mrr": 0.3333333333333333,
+      "file_mrr": 0.3611111111111111,
+      "scored": 6,
+      "delta_pp": 10.952380952380954,
+      "baseline_scored": 6
+     },
+     {
+      "cell": "signature_docstring / truncate",
+      "chunk_mrr": 0.3666666666666667,
+      "file_mrr": 0.5277777777777778,
+      "scored": 6,
+      "delta_pp": 14.285714285714288,
+      "baseline_scored": 6
+     },
+     {
+      "cell": "signature_docstring / head_tail",
+      "chunk_mrr": 0.1851851851851852,
+      "file_mrr": 0.3333333333333333,
+      "scored": 6,
+      "delta_pp": -3.8624338624338614,
+      "baseline_scored": 6
+     }
+    ]
+   }
+  ],
+  "description_only": true,
+  "top_two": [
+   "pytest-dev/pytest",
+   "sphinx-doc/sphinx"
+  ],
+  "top_two_instances": 12,
+  "total_instances": 18,
+  "note": "One to six instances per repository: these are descriptions, with no intervals and no tests."
+ },
+ "unreachable": {
+  "total_hunks": 0,
+  "instances_with_any": 0,
+  "instances": 18,
+  "per_instance": [],
+  "same_in_every_cell": true,
+  "meaning": "Gold hunks no indexed chunk overlaps. They are dropped from the chunk metrics, not scored as misses."
+ },
+ "sweep_link": {
+  "run": "sweep-4",
+  "exploratory": true,
+  "retrieval_cell": "truncate / truncate",
+  "metric": "chunk reciprocal rank",
+  "available": true,
+  "rows_total": 54,
+  "rows_used": 42,
+  "rows_excluded_harness_loss": 12,
+  "exclusion": "rows with an empty outcome (a harness loss, mostly provider 429s) are excluded, not counted as failures",
+  "instances": 18,
+  "per_instance": [
+   {
+    "instance": "mwaskom__seaborn-3069",
+    "repo": "mwaskom/seaborn",
+    "rr": 0.0,
+    "runs": 2,
+    "passes": 0,
+    "pass_rate": 0.0,
+    "lost_rows": 1
+   },
+   {
+    "instance": "mwaskom__seaborn-3187",
+    "repo": "mwaskom/seaborn",
+    "rr": 0.0,
+    "runs": 2,
+    "passes": 0,
+    "pass_rate": 0.0,
+    "lost_rows": 1
+   },
+   {
+    "instance": "pallets__flask-5014",
+    "repo": "pallets/flask",
+    "rr": 0.0,
+    "runs": 2,
+    "passes": 2,
+    "pass_rate": 1.0,
+    "lost_rows": 1
+   },
+   {
+    "instance": "pylint-dev__pylint-4551",
+    "repo": "pylint-dev/pylint",
+    "rr": 0.0,
+    "runs": 2,
+    "passes": 0,
+    "pass_rate": 0.0,
+    "lost_rows": 1
+   },
+   {
+    "instance": "pylint-dev__pylint-4604",
+    "repo": "pylint-dev/pylint",
+    "rr": 0.0,
+    "runs": 2,
+    "passes": 0,
+    "pass_rate": 0.0,
+    "lost_rows": 1
+   },
+   {
+    "instance": "pylint-dev__pylint-4970",
+    "repo": "pylint-dev/pylint",
+    "rr": 0.0,
+    "runs": 2,
+    "passes": 2,
+    "pass_rate": 1.0,
+    "lost_rows": 1
+   },
+   {
+    "instance": "pytest-dev__pytest-5631",
+    "repo": "pytest-dev/pytest",
+    "rr": 0.0,
+    "runs": 3,
+    "passes": 3,
+    "pass_rate": 1.0,
+    "lost_rows": 0
+   },
+   {
+    "instance": "pytest-dev__pytest-6202",
+    "repo": "pytest-dev/pytest",
+    "rr": 0.0,
+    "runs": 3,
+    "passes": 3,
+    "pass_rate": 1.0,
+    "lost_rows": 0
+   },
+   {
+    "instance": "pytest-dev__pytest-7236",
+    "repo": "pytest-dev/pytest",
+    "rr": 0.0,
+    "runs": 3,
+    "passes": 3,
+    "pass_rate": 1.0,
+    "lost_rows": 0
+   },
+   {
+    "instance": "pytest-dev__pytest-7432",
+    "repo": "pytest-dev/pytest",
+    "rr": 0.05,
+    "runs": 3,
+    "passes": 3,
+    "pass_rate": 1.0,
+    "lost_rows": 0
+   },
+   {
+    "instance": "pytest-dev__pytest-7571",
+    "repo": "pytest-dev/pytest",
+    "rr": 0.0,
+    "runs": 3,
+    "passes": 3,
+    "pass_rate": 1.0,
+    "lost_rows": 0
+   },
+   {
+    "instance": "pytest-dev__pytest-7982",
+    "repo": "pytest-dev/pytest",
+    "rr": 0.0,
+    "runs": 3,
+    "passes": 3,
+    "pass_rate": 1.0,
+    "lost_rows": 0
+   },
+   {
+    "instance": "sphinx-doc__sphinx-7462",
+    "repo": "sphinx-doc/sphinx",
+    "rr": 0.0,
+    "runs": 3,
+    "passes": 1,
+    "pass_rate": 0.3333333333333333,
+    "lost_rows": 0
+   },
+   {
+    "instance": "sphinx-doc__sphinx-7590",
+    "repo": "sphinx-doc/sphinx",
+    "rr": 0.14285714285714285,
+    "runs": 2,
+    "passes": 0,
+    "pass_rate": 0.0,
+    "lost_rows": 1
+   },
+   {
+    "instance": "sphinx-doc__sphinx-9230",
+    "repo": "sphinx-doc/sphinx",
+    "rr": 0.0,
+    "runs": 2,
+    "passes": 2,
+    "pass_rate": 1.0,
+    "lost_rows": 1
+   },
+   {
+    "instance": "sphinx-doc__sphinx-9320",
+    "repo": "sphinx-doc/sphinx",
+    "rr": 0.2,
+    "runs": 2,
+    "passes": 2,
+    "pass_rate": 1.0,
+    "lost_rows": 1
+   },
+   {
+    "instance": "sphinx-doc__sphinx-9367",
+    "repo": "sphinx-doc/sphinx",
+    "rr": 1.0,
+    "runs": 2,
+    "passes": 2,
+    "pass_rate": 1.0,
+    "lost_rows": 1
+   },
+   {
+    "instance": "sphinx-doc__sphinx-9602",
+    "repo": "sphinx-doc/sphinx",
+    "rr": 0.0,
+    "runs": 1,
+    "passes": 0,
+    "pass_rate": 0.0,
+    "lost_rows": 2
+   }
+  ],
+  "spearman": {
+   "rho": 0.1493887570409942,
+   "ci": [
+    -0.3500161599372157,
+    0.501575940591839
+   ],
+   "p_permutation": 0.5528223588820559,
+   "n": 18
+  },
+  "auc": {
+   "value": 0.5486111111111112,
+   "ci": [
+    0.3333333333333333,
+    0.7272727272727273
+   ],
+   "n_ever_passed": 12,
+   "n_never_passed": 6,
+   "reading": "probability that a random ever-solved instance had a better retrieval rank than a random never-solved one; 0.5 is no relation"
+  },
+  "hit_split": {
+   "hit": {
+    "instances": 4,
+    "mean_pass_rate": 0.75
+   },
+   "miss": {
+    "instances": 14,
+    "mean_pass_rate": 0.5952380952380952
+   }
+  },
+  "power_note": "18 instances: an interval of this width cannot separate a modest relation from none."
+ },
+ "truncation": {
+  "max_seq_length_tokens": 128,
+  "chunks_measured": 238,
+  "share_over_budget": 0.416,
+  "median_chunk_tokens": 105,
+  "share_over_budget_by_type": {
+   "function": 0.527,
+   "module": 0.469,
+   "class_skeleton": 0.333,
+   "method": 0.304
+  },
+  "longest_chunk_tokens": 1328,
+  "source": ".claude/rules/open-questions.md, embedding truncation (measured over this repository, not the benchmark repositories)",
+  "model": "flax-sentence-embeddings/st-codesearch-distilroberta-base"
+ }
+}

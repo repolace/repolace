@@ -21,8 +21,6 @@ import retrieval_stats as R  # noqa: E402  (the module under test; the analysis 
 FIXTURE = HERE / "fixtures" / "retrieval_eval_fixture.json"
 SCHEMA = HERE.parents[1] / "api" / "repolace_api" / "site" / "retrieval_site" / "data" / "retrieval.schema.json"
 SITE_JSON = SCHEMA.with_name("retrieval.json")
-#: The page and its schema live on feat/retrieval-report until that page is merged; these tests need them.
-needs_page = pytest.mark.skipif(not SCHEMA.exists(), reason="the retrieval page (schema, data) is not in this tree")
 
 
 @pytest.fixture(autouse=True)
@@ -202,12 +200,10 @@ def _validate(instance):
     jsonschema.validate(instance, schema)
 
 
-@needs_page
 def test_ready_output_matches_the_schema(built):
     _validate(built)
 
 
-@needs_page
 def test_placeholder_matches_the_schema_and_is_not_synthetic():
     out = R.placeholder()
     assert out["status"] == "awaiting" and out["synthetic"] is False
@@ -217,7 +213,6 @@ def test_placeholder_matches_the_schema_and_is_not_synthetic():
     assert best["chunk_mrr_pp"] == [5.3, 0.0, 14.8] and best["meets_switch_rule"] is False
 
 
-@needs_page
 def test_the_committed_page_data_is_never_synthetic():
     committed = json.loads(SITE_JSON.read_text())
     assert committed["synthetic"] is False

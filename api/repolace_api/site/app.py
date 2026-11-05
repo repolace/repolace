@@ -220,6 +220,9 @@ def create_site_app(
     # feat/benchmark-site branch, see benchmark_site/README.md). `/benchmark` redirects to `/benchmark/`
     # so its relative URLs resolve.
     app.mount("/benchmark", StaticAssets(directory=HERE / "benchmark_site", html=True), name="benchmark")
+    # The retrieval grid report: the same kind of static site. It borrows the benchmark site's stylesheet, fonts, D3 and core.js
+    # by absolute path (see retrieval_site/README.md), so both directories must stay mounted together.
+    app.mount("/retrieval", StaticAssets(directory=HERE / "retrieval_site", html=True), name="retrieval")
     app.mount("/assets", StaticAssets(directory=HERE / "static"), name="assets")
 
     @app.exception_handler(StarletteHTTPException)
