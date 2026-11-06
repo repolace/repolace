@@ -20,25 +20,27 @@
 <header class="topbar">
   <a class="mark" href="/" title="repolace home"><span class="wm">repolace</span> <span class="wm-sub">retrieval</span></a>
   <nav aria-label="Sections">
-    <a href="#grid">Grid</a>
-    <a href="#gains">Gains</a>
-    <a href="#bugs">Bugs</a>
-    <a href="#power">Power</a>
-    <a href="#repos">Repos</a>
-    <a href="#passfail">Pass/fail</a>
+    <a href="#overview">Overview</a>
+    <a href="#grid">Results</a>
+    <a href="#bugs">Per bug</a>
+    <a href="#power">Sample size</a>
+    <a href="#repos">By project</a>
+    <a href="#passfail">Agent link</a>
     <a href="#method">Method</a>
     <a href="/benchmark/">Benchmark</a>
   </nav>
   <details class="menu">
     <summary>Sections</summary>
     <div class="panel">
-      <a href="#grid">The grid</a>
-      <a href="#gains">Gains over the baseline</a>
-      <a href="#bugs">Bug by bug</a>
-      <a href="#power">What 18 bugs can show</a>
-      <a href="#repos">By repository</a>
-      <a href="#passfail">Retrieval and pass/fail</a>
+      <a href="#overview">Overview: how the test works</a>
+      <a href="#grid">Results: how well each option finds the code</a>
+      <a href="#gains">Did any option beat the default?</a>
+      <a href="#bugs">Per bug</a>
+      <a href="#power">Is 18 bugs enough?</a>
+      <a href="#repos">By project</a>
+      <a href="#passfail">Link to the agent's results</a>
       <a href="#method">Method</a>
+      <a href="#next">What happens next</a>
       <a href="/benchmark/">Benchmark report</a>
       <a href="/">Home</a>
     </div>
@@ -52,16 +54,35 @@
   <div class="wrap">
     <section class="hero" aria-labelledby="headline">
       <div id="banner"></div>
-      <h1 id="headline">No retrieval strategy has yet beaten the plain baseline at finding the code a fix changes.</h1>
-      <p class="sub" id="hero-sub">Eight ways of embedding code and queries, scored on where the lines a real fix changed land in the top 20 results. No model writes anything here: it is retrieval alone.</p>
+      <p class="kicker">What is this?</p>
+      <p class="what" id="what">repolace is a system that tries to fix a bug report by editing a software project’s code. A real project holds thousands of functions, so before it can edit anything it has to find the right place with a search step. This page measures how well that search step works, and whether changing how it prepares text makes it better.</p>
+      <h1 id="headline">None of the changes we tried clearly beat today’s default at finding the right code.</h1>
+      <p class="answer" id="answer"></p>
+      <p class="why" id="why"></p>
       <dl class="kv" id="hero-kv"></dl>
       <noscript><div class="nojs">This report draws its charts with JavaScript. The numbers are all in <a href="data/retrieval.json">data/retrieval.json</a>.</div></noscript>
     </section>
   </div>
 
   <div class="wrap">
+    <section class="story" id="overview" aria-labelledby="overview-h">
+      <h2 id="overview-h">How does the test work?</h2>
+      <div class="measure" id="overview-text"></div>
+      <ol class="steps" id="steps"></ol>
+      <p class="callout" id="no-model"></p>
+      <h3>The eight search setups</h3>
+      <div class="measure" id="strategies"></div>
+      <h3>Words used on this page</h3>
+      <details class="glossary" open>
+        <summary>Plain-language glossary (click to fold)</summary>
+        <dl id="glossary"></dl>
+      </details>
+      <h3>What this page does not show</h3>
+      <ul class="plain disc notlist" id="notshow"></ul>
+    </section>
+
     <section class="story" id="grid" aria-labelledby="grid-h">
-      <h2 id="grid-h">The grid, as measured</h2>
+      <h2 id="grid-h">How well does each setup find the right code?</h2>
       <div class="pair">
         <div class="measure" id="grid-text"></div>
         <aside class="note" id="grid-note"></aside>
@@ -72,7 +93,7 @@
     </section>
 
     <section class="story" id="gains" aria-labelledby="gains-h">
-      <h2 id="gains-h">Gain over the baseline, against the bar</h2>
+      <h2 id="gains-h">Did any setup beat the default?</h2>
       <div class="pair">
         <div class="measure" id="gains-text"></div>
         <aside class="note" id="gains-note"></aside>
@@ -82,7 +103,7 @@
     </section>
 
     <section class="story" id="bugs" aria-labelledby="bugs-h">
-      <h2 id="bugs-h">Bug by bug</h2>
+      <h2 id="bugs-h">Which bugs does the search find, and which does it miss?</h2>
       <div class="pair">
         <div class="measure" id="bugs-text"></div>
         <aside class="note" id="bugs-note"></aside>
@@ -93,7 +114,7 @@
     </section>
 
     <section class="story" id="power" aria-labelledby="power-h">
-      <h2 id="power-h">What 18 bugs can show</h2>
+      <h2 id="power-h">Is 18 bugs enough to tell?</h2>
       <div class="pair">
         <div class="measure" id="power-text"></div>
         <aside class="note" id="power-note"></aside>
@@ -103,7 +124,7 @@
     </section>
 
     <section class="story" id="repos" aria-labelledby="repos-h">
-      <h2 id="repos-h">By repository</h2>
+      <h2 id="repos-h">Does it depend on the project?</h2>
       <div class="pair">
         <div class="measure" id="repos-text"></div>
         <aside class="note" id="repos-note"></aside>
@@ -112,7 +133,7 @@
     </section>
 
     <section class="story" id="passfail" aria-labelledby="pf-h">
-      <h2 id="pf-h">Does finding the code predict a pass?</h2>
+      <h2 id="pf-h">Does finding the right code predict whether the agent fixes the bug?</h2>
       <div class="pair">
         <div class="measure" id="pf-text"></div>
         <aside class="note" id="pf-note"></aside>
@@ -127,7 +148,7 @@
         <div class="measure" id="met-text"></div>
         <aside class="note" id="met-note"></aside>
       </div>
-      <h3>The 128-token ceiling</h3>
+      <h3>The 128-token limit, measured</h3>
       <div class="measure" id="trunc-text"></div>
       <dl class="kv" id="trunc-kv"></dl>
       <h3>What is scored, and what is not</h3>
@@ -137,6 +158,11 @@
       <h3>Data and regeneration</h3>
       <div class="downloads" id="downloads"></div>
       <pre class="cmd" id="regen"></pre>
+    </section>
+
+    <section class="story" id="next" aria-labelledby="next-h">
+      <h2 id="next-h">What happens next</h2>
+      <div class="measure" id="next-text"></div>
     </section>
 
     <footer class="foot" id="foot"></footer>

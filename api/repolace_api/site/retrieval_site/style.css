@@ -70,3 +70,34 @@ svg .annot-strong { font-size: 12px; fill: var(--ink); font-weight: 600; }
 .pf-stats div { border-top: 1px solid var(--axis); padding-top: 0.4rem; }
 .pf-stats dt { font-size: 0.8125rem; color: var(--ink-2); }
 .pf-stats dd { margin: 0.1rem 0 0; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* ---------- plain-language scaffolding ---------- */
+.kicker { font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); margin: 0 0 0.35rem; }
+.what { max-width: 44rem; font-size: 1.1875rem; line-height: 1.55; margin-bottom: 2rem; }
+.answer, .why { max-width: 44rem; font-size: 1.125rem; line-height: 1.55; margin-top: 1.4rem; }
+.answer b, .why b { font-weight: 600; }
+.why { color: var(--ink-2); margin-top: 0.8rem; }
+.callout { max-width: 46rem; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 0.9rem 1.1rem; }
+.steps { list-style: none; margin: 1.6rem 0 1rem; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; counter-reset: step; }
+.steps li { counter-increment: step; position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 2.6rem 1rem 1rem; font-size: 0.9375rem; line-height: 1.5; }
+.steps li::before { content: counter(step); position: absolute; left: 1rem; top: 0.8rem; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--ink); color: var(--page); font-weight: 600; font-size: 0.875rem; display: grid; place-items: center; }
+.steps li b { display: block; font-weight: 600; margin-bottom: 0.2rem; }
+.steps li:not(:last-child)::after { content: "\2192"; position: absolute; right: -0.95rem; top: 50%; color: var(--ink-2); font-size: 1rem; z-index: 1; }
+@media (max-width: 900px) { .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } .steps li:nth-child(2)::after { display: none; } }
+@media (max-width: 520px) { .steps { grid-template-columns: minmax(0, 1fr); } .steps li::after { display: none; } }
+.strat { display: grid; gap: 0.55rem; margin: 0.6rem 0 1rem; }
+.strat div { display: grid; grid-template-columns: 11.5rem minmax(0, 1fr); gap: 0.2rem 1rem; align-items: baseline; border-top: 1px solid var(--grid); padding-top: 0.55rem; }
+.strat dt { font-family: var(--mono); font-size: 0.8125rem; font-weight: 600; }
+.strat dd { margin: 0; color: var(--ink); }
+@media (max-width: 600px) { .strat div { grid-template-columns: minmax(0, 1fr); } }
+details.glossary { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 0.7rem 1.1rem 1rem; max-width: 56rem; }
+details.glossary summary { cursor: pointer; font-weight: 600; font-size: 0.9375rem; }
+details.glossary dl { margin: 0.8rem 0 0; display: grid; gap: 0.7rem 2rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+details.glossary dt { font-weight: 600; font-size: 0.9375rem; }
+details.glossary dd { margin: 0.1rem 0 0; font-size: 0.9375rem; color: var(--ink-2); line-height: 1.5; }
+@media (max-width: 760px) { details.glossary dl { grid-template-columns: minmax(0, 1fr); } }
+.how { max-width: 46rem; font-size: 0.9375rem; color: var(--ink-2); margin: 2rem 0 0.2rem; }
+.how b, .takeaway b { color: var(--ink); font-weight: 600; }
+.how + figure.fig, .how + .fig { margin-top: 0.6rem; }
+.takeaway { max-width: 46rem; font-size: 1rem; margin: 0.6rem 0 0; padding: 0.6rem 0.9rem; background: var(--wash); border-radius: 8px; }
+.notlist { max-width: 46rem; }

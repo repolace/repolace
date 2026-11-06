@@ -1,6 +1,6 @@
 // Everything that needs the per-bug run: the heatmap, reciprocal-rank distributions, repository dot plot and the pass/fail panel.
 import { $, el, figure, attachTip, trow } from "/benchmark/js/core.js";
-import { colorOf, hollow, mark, parse, ppct, ci, fnum, short, pendingBox, IX_COLOR, INDEX, sign, pv, plural } from "./shared.js";
+import { colorOf, hollow, mark, parse, ppct, fnum, short, pendingBox, INDEX, sign, pv, plural, notes } from "./shared.js";
 
 const rankOf = (rr) => (rr == null || rr <= 0 ? null : Math.round(1 / rr));
 const cellName = (k) => k.replace("signature_docstring", "sig_docstring");
@@ -10,7 +10,7 @@ export function renderBugs(D) {
     $("#fig-heat").replaceChildren(pendingBox("The bug-by-bug heatmap and the distributions of where the first correct chunk lands need the per-instance results."));
     return;
   }
-  heat(D); strip(D); bins(D);
+  heat(D); heatNotes(D); strip(D); stripNotes(D); bins(D); binsNotes(D);
 }
 
 function heat(D) {
@@ -27,10 +27,10 @@ function heat(D) {
   };
   const api = figure($("#fig-heat"), {
     id: "heat",
-    title: "Where the first correct chunk landed, bug by bug",
-    sub: "Rows are bugs, columns the eight cells. Darker means nearer the top of the 20 results.",
+    title: "Where did the first correct result land for each bug?",
+    sub: "Rows are bugs, columns are the eight setups. Darker means nearer the top of the 20 results.",
     tools: [kindSel, ordSel],
-    caption: "A cell shows the rank of the first correct chunk (1 is best). A hatched cell is a miss: nothing correct in the top 20. A dashed empty cell was not scored for that bug (no gold of that kind). Hover or focus a cell for the exact value.",
+    caption: "A dashed empty box means nothing was scored for that bug (no answer key of that kind). Hover or focus a box for the exact value.",
     table: () => ({
       caption: "Reciprocal rank per bug and cell (rank in brackets).",
       cols: [{ key: "b", label: "Bug" }, { key: "r", label: "Repository" }, ...H.cells.map((c) => ({ key: c, label: c }))],
@@ -60,6 +60,15 @@ function heat(D) {
   });
 }
 
+function heatNotes(D) {
+  const H = D.d.heatmap;
+  const never = H.rows.filter((r) => H.cells.every((c) => !r.chunk_rr[c]));
+  const base = D.d.distributions.cells.find((c) => c.key === "truncate / truncate").chunk_mrr;
+  notes($("#fig-heat"),
+    "Each row is a bug and each column one of the eight setups. A number is the position of the first correct result (1 is best); a hatched box means the correct code was not in the top 20; a dashed box means nothing was scored.",
+    `${never.length} of ${H.rows.length} bugs ${never.length === 1 ? "is" : "are"} missed by all eight setups, and the default misses ${Math.round(base.share_miss * base.values.length)}. Where a setup does find a bug, the position varies widely, so a gain in the average comes from a few bugs switching between missed and found.`);
+}
+
 function strip(D) {
   const R = D.d.distributions.cells;
   let kind = "chunk_mrr";
@@ -67,10 +76,10 @@ function strip(D) {
   sel.addEventListener("change", () => { kind = sel.value; api.redraw(); });
   const api = figure($("#fig-strip"), {
     id: "strip",
-    title: "Distribution of reciprocal rank, one dot per bug",
-    sub: "Reciprocal rank is 1 when the first correct chunk is first, 0.5 when second, 0 for a miss. The bar is the median.",
+    title: "How are the scores spread across bugs?",
+    sub: "One dot per bug. Reciprocal rank is 1 when the first correct result is first, 0.5 when second and 0 for a miss.",
     tools: [sel],
-    caption: "Most dots sit at 0: for most bugs the top 20 chunks hold nothing the fix changed. A mean over these values is driven by the few bugs found at rank 1 to 3, which is why the intervals are wide.",
+    caption: null,
     table: () => ({
       caption: "Share of bugs by outcome, and median.",
       cols: [{ key: "c", label: "Cell" }, { key: "n", label: "Scored" }, { key: "m", label: "Miss" }, { key: "r1", label: "Rank 1" }, { key: "md", label: "Median RR" }],
@@ -107,15 +116,32 @@ function strip(D) {
   });
 }
 
+function stripNotes(D) {
+  const R = D.d.distributions.cells;
+  const miss = R.map((c) => c.chunk_mrr.share_miss);
+  notes($("#fig-strip"),
+    "Each dot is one bug in one setup, placed by reciprocal rank: far right (1) means the right code was the very first result, far left (0) means it was missed. The black bar is the median.",
+    `In every setup most dots sit at zero: ${ppct(Math.min(...miss), 0)} to ${ppct(Math.max(...miss), 0)} of bugs are missed. An average over these scores is driven by a handful of bugs, which is why the intervals are wide.`);
+}
+
+function binsNotes(D) {
+  const R = D.d.distributions.cells;
+  const miss = R.map((c) => c.chunk_mrr.bins.miss);
+  const n = Object.values(R[0].chunk_mrr.bins).reduce((a, b) => a + b, 0);
+  notes($("#fig-bins"),
+    "Each bar is one setup, split by where the first correct result appeared: dark blue is first or second place, pale blue is lower down, and the white part is not in the top 20.",
+    `The white “missed” part is the largest in every setup: ${Math.min(...miss)} to ${Math.max(...miss)} of ${n} bugs.`);
+}
+
 function bins(D) {
   const names = D.d.distributions.rank_bins;
   const R = D.d.distributions.cells;
   const shade = (i) => `color-mix(in srgb, var(--accent) ${[100, 78, 58, 38, 22][i]}%, var(--surface))`;
   figure($("#fig-bins"), {
     id: "bins",
-    title: "Where the first correct chunk lands, as a share of bugs",
-    sub: "Chunk reciprocal rank, grouped by rank",
-    caption: "Each bar is the 18 bugs (or those scored) of one cell. Ranks 1 and 2 are where an agent reading the first few results would find the code; the empty segment is the bugs for which the top 20 held nothing.",
+    title: "How many bugs are found early, late or not at all?",
+    sub: "Chunk score, bugs grouped by the position of the first correct result",
+    caption: null,
     table: () => ({ caption: "Bugs by rank of the first correct chunk (chunk RR).", cols: [{ key: "c", label: "Cell" }, ...names.map((n) => ({ key: n, label: n === "miss" ? "Miss" : "Rank " + n }))], rows: R.map((c) => ({ c: c.key, ...c.chunk_mrr.bins })) }),
     draw: (plot) => {
       const d3 = window.d3;
@@ -159,10 +185,10 @@ export function renderRepos(D) {
   const val = (c) => c[metric];
   const api = figure($("#fig-repos"), {
     id: "repos",
-    title: "Mean reciprocal rank by repository",
-    sub: "Descriptive only: one to six bugs per repository, no intervals, no tests",
+    title: "How does each setup score within each project?",
+    sub: "Descriptive only: one to six bugs per project, no intervals, no tests",
     tools: [sel],
-    caption: `Each row is a repository with its number of bugs. Dots are the eight cells; the row is split into four lanes, one per index strategy. ${D.d.repos.top_two.map((r) => r.split("/")[1]).join(" and ")} hold ${D.d.repos.top_two_instances} of the ${D.d.repos.total_instances} bugs, so the pooled numbers are mostly about those two.`,
+    caption: null,
     table: () => ({
       caption: "Mean reciprocal rank per repository and cell.",
       cols: [{ key: "r", label: "Repository (bugs)" }, ...D.keys.map((k) => ({ key: k, label: k }))],
@@ -195,17 +221,26 @@ export function renderRepos(D) {
       plot.replaceChildren(svg.node());
     },
   });
+  repoNotes(D);
+}
+
+function repoNotes(D) {
+  const R = D.d.repos;
+  const base = R.repos.map((r) => ({ r, v: r.cells.find((c) => c.cell === "truncate / truncate").chunk_mrr })).filter((x) => x.v != null).sort((a, b) => a.v - b.v);
+  notes($("#fig-repos"),
+    "Each row is one open-source project. Each dot is one setup’s average score on that project’s bugs; the row is split into four lanes, one per way of preparing code, and hollow dots mark the shortened-bug-text variants.",
+    `The scores depend heavily on the project: with today’s default, ${base[0].r.repo.split("/")[1]} scores ${ppct(base[0].v, 0)} and ${base.at(-1).r.repo.split("/")[1]} ${ppct(base.at(-1).v, 0)}. ${R.top_two.map((x) => x.split("/")[1]).join(" and ")} hold ${R.top_two_instances} of the ${R.total_instances} bugs.`);
 }
 
 export function renderSweep(D) {
   const box = $("#pf-box");
-  if (!D.ready) { box.replaceChildren(pendingBox("The relation between retrieval and the sweep-4 outcome needs the per-instance retrieval results.")); box.className = ""; return; }
+  if (!D.ready) { box.replaceChildren(pendingBox("The relation between retrieval and the agent’s benchmark results needs the per-instance retrieval results.")); box.className = ""; return; }
   const S = D.d.sweep_link;
-  if (!S.available) { box.replaceChildren(el("p", {}, "The sweep-4 task table was not available when this page was built, so this panel is empty.")); return; }
+  if (!S.available) { box.replaceChildren(el("p", {}, "The agent’s benchmark results were not available when this page was built, so this panel is empty.")); return; }
   const sp = S.spearman, au = S.auc;
   box.replaceChildren(
     el("span", { class: "tag" }, "Exploratory"),
-    el("p", {}, `${S.instances} bugs have both a retrieval score and at least one sweep-4 run that finished. ${S.rows_excluded_harness_loss} of the ${S.rows_total} sweep-4 rows have no outcome (the harness lost them, mostly to provider rate limits) and are left out; they are not counted as failures. One test, not corrected for anything, on very few bugs.`),
+    el("p", {}, `${S.instances} bugs have both a retrieval score and at least one finished attempt in the agent’s benchmark. ${S.rows_excluded_harness_loss} of the ${S.rows_total} benchmark attempts have no outcome (the harness lost them, mostly to provider rate limits) and are left out; they are not counted as failures. One test, not corrected for anything, on very few bugs.`),
     sp ? el("dl", { class: "pf-stats" },
       el("div", {}, el("dt", {}, "Spearman rank correlation"), el("dd", {}, `${fnum(sp.rho, 2)}  (95% interval ${fnum(sp.ci?.[0], 2)} to ${fnum(sp.ci?.[1], 2)})`)),
       el("div", {}, el("dt", {}, "Permutation p"), el("dd", {}, pv(sp.p_permutation))),
@@ -215,10 +250,10 @@ export function renderSweep(D) {
   const per = S.per_instance;
   figure($("#fig-sweep"), {
     id: "sweep",
-    title: "Retrieval of the baseline cell against the sweep-4 pass rate",
-    sub: "One dot per bug. Horizontal: chunk reciprocal rank of truncate / truncate. Vertical: share of its finished sweep-4 runs that passed.",
-    caption: "Dots at the left edge are bugs the baseline retrieval missed entirely. The agent can also search the repository with its own tools, so it does not depend only on this retrieval; a weak link would not be surprising.",
-    table: () => ({ caption: "Per bug: baseline retrieval and sweep-4 outcome.", cols: [{ key: "b", label: "Bug" }, { key: "r", label: "Chunk RR" }, { key: "p", label: "Passed / finished runs" }, { key: "l", label: "Rows lost" }],
+    title: "Do bugs that search finds also get fixed more often?",
+    sub: "One dot per bug, using today’s default search and the agent’s benchmark attempts.",
+    caption: "Dots at the left edge are bugs the default search missed entirely. The agent can also search the repository with its own tools, so it does not depend only on this search; a weak link would not be surprising.",
+    table: () => ({ caption: "Per bug: default search and agent benchmark outcome.", cols: [{ key: "b", label: "Bug" }, { key: "r", label: "Chunk RR" }, { key: "p", label: "Passed / finished attempts" }, { key: "l", label: "Rows lost" }],
       rows: per.map((p) => ({ b: short(p.instance), r: fnum(p.rr, 3), p: `${p.passes} / ${p.runs}`, l: p.lost_rows })) }),
     draw: (plot) => {
       const d3 = window.d3;
@@ -226,7 +261,7 @@ export function renderSweep(D) {
       const H = Math.min(360, Math.max(260, w * 0.5)), m = { l: 48, r: 16, t: 14, b: 44 };
       const x = d3.scaleLinear([0, 1], [m.l + 16, w - m.r - 8]);
       const y = d3.scaleLinear([0, 1], [H - m.b - 10, m.t + 10]);
-      const svg = d3.create("svg").attr("viewBox", `0 0 ${w} ${H}`).attr("role", "group").attr("aria-label", "Retrieval success against sweep-4 pass rate, one dot per bug");
+      const svg = d3.create("svg").attr("viewBox", `0 0 ${w} ${H}`).attr("role", "group").attr("aria-label", "Retrieval success against the agent’s pass rate, one dot per bug");
       for (const t of [0, 0.25, 0.5, 0.75, 1]) {
         svg.append("line").attr("class", "grid").attr("x1", m.l).attr("x2", w - m.r).attr("y1", y(t)).attr("y2", y(t));
         svg.append("text").attr("x", m.l - 6).attr("y", y(t) + 4).attr("text-anchor", "end").text(Math.round(t * 100) + "%");
@@ -244,4 +279,8 @@ export function renderSweep(D) {
       plot.replaceChildren(svg.node());
     },
   });
+  const hs = S.hit_split;
+  notes($("#fig-sweep"),
+    "Each dot is one bug. Left to right is how well today’s default search found the changed code (far left means it was missed); bottom to top is the share of the agent’s finished benchmark attempts at that bug that passed.",
+    `Bugs where search found the code passed ${ppct(hs.hit.mean_pass_rate, 0)} of the time (${plural(hs.hit.instances, "bug")}) against ${ppct(hs.miss.mean_pass_rate, 0)} for the others (${hs.miss.instances}). With so few bugs, and a correlation of ${fnum(sp?.rho, 2)} (95% interval ${fnum(sp?.ci?.[0], 2)} to ${fnum(sp?.ci?.[1], 2)}), this cannot show a link either way.`);
 }

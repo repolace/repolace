@@ -1,6 +1,6 @@
 // The grid as measured: recall@k curves, one small multiple per index strategy, then the whole table.
 import { $, el, figure, attachTip, trow, buildTable } from "/benchmark/js/core.js";
-import { INDEX, IX_COLOR, IX_PLAIN, colorOf, hollow, parse, ppct, ci, mark, isBase, fnum, legend } from "./shared.js";
+import { INDEX, IX_COLOR, colorOf, ppct, ci, mark, isBase, legend, notes } from "./shared.js";
 
 const KS = [5, 10, 20];
 
@@ -14,10 +14,10 @@ export function renderGrid(D) {
 
   const api = figure($("#fig-curves"), {
     id: "curves",
-    title: "Recall at 5, 10 and 20 chunks",
-    sub: D.ready ? "Mean over the bugs, with the 95% interval over bugs. The grey line is the baseline, truncate / truncate." : "Mean over the bugs. Intervals arrive with the per-bug figures.",
+    title: "How much of the changed code is found in the first 5, 10 and 20 results?",
+    sub: D.ready ? "Average over the bugs, with the 95% interval. The grey line is today’s default, truncate / truncate." : "Average over the bugs. Intervals arrive with the per-bug figures.",
     tools: [sel],
-    caption: "Each panel holds one index strategy; the solid line is queried with truncate, the dashed line with head_tail. The search returns 20 chunks, so file recall at k is over the files of the first k chunks, not the first k files. All panels share one vertical scale.",
+    caption: "File recall at k counts the files of the first k chunks, not the first k files. All panels share one vertical scale.",
     table: () => ({
       caption: `${kind === "chunk" ? "Chunk" : "File"} recall by cut-off.`,
       cols: [{ key: "c", label: "Index / query" }, ...KS.map((k) => ({ key: "k" + k, label: `R@${k} [95% interval]` })), { key: "n", label: "Scored" }],
@@ -65,9 +65,15 @@ export function renderGrid(D) {
     },
   });
   void api;
+  const r20 = D.keys.map((k) => ({ k, m: D.byKey[k].metrics.chunk_r20 }));
+  const top = r20.reduce((a, b) => (b.m.mean > a.m.mean ? b : a));
+  const bm = D.byKey["truncate / truncate"].metrics.chunk_r20;
+  notes($("#fig-curves"),
+    "Each small chart is one way of preparing code. The dots show the share of the changed code that appears within the first 5, 10 or 20 results (you can switch to whole files); the thin bars are the 95% interval across the bugs, and the grey line is today’s default. Solid marks mean the bug text was kept from its start, hollow marks that its start and end were kept.",
+    D.ready ? `At 20 results the default finds ${ppct(bm.mean, 0)} of changed code pieces, with a 95% interval of ${ci(bm.ci, (x) => ppct(x, 0))}. The highest setup at 20 is ${top.k} at ${ppct(top.m.mean, 0)}, and ${top.m.ci && bm.ci && top.m.ci[0] <= bm.ci[1] && bm.ci[0] <= top.m.ci[1] ? "the two intervals overlap" : "the two intervals do not overlap"}.` : `At 20 results the default finds ${ppct(bm.mean, 0)} of changed code pieces; the highest setup is ${top.k} at ${ppct(top.m.mean, 0)}.`);
 
   // the full table, always visible: every cell, every metric, with its denominator
-  const cols = [{ key: "c", label: "Index / query" }, { key: "n", label: "Scored: file / chunk" },
+  const cols = [{ key: "c", label: "Setup (code / bug text)" }, { key: "n", label: "Bugs scored: file / chunk" },
     ...["chunk_mrr", "file_mrr"].map((m) => ({ key: m, label: m === "chunk_mrr" ? "Chunk MRR" : "File MRR" })),
     ...["chunk", "file"].flatMap((kd) => KS.map((k) => ({ key: `${kd}_r${k}`, label: `${kd} R@${k}` })))];
   const rows = D.keys.map((key) => {
@@ -75,7 +81,7 @@ export function renderGrid(D) {
     const cellTxt = (m) => { const v = c.metrics[m]; return v.mean == null ? "n/a" : ppct(v.mean) + (v.ci ? ` [${ppct(v.ci[0], 0)}, ${ppct(v.ci[1], 0)}]` : ""); };
     return { c: key + (isBase(key) ? " (baseline)" : ""), n: `${c.scored.file} / ${c.scored.chunk} of ${D.n}`, ...Object.fromEntries(cols.slice(2).map((col) => [col.key, cellTxt(col.key)])) };
   });
-  $("#fig-table").replaceChildren(el("h3", {}, "Every cell, every metric"), buildTable({
+  $("#fig-table").replaceChildren(el("h3", {}, "Every setup, every score"), buildTable({
     caption: D.ready ? "Mean with the 95% interval over bugs in brackets. MRR counts only the top 20 chunks: a miss scores 0." : "Means without intervals. MRR counts only the top 20 chunks: a miss scores 0.",
     cols, rows,
   }));

@@ -1,6 +1,6 @@
 // The forest of paired gains against the switch-rule bar, and the power analysis behind how large a gain 18 bugs can show.
 import { $, el, figure, attachTip, trow } from "/benchmark/js/core.js";
-import { colorOf, hollow, mark, fpp, ciPP, pv, fnum, sign, isBase } from "./shared.js";
+import { colorOf, mark, fpp, ciPP, pv, fnum, sign, notes } from "./shared.js";
 
 const MET = [["chunk_mrr", "Chunk MRR (the pre-registered metric)"], ["file_mrr", "File MRR"],
   ["chunk_r5", "Chunk R@5"], ["chunk_r10", "Chunk R@10"], ["chunk_r20", "Chunk R@20"], ["file_r5", "File R@5"], ["file_r10", "File R@10"], ["file_r20", "File R@20"]];
@@ -15,15 +15,13 @@ export function renderForest(D) {
 
   const api = figure($("#fig-forest"), {
     id: "forest",
-    title: "Paired gain over truncate / truncate, in percentage points",
-    sub: "Each bug is compared with itself. Bars are the 95% interval over bugs.",
+    title: "How much better or worse is each setup than today’s default?",
+    sub: "Each bug is scored under both setups. Bars are the 95% interval over bugs.",
     tools: [sel],
-    caption: `The dashed line is the pre-registered bar of ${D.minGain} percentage points, and a strategy only clears it if its whole interval is also above zero. ` +
-      (D.mde != null ? `The pale band marks gains smaller than about ${Math.round(D.mde)} points, which 18 bugs could not reliably detect (80% power, see the power section). ` : "") +
-      "Seven comparisons on the same few bugs: whichever looks best is a candidate, not a finding.",
+    caption: D.mde != null ? `The pale band marks gains smaller than about ${Math.round(D.mde)} points, which ${D.n} bugs could not reliably detect (see “Is ${D.n} bugs enough to tell?”).` : null,
     table: () => ({
       caption: `${MET.find((m) => m[0] === metric)[1]}: paired difference against truncate / truncate.`,
-      cols: [{ key: "c", label: "Cell" }, { key: "n", label: "Paired" }, { key: "m", label: "Mean gain" }, { key: "ci", label: "95% interval" },
+      cols: [{ key: "c", label: "Setup" }, { key: "n", label: "Bugs paired" }, { key: "m", label: "Average gain" }, { key: "ci", label: "95% interval" },
         ...(D.ready ? [{ key: "wl", label: "Better / worse / equal" }, { key: "dz", label: "d_z" }, { key: "p", label: "p (sign-flip)" }, { key: "h", label: "Holm-adjusted p" }] : []), { key: "r", label: "Meets the bar" }],
       rows: rows().map((r) => ({
         c: r.cell, n: r.paired, m: fpp(r.mean_pp), ci: ciPP(r.ci_pp),
@@ -80,6 +78,12 @@ export function renderForest(D) {
       plot.replaceChildren(svg.node());
     },
   });
+  const pr = D.deltas("chunk_mrr");
+  const bst = D.best;
+  notes($("#fig-forest"),
+    `Each row compares one setup with today’s default. The dot is its average gain in percentage points and the bar is the 95% interval; a dot to the right of the solid zero line is better than the default. The dashed line is the ${D.minGain}-point bar a setup had to clear, with its whole bar also to the right of zero.`,
+    D.anyMet ? `${pr.filter((r) => r.meets_switch_rule).map((r) => r.cell).join(", ")} cleared the bar. With seven comparisons on ${D.n} bugs, treat that as a lead to confirm.`
+      : `No setup clears the bar: none has both an average gain of ${D.minGain} points and an interval wholly above zero. The best dot is ${bst.cell} at ${fpp(bst.mean_pp)}, with an interval from ${sign(bst.ci_pp[0])} to ${sign(bst.ci_pp[1])} points, so its true effect could be zero or negative.`);
 }
 
 export function renderPower(D) {
@@ -92,10 +96,9 @@ export function renderPower(D) {
   const mde = P.mde_pp_median_sd;
   figure($("#fig-power"), {
     id: "power",
-    title: "Chance of seeing a true gain, by size of the gain",
-    sub: `${P.n} bugs, two-sided test at 5%, the spread of the differences observed in this run`,
-    caption: `The bold curve uses the median spread over the seven comparisons (${fnum(P.median_sd_pp, 0)} points); the grey curves use each comparison's own. The dotted line is 80% power, reached at about ${fnum(mde, 0)} points. ` +
-      `Taking the Holm correction for seven comparisons into account, it would take about ${fnum(P.mde_pp_median_sd_holm, 0)} points. The ${D.minGain} point bar sits at ${Math.round((P.power_at_min_gain_median_sd ?? 0) * 100)}% power.`,
+    title: "How likely is a test with this many bugs to notice a real gain?",
+    sub: `${P.n} bugs; the spread of the differences is the one seen in this data`,
+    caption: `The bold curve uses the median spread over the seven comparisons (${fnum(P.median_sd_pp, 0)} points); the grey curves use each comparison’s own.`,
     table: () => ({
       caption: "Smallest gain detectable at 80% power, per comparison.",
       cols: [{ key: "c", label: "Cell" }, { key: "o", label: "Observed gain" }, { key: "s", label: "SD of paired differences" }, { key: "m", label: "Detectable at 80%" }, { key: "h", label: "Holm-corrected" }, { key: "pw", label: `Power at ${D.minGain} pp` }],
@@ -129,14 +132,17 @@ export function renderPower(D) {
     },
   });
 
+  notes($("#fig-power"),
+    "The curve shows how likely a test on this many bugs is to notice a real gain of each size (left to right); higher is better. The dotted line marks 80%, the usual target, and the dashed line is our 10-point bar.",
+    `A real gain would need to be about ${fnum(mde, 0)} points to be noticed 80% of the time (about ${fnum(P.mde_pp_median_sd_holm, 0)} points once the seven comparisons are allowed for). A real ${D.minGain}-point gain would be noticed only about ${Math.round((P.power_at_min_gain_median_sd ?? 0) * 100)}% of the time.`);
+
   const nc = P.n_curve;
   if (nc) {
     const need = nc.points.find((p) => p[1] >= 0.8)?.[0];
     figure($("#fig-npower"), {
       id: "npower",
-      title: `Chance of seeing a ${D.minGain} point gain, by number of bugs`,
-      sub: `Same spread (${fnum(nc.sd_pp, 0)} points), five per cent level`,
-      caption: need ? `Eighty per cent power for a ${D.minGain} point gain would need about ${need} bugs, against ${P.n} here.` : `Even 100 bugs would not reach 80% power for a ${D.minGain} point gain at this spread.`,
+      title: `How many bugs would it take to notice a ${D.minGain}-point gain?`,
+      sub: `Same spread (${fnum(nc.sd_pp, 0)} points); only the number of bugs changes`,
       table: () => ({ caption: "Power by number of bugs.", cols: [{ key: "n", label: "Bugs" }, { key: "p", label: "Power" }], rows: nc.points.filter((p, i) => i % 3 === 0 || p[0] === P.n).map((p) => ({ n: p[0], p: Math.round(p[1] * 100) + "%" })) }),
       draw: (plot) => {
         const d3 = window.d3;
@@ -154,9 +160,11 @@ export function renderPower(D) {
         svg.append("path").attr("fill", "none").attr("stroke", "var(--ink)").attr("stroke-width", 2.5).attr("d", d3.line().x((p) => x(p[0])).y((p) => y(p[1]))(nc.points));
         svg.append("line").attr("stroke", "var(--ink-2)").attr("stroke-dasharray", "2 4").attr("x1", m.l).attr("x2", w - m.r).attr("y1", y(0.8)).attr("y2", y(0.8));
         svg.append("line").attr("class", "thresh").attr("x1", x(P.n)).attr("x2", x(P.n)).attr("y1", m.t).attr("y2", H - m.b);
-        svg.append("text").attr("class", "annot-strong").attr("x", x(P.n) + 5).attr("y", m.t + 12).text(`this run: ${P.n} bugs`);
+        svg.append("text").attr("class", "annot-strong").attr("x", x(P.n) + 5).attr("y", m.t + 12).text(`our test: ${P.n} bugs`);
         plot.replaceChildren(svg.node());
       },
     });
+    notes($("#fig-npower"), "Same idea, but now the number of bugs changes along the bottom and the gain is fixed at 10 points. The dashed line marks the number of bugs we had.",
+      need ? `About ${need} bugs would be needed to notice a real ${D.minGain}-point gain 80% of the time, against ${P.n} here.` : `Even 100 bugs would not reach 80% for a ${D.minGain}-point gain at this spread.`);
   }
 }

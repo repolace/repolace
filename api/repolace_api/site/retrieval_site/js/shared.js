@@ -10,9 +10,18 @@ export const IX_NAME = {
   truncate: "truncate", head_tail: "head_tail", windows: "windows", signature_docstring: "signature_docstring",
 };
 export const IX_PLAIN = {
-  truncate: "keep the first 128 tokens (today's default)", head_tail: "keep the start and the end",
-  windows: "embed overlapping windows and keep the best", signature_docstring: "embed the signature and docstring",
+  truncate: "keeps the first 128 tokens of each chunk and ignores the rest (today's default)",
+  head_tail: "keeps the start and the end of each chunk and drops the middle",
+  windows: "cuts each chunk into overlapping windows and averages them",
+  signature_docstring: "uses only a function's signature and its documentation, not its body",
 };
+export const IX_SHORT = { truncate: "first part only", head_tail: "start and end", windows: "overlapping windows", signature_docstring: "signature and docs" };
+export const Q_PLAIN = {
+  truncate: "keeps the first 128 tokens of the bug text",
+  head_tail: "keeps the start and the end of the bug text",
+};
+/** A cell in words: "windows / truncate" -> "windows (overlapping windows), bug text kept from the start". */
+export const plainCell = (key) => { const { s, q } = parse(key); return `${s} (${IX_SHORT[s]}) with the bug text ${q === "truncate" ? "cut to its first part" : "cut to its start and end"}`; };
 export const parse = (key) => { const [s, q] = key.split(" / "); return { s, q }; };
 export const colorOf = (key) => IX_COLOR[parse(key).s];
 export const hollow = (key) => parse(key).q === "head_tail";
@@ -38,12 +47,18 @@ export function mark(g, key, cx, cy, r = 5.5) {
 
 /** Legend HTML node: four index colours and the two query marks. */
 export function legend() {
-  const idx = el("span", { class: "grp" }, el("span", { class: "lab" }, "Index strategy (colour)"),
+  const idx = el("span", { class: "grp" }, el("span", { class: "lab" }, "How code is prepared (colour; “index strategy”)"),
     INDEX.map((s) => el("span", { class: "k", title: IX_PLAIN[s] }, el("span", { class: "sw", style: `background:${IX_COLOR[s]}` }), IX_NAME[s])));
-  const q = el("span", { class: "grp" }, el("span", { class: "lab" }, "Query strategy"),
-    el("span", { class: "k" }, el("span", { class: "mk solid" }), "truncate (solid, line)"),
-    el("span", { class: "k" }, el("span", { class: "mk" }), "head_tail (hollow, dashed)"));
+  const q = el("span", { class: "grp" }, el("span", { class: "lab" }, "How the bug text is shortened (“query strategy”)"),
+    el("span", { class: "k" }, el("span", { class: "mk solid" }), "first part (solid mark, solid line)"),
+    el("span", { class: "k" }, el("span", { class: "mk" }), "start and end (hollow mark, dashed line)"));
   return el("div", { class: "cell-legend" }, idx, q);
+}
+
+/** Put a one-sentence "how to read" above a figure and a one-sentence "what it shows" below it. */
+export function notes(host, how, shows) {
+  host.prepend(el("p", { class: "how" }, el("b", {}, "How to read this chart. "), how));
+  if (shows) host.append(el("p", { class: "takeaway" }, el("b", {}, "What it shows. "), shows));
 }
 
 export const pendingBox = (what) => el("div", { class: "pending", role: "note" },
