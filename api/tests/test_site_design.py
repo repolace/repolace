@@ -109,7 +109,7 @@ async def test_site_assets_are_versioned_so_a_deploy_is_not_hidden_by_browser_ca
 
 async def test_every_page_and_the_report_carry_the_favicon_and_it_is_served():
     async with client() as c:
-        for path in ("/", "/pricing", "/waitlist", "/privacy", "/terms", "/benchmark/", "/retrieval/"):
+        for path in ("/", "/pricing", "/waitlist", "/privacy", "/terms", "/benchmark/", "/retrieval-benchmark/"):
             html = (await c.get(path)).text
             assert 'rel="icon" type="image/svg+xml"' in html and 'rel="apple-touch-icon"' in html, path
         icon = await c.get("/assets/favicon.svg")
@@ -151,7 +151,7 @@ def test_retrieval_report_takes_its_tokens_from_the_benchmark_stylesheet():
 
 async def test_retrieval_report_shares_the_top_bar_theme_and_logo_links():
     async with client() as c:
-        html = (await c.get("/retrieval/")).text
+        html = (await c.get("/retrieval-benchmark/")).text
     assert 'class="topbar"' in html and 'id="theme"' in html
     for link in ('href="/"', 'href="/benchmark/"', "/benchmark/js/theme-init.js"):
         assert link in html, link

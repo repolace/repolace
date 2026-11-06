@@ -24,7 +24,7 @@ def site_client(**kwargs) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=f"http://{HOST}")
 
 
-@pytest.mark.parametrize("path", ["/", "/pricing", "/benchmark/", "/retrieval/", "/privacy", "/terms", "/waitlist", "/waitlist/thanks"])
+@pytest.mark.parametrize("path", ["/", "/pricing", "/benchmark/", "/retrieval-benchmark/", "/privacy", "/terms", "/waitlist", "/waitlist/thanks"])
 async def test_public_pages_render(path):
     async with site_client() as client:
         resp = await client.get(path)
@@ -92,7 +92,7 @@ def test_csp_adds_turnstile_origin_only_when_enabled():
 
 async def test_pages_have_no_inline_style_or_script():
     async with site_client() as client:
-        for path in ("/", "/pricing", "/benchmark/", "/retrieval/"):
+        for path in ("/", "/pricing", "/benchmark/", "/retrieval-benchmark/"):
             html = (await client.get(path)).text
             assert " style=" not in html
             assert "<style" not in html
@@ -170,12 +170,12 @@ def test_site_does_not_import_the_private_routers():
 
 async def test_retrieval_report_is_served_with_its_data_and_never_synthetic():
     async with site_client() as client:
-        redirect = await client.get("/retrieval")
-        page = await client.get("/retrieval/")
-        data = await client.get("/retrieval/data/retrieval.json")
-        schema = await client.get("/retrieval/data/retrieval.schema.json")
+        redirect = await client.get("/retrieval-benchmark")
+        page = await client.get("/retrieval-benchmark/")
+        data = await client.get("/retrieval-benchmark/data/retrieval.json")
+        schema = await client.get("/retrieval-benchmark/data/retrieval.schema.json")
         shared = [await client.get(p) for p in ("/benchmark/js/core.js", "/benchmark/js/vendor/d3.min.js", "/benchmark/style.css")]
-    assert redirect.status_code in (301, 302, 307, 308) and redirect.headers["location"].endswith("/retrieval/")
+    assert redirect.status_code in (301, 302, 307, 308) and redirect.headers["location"].endswith("/retrieval-benchmark/")
     assert page.status_code == 200 and 'href="/benchmark/"' in page.text
     assert data.json()["status"] in ("ready", "awaiting") and data.json()["synthetic"] is False
     assert schema.status_code == 200 and all(r.status_code == 200 for r in shared)
@@ -199,7 +199,7 @@ def test_retrieval_static_site_is_csp_clean_and_borrows_only_from_the_benchmark_
 
 async def test_the_two_reports_link_to_each_other():
     async with site_client() as client:
-        retrieval_js = (await client.get("/retrieval/js/main.js")).text
+        retrieval_js = (await client.get("/retrieval-benchmark/js/main.js")).text
         benchmark_js = (await client.get("/benchmark/js/main.js")).text
     assert 'href="/benchmark/"' in retrieval_js
-    assert 'href="/retrieval/"' in benchmark_js
+    assert 'href="/retrieval-benchmark/"' in benchmark_js

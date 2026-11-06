@@ -1,4 +1,4 @@
-# Retrieval report (served at /retrieval/)
+# Retrieval report (served at /retrieval-benchmark/)
 
 A static page for the retrieval grid (`repolace-eval retrieval`: 4 index x 2 query embedding strategies on the benchmark's 18 bugs).
 Mounted in `api/repolace_api/site/app.py` next to `/benchmark/`, under the same Content-Security-Policy (no inline script or style, no remote origin).
@@ -11,5 +11,5 @@ Mounted in `api/repolace_api/site/app.py` next to `/benchmark/`, under the same 
 - **Reading level:** written for someone with no context. The top of the page (what this is, the short answer, why it was run), a four-step explainer, a plain-language glossary and a "what this does not show" list sit before any chart; every chart has a one-sentence "how to read this chart" above it and a "what it shows" takeaway below it (both built from the JSON by `notes()` in `js/shared.js`). Jargon names (`truncate`, `head_tail`, ...) stay as the labels of the data, each explained in words at first use. Method-only terms (SWE-bench, p-values, formulas) live in the Method section.
 - **Own files:** `index.html`, `style.css` (cell colours and the retrieval figures), `js/` (`main.js` assembly, overview, glossary and prose built from the JSON, `data.js`, `shared.js` with the cell styling, legend and `notes()`, `grid.js`, `delta.js`, `instances.js`).
 - **Colour:** the four index strategies use the benchmark's four validated series hues; the query strategy is the second channel (solid mark and line = `truncate`, hollow mark and dashed line = `head_tail`).
-- **Preview:** `uv run uvicorn repolace_api.site.main:app --port 8765`, then `/retrieval/`.
+- **Preview:** `uv run uvicorn repolace_api.site.main:app --port 8765`, then `/retrieval-benchmark/`.
 - **Deploy:** rebuild the `site` compose image. That makes it public, so it needs the user's approval.
