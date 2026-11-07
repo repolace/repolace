@@ -36,7 +36,7 @@ STATE_MAX_AGE_SECONDS = 600
 AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
 TOKEN_URL = "https://github.com/login/oauth/access_token"
 USER_URL = "https://api.github.com/user"
-AFTER_LOGIN = "/ui/repos"
+AFTER_LOGIN = "/ui/account"
 
 
 async def get_oauth_http() -> AsyncIterator[httpx.AsyncClient]:
@@ -177,7 +177,7 @@ async def _upsert_user(db: AsyncSession, profile: dict):
 async def logout(request: Request) -> Response:
     require_same_origin(request)
     if wants_html(request):
-        response: Response = RedirectResponse("/ui/repos", status_code=303)
+        response: Response = RedirectResponse("/ui/account", status_code=303)
     else:
         response = Response(status_code=204)
     response.delete_cookie(SESSION_COOKIE, path="/")

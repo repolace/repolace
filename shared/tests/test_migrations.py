@@ -473,6 +473,60 @@ class TestMigration0019:
             assert _in_thread(lambda: _user_id_state(dsn)) == present
 
 
+async def _cancel_at_state(dsn: str) -> set[str]:
+    import asyncpg
+
+    conn = await asyncpg.connect(dsn)
+    try:
+        cols = await conn.fetch(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'subscriptions' AND column_name = 'cancel_at'"
+        )
+    finally:
+        await conn.close()
+    return {r[0] for r in cols}
+
+
+class TestMigration0020:
+    def test_it_upgrades_downgrades_keeps_rows_and_upgrades_again(self, scratch_url):
+        dsn = _dsn(make_url(scratch_url))
+        import asyncpg
+
+        async def seed() -> None:
+            conn = await asyncpg.connect(dsn)
+            try:
+                await conn.execute(
+                    "INSERT INTO users (id, github_user_id, github_login) "
+                    "VALUES ('00000000-0000-0000-0000-0000000000a1', 1, 'octo')"
+                )
+                await conn.execute(
+                    "INSERT INTO subscriptions (id, user_id, stripe_customer_id) VALUES "
+                    "(gen_random_uuid(), '00000000-0000-0000-0000-0000000000a1', 'cus_1')"
+                )
+            finally:
+                await conn.close()
+
+        async def count() -> int:
+            conn = await asyncpg.connect(dsn)
+            try:
+                return await conn.fetchval("SELECT count(*) FROM subscriptions")
+            finally:
+                await conn.close()
+
+        with mock.patch.dict(os.environ, {"DATABASE_URL": scratch_url}):
+            command.upgrade(_config(), "0019")
+            assert _in_thread(lambda: _cancel_at_state(dsn)) == set()
+            _in_thread(seed)
+            command.upgrade(_config(), "0020")
+            assert _in_thread(lambda: _cancel_at_state(dsn)) == {"cancel_at"}
+            assert _in_thread(count) == 1
+            command.downgrade(_config(), "0019")
+            assert _in_thread(lambda: _cancel_at_state(dsn)) == set()
+            assert _in_thread(count) == 1
+            command.upgrade(_config(), "0020")
+            assert _in_thread(lambda: _cancel_at_state(dsn)) == {"cancel_at"}
+
+
 class TestModelsAgreeWithMigrations:
     def test_alembic_check_is_clean_at_head(self, scratch_url):
         """The model and the migration chain describe the same schema.

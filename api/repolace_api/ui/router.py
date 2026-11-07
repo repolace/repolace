@@ -165,6 +165,7 @@ async def account_page(
             "plan": plan,
             "status": sub.status if sub else "no subscription",
             "period_end": sub.current_period_end if sub else None,
+            "cancel_at": sub.cancel_at if sub else None,
             "has_subscription": sub is not None,
             "used": await tasks_started_this_month(db, user.id),
             "limit": allowance_for(plan),

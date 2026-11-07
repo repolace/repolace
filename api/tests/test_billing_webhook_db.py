@@ -181,6 +181,41 @@ class TestHandledEvents:
         after = await reload(db_session, row)
         assert (after.status, after.plan) == ("canceled", "free")
 
+    async def test_a_portal_cancellation_stores_cancel_at_and_keeps_pro(self, world, db_session):
+        client, _, row, _ = world
+        obj = {**sub_obj("active"), "cancel_at": LATER, "cancel_at_period_end": False}
+        await post_event(client, event("customer.subscription.updated", obj))
+        after = await reload(db_session, row)
+        assert (after.status, after.plan) == ("active", "pro")
+        assert after.cancel_at == datetime.fromtimestamp(LATER, UTC)
+
+    async def test_cancel_at_period_end_on_older_api_versions_uses_the_period_end(self, world, db_session):
+        client, _, row, _ = world
+        obj = {**sub_obj("active"), "cancel_at": None, "cancel_at_period_end": True}
+        await post_event(client, event("customer.subscription.updated", obj))
+        assert (await reload(db_session, row)).cancel_at == datetime.fromtimestamp(PERIOD_END, UTC)
+
+    async def test_resuming_clears_cancel_at(self, world, db_session):
+        client, _, row, _ = world
+        await post_event(client, event("customer.subscription.updated", {**sub_obj(), "cancel_at": LATER}))
+        assert (await reload(db_session, row)).cancel_at is not None
+        await post_event(client, event("customer.subscription.updated", {**sub_obj(), "cancel_at": None, "cancel_at_period_end": False}))
+        after = await reload(db_session, row)
+        assert (after.cancel_at, after.plan) == (None, "pro")
+
+    async def test_a_stale_event_does_not_touch_cancel_at(self, world, db_session):
+        client, _, row, _ = world
+        await post_event(client, event("customer.subscription.updated", {**sub_obj(period_end=LATER), "cancel_at": LATER}))
+        await post_event(client, event("customer.subscription.updated", {**sub_obj(period_end=PERIOD_END), "cancel_at": None}))
+        assert (await reload(db_session, row)).cancel_at == datetime.fromtimestamp(LATER, UTC)
+
+    async def test_the_deleted_event_after_a_pending_cancellation_ends_as_free(self, world, db_session):
+        client, _, row, _ = world
+        await post_event(client, event("customer.subscription.updated", {**sub_obj(), "cancel_at": PERIOD_END}))
+        await post_event(client, event("customer.subscription.deleted", {**sub_obj("canceled"), "cancel_at": PERIOD_END}))
+        after = await reload(db_session, row)
+        assert (after.status, after.plan) == ("canceled", "free")
+
     async def test_an_event_for_an_unknown_customer_is_a_200_noop(self, world, db_session):
         client, _, row, _ = world
         response = await post_event(client, event("customer.subscription.updated", sub_obj(customer="cus_nobody")))

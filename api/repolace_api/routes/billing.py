@@ -191,6 +191,21 @@ def _period_end(subscription: dict) -> datetime | None:
     return datetime.fromtimestamp(ts, UTC) if isinstance(ts, int | float) else None
 
 
+def _cancel_at(subscription: dict, period_end: datetime | None) -> datetime | None:
+    """When Stripe will end the subscription, or None when nothing is pending.
+
+    Current API versions express a portal cancellation as `cancel_at` (the status stays `active` and
+    `cancel_at_period_end` stays false); older ones set `cancel_at_period_end` and leave `cancel_at`
+    null, in which case the period end is the cancel date.
+    """
+    ts = subscription.get("cancel_at")
+    if isinstance(ts, int | float):
+        return datetime.fromtimestamp(ts, UTC)
+    if subscription.get("cancel_at_period_end") is True:
+        return period_end
+    return None
+
+
 async def _on_checkout_completed(db: AsyncSession, event: dict, client: stripe.StripeClient) -> None:
     obj = event["data"]["object"]
     if obj.get("mode") != "subscription":
@@ -228,6 +243,13 @@ async def _on_subscription(db: AsyncSession, event: dict, client: stripe.StripeC
         subscription while one is live, so this only matters for out-of-order delivery.
     Equal period ends cannot be ordered (active then past_due within one period); Stripe's retry
     and the next event converge those.
+
+    `cancel_at` is stored from the same event, so it passes through the same guards: a stale event
+    (older period end, or any non-delete event after `canceled`) changes nothing, including
+    `cancel_at`. Resuming does not move the period end, so it is not ordered by the period guard
+    (an equal period end is accepted); a resume event therefore clears `cancel_at` when Stripe reports
+    null. The plan still comes only from `status`, so a pending cancellation keeps `pro` until Stripe
+    sends `deleted` (or a non-paid status).
     """
     sub = event["data"]["object"]
     row = await _by_customer(db, sub.get("customer"))
@@ -251,6 +273,7 @@ async def _on_subscription(db: AsyncSession, event: dict, client: stripe.StripeC
     row.plan = "pro" if status in PRO_STATUSES else "free"
     if period_end is not None:
         row.current_period_end = period_end
+    row.cancel_at = _cancel_at(sub, period_end or row.current_period_end)
 
 
 async def _on_invoice_paid(db: AsyncSession, event: dict, client: stripe.StripeClient) -> None:

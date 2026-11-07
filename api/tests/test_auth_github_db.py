@@ -143,7 +143,7 @@ class TestCallback:
         async with client_for(app) as client:
             state = await start_login(client)
             response = await client.get("/auth/github/callback", params={"code": "the-code", "state": state})
-        assert response.status_code == 303 and response.headers["location"] == "/ui/repos"
+        assert response.status_code == 303 and response.headers["location"] == "/ui/account"
         user = (await db_session.execute(select(User))).scalar_one()
         assert (user.github_user_id, user.github_login, user.email) == (77, "octocat", "o@example.com")
         payload = unsign(response.cookies[SESSION_COOKIE], "session", SESSION_SECRET)
@@ -175,6 +175,13 @@ class TestLogout:
             response = await client.post("/auth/logout", headers=SAME_ORIGIN)
         assert response.status_code == 204
         assert SESSION_COOKIE in response.headers["set-cookie"] and "max-age=0" in response.headers["set-cookie"].lower()
+
+    async def test_a_browser_logout_lands_on_the_account_page(self, db_session, db_session_factory):
+        user = await seed_user(db_session)
+        app = build_app(db_session_factory)
+        async with client_for(app, cookies=session_cookie(user.id)) as client:
+            response = await client.post("/auth/logout", headers={**SAME_ORIGIN, "Accept": "text/html"})
+        assert response.status_code == 303 and response.headers["location"] == "/ui/account"
 
     async def test_a_cross_site_logout_is_refused(self, db_session_factory):
         app = build_app(db_session_factory)

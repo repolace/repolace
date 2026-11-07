@@ -30,6 +30,12 @@
     {% if period_end %}<dt>Current period ends</dt><dd>{{ absolute(period_end) }}</dd>{% endif %}
     <dt>Tasks this month</dt><dd>{{ used }} of {{ limit }}{% if used >= limit %} <span class="muted">(allowance used; further tasks are refused until next month or an upgrade)</span>{% endif %}</dd>
   </dl>
+  {% if plan == "pro" and cancel_at %}
+  <p class="panel notice" role="status">Cancels on {{ absolute(cancel_at) }}. You keep Pro until then. Use Manage billing to resume.</p>
+  {% endif %}
+  {% if status == "past_due" %}
+  <p class="panel notice" role="status">Your last payment failed. Update your card in Manage billing to keep Pro.</p>
+  {% endif %}
   <div class="body actions">
     {% if stripe_ready and plan != "pro" %}
     <form method="post" action="/billing/checkout"><button class="btn btn-primary" type="submit">Upgrade</button></form>

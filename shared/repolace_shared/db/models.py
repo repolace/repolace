@@ -616,6 +616,9 @@ class Subscription(Base):
     plan: Mapped[str] = mapped_column(String, nullable=False, server_default="free")
     status: Mapped[str] = mapped_column(String, nullable=False, server_default="incomplete")
     current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: When Stripe will end the subscription (a cancellation requested in the portal): the plan stays
+    #: `pro` until then. NULL when nothing is pending, including after the user resumes.
+    cancel_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     #: Set by a dispute or early fraud warning event; cleared by hand after review.
     risk_flag: Mapped[str | None] = mapped_column(String, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

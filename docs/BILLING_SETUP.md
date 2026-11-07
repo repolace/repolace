@@ -46,7 +46,7 @@ In the GitHub App settings: leave **Request user authorization (OAuth) during in
 2. Open `http://localhost:8000/ui/account`, **Sign in with GitHub**.
 3. **Upgrade**, pay with the test card `4242 4242 4242 4242`, any future expiry, any CVC.
 4. Back on `/ui/account?checkout=success`: the banner is not proof of payment. The plan flips to `pro` when `stripe listen` delivers the events; reload.
-5. **Manage billing** opens the Customer Portal; cancelling there flips the row after the next event.
+5. **Manage billing** opens the Customer Portal; cancelling there stores `cancel_at` (the account page shows "Cancels on <date>" and keeps Pro until then) and the plan drops to free when Stripe sends `customer.subscription.deleted` at the period end; resuming in the portal clears it.
 
 ## Allowance
 

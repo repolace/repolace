@@ -53,6 +53,32 @@ class TestVisitors:
         assert ">pro<" in text and "2027-01-02 03:04:00 UTC" in text
         assert "/billing/portal" in text and "/billing/checkout" not in text
 
+    async def test_a_pending_cancellation_is_shown_and_pro_is_kept(self, db_session, db_session_factory):
+        from datetime import UTC, datetime
+
+        user = await seed_user(db_session)
+        await seed_subscription(
+            db_session, user, plan="pro", status="active", cancel_at=datetime(2027, 2, 3, 4, 5, tzinfo=UTC)
+        )
+        async with get(db_session_factory, cookies=session_cookie(user.id)) as c:
+            text = (await c.get("/ui/account")).text
+        assert "Cancels on 2027-02-03 04:05:00 UTC. You keep Pro until then." in text
+        assert ">pro<" in text and "/billing/portal" in text
+
+    async def test_no_cancel_notice_for_an_active_subscription(self, db_session, db_session_factory):
+        user = await seed_user(db_session)
+        await seed_subscription(db_session, user, plan="pro", status="active")
+        async with get(db_session_factory, cookies=session_cookie(user.id)) as c:
+            text = (await c.get("/ui/account")).text
+        assert "Cancels on" not in text and "payment failed" not in text
+
+    async def test_past_due_shows_a_payment_notice(self, db_session, db_session_factory):
+        user = await seed_user(db_session)
+        await seed_subscription(db_session, user, plan="pro", status="past_due")
+        async with get(db_session_factory, cookies=session_cookie(user.id)) as c:
+            text = (await c.get("/ui/account")).text
+        assert "payment failed" in text and "Manage billing" in text
+
     async def test_stripe_not_configured_hides_the_buttons(self, db_session, db_session_factory):
         user = await seed_user(db_session)
         async with get(db_session_factory, billing=settings(stripe_secret_key=None), cookies=session_cookie(user.id)) as c:
