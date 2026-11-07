@@ -2,6 +2,8 @@
 
 repolace is an autonomous agent that takes a GitHub issue, finds the relevant code, writes a patch, runs the repository's own test suite in a locked-down sandbox, and opens a pull request if the checks hold. You register a repository through a GitHub App, pick one open issue and a target branch, and a worker does the rest.
 
+[Documentation](https://repolace.rounakkumarsingh.com/documentation/) | [Benchmark report](https://repolace.rounakkumarsingh.com/benchmark/) | [Retrieval report](https://repolace.rounakkumarsingh.com/retrieval-benchmark/) | [Source](https://github.com/repolace/repolace) | MIT licence
+
 Agents that patch issues are common. What this project is for is the part most of them skip: a measured success rate with cost and latency on real issues, model-written code that runs only inside a rootless container with no network, and hard bounds on every loop (3 scored attempts, 40 steps per attempt, $2 per task by default, one hour of agent time). The numbers below come from a recorded benchmark run, with its caveats stated next to them.
 
 ## Status

@@ -3,8 +3,16 @@ name = "repolace"
 license = "MIT"
 version = "0.0.1"
 description = "Autonomous software-engineering agent platform"
+authors = [{ name = "Rounak Kumar Singh" }]
+keywords = ["ai-agent", "llm", "swe-bench", "github-app", "langgraph", "sandbox", "benchmark"]
 requires-python = ">=3.12"
 dependencies = []
+
+[project.urls]
+Homepage = "https://repolace.rounakkumarsingh.com"
+Documentation = "https://repolace.rounakkumarsingh.com/documentation/"
+Repository = "https://github.com/repolace/repolace"
+Issues = "https://github.com/repolace/repolace/issues"
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.15"]

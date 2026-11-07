@@ -6,6 +6,11 @@
   <meta name="color-scheme" content="light dark">
   <title>{% block title %}repolace: an agent that turns GitHub issues into tested pull requests{% endblock %}</title>
   <meta name="description" content="{% block description %}repolace takes a GitHub issue, finds the relevant code, writes a fix, runs your test suite in a locked-down sandbox and opens a pull request. Early access.{% endblock %}">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="repolace">
+  <meta property="og:title" content="{{ self.title() }}">
+  <meta property="og:description" content="{{ self.description() }}">
+  <meta name="twitter:card" content="summary">
   <link rel="preload" href="/benchmark/fonts/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/benchmark/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg?v={{ asset_v }}">
@@ -44,8 +49,8 @@
   </main>
   <footer class="foot">
     <div class="wrap footrow">
-      <p>repolace is in early access. Python repositories only, for now.</p>
-      <nav aria-label="Footer"><a href="/benchmark/">Benchmark</a><a href="/documentation/">Docs</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
+      <p>repolace is in early access. Python repositories only, for now. Open source under the <a href="https://github.com/repolace/repolace/blob/main/LICENSE">MIT licence</a>.</p>
+      <nav aria-label="Footer"><a href="/benchmark/">Benchmark</a><a href="/documentation/">Docs</a><a href="https://github.com/repolace/repolace">Source</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
     </div>
   </footer>
   <script src="/assets/site.js?v={{ asset_v }}" defer></script>
