@@ -50,7 +50,7 @@ In the GitHub App settings: enable **Request user authorization (OAuth)**, set t
 
 ## Allowance
 
-When sign-in is configured **and** someone is signed in, the enqueue path (JSON `POST /repos/{id}/tasks` and the UI form) records `tasks.user_id` and refuses with `402` once the user has started `5` (free) or `100` (pro) non-benchmark tasks this calendar month (UTC). Failed tasks count. With sign-in unset, or nobody signed in, there is no owner and no limit. The numbers are preview numbers in `api/repolace_api/billing_limits.py`.
+When sign-in is configured **and** someone is signed in, the enqueue path (JSON `POST /repos/{id}/tasks` and the UI form) records `tasks.user_id` and refuses with `402` once the user has started `2` (free) or `60` (pro) non-benchmark tasks this calendar month (UTC). Failed tasks count. With sign-in unset, or nobody signed in, there is no owner and no limit. The numbers are preview numbers in `api/repolace_api/billing_limits.py`.
 
 ## Not live yet
 
@@ -60,3 +60,7 @@ When sign-in is configured **and** someone is signed in, the enqueue path (JSON 
 - The JSON API and the rest of `/ui` are still unauthenticated; sign-in covers only `/ui/account`, `/billing/*` and the allowance.
 - `/pricing` on the public site still says billing is not open; it is untouched.
 - The OAuth callback, cookie flags over HTTPS, and the Stripe flow were tested with mocks, not against real Stripe or GitHub (see the status in `CLAUDE.md`).
+
+## Sandbox objects created for development
+
+In the Stripe sandbox "repolace sandbox" (test mode): Product `prod_VaMUVUVW3NZBqr` ("repolace Pro", 60 tasks a month) with Price `price_1UZBm22V3cpV9h6vI4Wpj1Ve` ($99 a month). Put the price id in `STRIPE_PRICE_ID`. These are test-mode objects; live mode needs its own.

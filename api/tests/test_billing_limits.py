@@ -15,8 +15,8 @@ from repolace_api.billing_limits import (
 
 
 def test_allowances_by_plan():
-    assert allowance_for("free") == FREE_TASKS_PER_MONTH == 5
-    assert allowance_for("pro") == PRO_TASKS_PER_MONTH == 100
+    assert allowance_for("free") == FREE_TASKS_PER_MONTH == 2
+    assert allowance_for("pro") == PRO_TASKS_PER_MONTH == 60
 
 
 def test_an_unknown_plan_gets_the_free_allowance_never_more():

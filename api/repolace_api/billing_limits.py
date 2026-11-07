@@ -20,8 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from repolace_api.config import BillingSettings, get_billing_settings
 from repolace_api.deps import optional_user
 
-FREE_TASKS_PER_MONTH = 5
-PRO_TASKS_PER_MONTH = 100
+FREE_TASKS_PER_MONTH = 2
+PRO_TASKS_PER_MONTH = 60
 
 _ALLOWANCES = {"free": FREE_TASKS_PER_MONTH, "pro": PRO_TASKS_PER_MONTH}
 
