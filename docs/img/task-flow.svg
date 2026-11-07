@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 630" role="img" aria-labelledby="t d">
+  <title id="t">repolace task flow</title>
+  <desc id="d">The pipeline stages in order: claim, instance, preflight, embedder, clone, index, retrieve, baseline test run, branch, then the agent loop of localize, agent, verify and route that repeats until the agent submits or a budget runs out. Then review and gate, merge_target for product tasks that would open a pull request, squash, push, pr and finalize. A task can stop early on an inadmissible baseline, at a budget cap or step cap inside the agent loop, or when the gate declines to open a pull request.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f7f7f4; stroke: #8a8980; stroke-width: 1.5; }
+      .card { fill: #ffffff; stroke: #55544e; stroke-width: 1.5; }
+      .opt { fill: #ffffff; stroke: #55544e; stroke-width: 1.5; stroke-dasharray: 5 4; }
+      .loop { fill: #e3eefb; stroke: #1c5cab; stroke-width: 1.5; }
+      .stop { fill: #fdeadc; stroke: #a8420f; stroke-width: 1.5; }
+      .t { font: 600 14px ui-monospace, "SF Mono", Menlo, Consolas, monospace; fill: #161615; text-anchor: middle; }
+      .small { font-size: 12px; }
+      .s { font: 400 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #34332f; text-anchor: middle; }
+      .z { font: 600 13px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #34332f; }
+      .lb { font: 400 12.5px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #34332f; }
+      .ln { fill: none; stroke: #34332f; stroke-width: 1.6; marker-end: url(#a); }
+    </style>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="#34332f"/></marker>
+  </defs>
+  <rect class="bg" x="2" y="2" width="1096" height="626" rx="14"/>
+  <text class="z" x="44" y="40">Setup stages</text>
+  <rect class="card" x="44" y="60" width="124" height="60" rx="9"/><text class="t" x="106" y="85">claim</text><text class="s" x="106" y="104">queued to running</text>
+  <rect class="card" x="192" y="60" width="124" height="60" rx="9"/><text class="t" x="254" y="85">instance</text><text class="s" x="254" y="104">load instance, if any</text>
+  <rect class="card" x="340" y="60" width="124" height="60" rx="9"/><text class="t" x="402" y="85">preflight</text><text class="s" x="402" y="104">GitHub access check</text>
+  <rect class="card" x="488" y="60" width="124" height="60" rx="9"/><text class="t" x="550" y="85">embedder</text><text class="s" x="550" y="104">warm the local model</text>
+  <rect class="card" x="636" y="60" width="124" height="60" rx="9"/><text class="t" x="698" y="85">clone</text><text class="s" x="698" y="104">checkout at the base</text>
+  <rect class="card" x="784" y="60" width="124" height="60" rx="9"/><text class="t" x="846" y="85">index</text><text class="s" x="846" y="104">chunk and embed</text>
+  <rect class="card" x="932" y="60" width="124" height="60" rx="9"/><text class="t" x="994" y="85">retrieve</text><text class="s" x="994" y="104">hybrid search</text>
+  <path class="ln" d="M168 90H192"/>
+  <path class="ln" d="M316 90H340"/>
+  <path class="ln" d="M464 90H488"/>
+  <path class="ln" d="M612 90H636"/>
+  <path class="ln" d="M760 90H784"/>
+  <path class="ln" d="M908 90H932"/>
+  <path class="ln" d="M994 120V160H106V200"/>
+  <rect class="card" x="44" y="200" width="124" height="60" rx="9"/><text class="t small" x="106" y="225">verify_baseline</text><text class="s" x="106" y="244">baseline test run</text>
+  <rect class="card" x="192" y="200" width="124" height="60" rx="9"/><text class="t" x="254" y="225">branch</text><text class="s" x="254" y="244">agent branch</text>
+  <path class="ln" d="M168 230H192"/>
+  <path class="ln" d="M316 230H340"/>
+  <rect class="loop" x="340" y="176" width="716" height="160" rx="12"/><text class="z" x="356" y="198">agent loop, until submit or a budget runs out</text>
+  <rect class="card" x="360" y="214" width="120" height="60" rx="9"/><text class="t" x="420" y="239">localize</text><text class="s" x="420" y="258">no model call</text>
+  <rect class="card" x="530" y="214" width="120" height="60" rx="9"/><text class="t" x="590" y="239">agent</text><text class="s" x="590" y="258">tool loop, 9 tools</text>
+  <rect class="card" x="700" y="214" width="120" height="60" rx="9"/><text class="t" x="760" y="239">verify</text><text class="s" x="760" y="258">run the suite</text>
+  <rect class="card" x="870" y="214" width="120" height="60" rx="9"/><text class="t" x="930" y="239">route</text><text class="s" x="930" y="258">retry or end</text>
+  <path class="ln" d="M480 244H530"/>
+  <path class="ln" d="M650 244H700"/>
+  <path class="ln" d="M820 244H870"/>
+  <path class="ln" d="M910 274V298H580V274"/><text class="lb" x="745" y="318" text-anchor="middle">a scored attempt still fails and attempts remain: back to agent</text>
+  <rect class="stop" x="44" y="284" width="272" height="64" rx="9"/><text class="t" x="180" y="306">Stop early</text><text class="s" x="180" y="324">inadmissible baseline: no agent run,</text><text class="s" x="180" y="340">completed with no outcome</text><path class="ln" d="M106 260V284"/>
+  <rect class="stop" x="440" y="356" width="616" height="64" rx="9"/><text class="t" x="748" y="378">Stop (a result, not a crash)</text><text class="s" x="748" y="396">submitted, step cap, budget (usd, calls, wall clock), llm error, no change, max attempts.</text><text class="s" x="748" y="412">The last scored attempt still goes on to review.</text><path class="ln" d="M1000 336V356"/>
+  <path class="ln" d="M1000 420V444H114V484"/>
+  <rect class="card" x="44" y="484" width="140" height="60" rx="9"/><text class="t" x="114" y="509">review, gate</text><text class="s" x="114" y="528">diff, score, PR or not</text>
+  <rect class="opt" x="212" y="484" width="140" height="60" rx="9"/><text class="t" x="282" y="509">merge_target</text><text class="s" x="282" y="528">only if a PR would open</text>
+  <rect class="card" x="380" y="484" width="140" height="60" rx="9"/><text class="t" x="450" y="509">squash</text><text class="s" x="450" y="528">one commit</text>
+  <rect class="card" x="548" y="484" width="140" height="60" rx="9"/><text class="t" x="618" y="509">push</text><text class="s" x="618" y="528">agent branch</text>
+  <rect class="card" x="716" y="484" width="140" height="60" rx="9"/><text class="t" x="786" y="509">pr</text><text class="s" x="786" y="528">open the pull request</text>
+  <rect class="card" x="884" y="484" width="140" height="60" rx="9"/><text class="t" x="954" y="509">finalize</text><text class="s" x="954" y="528">terminal status, cost</text>
+  <path class="ln" d="M184 514H212"/>
+  <path class="ln" d="M352 514H380"/>
+  <path class="ln" d="M520 514H548"/>
+  <path class="ln" d="M688 514H716"/>
+  <path class="ln" d="M856 514H884"/>
+  <path class="ln" d="M114 544V572H954V544"/><text class="lb" x="534" y="566" text-anchor="middle">gate says no PR, or the target could not be merged: skip squash, push and pr</text>
+  <text class="lb" x="44" y="610">Any stage that raises ends the task as failed and records the stage name. A benchmark task never runs merge_target.</text>
+  </svg>

@@ -79,7 +79,7 @@ async def test_every_font_and_asset_the_pages_use_is_served():
 
 async def test_pages_share_one_top_bar_and_reach_each_other():
     async with client() as c:
-        for path in ("/", "/pricing", "/waitlist", "/privacy", "/terms"):
+        for path in ("/", "/pricing", "/waitlist", "/privacy", "/terms", "/documentation/"):
             html = (await c.get(path)).text
             assert 'class="topbar"' in html and 'id="theme"' in html, path
             assert 'href="/benchmark/"' in html and 'href="/pricing"' in html and 'href="/waitlist"' in html, path
@@ -109,7 +109,7 @@ async def test_site_assets_are_versioned_so_a_deploy_is_not_hidden_by_browser_ca
 
 async def test_every_page_and_the_report_carry_the_favicon_and_it_is_served():
     async with client() as c:
-        for path in ("/", "/pricing", "/waitlist", "/privacy", "/terms", "/benchmark/", "/retrieval-benchmark/"):
+        for path in ("/", "/pricing", "/waitlist", "/privacy", "/terms", "/benchmark/", "/retrieval-benchmark/", "/documentation/"):
             html = (await c.get(path)).text
             assert 'rel="icon" type="image/svg+xml"' in html and 'rel="apple-touch-icon"' in html, path
         icon = await c.get("/assets/favicon.svg")

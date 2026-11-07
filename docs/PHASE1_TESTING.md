@@ -1,9 +1,10 @@
+> **Archived runbook.** This is how the Phase 1 numbers were produced (sweeps 4 and 4b are done). It may be out of date; the current setup is in [getting-started.md](getting-started.md) and [benchmark.md](benchmark.md).
+
 # Phase 1: running the benchmark locally
 
 This is the order of operations that produces the Phase 1 number. It runs **on the machine that has the
 rootless Docker daemon, the development database, the 18 registered `repolace/bench-*` repositories and the
-provider key**. A cloud session cannot do it (no Docker, no database, no secrets); cloud sessions work on
-the code packages in `docs/cloud-work/` instead.
+provider key**. A cloud session cannot do it (no Docker, no database, no secrets).
 
 The headline model for this run is **Gemini 3.1 Pro on Vertex AI**, key `vertex-gemini-3-1-pro-preview`.
 The smoke test, dry run and sweeps 4 and 4b have since been run; measured cost, wall time and results are in
@@ -18,9 +19,9 @@ cd infra && docker compose up -d postgres && cd ..           # Phase 1 needs Pos
 scripts/phase1_preflight.sh                                  # read-only; must end "preflight passed"
 ```
 
-Do **not** start the compose `api` or `worker` services for this: the compose `worker` is written but has not
-been run end to end (see `CLAUDE.md` "Deployment requirements"), and the `api` container loads the whole `.env`. The benchmark runs `repolace-run-task`
-subprocesses on the host.
+Do **not** start the compose `api` or `worker` services for this: benchmark rows run as `repolace-run-task`
+subprocesses on the host, and the worker refuses rows that belong to an eval run. (The compose `worker` has since run one
+product task end to end; see `CLAUDE.md` "Deployment requirements". The `api` container loads its own `infra/api.env`.)
 
 The preflight checks git, `prlimit`, `uv`, the rootless socket and cgroup delegation, that `.env` has a
 `GOOGLE_API_KEY` and no bench token, that the database is at head and the 18 bench repos match the 18
@@ -131,8 +132,8 @@ caveats beside the number. At 18 instances the 95% interval is roughly 30 to 40 
 ## Not part of Phase 1, so do not chase it now
 
 The compose `worker`/`api` deployment, RabbitMQ `consumer_timeout`, database indexes, the browser check of the
-UI, the agent role split (`phase-2/agents`), conflict-resolver wiring, OpenTelemetry. Cloud packages A to D in
-`docs/cloud-work/` own them.
+UI, the agent role split (`phase-2/agents`), conflict-resolver wiring, OpenTelemetry. The cloud work
+packages that once listed them are retired; `CLAUDE.md` holds the current status.
 
 ## Afterwards
 

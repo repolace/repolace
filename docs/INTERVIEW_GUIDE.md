@@ -1,3 +1,5 @@
+> **Archived, personal interview notes.** Written before the worker, the public site, the AWS deployment and billing existed. It is kept for history, not maintained, and is not part of the public documentation.
+
 # repolace: the interview guide
 
 Written 2026-10-19 from a read of the repository at `main` (`10c4293`). **Updated 2026-10-25** (checked against `main` at

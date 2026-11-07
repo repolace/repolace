@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Getting started - repolace documentation</title>
+<meta name="description" content="After this guide you will have the API and task UI running locally, a worker ready to run tasks, and know how to run a task, run the tests and read the result. Allow an hour for the first pass, mostly">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="/benchmark/fonts/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/benchmark/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon.png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<link rel="stylesheet" href="/documentation/docs.css">
+<script src="/benchmark/js/theme-init.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+<header class="topbar">
+  <a class="mark" href="/" title="repolace home"><span class="wm">repolace</span> <span class="wm-sub">docs</span></a>
+  <nav aria-label="Site">
+    <a href="/">Home</a>
+    <a href="/benchmark/">Benchmark</a>
+    <a href="/pricing">Pricing</a>
+    <a href="/documentation/" aria-current="true">Docs</a>
+  </nav>
+  <details class="menu">
+    <summary>Menu</summary>
+    <div class="panel">
+      <a href="/">Home</a>
+      <a href="/benchmark/">Benchmark</a>
+      <a href="/retrieval-benchmark/">Retrieval benchmark</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/waitlist">Join the waitlist</a>
+      <a href="/documentation/">Documentation</a>
+    </div>
+  </details>
+  <button class="iconbtn" id="theme" type="button" aria-label="Switch colour theme" title="Switch colour theme">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7Z"/></svg>
+  </button>
+</header>
+<div class="doc-wrap">
+  <aside class="doc-side">
+    <nav aria-label="Documentation">
+      <p class="doc-side-h">Documentation</p>
+      <ul class="doc-list" id="doc-side-list"><li><a href="/documentation/">Overview</a></li><li><a href="/documentation/architecture/">Architecture</a></li><li><a href="/documentation/getting-started/" aria-current="page">Getting started</a><ol class="doc-toc"><li><a href="#prerequisites">Prerequisites</a></li><li><a href="#install">Install</a></li><li><a href="#env-files">Env files</a></li><li><a href="#start-the-infrastructure">Start the infrastructure</a></li><li><a href="#run-the-api">Run the API</a></li><li><a href="#create-the-github-app">Create the GitHub App</a></li><li><a href="#start-a-worker">Start a worker</a></li><li><a href="#run-a-task">Run a task</a></li><li><a href="#run-the-tests">Run the tests</a></li><li><a href="#next-steps">Next steps</a></li></ol></li><li><a href="/documentation/benchmark/">Benchmark</a></li><li><a href="/documentation/security/">Security</a></li></ul>
+    </nav>
+  </aside>
+  <details class="doc-top">
+    <summary>Documentation pages</summary>
+    <nav aria-label="Documentation, compact"><ul class="doc-list" id="doc-top-list"><li><a href="/documentation/">Overview</a></li><li><a href="/documentation/architecture/">Architecture</a></li><li><a href="/documentation/getting-started/" aria-current="page">Getting started</a></li><li><a href="/documentation/benchmark/">Benchmark</a></li><li><a href="/documentation/security/">Security</a></li></ul></nav>
+  </details>
+  <main id="main" class="doc">
+<h1 id="getting-started">Getting started<a class="headerlink" href="#getting-started" title="Link to this section">#</a></h1>
+<p>After this guide you will have the API and task UI running locally, a worker ready to run tasks, and know how to run a task, run the tests and read the result. Allow an hour for the first pass, mostly the GitHub App and the first image build.</p>
+<p>This guide runs real tasks that call a model provider and spend money. The default cap is $2.00 per task. Use a toy repository first.</p>
+<h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this section">#</a></h2>
+<div class="doc-table"><table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Python 3.12 or newer</td>
+<td>Every package requires it</td>
+</tr>
+<tr>
+<td><a href="https://docs.astral.sh/uv/" rel="noopener noreferrer">uv</a></td>
+<td>Installs the workspace</td>
+</tr>
+<tr>
+<td>Docker with Compose</td>
+<td>Postgres (with pgvector), Redis, RabbitMQ, and the worker image</td>
+</tr>
+<tr>
+<td><strong>Rootless</strong> Docker with cgroup v2 delegation of <code>cpu</code>, <code>memory</code> and <code>pids</code></td>
+<td>The Verify sandbox. Without delegation the memory, CPU and process caps are silently ignored</td>
+</tr>
+<tr>
+<td>git 2.38 or newer</td>
+<td>Merge handling uses <code>merge-tree --write-tree</code>; the worker image checks this at build</td>
+</tr>
+<tr>
+<td><code>prlimit</code> (util-linux)</td>
+<td>The agent's <code>grep</code> tool runs git under it, and the toolbox refuses to build without it</td>
+</tr>
+<tr>
+<td>A GitHub App</td>
+<td>Repository registration, issue listing, clone, push and pull requests</td>
+</tr>
+<tr>
+<td>A model provider key</td>
+<td>For <code>--agent llm</code>. See <a href="#env-files">Env files</a></td>
+</tr>
+</tbody>
+</table></div>
+<p>Set up rootless Docker with <code>systemctl --user enable --now docker</code> (from <code>docker-rootless-extras</code>). Check delegation with <code>docker info</code>; a missing controller shows as a warning.</p>
+<p>Point Docker at the rootless daemon in every shell that runs compose, the CLI or the tests:</p>
+<pre><code class="language-bash">export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock
+</code></pre>
+<p>This must be a real environment variable. A <code>DOCKER_HOST</code> line in <code>.env</code> is read into the settings object, never into <code>os.environ</code>, so the sandbox would silently use the rootful socket. Use one daemon for everything: a compose stack on the other daemon has its own Postgres.</p>
+<h2 id="install">Install<a class="headerlink" href="#install" title="Link to this section">#</a></h2>
+<pre><code class="language-bash">uv sync --all-packages
+</code></pre>
+<p>Plain <code>uv sync</code> prunes the workspace members, because the root package declares no dependencies.</p>
+<h2 id="env-files">Env files<a class="headerlink" href="#env-files" title="Link to this section">#</a></h2>
+<p>Copy each template and fill in values. The templates hold names only.</p>
+<pre><code class="language-bash">cp .env.example .env
+cp infra/api.env.example infra/api.env
+cp infra/worker.env.example infra/worker.env
+cp infra/site.env.example infra/site.env
+</code></pre>
+<div class="doc-table"><table>
+<thead>
+<tr>
+<th>File</th>
+<th>Read by</th>
+<th>Holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.env</code></td>
+<td>Anything you run on the host: <code>uvicorn</code>, <code>repolace-run-task</code>, <code>repolace-eval</code>, <code>alembic</code>, the tests. Also compose, for variable interpolation (<code>infra/.env</code> is a symlink to it)</td>
+<td>Database, Redis and broker URLs, GitHub App values, provider keys</td>
+</tr>
+<tr>
+<td><code>infra/api.env</code></td>
+<td>The <code>api</code> container</td>
+<td>Database, Redis and broker URLs, GitHub App values, <code>API_BASE_URL</code>, <code>UI_ALLOWED_HOSTS</code>. <strong>No provider keys</strong></td>
+</tr>
+<tr>
+<td><code>infra/worker.env</code></td>
+<td>The <code>worker</code> container</td>
+<td><code>GITHUB_APP_ID</code>, <code>GITHUB_APP_PRIVATE_KEY_BASE64</code>, provider keys, optional <code>GATEWAY_STAGE_MODELS</code>, <code>WORKER_CONCURRENCY</code>, <code>WORKER_TASK_BOUND_SECONDS</code>, <code>MAX_CHANGED_FILES</code>, <code>MAX_CHANGED_LINES</code></td>
+</tr>
+<tr>
+<td><code>infra/site.env</code></td>
+<td>The <code>site</code> container</td>
+<td><code>SITE_ALLOWED_HOSTS</code>, <code>SITE_DATABASE_URL</code>, optional Turnstile keys, <code>SITE_TRUST_CF_IP</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>The <code>worker-maintenance</code> container has no env file and needs no provider key.</p>
+<p>Variable names that matter for a first run:</p>
+<ul>
+<li>GitHub App: <code>GITHUB_APP_ID</code>, <code>GITHUB_APP_SLUG</code>, <code>GITHUB_APP_PRIVATE_KEY_BASE64</code>, <code>GITHUB_APP_WEBHOOK_SECRET</code>, <code>API_BASE_URL</code>.</li>
+<li>Provider keys, set only for the providers your <code>gateway/models.toml</code> routes to: <code>ANTHROPIC_API_KEY</code>, <code>OPENAI_API_KEY</code>, <code>GEMINI_API_KEY</code>, <code>MINIMAX_API_KEY</code>, and <code>GOOGLE_API_KEY</code> plus <code>GOOGLE_CLOUD_PROJECT</code> for Vertex AI (a Vertex key, not an AI Studio key).</li>
+</ul>
+<p>The shipped <code>agent</code> stage routes to <code>claude-sonnet-5-5</code>. To use another priced model for one run, set <code>GATEWAY_STAGE_MODELS='{"agent": "&lt;model key&gt;"}'</code>. A model without a price in <code>gateway/models.toml</code> is refused before the first call.</p>
+<p>Every variable is listed in reference/env.md.</p>
+<h2 id="start-the-infrastructure">Start the infrastructure<a class="headerlink" href="#start-the-infrastructure" title="Link to this section">#</a></h2>
+<p>From the repository root:</p>
+<pre><code class="language-bash">docker compose -f infra/docker-compose.yml up -d postgres redis rabbitmq
+</code></pre>
+<p>All ports bind to <code>127.0.0.1</code>: Postgres 5432, Redis 6379, RabbitMQ 5672 and its management UI 15672. Compose defaults every credential to <code>repolace</code>; set <code>POSTGRES_USER</code>, <code>POSTGRES_PASSWORD</code>, <code>REDIS_PASSWORD</code>, <code>RABBITMQ_USER</code> and <code>RABBITMQ_PASSWORD</code> in <code>.env</code> to change them, and keep the URLs in <code>.env</code> in step.</p>
+<p>Apply the schema:</p>
+<pre><code class="language-bash">cd api &amp;&amp; uv run alembic upgrade head
+</code></pre>
+<p>Never run <code>alembic upgrade</code> against your development database from a test run.</p>
+<h2 id="run-the-api">Run the API<a class="headerlink" href="#run-the-api" title="Link to this section">#</a></h2>
+<p>The settings require the four GitHub App values (<code>GITHUB_APP_ID</code>, <code>GITHUB_APP_SLUG</code>, <code>GITHUB_APP_PRIVATE_KEY_BASE64</code>, <code>GITHUB_APP_WEBHOOK_SECRET</code>) to exist in <code>.env</code>, so create the App (next section) first, or put placeholder values there to see the pages render.</p>
+<pre><code class="language-bash">uv run --project api uvicorn repolace_api.main:app --port 8000
+</code></pre>
+<p><code>http://localhost:8000/ui/repos</code> is the task UI and <code>http://localhost:8000/healthz</code> returns <code>{"status": "ok"}</code>. The API and UI have no general authentication (sign-in covers only <code>/ui/account</code>); bind them to localhost only. Billing setup is in BILLING_SETUP.md.</p>
+<h2 id="create-the-github-app">Create the GitHub App<a class="headerlink" href="#create-the-github-app" title="Link to this section">#</a></h2>
+<p>repolace registers repositories only through the App's installation webhook. There is no manual register route.</p>
+<ol>
+<li>In GitHub, open Settings, Developer settings, GitHub Apps, New GitHub App.</li>
+<li><strong>Repository permissions</strong>: Contents read and write, Pull requests read and write, Issues read. The pipeline's preflight checks only the first two. Issues read is what listing issues needs.</li>
+<li><strong>Subscribe to events</strong>: Installation, and Installation repositories (the API handles <code>installation</code> and <code>installation_repositories</code>).</li>
+<li><strong>Webhook</strong>: URL <code>&lt;public URL&gt;/github/webhook</code>, and a secret of your choosing. GitHub must reach this URL, so use a tunnel for a local API (for example a Cloudflare Tunnel or ngrok). The route is exempt from the Host allowlist and authenticates by HMAC signature.</li>
+<li>Generate a private key. Base64-encode the PEM onto one line and put it in <code>GITHUB_APP_PRIVATE_KEY_BASE64</code>:</li>
+</ol>
+<p><code>bash
+   base64 -w0 &lt; your-app.private-key.pem</code></p>
+<ol start="6">
+<li>Put the App id, slug and webhook secret in <code>.env</code> and <code>infra/api.env</code> (and the id and key in <code>infra/worker.env</code>), then restart the API.</li>
+<li>Install the App on a test repository. Visiting <code>/github/install</code> on your API redirects to the install page.</li>
+</ol>
+<p>When the installation webhook arrives, the repository appears in <code>/ui/repos</code>. If you added a tunnel hostname, add it to <code>UI_ALLOWED_HOSTS</code> or the UI answers 400 for that hostname.</p>
+<p>Disable GitHub Actions on the test repository before the first run. The agent may edit build files such as a <code>Makefile</code>, which a push-triggered workflow would run with the repository's secrets.</p>
+<h2 id="start-a-worker">Start a worker<a class="headerlink" href="#start-a-worker" title="Link to this section">#</a></h2>
+<p>The worker runs tasks. Build and start both worker services:</p>
+<pre><code class="language-bash">docker compose -f infra/docker-compose.yml up -d --build worker worker-maintenance
+</code></pre>
+<p>Notes:</p>
+<ul>
+<li>The worker mounts the <strong>rootless</strong> socket at <code>/run/user/1000/docker.sock</code> by default. For another uid set <code>DOCKER_SOCKET</code> in <code>.env</code>. Never mount the rootful <code>/var/run/docker.sock</code>.</li>
+<li>Rebuild the image after code changes (<code>--build</code>). A stale image registers no tasks.</li>
+<li>Each prefork child loads the embedding model; <code>WORKER_CONCURRENCY</code> defaults to 3 (about 10 GB of RAM). Lower it on a laptop.</li>
+<li>Put <code>WORKSPACE_PARENT_DIR</code> (default <code>/var/tmp/repolace-workspaces</code>) on a size- and inode-limited filesystem.</li>
+</ul>
+<p>More in operations.md.</p>
+<h2 id="run-a-task">Run a task<a class="headerlink" href="#run-a-task" title="Link to this section">#</a></h2>
+<h3 id="from-the-ui">From the UI<a class="headerlink" href="#from-the-ui" title="Link to this section">#</a></h3>
+<p>Open <code>/ui/repos</code>, choose the repository, choose New task, pick an issue and a branch, confirm and start. The task page shows a stage strip, the diff and the test runs, and polls while the task runs.</p>
+<h3 id="from-json">From JSON<a class="headerlink" href="#from-json" title="Link to this section">#</a></h3>
+<pre><code class="language-bash">curl -X POST localhost:8000/repos/&lt;repo_id&gt;/tasks \
+  -H 'content-type: application/json' \
+  -d '{&quot;issue_number&quot;: 42, &quot;target_branch&quot;: &quot;main&quot;}'
+</code></pre>
+<p>The response carries the task id (HTTP 201). Omit <code>target_branch</code> for the default branch. Add <code>"open_pr_on_failure": true</code> to open a PR even when the checks flag the change. A second request for an issue that already has a <code>queued</code> or <code>running</code> task on that branch returns 409.</p>
+<p>List repository ids with <code>curl localhost:8000/repos</code>, and follow a task with <code>curl localhost:8000/tasks/&lt;task_id&gt;</code>.</p>
+<h3 id="from-the-command-line">From the command line<a class="headerlink" href="#from-the-command-line" title="Link to this section">#</a></h3>
+<p>The CLI runs the same <code>run_task</code> as one host process, without the queue. It claims a <code>queued</code> row, so enqueue one first (the worker would also claim it if it is running, so stop the worker or use a separate database for a pure CLI run).</p>
+<pre><code class="language-bash">uv run --all-packages repolace-run-task &lt;task_id&gt; [--agent llm|stub|gold] [--no-pr]
+</code></pre>
+<div class="doc-table"><table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--agent llm</code></td>
+<td>The real agent. The default</td>
+</tr>
+<tr>
+<td><code>--agent stub</code></td>
+<td>A deterministic editor that writes a marker comment. It proves the plumbing and says so in the PR it opens</td>
+</tr>
+<tr>
+<td><code>--agent gold</code></td>
+<td>Applies a benchmark instance's reference fix. Never opens a PR</td>
+</tr>
+<tr>
+<td><code>--no-pr</code></td>
+<td>Run everything except opening a PR</td>
+</tr>
+</tbody>
+</table></div>
+<p>Exit codes report whether repolace worked, not whether the issue was fixed:</p>
+<div class="doc-table"><table>
+<thead>
+<tr>
+<th>Code</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>The task ran to the end, whatever the outcome</td>
+</tr>
+<tr>
+<td>1</td>
+<td>repolace itself broke; the task is <code>failed</code> and <code>error_message</code> says why</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Bad invocation, task not found, or a model with no price</td>
+</tr>
+<tr>
+<td>3</td>
+<td>The task is not claimable (already run, or another runner has it)</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>REPOLACE_TASK_MAX_USD</code> replaces the $2.00 cost cap for one run. It is read from the process environment, so export it:</p>
+<pre><code class="language-bash">REPOLACE_TASK_MAX_USD=0.50 uv run --all-packages repolace-run-task &lt;task_id&gt; --no-pr
+</code></pre>
+<p>The CLI checks the model's price before claiming the task. Provider keys must be in <code>.env</code>.</p>
+<h3 id="reading-the-result">Reading the result<a class="headerlink" href="#reading-the-result" title="Link to this section">#</a></h3>
+<p>A task ends in one of six statuses: <code>queued</code>, <code>running</code>, <code>completed</code>, <code>pr_opened</code>, <code>conflicting</code>, <code>failed</code>. <code>completed</code> means the pipeline ran to the end without opening a PR; read <code>outcome</code> and <code>agent_stop_reason</code> for why. <code>failed</code> means repolace broke. A PR opens only when the agent submitted and no regression, silenced failure or new collection error was found, unless the task was queued with <code>open_pr_on_failure</code>.</p>
+<p>Repositories with no pytest tests are out of scope: the baseline run produces nothing scoreable and the task completes without running the agent.</p>
+<h2 id="run-the-tests">Run the tests<a class="headerlink" href="#run-the-tests" title="Link to this section">#</a></h2>
+<pre><code class="language-bash">uv run ruff check .
+uv run --all-packages pytest -m &quot;not db and not docker&quot;       # no services needed
+REPOLACE_TEST_DB_SUFFIX=_mybranch uv run --all-packages pytest -m db    # needs Postgres
+uv run --all-packages pytest -m docker                        # needs the Docker daemon
+</code></pre>
+<ul>
+<li>Markers: <code>db</code> needs a live PostgreSQL, <code>docker</code> needs a live Docker daemon. Both skip when the service is unreachable. Set <code>REPOLACE_TEST_DB_REQUIRED=1</code> and <code>REPOLACE_TEST_DOCKER_REQUIRED=1</code> to turn a skip into a failure, which is what you want before merging.</li>
+<li>Database tests truncate every table of their database. Parallel checkouts must set different <code>REPOLACE_TEST_DB_SUFFIX</code> values (an underscore, then 1 to 32 of <code>a-z</code>, <code>0-9</code>, <code>_</code>; the default is <code>_test</code>).</li>
+<li>Test file basenames must be unique across the repository, because there are no <code>__init__.py</code> files. This must print nothing:</li>
+</ul>
+<p><code>bash
+  find . -name 'test_*.py' -not -path './.venv/*' -not -path './*/.venv/*' | xargs -n1 basename | sort | uniq -d</code></p>
+<ul>
+<li>After changing models, run <code>alembic check</code> from <code>api/</code>.</li>
+<li>The first Docker test run builds an image and needs Docker Hub access once.</li>
+</ul>
+<h2 id="next-steps">Next steps<a class="headerlink" href="#next-steps" title="Link to this section">#</a></h2>
+<ul>
+<li><a href="/documentation/architecture/">Architecture</a> for what the worker does with the task</li>
+<li>Operations for running the worker and the site</li>
+<li><a href="/documentation/benchmark/">Benchmark</a> to reproduce the measured run</li>
+<li>Contributing before opening a pull request</li>
+</ul>
+<nav class="doc-pager" aria-label="Pages"><a rel="prev" href="/documentation/architecture/"><span>Previous</span>Architecture</a><a rel="next" href="/documentation/benchmark/"><span>Next</span>Benchmark</a></nav>
+  </main>
+</div>
+<footer class="foot">
+  <div class="wrap footrow">
+    <p>repolace is in early access. Python repositories only, for now.</p>
+    <nav aria-label="Footer"><a href="/">Home</a><a href="/pricing">Pricing</a><a href="/waitlist">Waitlist</a><a href="/benchmark/">Benchmark</a><a href="/retrieval-benchmark/">Retrieval benchmark</a><a href="/documentation/">Docs</a></nav>
+  </div>
+</footer>
+<script src="/documentation/docs.js" defer></script>
+</body>
+</html>

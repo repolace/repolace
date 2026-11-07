@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 730" role="img" aria-labelledby="t d">
+  <title id="t">repolace system overview</title>
+  <desc id="d">A user and GitHub reach the private API on port 8000. The API stores task rows in PostgreSQL and publishes to RabbitMQ. A Celery task worker runs the pipeline, which uses retrieval over pgvector, the LangGraph agent with nine tools, the LiteLLM gateway to model providers, and verify, which runs tests in a rootless Docker sandbox. The pipeline pushes a branch and opens a pull request on GitHub. A maintenance worker runs a sweeper and a reaper. A separate public site on port 8100, reached through a Cloudflare Tunnel, mounts no API router.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f7f7f4; stroke: #8a8980; stroke-width: 1.5; }
+      .zone { fill: none; stroke: #6b6a63; stroke-width: 1.5; stroke-dasharray: 7 5; }
+      .card { fill: #ffffff; stroke: #55544e; stroke-width: 1.5; }
+      .priv { fill: #e3eefb; stroke: #1c5cab; stroke-width: 1.5; }
+      .pub { fill: #e1f3e1; stroke: #1f6b1f; stroke-width: 1.5; }
+      .sbx { fill: #fdeadc; stroke: #a8420f; stroke-width: 1.5; }
+      .store { fill: #eeeaf8; stroke: #4f3fb0; stroke-width: 1.5; }
+      .ext { fill: #ffffff; stroke: #55544e; stroke-width: 1.5; stroke-dasharray: 5 4; }
+      .t { font: 600 15px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #161615; text-anchor: middle; }
+      .s { font: 400 12.5px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #34332f; text-anchor: middle; }
+      .z { font: 600 13px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #34332f; }
+      .lb { font: 400 12.5px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #34332f; }
+      .ln { fill: none; stroke: #34332f; stroke-width: 1.6; marker-end: url(#a); }
+      .ln2 { fill: none; stroke: #34332f; stroke-width: 1.6; marker-end: url(#a); marker-start: url(#b); }
+    </style>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="#34332f"/></marker>
+    <marker id="b" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#34332f"/></marker>
+  </defs>
+  <rect class="bg" x="2" y="2" width="1096" height="726" rx="14"/>
+
+  <!-- private zone -->
+  <rect class="zone" x="150" y="36" width="930" height="574" rx="12"/>
+  <text class="z" x="166" y="58">Private: loopback or private tunnel only</text>
+
+  <!-- left column -->
+  <rect class="card" x="20" y="80" width="110" height="64" rx="10"/>
+  <text class="t" x="75" y="108">User</text><text class="s" x="75" y="127">browser</text>
+  <rect class="ext" x="20" y="290" width="110" height="64" rx="10"/>
+  <text class="t" x="75" y="318">GitHub</text><text class="s" x="75" y="337">external</text>
+
+  <!-- row 1 -->
+  <rect class="priv" x="175" y="80" width="190" height="70" rx="10"/>
+  <text class="t" x="270" y="106">api</text><text class="s" x="270" y="125">FastAPI + HTMX UI</text><text class="s" x="270" y="141">port 8000</text>
+  <rect class="card" x="420" y="80" width="140" height="70" rx="10"/>
+  <text class="t" x="490" y="111">RabbitMQ</text><text class="s" x="490" y="130">task queue</text>
+  <rect class="priv" x="615" y="80" width="200" height="70" rx="10"/>
+  <text class="t" x="715" y="106">worker</text><text class="s" x="715" y="125">Celery, task role</text><text class="s" x="715" y="141">runs run_task</text>
+  <rect class="card" x="850" y="80" width="210" height="70" rx="10"/>
+  <text class="t" x="955" y="106">worker-maintenance</text><text class="s" x="955" y="125">sweeper: republish queued</text><text class="s" x="955" y="141">reaper: fail stale heartbeats</text>
+
+  <!-- pipeline -->
+  <rect class="priv" x="400" y="200" width="660" height="150" rx="12" fill-opacity="0.35"/>
+  <text class="z" x="416" y="222">pipeline: run_task (the stages around the agent)</text>
+  <rect class="card" x="415" y="240" width="145" height="90" rx="10"/>
+  <text class="t" x="487" y="268">rag</text><text class="s" x="487" y="288">retrieval</text><text class="s" x="487" y="305">pgvector + keyword</text>
+  <rect class="card" x="575" y="240" width="145" height="90" rx="10"/>
+  <text class="t" x="647" y="268">agents</text><text class="s" x="647" y="288">LangGraph graph</text><text class="s" x="647" y="305">9 tools</text>
+  <rect class="card" x="735" y="240" width="145" height="90" rx="10"/>
+  <text class="t" x="807" y="268">gateway</text><text class="s" x="807" y="288">LiteLLM</text><text class="s" x="807" y="305">budget, cost</text>
+  <rect class="sbx" x="895" y="240" width="150" height="90" rx="10"/>
+  <text class="t" x="970" y="268">verify</text><text class="s" x="970" y="288">baseline + each</text><text class="s" x="970" y="305">attempt, scored</text>
+
+  <!-- lower externals -->
+  <rect class="ext" x="735" y="395" width="145" height="64" rx="10"/>
+  <text class="t" x="807" y="422">Model providers</text><text class="s" x="807" y="441">external</text>
+  <rect class="sbx" x="895" y="395" width="150" height="64" rx="10"/>
+  <text class="t" x="970" y="422">Docker sandbox</text><text class="s" x="970" y="441">rootless, no network</text>
+
+  <!-- postgres -->
+  <rect class="store" x="175" y="520" width="870" height="64" rx="10"/>
+  <text class="t" x="610" y="548">PostgreSQL</text>
+  <text class="s" x="610" y="567">task rows and stages, code chunks (pgvector), llm_calls, test runs</text>
+
+  <!-- arrows -->
+  <path class="ln" d="M130 112H175"/>
+  <path class="ln" d="M365 115H420"/>
+  <path class="ln" d="M560 115H615"/>
+  <text class="lb" x="372" y="106">publish</text>
+  <path class="ln" d="M715 150V200"/>
+  <path class="ln2" d="M490 80V62H955V80"/>
+  <text class="lb" x="640" y="56">maintenance queue</text>
+  <path class="ln" d="M130 300H330V150"/>
+  <text class="lb" x="212" y="268">repos, issues,</text><text class="lb" x="212" y="284">webhooks</text>
+  <path class="ln" d="M400 330H130"/>
+  <text class="lb" x="214" y="322">clone, push branch, open PR</text>
+  <path class="ln" d="M807 330V395"/>
+  <path class="ln" d="M970 330V395"/>
+  <text class="lb" x="977" y="372">docker run</text>
+  <path class="ln2" d="M200 150V520"/>
+  <text class="lb" x="208" y="480">task rows</text>
+  <path class="ln2" d="M487 330V520"/>
+  <text class="lb" x="494" y="480">state, chunks, costs</text>
+
+  <!-- public zone -->
+  <rect class="zone" x="20" y="630" width="1060" height="88" rx="12"/>
+  <text class="z" x="36" y="652">Public: the only process a hostname may reach</text>
+  <rect class="ext" x="36" y="662" width="110" height="46" rx="10"/>
+  <text class="t" x="91" y="690">Visitors</text>
+  <rect class="card" x="210" y="662" width="170" height="46" rx="10"/>
+  <text class="t" x="295" y="682">Cloudflare Tunnel</text><text class="s" x="295" y="699">to port 8100 only</text>
+  <rect class="pub" x="440" y="662" width="330" height="46" rx="10"/>
+  <text class="t" x="605" y="682">site (port 8100)</text><text class="s" x="605" y="699">pages, reports, waitlist. Mounts no API router</text>
+  <rect class="store" x="830" y="662" width="236" height="46" rx="10"/>
+  <text class="t" x="948" y="682">Waitlist store</text><text class="s" x="948" y="699">its own database URL, optional</text>
+  <path class="ln" d="M146 685H210"/>
+  <path class="ln" d="M380 685H440"/>
+  <path class="ln" d="M770 685H830"/>
+</svg>
