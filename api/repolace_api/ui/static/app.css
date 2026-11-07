@@ -319,3 +319,8 @@ dl.sum dt { color: var(--fg-muted); }
   .costbar rect.fill, .est .bar .band { fill: Highlight; }
   .costbar rect.track, .est .bar .track { fill: Canvas; stroke: CanvasText; }
 }
+
+/* account page */
+.notice { padding: 12px 16px; margin-bottom: 16px; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border-top: 1px solid var(--border); }
+.actions form { margin: 0; }

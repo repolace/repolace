@@ -117,4 +117,4 @@ class TestPortal:
         async with client_for(app, cookies=session_cookie(user.id)) as client:
             response = await client.post("/billing/portal", headers=SAME_ORIGIN)
         assert response.json() == {"url": "https://billing.stripe.test/p/session_1"}
-        assert fake.portal_calls == [{"customer": "cus_stored", "return_url": "http://test/ui/repos"}]
+        assert fake.portal_calls == [{"customer": "cus_stored", "return_url": "http://test/ui/account"}]

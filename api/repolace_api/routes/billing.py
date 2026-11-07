@@ -101,8 +101,8 @@ async def checkout(
             "line_items": [{"price": settings.stripe_price_id, "quantity": 1}],
             "client_reference_id": str(user.id),
             "customer": row.stripe_customer_id,
-            "success_url": f"{base}/ui/repos?checkout=success",
-            "cancel_url": f"{base}/ui/repos?checkout=cancelled",
+            "success_url": f"{base}/ui/account?checkout=success",
+            "cancel_url": f"{base}/ui/account?checkout=cancelled",
             "integration_identifier": _integration_identifier(),
             # No payment_method_types: the methods come from the Dashboard.
         }
@@ -123,7 +123,7 @@ async def portal(
     if row is None:
         raise HTTPException(status_code=404, detail="no subscription to manage")
     session = client.v1.billing_portal.sessions.create(
-        params={"customer": row.stripe_customer_id, "return_url": f"{settings.api_base_url.rstrip('/')}/ui/repos"}
+        params={"customer": row.stripe_customer_id, "return_url": f"{settings.api_base_url.rstrip('/')}/ui/account"}
     )
     return _respond(request, session.url)
 

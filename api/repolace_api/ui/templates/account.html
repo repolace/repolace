@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Account | repolace{% endblock %}
+{% block crumbs %}<li aria-current="page">Account</li>{% endblock %}
+{% block content %}
+<div class="pagehead"><h1>Account</h1>{% if user %}<span class="mono">{{ user.github_login }}</span>{% endif %}</div>
+
+{% if notice == "success" %}
+<p class="panel notice" role="status">Returned from Stripe checkout. This is not confirmation of payment: the plan below changes when Stripe confirms it to repolace, which can take a few seconds. Reload to check.</p>
+{% elif notice == "cancelled" %}
+<p class="panel notice" role="status">Checkout was cancelled. Nothing was charged and the plan is unchanged.</p>
+{% endif %}
+
+{% if not signin_ready %}
+<div class="panel empty">
+  <p>Sign-in is not configured on this install.</p>
+  <p class="muted">Tasks are not metered and have no owner. See docs/BILLING_SETUP.md to turn it on.</p>
+</div>
+{% elif not user %}
+<div class="panel empty">
+  <p>You are not signed in.</p>
+  <p class="muted">Signing in attaches a plan and a monthly task allowance to your GitHub account.</p>
+  <a class="btn btn-primary" href="/auth/github/login">Sign in with GitHub</a>
+</div>
+{% else %}
+<section class="panel" aria-labelledby="plan-h">
+  <header><h2 id="plan-h">Plan</h2></header>
+  <dl class="result">
+    <dt>Plan</dt><dd><span class="tag">{{ plan }}</span></dd>
+    <dt>Status</dt><dd>{{ status }}</dd>
+    {% if period_end %}<dt>Current period ends</dt><dd>{{ absolute(period_end) }}</dd>{% endif %}
+    <dt>Tasks this month</dt><dd>{{ used }} of {{ limit }}{% if used >= limit %} <span class="muted">(allowance used; further tasks are refused until next month or an upgrade)</span>{% endif %}</dd>
+  </dl>
+  <div class="body actions">
+    {% if stripe_ready and plan != "pro" %}
+    <form method="post" action="/billing/checkout"><button class="btn btn-primary" type="submit">Upgrade</button></form>
+    {% endif %}
+    {% if stripe_ready and has_subscription %}
+    <form method="post" action="/billing/portal"><button class="btn" type="submit">Manage billing</button></form>
+    {% endif %}
+    {% if not stripe_ready %}<p class="muted">Billing is not configured, so plan changes are unavailable.</p>{% endif %}
+    <span class="spacer"></span>
+    <form method="post" action="/auth/logout"><button class="btn" type="submit">Sign out</button></form>
+  </div>
+</section>
+<p class="muted">Counted per calendar month (UTC), over the tasks you started while signed in. Plan limits are preview numbers.</p>
+{% endif %}
+{% endblock %}

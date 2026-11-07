@@ -153,6 +153,8 @@ class Task(Base):
         # `repo_id` agree in direction because Postgres only makes a row comparison an index condition
         # when they do; the old `(repo_id, created_at DESC)` index could bound `created_at` alone.
         Index("ix_tasks_repo_created_id", "repo_id", text("created_at DESC"), text("id DESC")),
+        # "Tasks this user started since the first of the month" (the plan allowance, migration 0019).
+        Index("ix_tasks_user_created", "user_id", "created_at"),
         # What the worker's sweeper and reaper scan every minute. Partial: the live rows are a tiny share of
         # the table whatever its age. `heartbeat_at` is deliberately not indexed, so a beat stays a cheap update.
         Index(
@@ -309,6 +311,13 @@ class Task(Base):
     #: `conflicting`, and only then (`ck_tasks_conflict_reason_needs_conflicting`), so
     #: `error_message` keeps its one meaning.
     conflict_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Who started the task, set only when billing sign-in is configured and someone is signed in
+    #: (migration 0019). NULL for benchmark rows, CLI-started tasks, tasks from before sign-in
+    #: existed, and every task on an install with no sign-in; NULL is never counted against anyone's
+    #: allowance. SET NULL on user delete: the task and its cost evidence outlive the account.
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
     repo: Mapped[RegisteredRepo] = relationship(back_populates="tasks")
     test_runs: Mapped[list["TaskTestRun"]] = relationship(

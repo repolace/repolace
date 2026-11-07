@@ -272,6 +272,10 @@ When a task starts, repolace checks the repo's `indexed_commit_sha` against the 
 
 **`llm_calls` stores every request and response verbatim, which includes repository source code.** For a private repository, its code is in that table (and was sent to the model provider). Redaction strips credential-shaped strings, and the exact keys the gateway holds, from what is stored; it does not and cannot strip code. Treat the database accordingly.
 
+## Billing (in progress, local test mode only)
+
+Optional GitHub sign-in and Stripe monthly plans (free and pro) with a monthly task allowance, an account page at `/ui/account`, and a webhook at `/billing/webhook`. Unconfigured, nothing changes: no sign-in, no owner on tasks, no limit. It has only been run with mocks and is not public; see [docs/BILLING_SETUP.md](docs/BILLING_SETUP.md).
+
 ## What comes next
 
 **Phase 1 completion:** gold validation, a dry run and sweeps 4 and 4b are done ([BENCHMARK/](BENCHMARK/)). Left: confirming Vertex prices in the Cloud console (`gateway/models.toml` uses AI Studio rates), a run that opens real PRs, and deciding whether any variant (early-edit nudge, role split, mixed models) earns a place on `main`. Benchmark repos must contain no tracked symlinks or submodules — the export refuses both.

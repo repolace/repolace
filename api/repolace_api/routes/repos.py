@@ -17,6 +17,7 @@ from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
+from repolace_api.billing_limits import enforce_allowance, enqueue_owner
 from repolace_api.deps import get_db, get_github_client
 from repolace_api.publisher import TaskPublisher, get_publisher
 from repolace_api.schemas import (
@@ -144,8 +145,9 @@ async def create_task(
     db: AsyncSession = Depends(get_db),
     github: GithubClient = Depends(get_github_client),
     publisher: TaskPublisher = Depends(get_publisher),
+    owner_id: UUID | None = Depends(enqueue_owner),
 ) -> TaskCreated:
-    return await enqueue_task(db, github, repo_id, body, publisher)
+    return await enqueue_task(db, github, repo_id, body, publisher, owner_id)
 
 
 async def enqueue_task(
@@ -154,8 +156,13 @@ async def enqueue_task(
     repo_id: UUID,
     body: CreateTaskRequest,
     publisher: TaskPublisher,
+    owner_id: UUID | None = None,
 ) -> TaskCreated:
     """Queue a task. Does not run it.
+
+    `owner_id` is set only by callers that resolved it through `enqueue_owner` (sign-in configured and
+    someone signed in); it records the owner and enforces the monthly allowance (402). None, the
+    default for the benchmark runner, the CLI and an install without sign-in, means no owner and no limit.
 
     The pipeline runs in a Celery worker (or `repolace-run-task`); this endpoint
     inserts the row and publishes its id by name. Keeping it that way is what stops the API image from
@@ -209,7 +216,11 @@ async def enqueue_task(
             detail=f"issue #{issue.number} already has a task queued or running for {target_branch!r}",
         )
 
+    if owner_id is not None:
+        await enforce_allowance(db, owner_id)
+
     task = Task(
+        user_id=owner_id,
         repo_id=repo.id,
         issue_number=issue.number,
         issue_title=issue.title,

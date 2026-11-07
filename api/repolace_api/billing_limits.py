@@ -3,20 +3,22 @@
 PREVIEW NUMBERS: like the prices on the public `/pricing` page, these are hypotheses to be
 validated against real cost per task, not commitments. Change them here only.
 
-Not wired into `enqueue_task` yet, deliberately: `tasks` has no owner column, so "tasks this user
-started this month" cannot be counted. Wiring it needs a `tasks.user_id` migration (nullable,
-set by the enqueue path from the signed-in user); then the enqueue path calls
-`plan_for_user(...)`, counts that user's non-benchmark tasks since `month_start(now)`, and calls
-`assert_within_allowance(plan, used)`. Until then the function is exercised on its own.
+Wired into `enqueue_task` through the `enqueue_owner` dependency, and only when sign-in is configured
+(`BillingSettings.signin_ready`) AND someone is signed in. Otherwise no owner is recorded and no limit
+applies, so the benchmark runner, the CLI and a local install with no billing behave as they always did.
+Counting is by `tasks.user_id` (migration 0019) over non-benchmark rows since `month_start(now)`.
 """
 
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import HTTPException
-from repolace_shared.db.models import Subscription
-from sqlalchemy import select
+from fastapi import Depends, HTTPException
+from repolace_shared.db.models import Subscription, Task, User
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from repolace_api.config import BillingSettings, get_billing_settings
+from repolace_api.deps import optional_user
 
 FREE_TASKS_PER_MONTH = 5
 PRO_TASKS_PER_MONTH = 100
@@ -48,3 +50,34 @@ def assert_within_allowance(plan: str, used: int) -> None:
             status_code=402,
             detail=f"the {plan} plan allows {limit} tasks per month and {used} have been started this month",
         )
+
+
+async def enqueue_owner(
+    user: User | None = Depends(optional_user),
+    settings: BillingSettings = Depends(get_billing_settings),
+) -> uuid.UUID | None:
+    """The id to record as the task's owner and meter, or None: sign-in not configured, or nobody
+    signed in. None means "behave exactly as before"."""
+    if user is None or not settings.signin_ready:
+        return None
+    return user.id
+
+
+async def tasks_started_this_month(db: AsyncSession, user_id: uuid.UUID, now: datetime | None = None) -> int:
+    return (
+        await db.scalar(
+            select(func.count())
+            .select_from(Task)
+            .where(Task.user_id == user_id, Task.eval_run_id.is_(None), Task.created_at >= month_start(now))
+        )
+        or 0
+    )
+
+
+async def enforce_allowance(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Raise 402 when the user has used this month's allowance. Takes a transaction-scoped advisory
+    lock per user so two concurrent enqueues cannot both read the same count; it is released by the
+    caller's commit, which follows straight after the insert."""
+    await db.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(f"tasks-allowance:{user_id}", 0))))
+    plan = await plan_for_user(db, user_id)
+    assert_within_allowance(plan, await tasks_started_this_month(db, user_id))
