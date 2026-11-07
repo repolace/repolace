@@ -19,6 +19,7 @@ Pick the group that matches why you are here. The [project README](../README.md)
 | Page | Read it to learn |
 |---|---|
 | [Architecture](architecture.md) | How the nine packages fit together and what happens to a task from enqueue to pull request |
+| [The demo run](demo.md) | A real pull request the agent opened on a small public repository, how it was made, and the two problems found in it |
 | [Benchmark](benchmark.md) | What the benchmark measures, the headline result with its caveats, and how to reproduce it |
 | [Security](security.md) | How model-written code is contained, and what is not protected |
 | [BENCHMARK/REPORT.md](../BENCHMARK/REPORT.md) | The full statistical write-up of the recorded run |

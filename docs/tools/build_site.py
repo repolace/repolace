@@ -33,6 +33,7 @@ PUBLIC_PAGES = [
     ("README.md", "", "Overview"),
     ("architecture.md", "architecture", "Architecture"),
     ("getting-started.md", "getting-started", "Getting started"),
+    ("demo.md", "demo", "The demo run"),
     ("benchmark.md", "benchmark", "Benchmark"),
     ("security.md", "security", "Security"),
 ]
@@ -204,6 +205,7 @@ SHELL = """<!doctype html>
       <a href="/">Home</a>
       <a href="/benchmark/">Benchmark</a>
       <a href="/retrieval-benchmark/">Retrieval benchmark</a>
+      <a href="/demo/">Demo</a>
       <a href="/pricing">Pricing</a>
       <a href="/waitlist">Join the waitlist</a>
       <a href="{base}/">Documentation</a>
@@ -232,7 +234,7 @@ SHELL = """<!doctype html>
 <footer class="foot">
   <div class="wrap footrow">
     <p>repolace is in early access. Python repositories only, for now. Open source under the <a href="https://github.com/repolace/repolace/blob/main/LICENSE">MIT licence</a>.</p>
-    <nav aria-label="Footer"><a href="/">Home</a><a href="/pricing">Pricing</a><a href="/waitlist">Waitlist</a><a href="/benchmark/">Benchmark</a><a href="/retrieval-benchmark/">Retrieval benchmark</a><a href="{base}/">Docs</a><a href="https://github.com/repolace/repolace">Source</a></nav>
+    <nav aria-label="Footer"><a href="/">Home</a><a href="/pricing">Pricing</a><a href="/waitlist">Waitlist</a><a href="/benchmark/">Benchmark</a><a href="/retrieval-benchmark/">Retrieval benchmark</a><a href="/demo/">Demo</a><a href="{base}/">Docs</a><a href="https://github.com/repolace/repolace">Source</a></nav>
   </div>
 </footer>
 <script src="{base}/docs.js" defer></script>
