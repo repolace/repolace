@@ -2,6 +2,18 @@
 
 Pick the group that matches why you are here. The [project README](../README.md) is the overview.
 
+## The project at a glance
+
+| | |
+|---|---|
+| What it is | An autonomous agent that turns a GitHub issue into a tested pull request, written in Python (3.12 or newer) |
+| Source | [https://github.com/repolace/repolace](https://github.com/repolace/repolace) |
+| Licence | MIT, see [LICENSE](../LICENSE) |
+| Status | A first benchmark exists (29/54 on 18 public SWE-bench Verified issues, with caveats); the public site is deployed; billing exists only in Stripe test mode. See the [README](../README.md) status table |
+| Stack | FastAPI, Celery with RabbitMQ and Redis, PostgreSQL with pgvector, LangGraph, LiteLLM, rootless Docker |
+| Author | Rounak Kumar Singh (solo project) |
+| Report a vulnerability | [SECURITY.md](../SECURITY.md) |
+
 ## Visitors
 
 | Page | Read it to learn |

@@ -174,6 +174,11 @@ SHELL = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{full_title}</title>
 <meta name="description" content="{description}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="repolace documentation">
+<meta property="og:title" content="{full_title}">
+<meta property="og:description" content="{description}">
+<meta name="twitter:card" content="summary">
 <meta name="color-scheme" content="light dark">
 <link rel="preload" href="/benchmark/fonts/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/benchmark/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
@@ -226,8 +231,8 @@ SHELL = """<!doctype html>
 </div>
 <footer class="foot">
   <div class="wrap footrow">
-    <p>repolace is in early access. Python repositories only, for now.</p>
-    <nav aria-label="Footer"><a href="/">Home</a><a href="/pricing">Pricing</a><a href="/waitlist">Waitlist</a><a href="/benchmark/">Benchmark</a><a href="/retrieval-benchmark/">Retrieval benchmark</a><a href="{base}/">Docs</a></nav>
+    <p>repolace is in early access. Python repositories only, for now. Open source under the <a href="https://github.com/repolace/repolace/blob/main/LICENSE">MIT licence</a>.</p>
+    <nav aria-label="Footer"><a href="/">Home</a><a href="/pricing">Pricing</a><a href="/waitlist">Waitlist</a><a href="/benchmark/">Benchmark</a><a href="/retrieval-benchmark/">Retrieval benchmark</a><a href="{base}/">Docs</a><a href="https://github.com/repolace/repolace">Source</a></nav>
   </div>
 </footer>
 <script src="{base}/docs.js" defer></script>
