@@ -165,7 +165,7 @@ cp infra/site.env.example infra/site.env
 <p>The settings require the four GitHub App values (<code>GITHUB_APP_ID</code>, <code>GITHUB_APP_SLUG</code>, <code>GITHUB_APP_PRIVATE_KEY_BASE64</code>, <code>GITHUB_APP_WEBHOOK_SECRET</code>) to exist in <code>.env</code>, so create the App (next section) first, or put placeholder values there to see the pages render.</p>
 <pre><code class="language-bash">uv run --project api uvicorn repolace_api.main:app --port 8000
 </code></pre>
-<p><code>http://localhost:8000/ui/repos</code> is the task UI and <code>http://localhost:8000/healthz</code> returns <code>{"status": "ok"}</code>. The API and UI have no authentication; bind them to localhost only.</p>
+<p><code>http://localhost:8000/ui/repos</code> is the task UI and <code>http://localhost:8000/healthz</code> returns <code>{"status": "ok"}</code>. The API and UI have no general authentication (sign-in covers only <code>/ui/account</code>); bind them to localhost only. Billing setup is in BILLING_SETUP.md.</p>
 <h2 id="create-the-github-app">Create the GitHub App<a class="headerlink" href="#create-the-github-app" title="Link to this section">#</a></h2>
 <p>repolace registers repositories only through the App's installation webhook. There is no manual register route.</p>
 <ol>

@@ -54,6 +54,14 @@ Tables and columns declared in `shared/repolace_shared/db/models.py`, read stati
 | `error` | `Text` | yes |
 | `created_at` | `DateTime(timezone=True)` | no |
 
+## `processed_stripe_events`
+
+| Column | Type | Nullable |
+| --- | --- | --- |
+| `event_id` | `String` | no |
+| `event_type` | `String` | no |
+| `processed_at` | `DateTime(timezone=True)` | no |
+
 ## `registered_repos`
 
 | Column | Type | Nullable |
@@ -70,6 +78,21 @@ Tables and columns declared in `shared/repolace_shared/db/models.py`, read stati
 | `indexed_commit_sha` | `String` | yes |
 | `index_strategy` | `String` | yes |
 | `registered_at` | `DateTime(timezone=True)` | no |
+| `updated_at` | `DateTime(timezone=True)` | no |
+
+## `subscriptions`
+
+| Column | Type | Nullable |
+| --- | --- | --- |
+| `id` | `UUID(as_uuid=True)` | no |
+| `user_id` | `UUID(as_uuid=True)` | no |
+| `stripe_customer_id` | `String` | no |
+| `stripe_subscription_id` | `String` | yes |
+| `plan` | `String` | no |
+| `status` | `String` | no |
+| `current_period_end` | `DateTime(timezone=True)` | yes |
+| `cancel_at` | `DateTime(timezone=True)` | yes |
+| `risk_flag` | `String` | yes |
 | `updated_at` | `DateTime(timezone=True)` | no |
 
 ## `task_stages`
@@ -144,6 +167,17 @@ Tables and columns declared in `shared/repolace_shared/db/models.py`, read stati
 | `heartbeat_at` | `DateTime(timezone=True)` | yes |
 | `claimed_by` | `Text` | yes |
 | `conflict_reason` | `Text` | yes |
+| `user_id` | `UUID(as_uuid=True)` | yes |
+
+## `users`
+
+| Column | Type | Nullable |
+| --- | --- | --- |
+| `id` | `UUID(as_uuid=True)` | no |
+| `github_user_id` | `BigInteger` | no |
+| `github_login` | `String` | no |
+| `email` | `String` | yes |
+| `created_at` | `DateTime(timezone=True)` | no |
 
 ## `waitlist_signups`
 

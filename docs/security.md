@@ -96,7 +96,7 @@ Full list: [.claude/rules/prompt-injection.md](../.claude/rules/prompt-injection
 | | Private API (`repolace_api.main`) | Public site (`repolace_api.site.main`) |
 |---|---|---|
 | Serves | `/repos`, `/tasks`, `/ui`, `/github`, `/healthz` | Landing, pricing, `/benchmark/`, `/retrieval-benchmark/`, `/documentation/`, waitlist, `/healthz` |
-| Authentication | **None** | Not needed: no task routes |
+| Authentication | GitHub sign-in on `/ui/account` and `/billing/*` only; none elsewhere | Not needed: no task routes |
 | Reachable from | localhost or a private tunnel | A public hostname or tunnel |
 | Env file | `infra/api.env` | `infra/site.env` |
 
@@ -125,7 +125,7 @@ The private API and UI add three defenses that are **not** authentication:
 
 Read this section before pointing repolace at anything that matters.
 
-- **The private API and task UI have no authentication.** Anyone who can reach the port can enqueue a task, which spends provider money and runs code on the host. The Host allowlist and same-origin check stop DNS rebinding and cross-site forgery, not a person with network access. Keep them on localhost or a private tunnel.
+- **The private API and task UI have no general authentication.** GitHub sign-in covers only `/ui/account` and `/billing/*` (signed cookie, `routes/auth.py`); the JSON API and the rest of `/ui` stay open. Anyone who can reach the port can enqueue a task, which spends provider money and runs code on the host. The Host allowlist and same-origin check stop DNS rebinding and cross-site forgery, not a person with network access. Keep them on localhost or a private tunnel.
 - **A container shares the host kernel.** A kernel bug could allow an escape. There is no gVisor or VM layer today.
 - **Resource caps depend on your host.** Without cgroup v2 delegation they are silently ignored. A suite can also write as much as it likes into its export directory, which no container limit covers, so the workspace parent directory should sit on a size- and inode-limited filesystem.
 - **Almost any file is writable by the agent, including files CI executes** (`Makefile`, `setup.py`, `noxfile.py`, scripts). repolace pushes the agent branch to the same repository the pull request targets. If that repository has push-triggered CI with secrets, that CI would run agent-written code before a human looks. Do not point product mode at such a repository without deciding that deliberately, and disable Actions on test repositories.

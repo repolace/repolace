@@ -60,3 +60,44 @@ class SiteSettings(BaseSettings):
     turnstile_secret_key: str | None = None
     #: Trust `CF-Connecting-IP` when the TCP peer is loopback or private (the tunnel connector).
     site_trust_cf_ip: bool = True
+
+
+class BillingSettings(BaseSettings):
+    """Stripe billing and GitHub sign-in. Every field is optional: unset, the billing and sign-in
+    routes answer 503 and the rest of the API is unaffected. Listed in infra/api.env.example.
+
+    Use a restricted key (`rk_`) with the minimum permissions: Checkout Sessions, Customers,
+    Customer Portal sessions and Subscriptions (read). Never a live key from a laptop.
+    """
+
+    model_config = SettingsConfigDict(env_file=_REPO_ROOT_ENV_FILE, extra="ignore")
+
+    stripe_secret_key: str | None = None
+    #: The signing secret of the webhook endpoint (`whsec_...`; `stripe listen` prints one locally).
+    stripe_webhook_secret: str | None = None
+    #: The Price id (`price_...`) of the paid monthly plan.
+    stripe_price_id: str | None = None
+    #: Signs the session cookie. At least 32 random characters.
+    session_secret: str | None = None
+    #: The GitHub App's OAuth client id and secret ("Request user authorization").
+    github_oauth_client_id: str | None = None
+    github_oauth_client_secret: str | None = None
+    #: Where Stripe and GitHub send the browser back to. Same variable as `ApiSettings.api_base_url`.
+    api_base_url: str = "http://localhost:8000"
+
+    @property
+    def cookie_secure(self) -> bool:
+        return self.api_base_url.lower().startswith("https://")
+
+    @property
+    def stripe_ready(self) -> bool:
+        return bool(self.stripe_secret_key and self.stripe_webhook_secret and self.stripe_price_id)
+
+    @property
+    def signin_ready(self) -> bool:
+        return bool(self.github_oauth_client_id and self.github_oauth_client_secret and self.session_secret and len(self.session_secret) >= 32)
+
+
+@lru_cache
+def get_billing_settings() -> BillingSettings:
+    return BillingSettings()

@@ -4,7 +4,7 @@
 
 Every revision in `api/alembic/versions`, read statically.
 
-Head: `0017`
+Head: `0020`
 
 | Revision | Down revision | Summary | File |
 | --- | --- | --- | --- |
@@ -25,3 +25,6 @@ Head: `0017`
 | `0015` | `0014` | index the queries that read more of `tasks` and `llm_calls` than they need | `0015_task_query_indexes.py` |
 | `0016` | `0015` | add tasks.conflict_reason | `0016_add_task_conflict_reason.py` |
 | `0017` | `0016` | add waitlist_signups | `0017_add_waitlist_signups.py` |
+| `0018` | `0017` | add users, subscriptions and processed_stripe_events | `0018_add_users_and_billing.py` |
+| `0019` | `0018` | add tasks.user_id | `0019_add_tasks_user_id.py` |
+| `0020` | `0019` | add subscriptions.cancel_at | `0020_add_subscriptions_cancel_at.py` |

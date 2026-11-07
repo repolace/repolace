@@ -153,6 +153,8 @@ class Task(Base):
         # `repo_id` agree in direction because Postgres only makes a row comparison an index condition
         # when they do; the old `(repo_id, created_at DESC)` index could bound `created_at` alone.
         Index("ix_tasks_repo_created_id", "repo_id", text("created_at DESC"), text("id DESC")),
+        # "Tasks this user started since the first of the month" (the plan allowance, migration 0019).
+        Index("ix_tasks_user_created", "user_id", "created_at"),
         # What the worker's sweeper and reaper scan every minute. Partial: the live rows are a tiny share of
         # the table whatever its age. `heartbeat_at` is deliberately not indexed, so a beat stays a cheap update.
         Index(
@@ -309,6 +311,13 @@ class Task(Base):
     #: `conflicting`, and only then (`ck_tasks_conflict_reason_needs_conflicting`), so
     #: `error_message` keeps its one meaning.
     conflict_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Who started the task, set only when billing sign-in is configured and someone is signed in
+    #: (migration 0019). NULL for benchmark rows, CLI-started tasks, tasks from before sign-in
+    #: existed, and every task on an install with no sign-in; NULL is never counted against anyone's
+    #: allowance. SET NULL on user delete: the task and its cost evidence outlive the account.
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
     repo: Mapped[RegisteredRepo] = relationship(back_populates="tasks")
     test_runs: Mapped[list["TaskTestRun"]] = relationship(
@@ -573,3 +582,53 @@ class WaitlistSignup(Base):
     source: Mapped[str] = mapped_column(String, nullable=False, server_default="site")
     consent: Mapped[bool] = mapped_column(Boolean, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class User(Base):
+    """A person who signed in with GitHub. The GitHub numeric id is the identity: logins change."""
+
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    github_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
+    github_login: Mapped[str] = mapped_column(String, nullable=False)
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Subscription(Base):
+    """One user's Stripe subscription, as last reported by a verified webhook.
+
+    Stripe is the source of truth; this row is a cache of it, so every field comes from an event and
+    nothing here is trusted from a redirect URL. `stripe_customer_id` is how later events (renewals,
+    refunds, disputes) are resolved to a user, not event metadata. A user with no row is on the free
+    plan. `status` is Stripe's own value (`active`, `past_due`, `canceled`, ...).
+    """
+
+    __tablename__ = "subscriptions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    stripe_customer_id: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String, nullable=True, unique=True)
+    plan: Mapped[str] = mapped_column(String, nullable=False, server_default="free")
+    status: Mapped[str] = mapped_column(String, nullable=False, server_default="incomplete")
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: When Stripe will end the subscription (a cancellation requested in the portal): the plan stays
+    #: `pro` until then. NULL when nothing is pending, including after the user resumes.
+    cancel_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Set by a dispute or early fraud warning event; cleared by hand after review.
+    risk_flag: Mapped[str | None] = mapped_column(String, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ProcessedStripeEvent(Base):
+    """Event ids already handled, so a redelivered webhook changes nothing."""
+
+    __tablename__ = "processed_stripe_events"
+
+    event_id: Mapped[str] = mapped_column(String, primary_key=True)
+    event_type: Mapped[str] = mapped_column(String, nullable=False)
+    processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

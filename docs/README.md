@@ -25,6 +25,7 @@ Pick the group that matches why you are here. The [project README](../README.md)
 | Page | Read it to learn |
 |---|---|
 | [Operations](operations.md) | Compose services and ports, env file per service, worker notes, recovery behavior, public site deployment |
+| [Billing setup](BILLING_SETUP.md) | Stripe sandbox, restricted key, webhook forwarding, GitHub sign-in, and what is not yet live |
 | [infra/aws/README.md](../infra/aws/README.md) | Step-by-step operator procedure for the public site on AWS |
 | [Phase 1 testing](PHASE1_TESTING.md) | The order of operations that produced the benchmark number, with a preflight script |
 | [SECURITY.md](../SECURITY.md) | How to report a vulnerability, and the known limits |

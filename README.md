@@ -14,12 +14,12 @@ Agents that patch issues are common. What this project is for is the part most o
 | Verify sandbox (rootless Docker) | Built. The 32 Docker containment tests have passed on a rootless daemon |
 | Celery worker | Ran one task end to end, which opened one pull request on a private smoke-test repository. No other real PR has been opened |
 | Pull-request opening at scale | **Not measured.** Every benchmark sweep used `--no-pr` |
-| Task UI and JSON API | Built (server-rendered pages under `/ui`). **No authentication**: localhost or a private tunnel only |
+| Task UI and JSON API | Built (server-rendered pages under `/ui`). **No general authentication**: only `/ui/account` and `/billing/*` use GitHub sign-in. Localhost or a private tunnel only |
 | Public site (landing, pricing preview, benchmark reports, waitlist) | Built as a separate process that mounts none of the API routes |
 | Public site on AWS | Deployed: the CDK stack, a push-to-deploy workflow with a reviewer approval, and a commit-sha check on `/healthz`. **Not yet tested:** reboot recovery, a backup restore |
 | Observability | Structured JSON logs with a task id on every line. OpenTelemetry and Grafana are not started |
 | Languages | Python repositories with pytest only. Indexing and the sandbox assume it |
-| Accounts and billing | Account sign-in and Stripe billing are in development on a branch, not merged |
+| Accounts and billing | GitHub sign-in, Stripe Checkout, customer portal and webhook, a monthly task allowance (free 2, paid 60) and `/ui/account`. **Test mode only**: exercised once against a Stripe sandbox and a real GitHub sign-in, not public (the webhook must move off the laptop first), and `/pricing` still says billing is not open. See [docs/BILLING_SETUP.md](docs/BILLING_SETUP.md) |
 
 ## Architecture
 
@@ -103,7 +103,7 @@ Start at [docs/README.md](docs/README.md). The main pages:
 - The sandbox receives a byte-exact export of the tracked tree with no `.git`, so it cannot plant hooks or rewrite remotes that the host later acts on. Only pass/fail data comes back out.
 - Hidden benchmark tests never reach the agent; a feedback filter is the only place a scored result becomes text a model reads.
 - Provider keys are handed to the gateway per call and never exported into the process environment, so git and Docker children cannot inherit them.
-- The private API and task UI have no authentication. The public site is a separate process that mounts none of those routes. Do not expose the API or `/ui` to the internet.
+- The private API and task UI have no general authentication (sign-in covers only `/ui/account` and `/billing/*`). The public site is a separate process that mounts none of those routes. Do not expose the API or `/ui` to the internet.
 
 ## Contributing and license
 

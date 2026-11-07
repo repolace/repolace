@@ -90,7 +90,7 @@ The settings require the four GitHub App values (`GITHUB_APP_ID`, `GITHUB_APP_SL
 uv run --project api uvicorn repolace_api.main:app --port 8000
 ```
 
-`http://localhost:8000/ui/repos` is the task UI and `http://localhost:8000/healthz` returns `{"status": "ok"}`. The API and UI have no authentication; bind them to localhost only.
+`http://localhost:8000/ui/repos` is the task UI and `http://localhost:8000/healthz` returns `{"status": "ok"}`. The API and UI have no general authentication (sign-in covers only `/ui/account`); bind them to localhost only. Billing setup is in [BILLING_SETUP.md](BILLING_SETUP.md).
 
 ## Create the GitHub App
 

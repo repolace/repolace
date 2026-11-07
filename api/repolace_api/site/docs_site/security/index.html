@@ -192,7 +192,7 @@
 </tr>
 <tr>
 <td>Authentication</td>
-<td><strong>None</strong></td>
+<td>GitHub sign-in on <code>/ui/account</code> and <code>/billing/*</code> only; none elsewhere</td>
 <td>Not needed: no task routes</td>
 </tr>
 <tr>
@@ -246,7 +246,7 @@
 <h2 id="what-is-not-protected">What is not protected<a class="headerlink" href="#what-is-not-protected" title="Link to this section">#</a></h2>
 <p>Read this section before pointing repolace at anything that matters.</p>
 <ul>
-<li><strong>The private API and task UI have no authentication.</strong> Anyone who can reach the port can enqueue a task, which spends provider money and runs code on the host. The Host allowlist and same-origin check stop DNS rebinding and cross-site forgery, not a person with network access. Keep them on localhost or a private tunnel.</li>
+<li><strong>The private API and task UI have no general authentication.</strong> GitHub sign-in covers only <code>/ui/account</code> and <code>/billing/*</code> (signed cookie, <code>routes/auth.py</code>); the JSON API and the rest of <code>/ui</code> stay open. Anyone who can reach the port can enqueue a task, which spends provider money and runs code on the host. The Host allowlist and same-origin check stop DNS rebinding and cross-site forgery, not a person with network access. Keep them on localhost or a private tunnel.</li>
 <li><strong>A container shares the host kernel.</strong> A kernel bug could allow an escape. There is no gVisor or VM layer today.</li>
 <li><strong>Resource caps depend on your host.</strong> Without cgroup v2 delegation they are silently ignored. A suite can also write as much as it likes into its export directory, which no container limit covers, so the workspace parent directory should sit on a size- and inode-limited filesystem.</li>
 <li><strong>Almost any file is writable by the agent, including files CI executes</strong> (<code>Makefile</code>, <code>setup.py</code>, <code>noxfile.py</code>, scripts). repolace pushes the agent branch to the same repository the pull request targets. If that repository has push-triggered CI with secrets, that CI would run agent-written code before a human looks. Do not point product mode at such a repository without deciding that deliberately, and disable Actions on test repositories.</li>

@@ -18,13 +18,15 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from pydantic import ValidationError
-from repolace_shared.db.models import AGENT_STOP_REASONS, Task, TaskOutcome, TaskStatus
+from repolace_shared.db.models import AGENT_STOP_REASONS, Subscription, Task, TaskOutcome, TaskStatus, User
 from repolace_shared.github.client import GithubClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
-from repolace_api.deps import get_db, get_github_client
+from repolace_api.billing_limits import allowance_for, enqueue_owner, plan_for_user, tasks_started_this_month
+from repolace_api.config import BillingSettings, get_billing_settings
+from repolace_api.deps import get_db, get_github_client, optional_user
 from repolace_api.publisher import TaskPublisher, get_publisher
 from repolace_api.routes.repos import (
     _LIST_COLUMNS,
@@ -136,6 +138,39 @@ class Filters:
 
 
 # --------------------------------------------------------------------------- pages
+
+
+@router.get("/account", response_class=HTMLResponse)
+async def account_page(
+    checkout: str | None = None,
+    user: User | None = Depends(optional_user),
+    settings: BillingSettings = Depends(get_billing_settings),
+    db: AsyncSession = Depends(get_db),
+) -> HTMLResponse:
+    """Plan, usage and the billing buttons. Read-only: the forms post to `/billing/*` and `/auth/*`.
+
+    `checkout` only selects a notice. It is never evidence of payment; the plan shown is the
+    `subscriptions` row the verified webhook maintains.
+    """
+    ctx: dict[str, Any] = {
+        "user": user,
+        "signin_ready": settings.signin_ready,
+        "stripe_ready": settings.stripe_ready,
+        "notice": checkout if checkout in ("success", "cancelled") else None,
+    }
+    if user is not None and settings.signin_ready:
+        sub = await db.scalar(select(Subscription).where(Subscription.user_id == user.id))
+        plan = await plan_for_user(db, user.id)
+        ctx |= {
+            "plan": plan,
+            "status": sub.status if sub else "no subscription",
+            "period_end": sub.current_period_end if sub else None,
+            "cancel_at": sub.cancel_at if sub else None,
+            "has_subscription": sub is not None,
+            "used": await tasks_started_this_month(db, user.id),
+            "limit": allowance_for(plan),
+        }
+    return render("account.html", **ctx)
 
 
 @router.get("/repos", response_class=HTMLResponse)
@@ -365,6 +400,7 @@ async def create_task_form(
     db: AsyncSession = Depends(get_db),
     github: GithubClient = Depends(get_github_client),
     publisher: TaskPublisher = Depends(get_publisher),
+    owner_id: UUID | None = Depends(enqueue_owner),
 ):
     """Enqueue through the same function as `POST /repos/{id}/tasks`, then redirect to the task."""
     if not same_origin(request):
@@ -401,7 +437,7 @@ async def create_task_form(
         return await again("That issue number is not valid.", 422)
     await active_repo(db, repo_id)  # 404 for an unknown repo, not a form error
     try:
-        created = await enqueue_task(db, github, repo_id, body, publisher)
+        created = await enqueue_task(db, github, repo_id, body, publisher, owner_id)
     except HTTPException as exc:
         return await again(str(exc.detail), exc.status_code, is_branch=exc.status_code in (400, 422))
     return RedirectResponse(f"/ui/tasks/{created.id}", status_code=303)

@@ -9,7 +9,7 @@ nothing in the API reads. It also checks the examples under `infra/` carry no se
 import re
 from pathlib import Path
 
-from repolace_api.config import ApiSettings, UiSettings
+from repolace_api.config import ApiSettings, BillingSettings, UiSettings
 
 INFRA = Path(__file__).resolve().parents[2] / "infra"
 API_ENV_EXAMPLE = INFRA / "api.env.example"
@@ -32,7 +32,7 @@ def read_env(path: Path) -> dict[str, str]:
 
 
 def test_the_api_example_lists_exactly_what_the_api_reads():
-    expected = {name.upper() for name in (*ApiSettings.model_fields, *UiSettings.model_fields)}
+    expected = {name.upper() for name in (*ApiSettings.model_fields, *UiSettings.model_fields, *BillingSettings.model_fields)}
 
     assert set(read_env(API_ENV_EXAMPLE)) == expected
 

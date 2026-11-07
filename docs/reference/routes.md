@@ -9,6 +9,12 @@ Method: a static `ast` scan of the route decorators, `add_api_route` and `mount`
 | Method | Path | Handler | Defined in |
 | --- | --- | --- | --- |
 | GET | / | redirect_root | api/repolace_api/ui/__init__.py |
+| GET | /auth/github/callback | callback | api/repolace_api/routes/auth.py |
+| GET | /auth/github/login | login | api/repolace_api/routes/auth.py |
+| POST | /auth/logout | logout | api/repolace_api/routes/auth.py |
+| POST | /billing/checkout | checkout | api/repolace_api/routes/billing.py |
+| POST | /billing/portal | portal | api/repolace_api/routes/billing.py |
+| POST | /billing/webhook | webhook | api/repolace_api/routes/billing.py |
 | GET | /github/callback | callback | api/repolace_api/routes/github.py |
 | GET | /github/install | install | api/repolace_api/routes/github.py |
 | POST | /github/webhook | webhook | api/repolace_api/routes/github.py |
@@ -20,6 +26,7 @@ Method: a static `ast` scan of the route decorators, `add_api_route` and `mount`
 | POST | /repos/{repo_id}/tasks | create_task | api/repolace_api/routes/repos.py |
 | GET | /repos/{repo_id}/tasks/estimate | estimate_task_cost | api/repolace_api/routes/repos.py |
 | GET | /tasks/{task_id} | get_task | api/repolace_api/routes/tasks.py |
+| GET | /ui/account | account_page | api/repolace_api/ui/router.py |
 | GET | /ui/repos | repos_page | api/repolace_api/ui/router.py |
 | GET | /ui/repos/{repo_id}/tasks | tasks_page | api/repolace_api/ui/router.py |
 | POST | /ui/repos/{repo_id}/tasks | create_task_form | api/repolace_api/ui/router.py |
