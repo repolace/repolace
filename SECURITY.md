@@ -17,7 +17,7 @@ repolace runs model-written code, so the parts worth attacking are the boundarie
 - the verify sandbox (`verify/`): escapes, network access, writes outside the export;
 - how repository content and issue or comment text reach a model (`agents/`, `pipeline/`);
 - the public site (`api/repolace_api/site/`), the only process meant to be reachable from the internet;
-- secrets handling (provider keys, the GitHub App key, Stripe keys).
+- secrets handling (provider keys and the GitHub App key).
 
 The design of each boundary is described in [docs/security.md](docs/security.md).
 
