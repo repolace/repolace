@@ -571,7 +571,7 @@ def main(argv=None):
     if args.placeholder:
         data = placeholder()
     elif args.input:
-        data = build(json.loads(Path(args.input).read_text()), args.tasks, source=str(args.input))
+        data = build(json.loads(Path(args.input).read_text()), args.tasks, source="repolace-eval retrieval report")  # not the path: it names a run
     else:
         ap.error("give an INPUT.json or --placeholder")
     args.out.parent.mkdir(parents=True, exist_ok=True)
