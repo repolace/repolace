@@ -8,6 +8,7 @@ dependencies = []
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.15"]
+docs = ["markdown>=3.6"]
 
 [tool.uv]
 package = false

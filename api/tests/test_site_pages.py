@@ -24,7 +24,7 @@ def site_client(**kwargs) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=f"http://{HOST}")
 
 
-@pytest.mark.parametrize("path", ["/", "/pricing", "/benchmark/", "/retrieval-benchmark/", "/privacy", "/terms", "/waitlist", "/waitlist/thanks"])
+@pytest.mark.parametrize("path", ["/", "/pricing", "/benchmark/", "/retrieval-benchmark/", "/documentation/", "/privacy", "/terms", "/waitlist", "/waitlist/thanks"])
 async def test_public_pages_render(path):
     async with site_client() as client:
         resp = await client.get(path)

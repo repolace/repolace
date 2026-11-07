@@ -206,7 +206,7 @@ function footer(D) {
     `<p>${esc(m.rules)}</p>` +
     `<p>Fonts: Fraunces, Geist and Geist Mono under the SIL Open Font License (see <a href="fonts/LICENSE-Fraunces.txt">licences</a>). Charts: D3 7.8.5 (ISC licence), served from this site.</p>` +
     `<p>The retrieval grid behind the agent's context has its own page: <a href="/retrieval-benchmark/">read the retrieval report</a>.</p>` +
-    `<p><a href="/">repolace home</a> · <a href="/retrieval-benchmark/">Retrieval</a> · <a href="/pricing">Pricing</a> · <a href="/waitlist">Join the waitlist</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>`;
+    `<p><a href="/">repolace home</a> · <a href="/retrieval-benchmark/">Retrieval</a> · <a href="/pricing">Pricing</a> · <a href="/waitlist">Join the waitlist</a> · <a href="/documentation/">Docs</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>`;
 }
 
 main().catch((e) => console.error(e));

@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Architecture - repolace documentation</title>
+<meta name="description" content="This page describes how repolace is built and how one task moves through it. Each claim points at the file that implements it. The reasoning behind each decision is in CLAUDE.md and .claude/rules/.">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="/benchmark/fonts/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/benchmark/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon.png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<link rel="stylesheet" href="/documentation/docs.css">
+<script src="/benchmark/js/theme-init.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+<header class="topbar">
+  <a class="mark" href="/" title="repolace home"><span class="wm">repolace</span> <span class="wm-sub">docs</span></a>
+  <nav aria-label="Site">
+    <a href="/">Home</a>
+    <a href="/benchmark/">Benchmark</a>
+    <a href="/pricing">Pricing</a>
+    <a href="/documentation/" aria-current="true">Docs</a>
+  </nav>
+  <details class="menu">
+    <summary>Menu</summary>
+    <div class="panel">
+      <a href="/">Home</a>
+      <a href="/benchmark/">Benchmark</a>
+      <a href="/retrieval-benchmark/">Retrieval benchmark</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/waitlist">Join the waitlist</a>
+      <a href="/documentation/">Documentation</a>
+    </div>
+  </details>
+  <button class="iconbtn" id="theme" type="button" aria-label="Switch colour theme" title="Switch colour theme">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7Z"/></svg>
+  </button>
+</header>
+<div class="doc-wrap">
+  <aside class="doc-side">
+    <nav aria-label="Documentation">
+      <p class="doc-side-h">Documentation</p>
+      <ul class="doc-list" id="doc-side-list"><li><a href="/documentation/">Overview</a></li><li><a href="/documentation/architecture/" aria-current="page">Architecture</a><ol class="doc-toc"><li><a href="#packages-and-dependency-direction">Packages and dependency direction</a></li><li><a href="#a-task-end-to-end">A task, end to end</a></li><li><a href="#retrieval">Retrieval</a></li><li><a href="#the-agent">The agent</a></li><li><a href="#the-gateway">The gateway</a></li><li><a href="#the-sandbox">The sandbox</a></li><li><a href="#data-model">Data model</a></li><li><a href="#failure-and-recovery">Failure and recovery</a></li></ol></li><li><a href="/documentation/getting-started/">Getting started</a></li><li><a href="/documentation/benchmark/">Benchmark</a></li><li><a href="/documentation/security/">Security</a></li></ul>
+    </nav>
+  </aside>
+  <details class="doc-top">
+    <summary>Documentation pages</summary>
+    <nav aria-label="Documentation, compact"><ul class="doc-list" id="doc-top-list"><li><a href="/documentation/">Overview</a></li><li><a href="/documentation/architecture/" aria-current="page">Architecture</a></li><li><a href="/documentation/getting-started/">Getting started</a></li><li><a href="/documentation/benchmark/">Benchmark</a></li><li><a href="/documentation/security/">Security</a></li></ul></nav>
+  </details>
+  <main id="main" class="doc">
+<h1 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Link to this section">#</a></h1>
+<p>This page describes how repolace is built and how one task moves through it. Each claim points at the file that implements it. The reasoning behind each decision is in CLAUDE.md and .claude/rules/.</p>
+<p><img alt="System overview" src="/documentation/img/system-overview.svg" loading="lazy"></p>
+<h2 id="packages-and-dependency-direction">Packages and dependency direction<a class="headerlink" href="#packages-and-dependency-direction" title="Link to this section">#</a></h2>
+<p>The repository is a uv workspace of nine packages. Each has its own top-level import name (<code>repolace_api</code>, <code>repolace_worker</code>, <code>repolace_agents</code>, <code>repolace_gateway</code>, <code>repolace_shared</code>, <code>repolace_pipeline</code>, <code>retrieval</code>, <code>verify</code>, <code>harness</code>). Never give two packages the same name: editable installs append each package root to <code>sys.path</code>, and duplicates shadow each other.</p>
+<div class="doc-table"><table>
+<thead>
+<tr>
+<th>Package</th>
+<th>Import name</th>
+<th>Depends on (workspace)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>shared</code></td>
+<td><code>repolace_shared</code></td>
+<td>nothing</td>
+</tr>
+<tr>
+<td><code>verify</code></td>
+<td><code>verify</code></td>
+<td>shared</td>
+</tr>
+<tr>
+<td><code>gateway</code></td>
+<td><code>repolace_gateway</code></td>
+<td>shared</td>
+</tr>
+<tr>
+<td><code>rag</code></td>
+<td><code>retrieval</code></td>
+<td>shared</td>
+</tr>
+<tr>
+<td><code>agents</code></td>
+<td><code>repolace_agents</code></td>
+<td>shared, gateway, verify</td>
+</tr>
+<tr>
+<td><code>pipeline</code></td>
+<td><code>repolace_pipeline</code></td>
+<td>agents, gateway, rag, verify, shared</td>
+</tr>
+<tr>
+<td><code>worker</code></td>
+<td><code>repolace_worker</code></td>
+<td>shared, pipeline, rag</td>
+</tr>
+<tr>
+<td><code>api</code></td>
+<td><code>repolace_api</code></td>
+<td>shared</td>
+</tr>
+<tr>
+<td><code>eval</code></td>
+<td><code>harness</code></td>
+<td>shared, verify, agents, gateway, rag</td>
+</tr>
+</tbody>
+</table></div>
+<p>The arrows that matter:</p>
+<ul>
+<li><code>shared &lt;- verify</code>, <code>shared &lt;- gateway</code>, <code>shared &lt;- rag</code>.</li>
+<li><code>agents -&gt; shared, gateway, verify</code>. <strong><code>agents</code> must not import <code>rag</code>.</strong> That keeps torch out of agent tests; <code>agents/pyproject.toml</code> does not list it.</li>
+<li><code>pipeline -&gt; agents, gateway, rag, verify, shared</code>. The pipeline is the only place that joins the agent to retrieval.</li>
+<li><code>api -&gt; shared</code> only. The API image never imports the pipeline, torch or LiteLLM.</li>
+<li><code>shared</code> depends on <code>pgvector</code> because <code>CodeChunk</code> must live in <code>shared/repolace_shared/db/models.py</code> with every other table. Tree-sitter and sentence-transformers stay in <code>rag/</code>.</li>
+</ul>
+<h2 id="a-task-end-to-end">A task, end to end<a class="headerlink" href="#a-task-end-to-end" title="Link to this section">#</a></h2>
+<p><img alt="Task flow: enqueue, claim, stages, agent, gate, PR" src="/documentation/img/task-flow.svg" loading="lazy"></p>
+<h3 id="1-enqueue">1. Enqueue<a class="headerlink" href="#1-enqueue" title="Link to this section">#</a></h3>
+<p><code>api/repolace_api/routes/repos.py::enqueue_task</code> is the single function behind both <code>POST /repos/{id}/tasks</code> and the UI form. It checks the target branch against GitHub, resolves the issue from GitHub (title and URL are never taken from the client), refuses a second <code>queued</code> or <code>running</code> task for the same issue and branch with a 409, inserts a <code>queued</code> row and commits.</p>
+<p><code>api/repolace_api/publisher.py::CeleryTaskPublisher.publish</code> then sends the task <code>repolace.run_task</code> by name, with the row id as both argument and Celery id. A publish failure is logged and never fails the request, because a <code>queued</code> row is exactly what the sweeper republishes.</p>
+<h3 id="2-claim">2. Claim<a class="headerlink" href="#2-claim" title="Link to this section">#</a></h3>
+<p><code>worker/repolace_worker/tasks.py::run_task_job</code> is the Celery task (<code>acks_late</code>, <code>reject_on_worker_lost</code>). It calls <code>run_one</code>, which:</p>
+<ul>
+<li>refuses a row that has <code>eval_run_id</code> set (benchmark rows belong to the eval runner);</li>
+<li>calls <code>run_task</code> inside <code>repolace_worker.bound.bounded(...)</code> with the per-task bound (11,700 s by default);</li>
+<li>logs and drops <code>TaskNotClaimable</code> and <code>TaskNotFound</code>, and logs any other exception without retrying.</li>
+</ul>
+<p>A task row is never re-run. The <code>queued</code> to <code>running</code> claim is conditional, so a redelivered message finds a non-queued row and is dropped.</p>
+<h3 id="3-the-pipeline-stages">3. The pipeline stages<a class="headerlink" href="#3-the-pipeline-stages" title="Link to this section">#</a></h3>
+<p><code>pipeline/repolace_pipeline/run.py::run_task</code> runs these stages in order. Each writes a <code>task_stages</code> row (best effort) with its start, end and status.</p>
+<div class="doc-table"><table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>instance</code></td>
+<td>Benchmark tasks: load the instance file. A product task has none, so the stage does nothing</td>
+</tr>
+<tr>
+<td><code>preflight</code></td>
+<td>Check the GitHub App installation grants <code>contents:write</code> and <code>pull_requests:write</code></td>
+</tr>
+<tr>
+<td><code>embedder</code></td>
+<td>Warm the embedding model</td>
+</tr>
+<tr>
+<td><code>clone</code></td>
+<td>Full (not shallow) clone into a per-task temporary directory</td>
+</tr>
+<tr>
+<td><code>index</code></td>
+<td>Re-index only files changed since <code>registered_repos.indexed_commit_sha</code></td>
+</tr>
+<tr>
+<td><code>retrieve</code></td>
+<td>Hybrid search for chunks relevant to the issue</td>
+</tr>
+<tr>
+<td><code>verify_baseline</code></td>
+<td>Run the repo's suite in the sandbox at the base commit</td>
+</tr>
+<tr>
+<td><code>record_baseline</code></td>
+<td>Store the baseline result</td>
+</tr>
+<tr>
+<td><code>baseline_files</code></td>
+<td>List every tracked path at the base commit, so scoring can tell a test file the agent added from a shipped module</td>
+</tr>
+<tr>
+<td><code>branch</code></td>
+<td>Create the working branch</td>
+</tr>
+<tr>
+<td><code>agent</code></td>
+<td>Run the agent; each attempt is scored in the sandbox</td>
+</tr>
+<tr>
+<td><code>review</code></td>
+<td>Compute the changed files and diff, judge the score, apply the PR gate</td>
+</tr>
+<tr>
+<td><code>merge_target</code></td>
+<td><strong>Product mode only</strong>, and only when the gate would open a PR: merge the target branch if it moved, with the conflict resolver if needed, then re-score</td>
+</tr>
+<tr>
+<td><code>squash</code></td>
+<td>Squash to one commit</td>
+</tr>
+<tr>
+<td><code>push</code></td>
+<td>Push the branch</td>
+</tr>
+<tr>
+<td><code>pr</code></td>
+<td>Open the pull request</td>
+</tr>
+<tr>
+<td><code>finalize</code></td>
+<td>One conditional terminal write of status, outcome, cost and diff</td>
+</tr>
+</tbody>
+</table></div>
+<p>If the baseline is unusable (the suite collected nothing, the environment would not build, the run crashed), the task completes after the baseline with no agent run and a <code>score_reason</code> that starts <code>baseline unscoreable</code>.</p>
+<h2 id="retrieval">Retrieval<a class="headerlink" href="#retrieval" title="Link to this section">#</a></h2>
+<p>Code lives in <code>rag/retrieval/</code>.</p>
+<ul>
+<li><strong>Chunking</strong> (<code>chunker.py</code>): tree-sitter parses each <code>.py</code> file into function, method, class-skeleton and module chunks. Other languages index to zero chunks, and the empty case is logged as <code>rag.index.no_python_files</code>.</li>
+<li><strong>Embeddings</strong> (<code>embed.py</code>, <code>config.py</code>): a local sentence-transformers model, <code>flax-sentence-embeddings/st-codesearch-distilroberta-base</code>, 768 dimensions. It is local on purpose: indexing embeds every chunk, and a per-call price would make re-indexing and repeated benchmark runs expensive. The cost is that any image installing <code>rag/</code> pulls torch.</li>
+<li><strong>The 128-token limit</strong>: the model's <code>max_seq_length</code> is 128 tokens, so a longer chunk is embedded from its opening tokens only. When this was measured over repolace's own 238 chunks, 99 (41.6%) exceeded it. That figure describes this repository's code at one point in time; measure again before quoting it for another corpus. Four embedding strategies (<code>truncate</code>, <code>head_tail</code>, <code>windows</code>, <code>signature_docstring</code>) are implemented in <code>strategies.py</code>, and the benchmark compared them (see <a href="/documentation/benchmark/">benchmark.md</a>). The default stays <code>truncate</code>.</li>
+<li><strong>Storage</strong>: chunks and vectors are rows of <code>code_chunks</code> in Postgres with pgvector (HNSW index) and a full-text index.</li>
+<li><strong>Search</strong> (<code>retrieve.py::hybrid_search</code>): a semantic arm and a keyword arm are merged by reciprocal-rank fusion (<code>ranking.py</code>, <code>RRF_K = 60</code>). The keyword arm takes identifiers, the semantic arm a short description, both built by <code>build_query</code> from the issue.</li>
+<li><strong>Freshness</strong> (<code>index.py::reindex_if_stale</code>): a transaction-scoped advisory lock makes indexing single-flight per repository. A mismatch between the stored strategy and the configured one forces a full re-index.</li>
+</ul>
+<h2 id="the-agent">The agent<a class="headerlink" href="#the-agent" title="Link to this section">#</a></h2>
+<p>Code lives in <code>agents/repolace_agents/</code>.</p>
+<p>The graph (<code>graph.py</code>) is <code>localize -&gt; agent -&gt; verify</code>, then a conditional edge <code>route</code> back to <code>agent</code> or to the end. <code>localize</code> makes no model call. <code>agent</code> is a bounded tool loop and the only node that calls the model. <code>verify</code> is the only node that reads a scored result, and only to pass it to the feedback filter. Scoring, the gate, the push and the final write are in the pipeline, because they need git, Postgres and GitHub.</p>
+<p><strong>Nine tools</strong> (<code>agents/repolace_agents/tools/</code>): <code>search_code</code>, <code>read_file</code>, <code>grep</code>, <code>list_dir</code>, <code>edit_file</code>, <code>create_file</code>, <code>run_python</code>, <code>run_tests</code>, <code>submit</code>. A tool schema is enforced by the toolbox, and every path goes through one confinement function that refuses symlinks, <code>.git*</code> components and, for writes, any dotfile or protected file.</p>
+<p><strong>Bounds</strong>:</p>
+<div class="doc-table"><table>
+<thead>
+<tr>
+<th>Bound</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Scored attempts</td>
+<td>3</td>
+</tr>
+<tr>
+<td>Model calls (steps) per attempt</td>
+<td>40</td>
+</tr>
+<tr>
+<td>Tool calls executed per model reply</td>
+<td>8</td>
+</tr>
+<tr>
+<td>Cost per task</td>
+<td>$2.00, or <code>REPOLACE_TASK_MAX_USD</code></td>
+</tr>
+<tr>
+<td>Model calls per task</td>
+<td>150</td>
+</tr>
+<tr>
+<td>Agent wall clock</td>
+<td>3,600 s, started when the <code>agent</code> stage starts</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Stop reasons</strong> (<code>tasks.agent_stop_reason</code>): <code>submitted</code>, <code>step_cap</code>, <code>budget_usd</code>, <code>budget_calls</code>, <code>budget_wall</code>, <code>llm_error</code>, <code>no_change</code>, <code>max_attempts</code>.</p>
+<p><strong>Conflict resolver</strong> (<code>resolver.py</code>): a separate agent with its own graph and five tools. It never runs git. The host re-checks for conflict markers and commits.</p>
+<h2 id="the-gateway">The gateway<a class="headerlink" href="#the-gateway" title="Link to this section">#</a></h2>
+<p>Code lives in <code>gateway/repolace_gateway/</code>.</p>
+<ul>
+<li><strong>Stage routing</strong>: <code>gateway/models.toml</code> maps a stage (<code>agent</code>, <code>cheap</code>, and an optional <code>resolve</code> that follows <code>agent</code>) to a model. <code>GATEWAY_STAGE_MODELS</code> overrides it for one run.</li>
+<li><strong>Pricing</strong>: every model needs a price in <code>models.toml</code> (USD per million tokens). An unpriced model is rejected before its first call, and <code>cost_usd</code> is <code>NULL</code>, not zero, when no priced call was made.</li>
+<li><strong>Budget</strong>: <code>budget.py</code> keeps the active task and its <code>TaskBudget</code> in a context variable set by <code>task_scope(task_id, budget)</code>. A model call outside a scope raises <code>NoTaskScope</code>. The cap is checked in the gateway, not trusted to the agent.</li>
+<li><strong>Recording</strong>: <code>recorder.py</code> writes every call to <code>llm_calls</code> (request, response, tokens, cost) on its own session, after redacting credential-shaped strings. The table stores repository source verbatim, which matters for private repositories.</li>
+<li><strong>Providers</strong>: LiteLLM, plus a small REST transport for Gemini on Vertex AI (<code>vertex.py</code>). The headline benchmark model is <code>vertex-gemini-3-1-pro-preview</code>. Retries use exponential backoff with jitter (up to 21 tries per model, set in <code>models.toml</code>).</li>
+</ul>
+<h2 id="the-sandbox">The sandbox<a class="headerlink" href="#the-sandbox" title="Link to this section">#</a></h2>
+<p>Code lives in <code>verify/verify/</code>. <code>backends/docker.py::DockerBackend</code> drives the <code>docker</code> CLI. <code>build_run_argv</code> is a pure function that returns the full argument list, so a test can assert each containment flag on its own. The flags and the reasoning are in <a href="/documentation/security/">security.md</a>.</p>
+<p><img alt="The sandbox boundary: what runs inside the container and what stays on the host" src="/documentation/img/sandbox-boundary.svg" loading="lazy"></p>
+<p>In short: the repo's code runs inside, from a prepared per-repo image, against an export of the tracked tree without <code>.git</code>. Cloning, indexing, every model call, applying patches and opening the PR stay on the host. No agent runs inside the sandbox; Verify is a stage.</p>
+<h2 id="data-model">Data model<a class="headerlink" href="#data-model" title="Link to this section">#</a></h2>
+<p>The schema has eight tables: <code>github_installations</code>, <code>registered_repos</code>, <code>tasks</code>, <code>task_stages</code>, <code>task_test_runs</code>, <code>llm_calls</code>, <code>code_chunks</code> and <code>waitlist_signups</code>. Migrations run from 0001 to 0017 on <code>main</code>. See reference/tables.md and reference/migrations.md.</p>
+<p>Three design points:</p>
+<ul>
+<li><code>tasks.status</code> is one of six values; <code>failed</code> means repolace itself broke and is the only status that sets <code>error_message</code>. An agent-caused stop is <code>completed</code> with an outcome and a stop reason.</li>
+<li><code>task_test_runs</code> stores raw sets of passing and failing tests per attempt, so a score can be recomputed.</li>
+<li>The terminal write is conditional on <code>running</code>, so a late or duplicate writer cannot resurrect a finished task.</li>
+</ul>
+<h2 id="failure-and-recovery">Failure and recovery<a class="headerlink" href="#failure-and-recovery" title="Link to this section">#</a></h2>
+<div class="doc-table"><table>
+<thead>
+<tr>
+<th>Situation</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Broker down at enqueue</td>
+<td>The row stays <code>queued</code>. The sweeper in <code>worker-maintenance</code> republishes <code>queued</code> product rows older than 5 minutes, at most once per 15 minutes per row, 50 per tick</td>
+</tr>
+<tr>
+<td>Worker dies mid-task</td>
+<td>The pipeline heartbeats every 30 s. The reaper fails a <code>running</code> row whose heartbeat is older than 5 minutes with <code>runner: abandoned</code> and removes the task's containers</td>
+</tr>
+<tr>
+<td>Task exceeds its bound</td>
+<td>The row reads <code>interrupted: WorkerTimeout</code>; Celery's hard limit is the bound plus 600 s</td>
+</tr>
+<tr>
+<td>Duplicate delivery</td>
+<td>The conditional claim drops it</td>
+</tr>
+<tr>
+<td>Container outlives a timeout</td>
+<td>The backend removes it by name, since killing the client does not stop it</td>
+</tr>
+</tbody>
+</table></div>
+<p>A row is never re-run. To try an issue again, enqueue a new task.</p>
+<nav class="doc-pager" aria-label="Pages"><a rel="prev" href="/documentation/"><span>Previous</span>Overview</a><a rel="next" href="/documentation/getting-started/"><span>Next</span>Getting started</a></nav>
+  </main>
+</div>
+<footer class="foot">
+  <div class="wrap footrow">
+    <p>repolace is in early access. Python repositories only, for now.</p>
+    <nav aria-label="Footer"><a href="/">Home</a><a href="/pricing">Pricing</a><a href="/waitlist">Waitlist</a><a href="/benchmark/">Benchmark</a><a href="/retrieval-benchmark/">Retrieval benchmark</a><a href="/documentation/">Docs</a></nav>
+  </div>
+</footer>
+<script src="/documentation/docs.js" defer></script>
+</body>
+</html>

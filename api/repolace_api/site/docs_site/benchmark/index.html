@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Benchmark - repolace documentation</title>
+<meta name="description" content="After reading this page you will know what the repolace benchmark measures, what number it produced and how far to trust it, and how to reproduce the run.">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="/benchmark/fonts/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/benchmark/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon.png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<link rel="stylesheet" href="/documentation/docs.css">
+<script src="/benchmark/js/theme-init.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+<header class="topbar">
+  <a class="mark" href="/" title="repolace home"><span class="wm">repolace</span> <span class="wm-sub">docs</span></a>
+  <nav aria-label="Site">
+    <a href="/">Home</a>
+    <a href="/benchmark/">Benchmark</a>
+    <a href="/pricing">Pricing</a>
+    <a href="/documentation/" aria-current="true">Docs</a>
+  </nav>
+  <details class="menu">
+    <summary>Menu</summary>
+    <div class="panel">
+      <a href="/">Home</a>
+      <a href="/benchmark/">Benchmark</a>
+      <a href="/retrieval-benchmark/">Retrieval benchmark</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/waitlist">Join the waitlist</a>
+      <a href="/documentation/">Documentation</a>
+    </div>
+  </details>
+  <button class="iconbtn" id="theme" type="button" aria-label="Switch colour theme" title="Switch colour theme">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7Z"/></svg>
+  </button>
+</header>
+<div class="doc-wrap">
+  <aside class="doc-side">
+    <nav aria-label="Documentation">
+      <p class="doc-side-h">Documentation</p>
+      <ul class="doc-list" id="doc-side-list"><li><a href="/documentation/">Overview</a></li><li><a href="/documentation/architecture/">Architecture</a></li><li><a href="/documentation/getting-started/">Getting started</a></li><li><a href="/documentation/benchmark/" aria-current="page">Benchmark</a><ol class="doc-toc"><li><a href="#what-it-measures">What it measures</a></li><li><a href="#the-result">The result</a></li><li><a href="#how-far-to-trust-it">How far to trust it</a></li><li><a href="#how-a-run-is-built">How a run is built</a></li><li><a href="#reproduce-the-run">Reproduce the run</a></li><li><a href="#the-retrieval-grid">The retrieval grid</a></li><li><a href="#the-live-reports">The live reports</a></li><li><a href="#related">Related</a></li></ol></li><li><a href="/documentation/security/">Security</a></li></ul>
+    </nav>
+  </aside>
+  <details class="doc-top">
+    <summary>Documentation pages</summary>
+    <nav aria-label="Documentation, compact"><ul class="doc-list" id="doc-top-list"><li><a href="/documentation/">Overview</a></li><li><a href="/documentation/architecture/">Architecture</a></li><li><a href="/documentation/getting-started/">Getting started</a></li><li><a href="/documentation/benchmark/" aria-current="page">Benchmark</a></li><li><a href="/documentation/security/">Security</a></li></ul></nav>
+  </details>
+  <main id="main" class="doc">
+<h1 id="benchmark">Benchmark<a class="headerlink" href="#benchmark" title="Link to this section">#</a></h1>
+<p>After reading this page you will know what the repolace benchmark measures, what number it produced and how far to trust it, and how to reproduce the run.</p>
+<p>The headline: <strong>29 of 54 (53.7%)</strong>, with a 95% interval over instances of 35 to 72%. Read the caveats in <a href="#how-far-to-trust-it">How far to trust it</a> before quoting it.</p>
+<h2 id="what-it-measures">What it measures<a class="headerlink" href="#what-it-measures" title="Link to this section">#</a></h2>
+<p>The benchmark runs the same pipeline a product task runs, on 18 real issues, and records for each task whether it passed, what it cost and how long it took. It exists so the claim "an agent takes a GitHub issue and fixes it" comes with a success rate, a cost per task and a latency, not a demo.</p>
+<p>The 18 instances are a filtered subset of SWE-bench Verified: pure-Python pytest repositories (pytest, sphinx, pylint, seaborn, flask), gold-validated, with a simple-fix filter. Each instance is a private <code>bench-&lt;instance_id&gt;</code> repository in the project's GitHub organization, with GitHub Actions disabled before the first push.</p>
+<p>A task <strong>passes</strong> when every curated fail-to-pass test is green at the end, with no regression in the tests that passed at the base commit, and the agent did not edit tests. A <code>passed_with_test_edit</code> is never counted as a pass. The hidden fail-to-pass tests are laid over the sandbox export only, so the agent cannot read them or run them (see <a href="/documentation/security/">security.md</a>).</p>
+<h2 id="the-result">The result<a class="headerlink" href="#the-result" title="Link to this section">#</a></h2>
+<p>Single agent, Gemini 3.1 Pro on Vertex AI (<code>vertex-gemini-3-1-pro-preview</code>), 18 instances, 3 runs each (54 planned rows), run with <code>--no-pr</code>. Per-task caps: $2, 150 model calls, 40 steps per attempt, 3 scored attempts, one hour of agent time.</p>
+<div class="doc-table"><table>
+<thead>
+<tr>
+<th>Definition</th>
+<th>Passed</th>
+<th>Rate</th>
+<th>95% interval</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>sweep-4, official</strong>: passed / planned, with the 12 rows lost to provider rate limits counted as non-passes</td>
+<td>29 / 54</td>
+<td><strong>53.7%</strong></td>
+<td>35.2 to 72.2 (bootstrap over instances)</td>
+</tr>
+<tr>
+<td>sweep-4, secondary: passed / rows that finished (not the headline)</td>
+<td>29 / 42</td>
+<td>69.0%</td>
+<td>54.0 to 80.9 (row-level Wilson)</td>
+</tr>
+<tr>
+<td>sweep-4b alone: the re-run of the 12 lost rows</td>
+<td>6 / 12</td>
+<td>50.0%</td>
+<td>25.4 to 74.6 (Wilson)</td>
+</tr>
+<tr>
+<td>Hand-stated substitution: each lost row replaced by its re-run</td>
+<td>35 / 54</td>
+<td>64.8%</td>
+<td>44.4 to 83.3 (bootstrap over instances)</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>The first row is the headline.</strong> The last row is a calculation done by hand: <code>repolace-eval report</code> never pools runs, so 35/54 is not a tool output. It is defensible, because a row lost to HTTP 429 says nothing about the agent and the re-run used the same instances, model, limits and code. It is still not the official figure and appears only labelled as a substitution.</p>
+<h3 id="cost-latency-and-stop-reasons">Cost, latency and stop reasons<a class="headerlink" href="#cost-latency-and-stop-reasons" title="Link to this section">#</a></h3>
+<p>These figures are computed over the <strong>54 final rows</strong>, meaning the sweep-4 rows with each lost row replaced by its sweep-4b re-run. They are not figures for the 29/54 row above.</p>
+<div class="doc-table"><table>
+<thead>
+<tr>
+<th>Measure</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Mean cost per task</td>
+<td>$0.751 (median $0.645, largest $1.82, below the $2 cap)</td>
+</tr>
+<tr>
+<td>Cost per pass</td>
+<td>$1.16 ($40.54 over the 35 passes of the final rows); $1.26 counting $3.64 wasted on the lost rows</td>
+</tr>
+<tr>
+<td>Median task time</td>
+<td>1,106 s (claim to terminal write, with 1 to 3 tasks sharing the machine, image build and index waits included)</td>
+</tr>
+<tr>
+<td>Tasks that ended on the step cap</td>
+<td>28 of 54 (52%); 11 of those passed</td>
+</tr>
+<tr>
+<td>Tasks that ended by submitting</td>
+<td>26 of 54; 24 of those passed</td>
+</tr>
+</tbody>
+</table></div>
+<p>By repository, over the final rows: pytest 18/18, flask 3/3, sphinx 11/18, pylint 2/9, seaborn 1/6. Removing the six pytest instances leaves 17/36 (47.2%), so repository mix moves the headline by about 17 points.</p>
+<p>Runs of one instance are strongly correlated (ICC 0.69), so the 54 rows carry about as much evidence as 23 independent ones. That is why the interval is taken over instances, not rows.</p>
+<p>Full tables, tests and figures: BENCHMARK/REPORT.md. Every number in the report is in BENCHMARK/analysis/results.json.</p>
+<h2 id="how-far-to-trust-it">How far to trust it<a class="headerlink" href="#how-far-to-trust-it" title="Link to this section">#</a></h2>
+<ul>
+<li><strong>A first measurement, not a score.</strong> One instance moves the rate by 5.6 points. The interval is 35 to 40 points wide. Comparing two configurations on these 18 instances needs a gap of roughly 40 points to call them different.</li>
+<li><strong>Contamination.</strong> The instances are public SWE-bench Verified issues that models have probably seen, so a pass cannot be told apart from recall. This is not the published Verified score and does not predict performance on unseen issues.</li>
+<li><strong>Subset.</strong> The 18 are not the official set. Six are pytest and all pass.</li>
+<li><strong>Provider loss.</strong> Twelve rows ended as harness errors when Vertex AI answered <code>429 RESOURCE_EXHAUSTED</code> after the gateway's bounded retries. The headline counts them as non-passes.</li>
+<li><strong>Pull-request opening was not measured.</strong> Every sweep used <code>--no-pr</code>. A run that opens real PRs has not been done.</li>
+<li><strong>The feedback filter is not an absolute barrier.</strong> Hidden tests are kept from the agent's feedback by a filter, and a deliberately adversarial agent could still try to signal through it.</li>
+<li><strong>Variants are not measured.</strong> The early-edit nudge, the role split and mixed models have their own run ids; none is merged, and none has been shown to beat the single agent.</li>
+</ul>
+<h2 id="how-a-run-is-built">How a run is built<a class="headerlink" href="#how-a-run-is-built" title="Link to this section">#</a></h2>
+<p>The <code>repolace-eval</code> subcommands, in the order a run uses them:</p>
+<div class="doc-table"><table>
+<thead>
+<tr>
+<th>Subcommand</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>select</code></td>
+<td>Chooses instances from SWE-bench Verified (needs network) and writes <code>eval/instances/&lt;id&gt;.json</code></td>
+</tr>
+<tr>
+<td><code>fork</code></td>
+<td>Creates the private <code>bench-&lt;id&gt;</code> repositories and pushes each base commit. Needs a separate GitHub token</td>
+</tr>
+<tr>
+<td><code>enqueue</code></td>
+<td>Writes the run manifest, then inserts the task rows idempotently</td>
+</tr>
+<tr>
+<td><code>run</code></td>
+<td>Starts task subprocesses K at a time and waits for them</td>
+</tr>
+<tr>
+<td><code>gold</code></td>
+<td>Reads two gold runs and writes <code>eval/instances/VALIDATION.md</code></td>
+</tr>
+<tr>
+<td><code>report</code></td>
+<td>Writes the report from the database and the manifest</td>
+</tr>
+<tr>
+<td><code>retrieval</code></td>
+<td>Evaluates retrieval strategies with no model calls</td>
+</tr>
+</tbody>
+</table></div>
+<p>Flags (from each module's argument parser; run <code>uv run --all-packages repolace-eval &lt;subcommand&gt; --help</code> for the text):</p>
+<ul>
+<li><code>select</code>: <code>--count</code> (default 25), <code>--max-per-repo</code> (6), <code>--seed</code> (0), <code>--instances-dir</code>, <code>--cache-dir</code>, <code>--specs</code>, <code>--overwrite</code>, and dataset options <code>--dataset</code>, <code>--config</code>, <code>--split</code>, <code>--endpoint</code>.</li>
+<li><code>fork</code>: <code>--instances</code> (comma-separated ids or <code>all</code>), <code>--instances-dir</code>, <code>--bench-repos-file</code>, <code>--cache-dir</code>, <code>--add-to-installation &lt;id&gt;</code>, <code>--delete</code> with <code>--yes</code>.</li>
+<li><code>enqueue</code>: <code>--eval-run-id</code> (required), <code>--instances</code>, <code>--runs</code> (3), <code>--rows 'instance#index,...'</code> (plan only those rows, for a re-run of rows lost outside the agent), <code>--agent llm|stub|gold</code>, <code>--model</code>, <code>--timeout-seconds</code>, <code>--open-pr-on-failure</code>, <code>--allow-dirty-tree</code>, <code>--instances-dir</code>, <code>--bench-repos-file</code>, <code>--runs-dir</code>.</li>
+<li><code>run</code>: <code>--eval-run-id</code> (required), <code>-k</code>/<code>--concurrency</code> (3), <code>--timeout-seconds</code>, <code>--agent llm|gold</code>, <code>--no-pr</code>, <code>--model</code>, <code>--max-total-usd</code>, <code>--limit</code>, <code>--mark-abandoned</code>, <code>--runs-dir</code>.</li>
+<li><code>gold</code>: <code>--runs</code> (default <code>gold-1,gold-2</code>), <code>--instances-dir</code>, <code>--output</code>, <code>--runner-timeout-seconds</code>.</li>
+<li><code>report</code>: <code>--run</code> and <code>--gold-run</code> (each repeatable), <code>--instances-dir</code>, <code>--runs-dir</code>, <code>--expect</code>/<code>--no-expect</code>, <code>--allow-partial</code>, <code>--supersede none|latest</code>, <code>--format markdown|json</code>, <code>--output</code>, <code>--predictions</code>, <code>--predictions-run-index</code>.</li>
+<li><code>retrieval</code>: <code>--plan</code>, <code>--repos</code>, <code>--strategies</code>, <code>--query-strategies</code>, <code>--max-instances-per-repo</code>, <code>--max-chunks-per-repo</code> (40,000), <code>--max-index-equivalents</code> (35), <code>--min-gain-pp</code> (10.0), <code>--instances-dir</code>, <code>--cache-dir</code>, <code>--format</code>, <code>--output</code>.</li>
+</ul>
+<h3 id="how-the-number-is-computed">How the number is computed<a class="headerlink" href="#how-the-number-is-computed" title="Link to this section">#</a></h3>
+<p><code>passed / planned</code>, where <em>planned</em> is the grid in the run's manifest (instances times runs). Every planned row that is not a pass is a non-pass, whatever the reason: a failure, a harness error, an unscoreable instance, a pass that edited tests. Excluding rows after seeing results is cherry-picking, so the headline does not. The rate over only the scoreable rows is printed as a labelled secondary figure. A planned row that is missing or still running withholds the headline unless you pass <code>--allow-partial</code>.</p>
+<h3 id="gold-validation-comes-first">Gold validation comes first<a class="headerlink" href="#gold-validation-comes-first" title="Link to this section">#</a></h3>
+<p>Before any agent run, the reference fix of each instance goes through the real pipeline twice at no model cost. An instance that does not score <code>passed</code> both times is dropped, not fixed. This found the instrument faults (missing dependencies, <code>setuptools_scm</code> needing <code>.git</code>, truncated test ids) that would otherwise have counted against the agent.</p>
+<h2 id="reproduce-the-run">Reproduce the run<a class="headerlink" href="#reproduce-the-run" title="Link to this section">#</a></h2>
+<p>The order is also in PHASE1_TESTING.md, with a read-only preflight script. You need the rootless Docker daemon, Postgres, a GitHub App installed on the bench repositories, and a provider key. The recorded run cost about $44 in model calls.</p>
+<pre><code class="language-bash">export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock
+M=vertex-gemini-3-1-pro-preview
+
+# 1. Select instances and create the private bench repositories.
+uv run --all-packages repolace-eval select
+REPOLACE_BENCH_GITHUB_TOKEN=... uv run --all-packages repolace-eval fork
+
+# 2. Gold validation: twice, no model cost, no PRs.
+uv run --all-packages repolace-eval enqueue --eval-run-id gold-1 --agent gold --runs 1
+uv run --all-packages repolace-eval run --eval-run-id gold-1 --agent gold
+uv run --all-packages repolace-eval enqueue --eval-run-id gold-2 --agent gold --runs 1
+uv run --all-packages repolace-eval run --eval-run-id gold-2 --agent gold
+uv run --all-packages repolace-eval gold --runs gold-1,gold-2
+
+# 3. A dry run on a few instances to see real cost, then the sweep.
+uv run --all-packages repolace-eval enqueue --eval-run-id dry-1 --agent llm --model $M \
+  --instances pallets__flask-5014,pytest-dev__pytest-7236,pylint-dev__pylint-4604 --runs 1
+uv run --all-packages repolace-eval run --eval-run-id dry-1 --agent llm --model $M \
+  -k 1 --max-total-usd 3 --no-pr
+uv run --all-packages repolace-eval enqueue --eval-run-id sweep-1 --agent llm --model $M
+uv run --all-packages repolace-eval run --eval-run-id sweep-1 --agent llm --model $M \
+  -k 3 --max-total-usd &lt;cap&gt; --no-pr
+
+# 4. The report.
+uv run --all-packages repolace-eval report --run sweep-1 --gold-run gold-1 --gold-run gold-2
+</code></pre>
+<p>The bench token goes inline on the one <code>fork</code> command and is never put in <code>.env</code>. <code>-k</code> is a RAM decision: about 4 GB per child. <code>enqueue</code> refuses a modified tracked tree and records the commit, so run it from a clean checkout. A task row is never re-queued; rows lost to the provider are re-run as a new run id with <code>enqueue --rows</code>.</p>
+<p>To regenerate the recorded analysis from the committed data:</p>
+<pre><code class="language-bash">python3 -I BENCHMARK/analysis/analyze.py
+</code></pre>
+<h2 id="the-retrieval-grid">The retrieval grid<a class="headerlink" href="#the-retrieval-grid" title="Link to this section">#</a></h2>
+<p><code>repolace-eval retrieval</code> measures whether retrieval finds the code a fix changed, per embedding strategy, with no model calls. The embedder reads only the first 128 tokens of a chunk, so the grid compares four index strategies (<code>truncate</code>, <code>head_tail</code>, <code>windows</code>, <code>signature_docstring</code>) by two query strategies (<code>truncate</code>, <code>head_tail</code>): eight cells, with <code>truncate / truncate</code> as the baseline.</p>
+<p>The switch rule was written before any number existed: a cell replaces the baseline only if its paired chunk-MRR gain is at least 10 percentage points <strong>and</strong> its 95% bootstrap interval over instances excludes zero.</p>
+<p><strong>No cell met the rule.</strong> Over the 18 instances, the baseline chunk MRR was 7.3%. The best gains were +5.3 points for <code>signature_docstring / truncate</code> (interval 0.0 to +14.8) and +5.3 points for <code>windows / truncate</code> (interval -10.1 to +20.6). Both fall short of 10 points, and the second interval includes zero. The default strategy therefore stays <code>truncate</code>.</p>
+<p>On repolace's own 238 chunks, 99 (41.6%) exceed the 128-token window (measured once; re-measure before quoting it for another corpus). Source: <code>BENCHMARK/data/retrieval.json</code>.</p>
+<h2 id="the-live-reports">The live reports<a class="headerlink" href="#the-live-reports" title="Link to this section">#</a></h2>
+<p>The public site serves two interactive reports built from this data:</p>
+<ul>
+<li><code>/benchmark/</code>: the sweep report with figures</li>
+<li><code>/retrieval-benchmark/</code>: the retrieval grid</li>
+</ul>
+<p>They are static pages generated from <code>report.json</code> and <code>retrieval.json</code>; nothing on them is typed by hand except wording.</p>
+<h2 id="related">Related<a class="headerlink" href="#related" title="Link to this section">#</a></h2>
+<ul>
+<li>BENCHMARK/README.md: file index of the recorded run</li>
+<li>.claude/rules/benchmark.md: design decisions of the harness</li>
+<li>.claude/rules/no-oracle.md: how hidden tests stay hidden</li>
+<li><a href="/documentation/architecture/">Architecture</a></li>
+</ul>
+<nav class="doc-pager" aria-label="Pages"><a rel="prev" href="/documentation/getting-started/"><span>Previous</span>Getting started</a><a rel="next" href="/documentation/security/"><span>Next</span>Security</a></nav>
+  </main>
+</div>
+<footer class="foot">
+  <div class="wrap footrow">
+    <p>repolace is in early access. Python repositories only, for now.</p>
+    <nav aria-label="Footer"><a href="/">Home</a><a href="/pricing">Pricing</a><a href="/waitlist">Waitlist</a><a href="/benchmark/">Benchmark</a><a href="/retrieval-benchmark/">Retrieval benchmark</a><a href="/documentation/">Docs</a></nav>
+  </div>
+</footer>
+<script src="/documentation/docs.js" defer></script>
+</body>
+</html>
