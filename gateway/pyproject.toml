@@ -1,5 +1,6 @@
 [project]
 name = "repolace-gateway"
+license = "MIT"
 version = "0.0.1"
 description = "LiteLLM wrapper (plus a Vertex AI REST transport) for model routing and cost tracking"
 requires-python = ">=3.12"

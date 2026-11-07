@@ -1,5 +1,6 @@
 [project]
 name = "repolace-worker"
+license = "MIT"
 version = "0.0.1"
 description = "Celery worker and sandbox execution logic for repolace"
 requires-python = ">=3.12"

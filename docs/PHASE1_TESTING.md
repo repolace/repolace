@@ -2,8 +2,7 @@
 
 This is the order of operations that produces the Phase 1 number. It runs **on the machine that has the
 rootless Docker daemon, the development database, the 18 registered `repolace/bench-*` repositories and the
-provider key**. A cloud session cannot do it (no Docker, no database, no secrets); cloud sessions work on
-the code packages in `docs/cloud-work/` instead.
+provider key**. A cloud session cannot do it (no Docker, no database, no secrets).
 
 The headline model for this run is **Gemini 3.1 Pro on Vertex AI**, key `vertex-gemini-3-1-pro-preview`.
 The smoke test, dry run and sweeps 4 and 4b have since been run; measured cost, wall time and results are in
@@ -131,8 +130,8 @@ caveats beside the number. At 18 instances the 95% interval is roughly 30 to 40 
 ## Not part of Phase 1, so do not chase it now
 
 The compose `worker`/`api` deployment, RabbitMQ `consumer_timeout`, database indexes, the browser check of the
-UI, the agent role split (`phase-2/agents`), conflict-resolver wiring, OpenTelemetry. Cloud packages A to D in
-`docs/cloud-work/` own them.
+UI, the agent role split (`phase-2/agents`), conflict-resolver wiring, OpenTelemetry. The cloud work
+packages that once listed them are retired; `CLAUDE.md` holds the current status.
 
 ## Afterwards
 
