@@ -573,3 +573,50 @@ class WaitlistSignup(Base):
     source: Mapped[str] = mapped_column(String, nullable=False, server_default="site")
     consent: Mapped[bool] = mapped_column(Boolean, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class User(Base):
+    """A person who signed in with GitHub. The GitHub numeric id is the identity: logins change."""
+
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    github_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
+    github_login: Mapped[str] = mapped_column(String, nullable=False)
+    email: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Subscription(Base):
+    """One user's Stripe subscription, as last reported by a verified webhook.
+
+    Stripe is the source of truth; this row is a cache of it, so every field comes from an event and
+    nothing here is trusted from a redirect URL. `stripe_customer_id` is how later events (renewals,
+    refunds, disputes) are resolved to a user, not event metadata. A user with no row is on the free
+    plan. `status` is Stripe's own value (`active`, `past_due`, `canceled`, ...).
+    """
+
+    __tablename__ = "subscriptions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    stripe_customer_id: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String, nullable=True, unique=True)
+    plan: Mapped[str] = mapped_column(String, nullable=False, server_default="free")
+    status: Mapped[str] = mapped_column(String, nullable=False, server_default="incomplete")
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Set by a dispute or early fraud warning event; cleared by hand after review.
+    risk_flag: Mapped[str | None] = mapped_column(String, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class ProcessedStripeEvent(Base):
+    """Event ids already handled, so a redelivered webhook changes nothing."""
+
+    __tablename__ = "processed_stripe_events"
+
+    event_id: Mapped[str] = mapped_column(String, primary_key=True)
+    event_type: Mapped[str] = mapped_column(String, nullable=False)
+    processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
