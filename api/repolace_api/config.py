@@ -82,6 +82,12 @@ class BillingSettings(BaseSettings):
     #: The GitHub App's OAuth client id and secret ("Request user authorization").
     github_oauth_client_id: str | None = None
     github_oauth_client_secret: str | None = None
+    #: Where Stripe and GitHub send the browser back to. Same variable as `ApiSettings.api_base_url`.
+    api_base_url: str = "http://localhost:8000"
+
+    @property
+    def cookie_secure(self) -> bool:
+        return self.api_base_url.lower().startswith("https://")
 
     @property
     def stripe_ready(self) -> bool:

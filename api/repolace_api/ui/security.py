@@ -63,9 +63,9 @@ DEFAULT_ALLOWED_HOSTS = ("localhost", "127.0.0.1", "[::1]")
 
 #: Paths that skip the Host allowlist. GitHub calls the webhook with `Host: <the public name>`,
 #: so requiring that name on the allowlist would put the whole unauthenticated UI and JSON API on
-#: the same public name. The webhook authenticates itself (HMAC over the body); `/healthz` carries
+#: the same public name. The webhooks authenticate themselves (HMAC over the body: GitHub's, and Stripe's `Stripe-Signature`); `/healthz` carries
 #: nothing. Exact paths only: a prefix here would exempt routes added later without a decision.
-HOST_CHECK_EXEMPT_PATHS = frozenset({"/github/webhook", "/healthz"})
+HOST_CHECK_EXEMPT_PATHS = frozenset({"/github/webhook", "/billing/webhook", "/healthz"})
 
 
 def normalise_host(value: str) -> str:
