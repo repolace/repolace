@@ -172,7 +172,7 @@ SHELL = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title} - repolace documentation</title>
+<title>{full_title}</title>
 <meta name="description" content="{description}">
 <meta name="color-scheme" content="light dark">
 <link rel="preload" href="/benchmark/fonts/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
@@ -261,7 +261,7 @@ def render(markdown_module) -> dict[Path, bytes]:
             next_link = f'<a rel="next" href="{_url(s)}"><span>Next</span>{html.escape(name)}</a>'
         pager = f'<nav class="doc-pager" aria-label="Pages">{prev_link}{next_link}</nav>' if prev_link or next_link else ""
         page = SHELL.format(
-            title=html.escape(title), description=description, base=BASE, body=body, pager=pager,
+            title=html.escape(title), full_title=html.escape(title if title.lower() == "repolace documentation" else f"{title} - repolace documentation"), description=description, base=BASE, body=body, pager=pager,
             side=_nav(pages, slug, toc, idp="doc-side-list"), top=_nav(pages, slug, "", idp="doc-top-list"),
         )
         files[Path(slug) / "index.html" if slug else Path("index.html")] = page.encode()

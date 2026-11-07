@@ -129,7 +129,7 @@
 </tr>
 </tbody>
 </table></div>
-<p>By repository, over the final rows: pytest 18/18, flask 3/3, sphinx 11/18, pylint 2/9, seaborn 1/6. Removing the six pytest instances leaves 17/36 (47.2%), so repository mix moves the headline by about 17 points.</p>
+<p>By repository, over the final rows: pytest 18/18, flask 3/3, sphinx 11/18, pylint 2/9, seaborn 1/6. Removing the six pytest instances leaves 17/36 (47.2%), against 64.8% for the same final rows (35/54, the hand-stated substitution), so repository mix moves the rate by about 17 points.</p>
 <p>Runs of one instance are strongly correlated (ICC 0.69), so the 54 rows carry about as much evidence as 23 independent ones. That is why the interval is taken over instances, not rows.</p>
 <p>Full tables, tests and figures: BENCHMARK/REPORT.md. Every number in the report is in BENCHMARK/analysis/results.json.</p>
 <h2 id="how-far-to-trust-it">How far to trust it<a class="headerlink" href="#how-far-to-trust-it" title="Link to this section">#</a></h2>
@@ -201,8 +201,10 @@
 <pre><code class="language-bash">export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock
 M=vertex-gemini-3-1-pro-preview
 
-# 1. Select instances and create the private bench repositories.
-uv run --all-packages repolace-eval select
+# 1. The 18 instance files are committed in eval/instances/, so `select` is only for regenerating them
+#    (it refuses to overwrite without --overwrite). `fork` creates private bench repositories in
+#    YOUR GitHub organisation; eval/instances/bench_repos.toml maps the committed instances to the
+#    author's `repolace/bench-*` repositories, so point it at your own before enqueueing.
 REPOLACE_BENCH_GITHUB_TOKEN=... uv run --all-packages repolace-eval fork
 
 # 2. Gold validation: twice, no model cost, no PRs.
@@ -232,7 +234,7 @@ uv run --all-packages repolace-eval report --run sweep-1 --gold-run gold-1 --gol
 <p><code>repolace-eval retrieval</code> measures whether retrieval finds the code a fix changed, per embedding strategy, with no model calls. The embedder reads only the first 128 tokens of a chunk, so the grid compares four index strategies (<code>truncate</code>, <code>head_tail</code>, <code>windows</code>, <code>signature_docstring</code>) by two query strategies (<code>truncate</code>, <code>head_tail</code>): eight cells, with <code>truncate / truncate</code> as the baseline.</p>
 <p>The switch rule was written before any number existed: a cell replaces the baseline only if its paired chunk-MRR gain is at least 10 percentage points <strong>and</strong> its 95% bootstrap interval over instances excludes zero.</p>
 <p><strong>No cell met the rule.</strong> Over the 18 instances, the baseline chunk MRR was 7.3%. The best gains were +5.3 points for <code>signature_docstring / truncate</code> (interval 0.0 to +14.8) and +5.3 points for <code>windows / truncate</code> (interval -10.1 to +20.6). Both fall short of 10 points, and the second interval includes zero. The default strategy therefore stays <code>truncate</code>.</p>
-<p>On repolace's own 238 chunks, 99 (41.6%) exceed the 128-token window (measured once; re-measure before quoting it for another corpus). Source: <code>BENCHMARK/data/retrieval.json</code>.</p>
+<p>On repolace's own 238 chunks, 99 (41.6%) exceed the 128-token window (measured once; re-measure before quoting it for another corpus). Source: <code>.claude/rules/open-questions.md</code> (the measurement is recorded there).</p>
 <h2 id="the-live-reports">The live reports<a class="headerlink" href="#the-live-reports" title="Link to this section">#</a></h2>
 <p>The public site serves two interactive reports built from this data:</p>
 <ul>

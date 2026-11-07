@@ -147,7 +147,7 @@
 <li>The environment is an allowlist, not the process environment.</li>
 </ul>
 <p><strong>Credentials never appear in a URL.</strong> The remote is plain HTTPS. A scoped credential helper answers git's request only when the protocol is <code>https</code> and the host is the expected one, and reads the token from an environment variable whose <em>name</em> (not value) is on the command line. A rewritten remote therefore produces a failed push, not a leaked token.</p>
-<p><strong>Every path goes through one guard.</strong> Any path that reaches the filesystem from a database row, a diff or a model goes through <code>repolace_shared.paths.resolve_within</code>, which refuses <code>..</code>, absolute paths and any symlink, even one that lands inside the tree.</p>
+<p><strong>Every path goes through one guard.</strong> Any path that reaches the filesystem from a database row, a diff or a model goes through <code>repolace_shared.paths.resolve_within</code>, which refuses <code>..</code>, absolute paths, a symlink as the last component, and anything that resolves outside the tree. The agent's own tools (<code>agents/repolace_agents/tools/paths.py</code>) are stricter still: they refuse a symlink anywhere in the path, even one that lands back inside the tree.</p>
 <h2 id="the-agents-authority-comes-from-its-tools">The agent's authority comes from its tools<a class="headerlink" href="#the-agents-authority-comes-from-its-tools" title="Link to this section">#</a></h2>
 <p>The agent can do what its nine tools do and nothing else.</p>
 <ul>
@@ -188,7 +188,7 @@
 <tr>
 <td>Serves</td>
 <td><code>/repos</code>, <code>/tasks</code>, <code>/ui</code>, <code>/github</code>, <code>/healthz</code></td>
-<td>Landing, pricing, <code>/benchmark/</code>, <code>/retrieval-benchmark/</code>, waitlist, <code>/healthz</code></td>
+<td>Landing, pricing, <code>/benchmark/</code>, <code>/retrieval-benchmark/</code>, <code>/documentation/</code>, waitlist, <code>/healthz</code></td>
 </tr>
 <tr>
 <td>Authentication</td>

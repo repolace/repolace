@@ -108,7 +108,7 @@ The public site is a separate process (`repolace_api.site.main:app`, port 8100) 
 - **Backups.** A systemd timer streams `pg_dump` to the versioned, encrypted bucket nightly with a 30-day expiry, and uploads only a dump that `pg_restore -l` lists cleanly.
 - **Secrets** are created by hand in the cloud secret store and rendered to files on the VM at deploy. The repository references them by name in the infrastructure code and never holds a value.
 
-A single VM is not highly available. Recovery is a reboot, the nightly backup and the CDK stack. Not yet run: the stack deployment, the user-data bootstrap on a real instance, `deploy.sh`, and the workflow end to end.
+A single VM is not highly available. Recovery is a reboot, the nightly backup and the CDK stack. Not yet tested: recovery after an instance reboot, a restore from a backup, and a rollback under a real failure.
 
 The tunnel stays locally managed, and the private API and UI are never routed through it.
 

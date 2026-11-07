@@ -37,7 +37,7 @@ These figures are computed over the **54 final rows**, meaning the sweep-4 rows 
 | Tasks that ended on the step cap | 28 of 54 (52%); 11 of those passed |
 | Tasks that ended by submitting | 26 of 54; 24 of those passed |
 
-By repository, over the final rows: pytest 18/18, flask 3/3, sphinx 11/18, pylint 2/9, seaborn 1/6. Removing the six pytest instances leaves 17/36 (47.2%), so repository mix moves the headline by about 17 points.
+By repository, over the final rows: pytest 18/18, flask 3/3, sphinx 11/18, pylint 2/9, seaborn 1/6. Removing the six pytest instances leaves 17/36 (47.2%), against 64.8% for the same final rows (35/54, the hand-stated substitution), so repository mix moves the rate by about 17 points.
 
 Runs of one instance are strongly correlated (ICC 0.69), so the 54 rows carry about as much evidence as 23 independent ones. That is why the interval is taken over instances, not rows.
 
@@ -93,8 +93,10 @@ The order is also in [PHASE1_TESTING.md](PHASE1_TESTING.md), with a read-only pr
 export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock
 M=vertex-gemini-3-1-pro-preview
 
-# 1. Select instances and create the private bench repositories.
-uv run --all-packages repolace-eval select
+# 1. The 18 instance files are committed in eval/instances/, so `select` is only for regenerating them
+#    (it refuses to overwrite without --overwrite). `fork` creates private bench repositories in
+#    YOUR GitHub organisation; eval/instances/bench_repos.toml maps the committed instances to the
+#    author's `repolace/bench-*` repositories, so point it at your own before enqueueing.
 REPOLACE_BENCH_GITHUB_TOKEN=... uv run --all-packages repolace-eval fork
 
 # 2. Gold validation: twice, no model cost, no PRs.
@@ -133,7 +135,7 @@ The switch rule was written before any number existed: a cell replaces the basel
 
 **No cell met the rule.** Over the 18 instances, the baseline chunk MRR was 7.3%. The best gains were +5.3 points for `signature_docstring / truncate` (interval 0.0 to +14.8) and +5.3 points for `windows / truncate` (interval -10.1 to +20.6). Both fall short of 10 points, and the second interval includes zero. The default strategy therefore stays `truncate`.
 
-On repolace's own 238 chunks, 99 (41.6%) exceed the 128-token window (measured once; re-measure before quoting it for another corpus). Source: `BENCHMARK/data/retrieval.json`.
+On repolace's own 238 chunks, 99 (41.6%) exceed the 128-token window (measured once; re-measure before quoting it for another corpus). Source: `.claude/rules/open-questions.md` (the measurement is recorded there).
 
 ## The live reports
 

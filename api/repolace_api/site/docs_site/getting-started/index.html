@@ -148,7 +148,7 @@ cp infra/site.env.example infra/site.env
 <p>Variable names that matter for a first run:</p>
 <ul>
 <li>GitHub App: <code>GITHUB_APP_ID</code>, <code>GITHUB_APP_SLUG</code>, <code>GITHUB_APP_PRIVATE_KEY_BASE64</code>, <code>GITHUB_APP_WEBHOOK_SECRET</code>, <code>API_BASE_URL</code>.</li>
-<li>Provider keys, set only for the providers your <code>gateway/models.toml</code> routes to: <code>ANTHROPIC_API_KEY</code>, <code>OPENAI_API_KEY</code>, <code>GEMINI_API_KEY</code>, <code>MINIMAX_API_KEY</code>, and <code>GOOGLE_API_KEY</code> for Vertex AI (a Vertex key, not an AI Studio key).</li>
+<li>Provider keys, set only for the providers your <code>gateway/models.toml</code> routes to: <code>ANTHROPIC_API_KEY</code>, <code>OPENAI_API_KEY</code>, <code>GEMINI_API_KEY</code>, <code>MINIMAX_API_KEY</code>, and <code>GOOGLE_API_KEY</code> plus <code>GOOGLE_CLOUD_PROJECT</code> for Vertex AI (a Vertex key, not an AI Studio key).</li>
 </ul>
 <p>The shipped <code>agent</code> stage routes to <code>claude-sonnet-5-5</code>. To use another priced model for one run, set <code>GATEWAY_STAGE_MODELS='{"agent": "&lt;model key&gt;"}'</code>. A model without a price in <code>gateway/models.toml</code> is refused before the first call.</p>
 <p>Every variable is listed in reference/env.md.</p>
@@ -162,6 +162,7 @@ cp infra/site.env.example infra/site.env
 </code></pre>
 <p>Never run <code>alembic upgrade</code> against your development database from a test run.</p>
 <h2 id="run-the-api">Run the API<a class="headerlink" href="#run-the-api" title="Link to this section">#</a></h2>
+<p>The settings require the four GitHub App values (<code>GITHUB_APP_ID</code>, <code>GITHUB_APP_SLUG</code>, <code>GITHUB_APP_PRIVATE_KEY_BASE64</code>, <code>GITHUB_APP_WEBHOOK_SECRET</code>) to exist in <code>.env</code>, so create the App (next section) first, or put placeholder values there to see the pages render.</p>
 <pre><code class="language-bash">uv run --project api uvicorn repolace_api.main:app --port 8000
 </code></pre>
 <p><code>http://localhost:8000/ui/repos</code> is the task UI and <code>http://localhost:8000/healthz</code> returns <code>{"status": "ok"}</code>. The API and UI have no authentication; bind them to localhost only.</p>

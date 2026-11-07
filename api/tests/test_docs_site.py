@@ -38,7 +38,8 @@ def test_the_index_page_exists_and_every_page_has_a_title_and_one_h1():
     assert (DOCS_SITE / "index.html").is_file()
     for path in HTML_FILES:
         text = path.read_text()
-        assert re.search(r"<title>[^<]+ - repolace documentation</title>", text), path
+        # The index is titled exactly "repolace documentation"; every other page "<Page> - repolace documentation".
+        assert re.search(r"<title>(?:[^<]+ - )?repolace documentation</title>", text), path
         assert text.count("<h1") == 1, path
 
 

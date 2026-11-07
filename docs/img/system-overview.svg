@@ -25,7 +25,7 @@
 
   <!-- private zone -->
   <rect class="zone" x="150" y="36" width="930" height="574" rx="12"/>
-  <text class="z" x="166" y="58">Private: loopback and Tailscale only</text>
+  <text class="z" x="166" y="58">Private: loopback or private tunnel only</text>
 
   <!-- left column -->
   <rect class="card" x="20" y="80" width="110" height="64" rx="10"/>

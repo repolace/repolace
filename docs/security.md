@@ -57,7 +57,7 @@ Every git command on the host runs in a sanitized environment (`shared/repolace_
 
 **Credentials never appear in a URL.** The remote is plain HTTPS. A scoped credential helper answers git's request only when the protocol is `https` and the host is the expected one, and reads the token from an environment variable whose *name* (not value) is on the command line. A rewritten remote therefore produces a failed push, not a leaked token.
 
-**Every path goes through one guard.** Any path that reaches the filesystem from a database row, a diff or a model goes through `repolace_shared.paths.resolve_within`, which refuses `..`, absolute paths and any symlink, even one that lands inside the tree.
+**Every path goes through one guard.** Any path that reaches the filesystem from a database row, a diff or a model goes through `repolace_shared.paths.resolve_within`, which refuses `..`, absolute paths, a symlink as the last component, and anything that resolves outside the tree. The agent's own tools (`agents/repolace_agents/tools/paths.py`) are stricter still: they refuse a symlink anywhere in the path, even one that lands back inside the tree.
 
 ## The agent's authority comes from its tools
 
@@ -95,7 +95,7 @@ Full list: [.claude/rules/prompt-injection.md](../.claude/rules/prompt-injection
 
 | | Private API (`repolace_api.main`) | Public site (`repolace_api.site.main`) |
 |---|---|---|
-| Serves | `/repos`, `/tasks`, `/ui`, `/github`, `/healthz` | Landing, pricing, `/benchmark/`, `/retrieval-benchmark/`, waitlist, `/healthz` |
+| Serves | `/repos`, `/tasks`, `/ui`, `/github`, `/healthz` | Landing, pricing, `/benchmark/`, `/retrieval-benchmark/`, `/documentation/`, waitlist, `/healthz` |
 | Authentication | **None** | Not needed: no task routes |
 | Reachable from | localhost or a private tunnel | A public hostname or tunnel |
 | Env file | `infra/api.env` | `infra/site.env` |

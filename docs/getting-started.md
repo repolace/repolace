@@ -58,7 +58,7 @@ The `worker-maintenance` container has no env file and needs no provider key.
 Variable names that matter for a first run:
 
 - GitHub App: `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY_BASE64`, `GITHUB_APP_WEBHOOK_SECRET`, `API_BASE_URL`.
-- Provider keys, set only for the providers your `gateway/models.toml` routes to: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `MINIMAX_API_KEY`, and `GOOGLE_API_KEY` for Vertex AI (a Vertex key, not an AI Studio key).
+- Provider keys, set only for the providers your `gateway/models.toml` routes to: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `MINIMAX_API_KEY`, and `GOOGLE_API_KEY` plus `GOOGLE_CLOUD_PROJECT` for Vertex AI (a Vertex key, not an AI Studio key).
 
 The shipped `agent` stage routes to `claude-sonnet-5-5`. To use another priced model for one run, set `GATEWAY_STAGE_MODELS='{"agent": "<model key>"}'`. A model without a price in `gateway/models.toml` is refused before the first call.
 
@@ -83,6 +83,8 @@ cd api && uv run alembic upgrade head
 Never run `alembic upgrade` against your development database from a test run.
 
 ## Run the API
+
+The settings require the four GitHub App values (`GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY_BASE64`, `GITHUB_APP_WEBHOOK_SECRET`) to exist in `.env`, so create the App (next section) first, or put placeholder values there to see the pages render.
 
 ```bash
 uv run --project api uvicorn repolace_api.main:app --port 8000

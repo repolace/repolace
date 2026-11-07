@@ -33,7 +33,7 @@ REPOLACE_TEST_DB_SUFFIX=_mybranch uv run --all-packages pytest -m db   # needs P
 
 ## Commits and pull requests
 
-- Commits are signed. Keep each commit to one logical change.
+- Please sign your commits. Keep each commit to one logical change.
 - Branch from `main`; open the pull request against `main`.
 - Never commit secrets. Provider keys live in `.env` and `infra/*.env`, which are gitignored; the
   `*.env.example` files hold names only and a test keeps them honest.

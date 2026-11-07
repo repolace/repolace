@@ -49,7 +49,7 @@ Read it with these caveats:
 - The interval is 35 to 40 points wide. One instance moves the rate by 5.6 points.
 - The instances are public SWE-bench Verified issues that the model has probably seen. This is not the published Verified score and does not predict performance on unseen issues. Six of the 18 are pytest, and every pytest run passed.
 - Twelve of the 54 rows were lost to HTTP 429 errors. Re-running them in sweep-4b passed 6; substituting each lost row by its re-run is a hand-stated calculation (35 of 54, 64.8%), not an output of the report tool, and it is not the headline.
-- Across the 54 final rows (re-runs included), the mean task cost $0.75, about $1.16 per pass, with a median of 1,106 s per task. 52% of tasks ended on the step cap.
+- Across the 54 final rows (re-runs included), the mean task cost $0.75, about $1.16 per pass ($40.54 over the 35 passes of the final rows, not the 29 of the headline), with a median of 1,106 s per task. 52% of tasks ended on the step cap.
 - Pull-request opening was not part of the measurement.
 
 Method, statistics and reproduction: [docs/benchmark.md](docs/benchmark.md) and [BENCHMARK/REPORT.md](BENCHMARK/REPORT.md).
