@@ -38,7 +38,7 @@ It prints a signing secret (`whsec_...`): put it in `STRIPE_WEBHOOK_SECRET` and 
 
 ## 3. GitHub sign-in
 
-In the GitHub App settings: enable **Request user authorization (OAuth)**, set the callback URL to `http://localhost:8000/auth/github/callback`, generate a client secret, and put the client id and secret in `GITHUB_OAUTH_CLIENT_ID` and `GITHUB_OAUTH_CLIENT_SECRET`. Set `SESSION_SECRET`.
+In the GitHub App settings: leave **Request user authorization (OAuth) during installation** unticked (sign-in does not need it, and an install redirect would hit the callback without a state cookie), add the callback URL to `http://localhost:8000/auth/github/callback`, generate a client secret, and put the client id and secret in `GITHUB_OAUTH_CLIENT_ID` and `GITHUB_OAUTH_CLIENT_SECRET`. Set `SESSION_SECRET`.
 
 ## 4. Try it
 
