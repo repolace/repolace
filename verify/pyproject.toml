@@ -1,5 +1,6 @@
 [project]
 name = "repolace-verify"
+license = "MIT"
 version = "0.0.1"
 description = "Runs a target repo's test suite in a sandbox and scores the result"
 requires-python = ">=3.12"

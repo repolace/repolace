@@ -1,0 +1,71 @@
+/* Documentation pages. The tokens, fonts, top bar, menu and footer rule come from the benchmark report's stylesheet,
+   so the pages cannot drift from it; this file defines no shared token and adds only the docs layout. */
+@import url("/benchmark/style.css");
+
+.footrow { display: flex; flex-wrap: wrap; gap: 0.6rem 2rem; justify-content: space-between; }
+footer.foot nav { display: flex; gap: 0.4rem 1.2rem; flex-wrap: wrap; }
+footer.foot p { margin: 0; }
+
+/* ---------- layout ---------- */
+.doc-wrap { display: grid; grid-template-columns: 15rem minmax(0, 1fr); column-gap: clamp(2rem, 5vw, 4.5rem); max-width: 78rem; margin: 0 auto; padding: 2.2rem var(--gutter) 0; align-items: start; }
+.doc-side { position: sticky; top: calc(var(--nav-h) + 1rem); max-height: calc(100vh - var(--nav-h) - 2rem); overflow-y: auto; font-size: 0.9rem; padding-bottom: 1rem; }
+.doc-side-h { margin: 0 0 0.6rem; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
+.doc-list, .doc-toc { list-style: none; margin: 0; padding: 0; }
+.doc-list > li > a { display: block; padding: 0.4rem 0.6rem; border-radius: 6px; color: var(--ink); text-decoration: none; }
+.doc-list > li > a:hover { background: var(--wash); }
+.doc-list a[aria-current="page"] { background: var(--wash); font-weight: 600; }
+.doc-toc { margin: 0.2rem 0 0.5rem 0.6rem; padding-left: 0.6rem; border-left: 1px solid var(--border); }
+.doc-toc a { display: block; padding: 0.25rem 0.5rem; color: var(--ink-2); text-decoration: none; border-radius: 6px; }
+.doc-toc a:hover { color: var(--ink); background: var(--wash); }
+.doc-top { display: none; margin-bottom: 1.4rem; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.doc-top summary { cursor: pointer; padding: 0.7rem 0.9rem; font-weight: 600; color: var(--ink); min-height: 44px; }
+.doc-top nav { padding: 0 0.4rem 0.5rem; }
+.doc-top .doc-list > li > a { padding: 0.6rem; }
+
+@media (max-width: 860px) {
+  .doc-wrap { grid-template-columns: minmax(0, 1fr); padding-top: 1.4rem; }
+  .doc-side { display: none; }
+  .doc-top { display: block; }
+}
+
+/* ---------- the page ---------- */
+.doc { min-width: 0; max-width: 70ch; }
+.doc > :first-child { margin-top: 0; }
+.doc h1 { font-family: var(--serif); font-weight: 540; font-size: clamp(2rem, 5vw, 2.9rem); line-height: 1.08; letter-spacing: -0.02em; margin: 0 0 1.2rem; font-variation-settings: "opsz" 120; }
+.doc h2 { font-family: var(--serif); font-weight: 560; font-size: clamp(1.45rem, 3vw, 1.85rem); line-height: 1.15; letter-spacing: -0.012em; max-width: none; margin: 2.8rem 0 0.8rem; padding-top: 1.6rem; border-top: 1px solid var(--border); }
+.doc h3 { font-size: 1.15rem; margin: 2rem 0 0.5rem; }
+.doc h4 { font-size: 1rem; margin: 1.5rem 0 0.4rem; }
+.doc h2, .doc h3, .doc h4 { scroll-margin-top: 1.2rem; }
+.doc .headerlink { margin-left: 0.4rem; font-family: var(--sans); font-size: 0.8em; font-weight: 400; text-decoration: none; color: var(--ink-2); opacity: 0; }
+.doc h1:hover .headerlink, .doc h2:hover .headerlink, .doc h3:hover .headerlink, .doc h4:hover .headerlink, .doc .headerlink:focus-visible { opacity: 1; }
+@media (hover: none) { .doc .headerlink { opacity: 0.7; } }
+.doc ul, .doc ol { padding-left: 1.4rem; margin: 0 0 1em; }
+.doc li { margin-bottom: 0.35em; }
+.doc li > ul, .doc li > ol { margin: 0.35em 0 0; }
+.doc p, .doc li { overflow-wrap: break-word; }
+.doc hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
+.doc strong { font-weight: 600; }
+
+.doc code { background: var(--wash); border-radius: 4px; padding: 0.1em 0.3em; overflow-wrap: anywhere; }
+.doc pre { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 0.9rem 1.1rem; overflow-x: auto; margin: 1.1rem 0; font-size: 0.8125rem; line-height: 1.55; tab-size: 4; }
+.doc pre code { background: none; padding: 0; border-radius: 0; overflow-wrap: normal; white-space: pre; font-size: inherit; }
+.doc pre:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.doc blockquote { margin: 1.2rem 0; padding: 0.8rem 1.1rem; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; color: var(--ink-2); }
+.doc blockquote > :last-child { margin-bottom: 0; }
+
+.doc-table { overflow-x: auto; margin: 1.2rem 0; border: 1px solid var(--border); border-radius: 10px; }
+.doc-table table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+.doc-table th, .doc-table td { text-align: left; vertical-align: top; padding: 0.55rem 0.8rem; border-bottom: 1px solid var(--grid); min-width: 7rem; }
+.doc-table thead th { background: var(--wash); color: var(--ink); font-weight: 600; white-space: nowrap; }
+.doc-table tbody tr:last-child td { border-bottom: 0; }
+.doc-table td code { white-space: nowrap; }
+
+.doc img { display: block; max-width: 100%; height: auto; border-radius: 10px; }
+.doc a.doc-fig { display: block; margin: 1.4rem 0; }
+
+.doc-pager { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3.5rem; padding-top: 1.4rem; border-top: 1px solid var(--border); }
+.doc-pager a { display: block; padding: 0.7rem 1rem; border: 1px solid var(--border); border-radius: 10px; text-decoration: none; color: var(--ink); min-width: 9rem; }
+.doc-pager a:hover { background: var(--wash); }
+.doc-pager a[rel="next"] { margin-left: auto; text-align: right; }
+.doc-pager span { display: block; font-size: 0.75rem; color: var(--ink-2); }

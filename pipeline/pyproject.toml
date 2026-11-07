@@ -1,5 +1,6 @@
 [project]
 name = "repolace-pipeline"
+license = "MIT"
 version = "0.0.1"
 description = "The Phase 1 task pipeline: clone, index, retrieve, edit, push, open a PR"
 requires-python = ">=3.12"

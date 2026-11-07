@@ -52,7 +52,7 @@ npx aws-cdk synth -c ami_id=ami-...        # --strict reports one intended warni
 python -m pytest --noconftest -c /dev/null --rootdir=. tests      # the stack's tests
 ```
 
-## First-time setup (you run these; nothing here has been deployed)
+## First-time setup (you run these)
 
 1. **Sign in.** `aws login` (profile for the account). Check `aws sts get-caller-identity`. The account had an
    "account being verified" block for Bedrock; EC2 may hit the same, so expect the first launch to be the test.

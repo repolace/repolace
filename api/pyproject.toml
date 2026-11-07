@@ -1,5 +1,6 @@
 [project]
 name = "repolace-api"
+license = "MIT"
 version = "0.0.1"
 description = "FastAPI orchestrator for repolace"
 requires-python = ">=3.12"

@@ -40,7 +40,7 @@ jobs:
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
       - run: uv sync --frozen --package repolace-api
       - run: uv run ruff check api shared infra/aws
-      - run: uv run pytest api/tests/test_site_pages.py api/tests/test_site_design.py api/tests/test_site_waitlist.py -m "not db and not docker"
+      - run: uv run --frozen --group docs pytest api/tests/test_site_pages.py api/tests/test_site_design.py api/tests/test_site_waitlist.py api/tests/test_docs_site.py -m "not db and not docker"
 
   build:
     if: vars.SITE_DEPLOY_ENABLED == 'true'

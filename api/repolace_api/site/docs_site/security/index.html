@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security - repolace documentation</title>
+<meta name="description" content="repolace runs code it did not write: the model&#x27;s patch and the target repository&#x27;s own test suite. This page explains how that is contained, what the agent can and cannot reach, and, in What is not pr">
+<meta name="color-scheme" content="light dark">
+<link rel="preload" href="/benchmark/fonts/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/benchmark/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon.png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<link rel="stylesheet" href="/documentation/docs.css">
+<script src="/benchmark/js/theme-init.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+<header class="topbar">
+  <a class="mark" href="/" title="repolace home"><span class="wm">repolace</span> <span class="wm-sub">docs</span></a>
+  <nav aria-label="Site">
+    <a href="/">Home</a>
+    <a href="/benchmark/">Benchmark</a>
+    <a href="/pricing">Pricing</a>
+    <a href="/documentation/" aria-current="true">Docs</a>
+  </nav>
+  <details class="menu">
+    <summary>Menu</summary>
+    <div class="panel">
+      <a href="/">Home</a>
+      <a href="/benchmark/">Benchmark</a>
+      <a href="/retrieval-benchmark/">Retrieval benchmark</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/waitlist">Join the waitlist</a>
+      <a href="/documentation/">Documentation</a>
+    </div>
+  </details>
+  <button class="iconbtn" id="theme" type="button" aria-label="Switch colour theme" title="Switch colour theme">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7Z"/></svg>
+  </button>
+</header>
+<div class="doc-wrap">
+  <aside class="doc-side">
+    <nav aria-label="Documentation">
+      <p class="doc-side-h">Documentation</p>
+      <ul class="doc-list" id="doc-side-list"><li><a href="/documentation/">Overview</a></li><li><a href="/documentation/architecture/">Architecture</a></li><li><a href="/documentation/getting-started/">Getting started</a></li><li><a href="/documentation/benchmark/">Benchmark</a></li><li><a href="/documentation/security/" aria-current="page">Security</a><ol class="doc-toc"><li><a href="#two-separate-dangers">Two separate dangers</a></li><li><a href="#the-sandbox">The sandbox</a></li><li><a href="#the-source-never-carries-git">The source never carries .git</a></li><li><a href="#host-side-git">Host-side git</a></li><li><a href="#the-agents-authority-comes-from-its-tools">The agent&#x27;s authority comes from its tools</a></li><li><a href="#the-no-oracle-protocol">The no-oracle protocol</a></li><li><a href="#prompt-injection">Prompt injection</a></li><li><a href="#public-and-private-are-separate-processes">Public and private are separate processes</a></li><li><a href="#secrets">Secrets</a></li><li><a href="#what-is-not-protected">What is not protected</a></li></ol></li></ul>
+    </nav>
+  </aside>
+  <details class="doc-top">
+    <summary>Documentation pages</summary>
+    <nav aria-label="Documentation, compact"><ul class="doc-list" id="doc-top-list"><li><a href="/documentation/">Overview</a></li><li><a href="/documentation/architecture/">Architecture</a></li><li><a href="/documentation/getting-started/">Getting started</a></li><li><a href="/documentation/benchmark/">Benchmark</a></li><li><a href="/documentation/security/" aria-current="page">Security</a></li></ul></nav>
+  </details>
+  <main id="main" class="doc">
+<h1 id="security">Security<a class="headerlink" href="#security" title="Link to this section">#</a></h1>
+<p>repolace runs code it did not write: the model's patch and the target repository's own test suite. This page explains how that is contained, what the agent can and cannot reach, and, in <a href="#what-is-not-protected">What is not protected</a>, where the limits are. To report a vulnerability, follow SECURITY.md.</p>
+<p>The design reasoning, including the attacks that were reproduced against this code, is in .claude/rules/verify-sandbox.md.</p>
+<h2 id="two-separate-dangers">Two separate dangers<a class="headerlink" href="#two-separate-dangers" title="Link to this section">#</a></h2>
+<p>A sandbox answers only one of them.</p>
+<ol>
+<li><strong>Untrusted code running.</strong> <code>pytest</code> executes <code>conftest.py</code> at collection, before any test runs and before any patch exists. Registering a hostile repository is the whole attack. A container contains this.</li>
+<li><strong>The confused deputy.</strong> Code inside the sandbox writes a file, stays perfectly contained, and exits. Later the host reads that file and acts on it: a <code>.git/hooks/post-commit</code> hook that runs on the next commit, or a rewritten <code>remote.origin.url</code> that sends the host's token to another server. A better sandbox does not fix this, because nothing escaped. The fix is to never let the host read anything the sandbox could have written.</li>
+</ol>
+<h2 id="the-sandbox">The sandbox<a class="headerlink" href="#the-sandbox" title="Link to this section">#</a></h2>
+<p><code>verify/verify/backends/docker.py</code> builds the <code>docker run</code> argument list in one pure function, <code>build_run_argv</code>, and the scratch-script path shares the same containment list. A test asserts each flag separately, because every one of them fails open: a dropped <code>--network=none</code> is simply a container with a network, and nothing about the run looks different.</p>
+<div class="doc-table"><table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Setting</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Network</td>
+<td><code>--network=none</code>, unconditional; no spec field can weaken it</td>
+</tr>
+<tr>
+<td>Root filesystem</td>
+<td><code>--read-only</code>, with <code>/tmp</code> as a tmpfs (<code>nosuid,nodev</code>, 256 MB)</td>
+</tr>
+<tr>
+<td>Capabilities</td>
+<td><code>--cap-drop=ALL</code></td>
+</tr>
+<tr>
+<td>Privilege</td>
+<td><code>--security-opt=no-new-privileges</code></td>
+</tr>
+<tr>
+<td>User</td>
+<td>non-root <code>65534:65534</code></td>
+</tr>
+<tr>
+<td>Memory</td>
+<td><code>--memory 2g</code>, with <code>--memory-swap</code> equal, so a container cannot exceed the cap by swapping</td>
+</tr>
+<tr>
+<td>CPU</td>
+<td><code>--cpus 2.0</code></td>
+</tr>
+<tr>
+<td>Processes</td>
+<td><code>--pids-limit 512</code></td>
+</tr>
+<tr>
+<td>Files</td>
+<td><code>--ulimit nofile=4096:4096</code></td>
+</tr>
+<tr>
+<td>Logs</td>
+<td><code>--log-opt max-size=10m</code>, one file</td>
+</tr>
+<tr>
+<td>Image</td>
+<td><code>--pull=never</code>: only the image that was built beforehand can start, so there is no registry access at run time</td>
+</tr>
+<tr>
+<td>Init</td>
+<td><code>--init</code>, so background processes do not leave zombies that keep the pid cgroup populated</td>
+</tr>
+<tr>
+<td>Entrypoint</td>
+<td>explicit, so an image's own <code>ENTRYPOINT</code> cannot take over the pytest invocation</td>
+</tr>
+<tr>
+<td>Timeout</td>
+<td>a hard timeout; on expiry the backend removes the container <strong>by name</strong>, because killing the <code>docker run</code> client does not stop a container that belongs to the daemon</td>
+</tr>
+</tbody>
+</table></div>
+<p>Dependencies are installed once into a per-repo image, with the network on, in a separate build step. Each test run then starts a fresh container from that image with the network off, so no state leaks between attempts.</p>
+<p><strong>Rootless daemon.</strong> The whole stack must run on the rootless Docker daemon. Without cgroup v2 delegation of <code>cpu</code>, <code>memory</code> and <code>pids</code>, rootless Docker silently ignores <code>--memory</code>, <code>--cpus</code> and <code>--pids-limit</code>. Check <code>docker info</code> for a delegation warning before trusting a run. The compose worker mounts only the rootless socket. Never mount the rootful <code>/var/run/docker.sock</code>: it is root-equivalent on the host and would defeat the sandbox.</p>
+<p><strong>A container is not a VM.</strong> It shares the host kernel. A container escape is usually a kernel bug. The backend has a runtime setting so gVisor (<code>runsc</code>) can be adopted later; the design records stronger isolation (gVisor, Kata, Firecracker) as the step to take when strangers can register repositories.</p>
+<h2 id="the-source-never-carries-git">The source never carries <code>.git</code><a class="headerlink" href="#the-source-never-carries-git" title="Link to this section">#</a></h2>
+<p>The sandbox receives the tracked tree and nothing else.</p>
+<ul>
+<li><strong>Byte-identical export.</strong> The tree is enumerated with <code>git ls-files -s -z</code> and each blob is read with <code>git cat-file --batch</code> and written straight to disk. The export does not use <code>git archive</code> (it honours <code>export-ignore</code>, which would let a repository hide its own tests from the run that sets ground truth) or <code>checkout-index</code> (it runs clean/smudge filters and line-ending conversion; in one measurement a one-line <code>.gitattributes</code> made 72 of 110 files differ from the commit). Reading blobs consults no attribute or filter machinery at all.</li>
+<li><strong>Symlinks and submodules are refused.</strong> Modes <code>120000</code> (symlink) and <code>160000</code> (gitlink) raise an error that lists every offender. Repositories that contain either cannot currently be exported.</li>
+<li><strong>Only data comes back.</strong> The pass/fail test-id sets and a bounded output tail. Never a file the host would execute, and never anything written back into <code>.git</code>.</li>
+<li><strong><code>tree_matches_head</code> is a precondition.</strong> The export refuses a tree that differs from <code>HEAD</code>, so the sandbox cannot test code the agent did not write and attribute the result to the attempt.</li>
+</ul>
+<h2 id="host-side-git">Host-side git<a class="headerlink" href="#host-side-git" title="Link to this section">#</a></h2>
+<p>Every git command on the host runs in a sanitized environment (<code>shared/repolace_shared/git/repo.py</code>):</p>
+<ul>
+<li><code>GIT_CONFIG_GLOBAL</code> and <code>GIT_CONFIG_SYSTEM</code> point at <code>/dev/null</code>, so git reads no configuration file it was not handed on the command line. This covers keys nobody has thought of yet, such as a <code>filter.&lt;name&gt;.smudge</code> or <code>diff.&lt;name&gt;.textconv</code> command that a tracked <code>.gitattributes</code> could select.</li>
+<li>Hooks and <code>core.fsmonitor</code> are disabled on every invocation.</li>
+<li>The environment is an allowlist, not the process environment.</li>
+</ul>
+<p><strong>Credentials never appear in a URL.</strong> The remote is plain HTTPS. A scoped credential helper answers git's request only when the protocol is <code>https</code> and the host is the expected one, and reads the token from an environment variable whose <em>name</em> (not value) is on the command line. A rewritten remote therefore produces a failed push, not a leaked token.</p>
+<p><strong>Every path goes through one guard.</strong> Any path that reaches the filesystem from a database row, a diff or a model goes through <code>repolace_shared.paths.resolve_within</code>, which refuses <code>..</code>, absolute paths, a symlink as the last component, and anything that resolves outside the tree. The agent's own tools (<code>agents/repolace_agents/tools/paths.py</code>) are stricter still: they refuse a symlink anywhere in the path, even one that lands back inside the tree.</p>
+<h2 id="the-agents-authority-comes-from-its-tools">The agent's authority comes from its tools<a class="headerlink" href="#the-agents-authority-comes-from-its-tools" title="Link to this section">#</a></h2>
+<p>The agent can do what its nine tools do and nothing else.</p>
+<ul>
+<li><strong>One confinement function</strong> for every path. It refuses empty, over-long, control-character and backslash paths, <code>..</code>, absolute paths, any symlink in the path, and any <code>.git*</code> component for reads. For writes it also refuses every dotfile and root-level CI definitions.</li>
+<li><strong><code>grep</code></strong> runs <code>git grep</code> under <code>prlimit</code>, with model strings never placed before <code>--</code>.</li>
+<li><strong>Scratch scripts and probes</strong> run in the sandbox with no network.</li>
+<li><strong>Bounds</strong>: at most 8 tool calls executed per model reply, results capped at 8,000 characters, and the cost, call and wall-clock limits enforced in the gateway rather than trusted to the agent.</li>
+</ul>
+<h2 id="the-no-oracle-protocol">The no-oracle protocol<a class="headerlink" href="#the-no-oracle-protocol" title="Link to this section">#</a></h2>
+<p>In benchmark mode the hidden fail-to-pass tests are the answer key. If the agent could see which are red, it would iterate against the key and the benchmark would measure how well it reads the key. So hidden tests never reach it (.claude/rules/no-oracle.md):</p>
+<ul>
+<li>The hidden test files are overlaid on the sandbox export, never on the checkout, so no tool can read them. Probes carry no overlay, so <code>run_tests</code> cannot run them.</li>
+<li><code>agents/repolace_agents/feedback.py</code> is the only place a scored result becomes text a model can read. It drops test ids and collection failures under an overlay path, computes counts and verdicts from the filtered result so a count cannot encode a hidden test, and drops the output tail, the exit code and the duration.</li>
+<li>The protection is keyed on the task having an instance id, not on the overlay being non-empty, so an empty overlay cannot switch it off.</li>
+<li>A test id is shown only if the baseline run produced it, because the scored run executes the agent's own code and an id on a visible path could be text the agent chose.</li>
+<li>Operator-side text for benchmark tasks (logs, gate reasons) names counts, not ids, and a benchmark pull request or commit message carries no outcome-bearing text.</li>
+</ul>
+<p>This is a filter, not a physical barrier. See the limits below.</p>
+<h2 id="prompt-injection">Prompt injection<a class="headerlink" href="#prompt-injection" title="Link to this section">#</a></h2>
+<p>Issue text, retrieved code, test ids and test output can all be written by someone who is not the repository owner. The prompt asks the model to refuse injected instructions, but <strong>the real bound is code</strong>: a test pins that a hostile issue changes neither the tool list nor the system prompt apart from a nonce.</p>
+<ul>
+<li>Untrusted text is wrapped in blocks tagged with a per-task random nonce. Before wrapping, it is length-cut, stripped of invisible and control characters, and has closing tags neutralized in one linear pass (so the defense does not rest on the nonce staying secret).</li>
+<li>The agent's own <code>submit</code> summary is sanitized, quoted in a fenced block, and has <code>@mentions</code> and bare <code>#123</code> references broken, so a pull request body cannot ping a person or notify another project.</li>
+<li>Product pull requests say <code>Refs #N</code>, never <code>Fixes #N</code>.</li>
+<li>A transcript budget elides old tool results, and malformed tool-call arguments are replayed as <code>{}</code>.</li>
+</ul>
+<p>Full list: .claude/rules/prompt-injection.md.</p>
+<h2 id="public-and-private-are-separate-processes">Public and private are separate processes<a class="headerlink" href="#public-and-private-are-separate-processes" title="Link to this section">#</a></h2>
+<div class="doc-table"><table>
+<thead>
+<tr>
+<th></th>
+<th>Private API (<code>repolace_api.main</code>)</th>
+<th>Public site (<code>repolace_api.site.main</code>)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Serves</td>
+<td><code>/repos</code>, <code>/tasks</code>, <code>/ui</code>, <code>/github</code>, <code>/healthz</code></td>
+<td>Landing, pricing, <code>/benchmark/</code>, <code>/retrieval-benchmark/</code>, <code>/documentation/</code>, waitlist, <code>/healthz</code></td>
+</tr>
+<tr>
+<td>Authentication</td>
+<td><strong>None</strong></td>
+<td>Not needed: no task routes</td>
+</tr>
+<tr>
+<td>Reachable from</td>
+<td>localhost or a private tunnel</td>
+<td>A public hostname or tunnel</td>
+</tr>
+<tr>
+<td>Env file</td>
+<td><code>infra/api.env</code></td>
+<td><code>infra/site.env</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>The site mounts no router from <code>repolace_api.routes</code> and not <code>repolace_api.ui</code>. A test imports it in a clean interpreter to prove neither is loaded, and <code>/ui</code>, <code>/repos</code>, <code>/tasks</code>, <code>/github/webhook</code>, <code>/docs</code> and <code>/openapi.json</code> answer 404 there. Its database role can INSERT into <code>waitlist_signups</code> and nothing else. The waitlist form has a same-origin check, an 8 KB body cap, a honeypot field and an in-memory rate limit.</p>
+<p>The private API and UI add three defenses that are <strong>not</strong> authentication:</p>
+<ul>
+<li><strong>Host allowlist.</strong> Every request needs a <code>Host</code> on <code>UI_ALLOWED_HOSTS</code> (default <code>localhost,127.0.0.1,[::1]</code>) or gets 400. This stops DNS rebinding. Exempt by exact path: <code>/github/webhook</code> (authenticated by its HMAC signature) and <code>/healthz</code>. Never add a public hostname to this list.</li>
+<li><strong>Same-origin check</strong> on the one state-changing HTML request, the enqueue POST: <code>Origin</code>, else <code>Referer</code>, must match the allowlist, and <code>Sec-Fetch-Site: cross-site</code> is refused.</li>
+<li><strong>Response headers</strong> on <code>/ui</code>: <code>Content-Security-Policy: default-src 'self'</code>, <code>nosniff</code>, <code>X-Frame-Options: DENY</code>.</li>
+</ul>
+<h2 id="secrets">Secrets<a class="headerlink" href="#secrets" title="Link to this section">#</a></h2>
+<div class="doc-table"><table>
+<thead>
+<tr>
+<th>Secret</th>
+<th>Where it lives</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Provider keys</td>
+<td>In the <code>worker</code> container's env file (<code>infra/worker.env</code>) and in the root <code>.env</code> for processes you run on the host. Not in <code>infra/api.env</code>, <code>infra/site.env</code>, or the <code>worker-maintenance</code> container, which has no env file</td>
+</tr>
+<tr>
+<td>GitHub App private key and webhook secret</td>
+<td>In both <code>infra/api.env</code> (the API lists issues and branches and verifies webhooks) and <code>infra/worker.env</code> (clone, push, PR). Not in the site or the maintenance worker</td>
+</tr>
+<tr>
+<td>Installation tokens</td>
+<td>Minted per use; passed to git through an environment variable, never in argv or a URL</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li>Provider keys are handed to LiteLLM per call and are never exported into <code>os.environ</code>, so git, Docker and the sandbox cannot inherit them. The Docker CLI's environment is an allowlist, not a subtraction.</li>
+<li><code>llm_calls</code> redacts credential-shaped strings and the exact keys the gateway holds before storing a request or response.</li>
+<li>Env templates (<code>*.env.example</code>) hold names only, and a test keeps <code>infra/api.env.example</code> equal to the API's settings in both directions, so a provider key pasted into it fails the build.</li>
+<li>Run a host process from the repository root and it reads the root <code>.env</code>, which holds provider keys. The statement "the API has no provider keys" is true of the compose <code>api</code> container, not of an API you start by hand in a checkout whose <code>.env</code> contains them.</li>
+</ul>
+<h2 id="what-is-not-protected">What is not protected<a class="headerlink" href="#what-is-not-protected" title="Link to this section">#</a></h2>
+<p>Read this section before pointing repolace at anything that matters.</p>
+<ul>
+<li><strong>The private API and task UI have no authentication.</strong> Anyone who can reach the port can enqueue a task, which spends provider money and runs code on the host. The Host allowlist and same-origin check stop DNS rebinding and cross-site forgery, not a person with network access. Keep them on localhost or a private tunnel.</li>
+<li><strong>A container shares the host kernel.</strong> A kernel bug could allow an escape. There is no gVisor or VM layer today.</li>
+<li><strong>Resource caps depend on your host.</strong> Without cgroup v2 delegation they are silently ignored. A suite can also write as much as it likes into its export directory, which no container limit covers, so the workspace parent directory should sit on a size- and inode-limited filesystem.</li>
+<li><strong>Almost any file is writable by the agent, including files CI executes</strong> (<code>Makefile</code>, <code>setup.py</code>, <code>noxfile.py</code>, scripts). repolace pushes the agent branch to the same repository the pull request targets. If that repository has push-triggered CI with secrets, that CI would run agent-written code before a human looks. Do not point product mode at such a repository without deciding that deliberately, and disable Actions on test repositories.</li>
+<li><strong>A hostile issue can still mislead the agent.</strong> The tools bound what it can do, not what it decides to do. A convincing injected instruction can produce a wrong edit that passes its checks.</li>
+<li><strong>The no-oracle filter is not a physical barrier.</strong> A deliberately adversarial agent could still try to signal through it.</li>
+<li><strong><code>llm_calls</code> stores repository source verbatim</strong>, and that source was sent to the model provider. Redaction strips credential-shaped strings, not code. Treat the database accordingly.</li>
+<li><strong>Error text can contain host paths.</strong> Secrets are scrubbed from stored errors, paths are not, and the failed-task page shows them.</li>
+<li><strong>The public-site deployment on AWS and the worker deployment have each been exercised only partly.</strong> The AWS path has deployed once; reboot recovery and a backup restore have not been tested.</li>
+<li><strong>Indexing is per repository, not per commit</strong>, so concurrent product tasks on one repository can see each other's index.</li>
+</ul>
+<nav class="doc-pager" aria-label="Pages"><a rel="prev" href="/documentation/benchmark/"><span>Previous</span>Benchmark</a></nav>
+  </main>
+</div>
+<footer class="foot">
+  <div class="wrap footrow">
+    <p>repolace is in early access. Python repositories only, for now.</p>
+    <nav aria-label="Footer"><a href="/">Home</a><a href="/pricing">Pricing</a><a href="/waitlist">Waitlist</a><a href="/benchmark/">Benchmark</a><a href="/retrieval-benchmark/">Retrieval benchmark</a><a href="/documentation/">Docs</a></nav>
+  </div>
+</footer>
+<script src="/documentation/docs.js" defer></script>
+</body>
+</html>

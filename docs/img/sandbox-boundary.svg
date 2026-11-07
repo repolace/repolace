@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 600" role="img" aria-labelledby="t d">
+  <title id="t">repolace sandbox boundary</title>
+  <desc id="d">The host exports the source tree without .git and runs the tests in a rootless Docker container started with no network, a read-only root filesystem and a small tmpfs for /tmp, all capabilities dropped, no new privileges, a non-root user, memory, CPU, process and file descriptor caps, and a hard timeout. Only a report file and an exit status return to the host. Provider keys stay with the worker and never enter the container.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f7f7f4; stroke: #8a8980; stroke-width: 1.5; }
+      .hostp { fill: #e3eefb; stroke: #1c5cab; stroke-width: 1.5; }
+      .boxp { fill: #fdeadc; stroke: #a8420f; stroke-width: 1.5; }
+      .card { fill: #ffffff; stroke: #55544e; stroke-width: 1.5; }
+      .key { fill: #ffffff; stroke: #8f1d1d; stroke-width: 1.5; stroke-dasharray: 5 4; }
+      .t { font: 600 15px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #161615; text-anchor: middle; }
+      .s { font: 400 12.5px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #34332f; text-anchor: middle; }
+      .m { font: 400 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace; fill: #161615; }
+      .z { font: 600 13px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #34332f; }
+      .lb { font: 400 12.5px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #34332f; }
+      .ln { fill: none; stroke: #34332f; stroke-width: 1.6; marker-end: url(#a); }
+      .no { fill: none; stroke: #8f1d1d; stroke-width: 1.6; stroke-dasharray: 6 5; }
+      .x { fill: none; stroke: #8f1d1d; stroke-width: 3; stroke-linecap: round; }
+    </style>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="#34332f"/></marker>
+  </defs>
+  <rect class="bg" x="2" y="2" width="1096" height="596" rx="14"/>
+  <rect class="hostp" x="20" y="50" width="400" height="500" rx="12"/><text class="z" x="38" y="76">Host: the worker, and the rootless Docker daemon</text>
+  <rect class="boxp" x="680" y="50" width="400" height="500" rx="12"/><text class="z" x="698" y="76">Sandbox container: docker run --rm</text>
+  <rect class="card" x="40" y="90" width="360" height="70" rx="9"/><text class="t" x="220" y="115">Task workspace</text><text class="s" x="220" y="135">checkout with .git, kept on the host</text><text class="s" x="220" y="151">(the sandbox never receives it)</text>
+  <path class="ln" d="M220 160V185"/>
+  <rect class="card" x="40" y="185" width="360" height="70" rx="9"/><text class="t" x="220" y="210">Export</text><text class="s" x="220" y="230">source tree written without .git</text><text class="s" x="220" y="246">and without symlinks</text>
+  <rect class="card" x="40" y="280" width="360" height="70" rx="9"/><text class="t" x="220" y="305">Scoring</text><text class="s" x="220" y="325">reads the report file and exit status</text><text class="s" x="220" y="341">compares the baseline with each attempt</text>
+  <rect class="card" x="40" y="375" width="360" height="70" rx="9"/><text class="t" x="220" y="400">Docker CLI</text><text class="s" x="220" y="420">one argv builder for every run,</text><text class="s" x="220" y="436">asserted flag by flag in tests</text>
+  <rect class="key" x="40" y="470" width="360" height="66" rx="9"/><text class="t" x="220" y="495">Provider keys</text><text class="s" x="220" y="515">held by the worker, handed to LiteLLM per call</text><text class="s" x="220" y="531">never exported to the environment</text>
+  <rect class="card" x="700" y="90" width="360" height="70" rx="9"/><text class="t" x="880" y="115">Prepared image</text><text class="s" x="880" y="135">built per repository ahead of time</text><text class="s" x="880" y="151">--pull=never: no registry at run time</text>
+  <rect class="card" x="700" y="185" width="360" height="70" rx="9"/><text class="t" x="880" y="210">/repo</text><text class="s" x="880" y="230">the export, bind mounted as the working dir</text><text class="s" x="880" y="246">the tests and any patch run here</text>
+  <rect class="card" x="700" y="280" width="360" height="70" rx="9"/><text class="t" x="880" y="305">/results</text><text class="s" x="880" y="325">a separate bind mount</text><text class="s" x="880" y="341">the test report is written here</text>
+  <rect class="card" x="700" y="375" width="360" height="161" rx="9"/><text class="t" x="880" y="400">Containment flags</text><text class="m" x="716" y="424">--network=none  --read-only</text><text class="m" x="716" y="438.5">--tmpfs /tmp (256m, nosuid, nodev)</text><text class="m" x="716" y="453">--cap-drop=ALL</text><text class="m" x="716" y="467.5">--security-opt=no-new-privileges</text><text class="m" x="716" y="482">--user 65534:65534</text><text class="m" x="716" y="496.5">--memory 2g --memory-swap 2g --cpus 2.0</text><text class="m" x="716" y="511">--pids-limit 512 --ulimit nofile=4096</text><text class="m" x="716" y="525.5">hard timeout, default 30 min</text>
+  <path class="ln" d="M400 220H680"/><text class="lb" x="540" y="211" text-anchor="middle">source tree</text>
+  <path class="ln" d="M680 315H400"/><text class="lb" x="540" y="306" text-anchor="middle">report and exit status</text>
+  <path class="ln" d="M400 410H680"/><text class="lb" x="540" y="401" text-anchor="middle">docker run, all limits</text>
+  <path class="no" d="M400 503H680"/><path class="x" d="M530 491L550 515M550 491L530 515"/><text class="lb" x="540" y="484" text-anchor="middle">never crosses</text>
+  <text class="lb" x="20" y="580">Only data comes back: a report file and an exit code, parsed as data and never executed. Limits shown are the defaults.</text>
+  </svg>

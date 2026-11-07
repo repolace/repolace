@@ -1,5 +1,6 @@
 [project]
 name = "repolace-eval"
+license = "MIT"
 version = "0.0.1"
 description = "SWE-bench-style benchmark harness for repolace"
 requires-python = ">=3.12"

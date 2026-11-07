@@ -1,5 +1,6 @@
 [project]
 name = "repolace-rag"
+license = "MIT"
 version = "0.0.1"
 description = "Repo-aware retrieval: AST chunking, embedding, pgvector indexing, hybrid retrieval"
 requires-python = ">=3.12"
