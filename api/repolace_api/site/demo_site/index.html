@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>repolace demo: one real run, replayed</title>
+<meta name="description" content="A read-only replay of one real repolace run: a GitHub issue on a toy repository, the stages, the tests before and after, the diff, the model calls and the cost, with what it does and does not show.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="repolace">
+<meta property="og:title" content="repolace demo: one real run, replayed">
+<meta property="og:description" content="One real run of an agent that turns a GitHub issue into a tested pull request, replayed from recorded data.">
+<link rel="preload" href="/benchmark/fonts/fraunces-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/benchmark/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon.png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+<script src="/benchmark/js/theme-init.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the replay</a>
+
+<header class="topbar">
+  <a class="mark" href="/" title="repolace home"><span class="wm">repolace</span> <span class="wm-sub">demo</span></a>
+  <nav aria-label="Sections">
+    <a href="#issue">Issue</a>
+    <a href="#stages">Stages</a>
+    <a href="#tests">Tests</a>
+    <a href="#diff">Diff</a>
+    <a href="#calls">Cost</a>
+    <a href="#clips">Walkthrough</a>
+    <a href="/benchmark/">Benchmark</a>
+  </nav>
+  <details class="menu">
+    <summary>Sections</summary>
+    <div class="panel">
+      <a href="#disclosure">Read this first</a>
+      <a href="#issue">The issue</a>
+      <a href="#stages">The stages</a>
+      <a href="#tests">The tests</a>
+      <a href="#diff">The change</a>
+      <a href="#calls">Model calls and cost</a>
+      <a href="#clips">Walkthrough</a>
+      <a href="#scope">What this is and is not</a>
+      <a href="#links">Links</a>
+      <a href="/benchmark/">Benchmark report</a>
+      <a href="/">Home</a>
+    </div>
+  </details>
+  <button class="iconbtn" id="theme" type="button" aria-label="Switch colour theme" title="Switch colour theme">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7Z"/></svg>
+  </button>
+</header>
+
+<main id="main">
+  <div class="wrap">
+    <section class="hero" aria-labelledby="headline">
+      <p class="kicker">Replay of a recorded run</p>
+      <h1 id="headline">One real run, replayed</h1>
+      <p class="sub">repolace is an agent that takes a GitHub issue, finds the code, writes a fix, runs the repository's tests in a locked-down sandbox and opens a pull request. This page replays one run of it from the data it recorded: the issue it was given, what it did and in what order, the tests before and after, the change it made, and what it cost. Nothing on this page runs anything; it only displays the recording.</p>
+      <dl class="kv" id="hero-kv"></dl>
+      <noscript><div class="nojs">This page draws the run from <a href="data/demo.json">data/demo.json</a> with JavaScript. The file holds every number shown here.</div></noscript>
+    </section>
+
+    <section class="disclosure" id="disclosure" aria-labelledby="disclosure-h">
+      <h2 id="disclosure-h">Read this first</h2>
+      <p>This is one run on a toy repository that was built to show the flow. It is not a success rate. The measured rate is on the <a href="/benchmark/">benchmark page</a>: 29 of 54 on 18 real SWE-bench Verified issues, with its caveats.</p>
+      <p>The replay on this page is the first attempt at this issue, and nothing was re-run or picked from several tries to make it. The walkthrough video is different: it is a second run of the same issue, made afterwards so it could be recorded as a smooth screen capture. It has its own pull request and its own cost, and it is shown as it came out; there was no third run.</p>
+      <p>The pull request text produced by repolace says &ldquo;the repository had no failing test for this issue&rdquo;. That sentence is wrong for this run: the repository did have a failing test, and it went from failing to passing, as the numbers below show. It is a fixed template line that ignores a baseline failure turning green, and it is recorded as a known defect.</p>
+      <p>repolace&rsquo;s own scorer calls the result &ldquo;passed (uncurated)&rdquo;: it can see that a failing test turned green and nothing regressed, but it cannot know that test was written for this issue, so that is not proof the issue is fixed; here the issue&rsquo;s example output was also checked by hand (see below).</p>
+      <div class="handcheck" id="hand-check" hidden>
+        <p class="hc-h">Hand check</p>
+        <p id="hand-check-text"></p>
+      </div>
+    </section>
+  </div>
+
+  <div class="wrap">
+    <section class="story" id="issue" aria-labelledby="issue-h">
+      <h2 id="issue-h">The issue the agent was given</h2>
+      <div class="issue-card" id="issue-card"></div>
+    </section>
+
+    <section class="story" id="stages" aria-labelledby="stages-h">
+      <h2 id="stages-h">What the pipeline did, and how long each part took</h2>
+      <p class="measure" id="stages-text"></p>
+      <ol class="timeline" id="timeline"></ol>
+    </section>
+
+    <section class="story" id="tests" aria-labelledby="tests-h">
+      <h2 id="tests-h">The tests, before and after</h2>
+      <p class="measure" id="tests-text"></p>
+      <div class="testbars" id="testbars"></div>
+    </section>
+
+    <section class="story" id="diff" aria-labelledby="diff-h">
+      <h2 id="diff-h">The change the agent made</h2>
+      <p class="measure" id="diff-text"></p>
+      <figure class="diff-fig">
+        <pre class="diff" id="diff-pre" tabindex="0" aria-label="The change as a unified diff"></pre>
+        <figcaption>Green lines were added, red lines were removed. The leading + and - are kept so the colours are not the only signal.</figcaption>
+      </figure>
+    </section>
+
+    <section class="story" id="calls" aria-labelledby="calls-h">
+      <h2 id="calls-h">Model calls and cost</h2>
+      <p class="measure" id="calls-text"></p>
+      <div class="tablewrap" id="calls-table"></div>
+    </section>
+
+    <section class="story" id="clips" aria-labelledby="clips-h">
+      <h2 id="clips-h">A short walkthrough of the real app</h2>
+      <p class="measure">A screen recording of the local repolace app, in a clean browser at high resolution. It is a second run of the same issue, made for the video; the replay above is the first. The waiting part is sped up and says so on screen, and the app pages in it are not public.</p>
+      <p class="measure" id="video-run"></p>
+      <figure class="walkthrough">
+        <video id="walkthrough-video" muted loop playsinline preload="none" poster="clips/demo-walkthrough-poster.jpg" width="1600" height="900" aria-describedby="walkthrough-note">
+          <source src="clips/demo-walkthrough.mp4" type="video/mp4">
+          <a href="clips/demo-walkthrough.mp4">Download the walkthrough video</a>
+        </video>
+        <figcaption id="walkthrough-note">
+          <button type="button" class="vbtn" id="walkthrough-toggle" aria-controls="walkthrough-video">Pause video</button>
+          <span>The video has captions burned in and no sound. The same steps, as text:</span>
+        </figcaption>
+      </figure>
+      <ol class="measure transcript">
+        <li>A title card says this is a second run of the same issue, recorded for the video.</li>
+        <li>The new-task page: the cursor picks the issue and moves to the Start button. The recording was started after the task had been queued, so Start is shown and not pressed.</li>
+        <li>The task page while the run is under way: retrieval and the baseline test run are done, with one failing test, and the agent is editing.</li>
+        <li>The rest of the run, sped up, with the speed written on screen. The app's own timer keeps counting real time.</li>
+        <li>The finished task: every stage is ok and a pull request is open.</li>
+        <li>The change the agent made in this second run.</li>
+        <li>The tests before and after, and an end card with both runs' pull requests and costs.</li>
+      </ol>
+    </section>
+
+    <section class="story" id="scope" aria-labelledby="scope-h">
+      <h2 id="scope-h">What this is and is not</h2>
+      <div class="scope-pair">
+        <div>
+          <h3>This is</h3>
+          <ul class="plain disc">
+            <li>A real run, replayed from the rows repolace wrote while it ran.</li>
+            <li>A way to see the whole path from issue to pull request, end to end, on a repository small enough to read.</li>
+            <li>A real pull request you can open on GitHub.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>This is not</h3>
+          <ul class="plain disc">
+            <li>A success rate or a benchmark result: it is a single run on a toy repository.</li>
+            <li>A live demo: you cannot start a task from this page, and nothing here talks to a model.</li>
+            <li>Proof that the fix is complete: the scorer cannot tell whether the failing test was written for this issue.</li>
+            <li>A picture of the hard cases: the repository is tiny and the bug is a one-function change.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="story" id="links" aria-labelledby="links-h">
+      <h2 id="links-h">Look at it yourself</h2>
+      <ul class="linklist" id="linklist">
+        <li><a id="link-pr" href="https://github.com/repolace/demo-config-parser/pull/2">The pull request on GitHub</a></li>
+        <li><a id="link-issue" href="https://github.com/repolace/demo-config-parser/issues/1">The issue on GitHub</a></li>
+        <li><a id="link-repo" href="https://github.com/repolace/demo-config-parser">The demo repository</a></li>
+        <li><a href="/benchmark/">The benchmark report, with the measured success rate</a></li>
+        <li><a href="/documentation/">The documentation</a></li>
+      </ul>
+    </section>
+
+    <footer class="foot">
+      <p>Data: <a href="data/demo.json">data/demo.json</a>, checked against <a href="data/demo.schema.json">data/demo.schema.json</a>. It holds counts and the diff, never test names, paths, logins or timestamps finer than a day.</p>
+      <p>Fonts: Fraunces, Geist and Geist Mono under the SIL Open Font License (see <a href="/benchmark/fonts/LICENSE-Fraunces.txt">licences</a>).</p>
+      <p><a href="/">repolace home</a> · <a href="/benchmark/">Benchmark</a> · <a href="/retrieval-benchmark/">Retrieval</a> · <a href="/pricing">Pricing</a> · <a href="/waitlist">Join the waitlist</a> · <a href="/documentation/">Docs</a> · <a href="https://github.com/repolace/repolace">Source</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>
+    </footer>
+  </div>
+</main>
+
+<script defer type="module" src="js/main.js"></script>
+</body>
+</html>

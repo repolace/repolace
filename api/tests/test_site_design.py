@@ -109,7 +109,7 @@ async def test_site_assets_are_versioned_so_a_deploy_is_not_hidden_by_browser_ca
 
 async def test_every_page_and_the_report_carry_the_favicon_and_it_is_served():
     async with client() as c:
-        for path in ("/", "/pricing", "/waitlist", "/privacy", "/terms", "/benchmark/", "/retrieval-benchmark/", "/documentation/"):
+        for path in ("/", "/pricing", "/waitlist", "/privacy", "/terms", "/benchmark/", "/retrieval-benchmark/", "/demo/", "/documentation/"):
             html = (await c.get(path)).text
             assert 'rel="icon" type="image/svg+xml"' in html and 'rel="apple-touch-icon"' in html, path
         icon = await c.get("/assets/favicon.svg")

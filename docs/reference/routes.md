@@ -48,6 +48,7 @@ FastAPI also serves `/docs`, `/redoc` and `/openapi.json` on this app.
 | GET | / | landing | api/repolace_api/site/app.py |
 | mount | /assets/* | static files | api/repolace_api/site/app.py |
 | mount | /benchmark/* | static files | api/repolace_api/site/app.py |
+| mount | /demo/* | static files | api/repolace_api/site/app.py |
 | mount | /documentation/* | static files | api/repolace_api/site/app.py |
 | GET | /favicon.ico | favicon_ico | api/repolace_api/site/app.py |
 | GET | /healthz | healthz | api/repolace_api/site/app.py |
