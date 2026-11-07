@@ -222,7 +222,7 @@ function footer(D) {
     `<p>Generated ${esc(m.generated_at.slice(0, 16).replace("T", " "))} UTC. Seed ${m.seed}, ${m.bootstrap_resamples.toLocaleString("en-US")} bootstrap resamples, ${m.permutations.toLocaleString("en-US")} permutations.</p>` +
     `<p>This search test belongs to the agent benchmark: <a href="/benchmark/">read the benchmark report</a> for how often the agent fixes the same ${D.n} bugs.</p>` +
     `<p>Fonts: Fraunces, Geist and Geist Mono under the SIL Open Font License (see <a href="/benchmark/fonts/LICENSE-Fraunces.txt">licences</a>). Charts: D3 7.8.5 (ISC licence), served from this site.</p>` +
-    `<p><a href="/">repolace home</a> · <a href="/benchmark/">Benchmark</a> · <a href="/pricing">Pricing</a> · <a href="/waitlist">Join the waitlist</a> · <a href="/documentation/">Docs</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>`;
+    `<p><a href="/">repolace home</a> · <a href="/benchmark/">Benchmark</a> · <a href="/pricing">Pricing</a> · <a href="/waitlist">Join the waitlist</a> · <a href="/demo/">Demo</a> · <a href="/documentation/">Docs</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>`;
 }
 
 main().catch((e) => console.error(e));

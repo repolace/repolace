@@ -1,0 +1,272 @@
+{
+  "schema_version": 1,
+  "task_short_id": "4f381d8e",
+  "repo": "repolace/demo-config-parser",
+  "issue": {
+    "number": 1,
+    "title": "A `#` inside a quoted value cuts the value off",
+    "body": "`parse_line` treats everything after the first `#` as a comment, even inside quotes.\n\n```python\nparse_line('url = \"http://example.com/docs#intro\"')\n# got:      ('url', '\"http://example.com/docs')\n# expected: ('url', 'http://example.com/docs#intro')\n```\n\nA `#` inside a quoted value should be kept. A `#` after whitespace on an unquoted value should still start a comment.\n",
+    "url": "https://github.com/repolace/demo-config-parser/issues/1"
+  },
+  "pr_url": "https://github.com/repolace/demo-config-parser/pull/2",
+  "status": "pr_opened",
+  "outcome": "passed",
+  "stop_reason": "submitted",
+  "model": "vertex_ai/gemini-3.1-pro-preview",
+  "cost_usd": 0.292,
+  "duration_seconds": 244.7,
+  "started_date": "2026-11-07",
+  "stages": [
+    {
+      "stage": "instance",
+      "status": "ok",
+      "seconds": 0.0
+    },
+    {
+      "stage": "preflight",
+      "status": "ok",
+      "seconds": 1.1
+    },
+    {
+      "stage": "embedder",
+      "status": "ok",
+      "seconds": 0.0
+    },
+    {
+      "stage": "clone",
+      "status": "ok",
+      "seconds": 3.4
+    },
+    {
+      "stage": "index",
+      "status": "ok",
+      "seconds": 5.0
+    },
+    {
+      "stage": "retrieve",
+      "status": "ok",
+      "seconds": 0.2
+    },
+    {
+      "stage": "verify_baseline",
+      "status": "ok",
+      "seconds": 19.0
+    },
+    {
+      "stage": "record_baseline",
+      "status": "ok",
+      "seconds": 0.0
+    },
+    {
+      "stage": "baseline_files",
+      "status": "ok",
+      "seconds": 0.0
+    },
+    {
+      "stage": "branch",
+      "status": "ok",
+      "seconds": 0.0
+    },
+    {
+      "stage": "agent",
+      "status": "ok",
+      "seconds": 205.4
+    },
+    {
+      "stage": "review",
+      "status": "ok",
+      "seconds": 0.0
+    },
+    {
+      "stage": "merge_target",
+      "status": "ok",
+      "seconds": 2.6
+    },
+    {
+      "stage": "squash",
+      "status": "ok",
+      "seconds": 0.0
+    },
+    {
+      "stage": "push",
+      "status": "ok",
+      "seconds": 3.8
+    },
+    {
+      "stage": "pr",
+      "status": "ok",
+      "seconds": 3.6
+    },
+    {
+      "stage": "finalize",
+      "status": "ok",
+      "seconds": 0.0
+    }
+  ],
+  "llm_calls": [
+    {
+      "n": 1,
+      "stage": "agent",
+      "model": "vertex_ai/gemini-3.1-pro-preview",
+      "input_tokens": 3442,
+      "cached_input_tokens": 0,
+      "output_tokens": 405,
+      "cost_usd": 0.011744
+    },
+    {
+      "n": 2,
+      "stage": "agent",
+      "model": "vertex_ai/gemini-3.1-pro-preview",
+      "input_tokens": 4413,
+      "cached_input_tokens": 0,
+      "output_tokens": 41,
+      "cost_usd": 0.009318
+    },
+    {
+      "n": 3,
+      "stage": "agent",
+      "model": "vertex_ai/gemini-3.1-pro-preview",
+      "input_tokens": 5044,
+      "cached_input_tokens": 1826,
+      "output_tokens": 671,
+      "cost_usd": 0.0148532
+    },
+    {
+      "n": 4,
+      "stage": "agent",
+      "model": "vertex_ai/gemini-3.1-pro-preview",
+      "input_tokens": 5765,
+      "cached_input_tokens": 3689,
+      "output_tokens": 1379,
+      "cost_usd": 0.0214378
+    },
+    {
+      "n": 5,
+      "stage": "agent",
+      "model": "vertex_ai/gemini-3.1-pro-preview",
+      "input_tokens": 7194,
+      "cached_input_tokens": 3753,
+      "output_tokens": 1151,
+      "cost_usd": 0.0214446
+    },
+    {
+      "n": 6,
+      "stage": "agent",
+      "model": "vertex_ai/gemini-3.1-pro-preview",
+      "input_tokens": 8745,
+      "cached_input_tokens": 5701,
+      "output_tokens": 31,
+      "cost_usd": 0.0076002
+    },
+    {
+      "n": 7,
+      "stage": "agent",
+      "model": "vertex_ai/gemini-3.1-pro-preview",
+      "input_tokens": 9366,
+      "cached_input_tokens": 5716,
+      "output_tokens": 2658,
+      "cost_usd": 0.0403392
+    },
+    {
+      "n": 8,
+      "stage": "agent",
+      "model": "vertex_ai/gemini-3.1-pro-preview",
+      "input_tokens": 12044,
+      "cached_input_tokens": 7728,
+      "output_tokens": 841,
+      "cost_usd": 0.0202696
+    },
+    {
+      "n": 9,
+      "stage": "agent",
+      "model": "vertex_ai/gemini-3.1-pro-preview",
+      "input_tokens": 12910,
+      "cached_input_tokens": 9681,
+      "output_tokens": 2385,
+      "cost_usd": 0.0370142
+    },
+    {
+      "n": 10,
+      "stage": "agent",
+      "model": "vertex_ai/gemini-3.1-pro-preview",
+      "input_tokens": 15315,
+      "cached_input_tokens": 11701,
+      "output_tokens": 885,
+      "cost_usd": 0.0201882
+    },
+    {
+      "n": 11,
+      "stage": "agent",
+      "model": "vertex_ai/gemini-3.1-pro-preview",
+      "input_tokens": 16448,
+      "cached_input_tokens": 13673,
+      "output_tokens": 38,
+      "cost_usd": 0.0087406
+    },
+    {
+      "n": 12,
+      "stage": "agent",
+      "model": "vertex_ai/gemini-3.1-pro-preview",
+      "input_tokens": 16623,
+      "cached_input_tokens": 13662,
+      "output_tokens": 1512,
+      "cost_usd": 0.0267984
+    },
+    {
+      "n": 13,
+      "stage": "agent",
+      "model": "vertex_ai/gemini-3.1-pro-preview",
+      "input_tokens": 18272,
+      "cached_input_tokens": 15663,
+      "output_tokens": 1439,
+      "cost_usd": 0.0256186
+    },
+    {
+      "n": 14,
+      "stage": "agent",
+      "model": "vertex_ai/gemini-3.1-pro-preview",
+      "input_tokens": 19738,
+      "cached_input_tokens": 17659,
+      "output_tokens": 505,
+      "cost_usd": 0.0137498
+    },
+    {
+      "n": 15,
+      "stage": "agent",
+      "model": "vertex_ai/gemini-3.1-pro-preview",
+      "input_tokens": 20267,
+      "cached_input_tokens": 17660,
+      "output_tokens": 345,
+      "cost_usd": 0.012886
+    }
+  ],
+  "test_runs": [
+    {
+      "attempt": 0,
+      "passed_count": 7,
+      "failed_count": 1,
+      "errors_count": 0,
+      "duration_seconds": 3.4
+    },
+    {
+      "attempt": 1,
+      "passed_count": 8,
+      "failed_count": 0,
+      "errors_count": 0,
+      "duration_seconds": 2.7
+    }
+  ],
+  "diff": "diff --git a/src/parser.py b/src/parser.py\nindex fa2c09f..765ccc2 100644\n--- a/src/parser.py\n+++ b/src/parser.py\n@@ -12,7 +12,22 @@ from pathlib import Path\n \n \n def _strip_inline_comment(value):\n-    return value.split(\"#\", 1)[0].strip()\n+    in_quote = False\n+    quote_char = None\n+    \n+    for i, char in enumerate(value):\n+        if char in ('\"', \"'\"):\n+            if not in_quote:\n+                in_quote = True\n+                quote_char = char\n+            elif quote_char == char:\n+                in_quote = False\n+                quote_char = None\n+        elif char == '#':\n+            if not in_quote:\n+                if i == 0 or value[i-1].isspace():\n+                    return value[:i].strip()\n+    return value.strip()\n \n \n def _unquote(value):\n",
+  "score_reason_summary": "passed (uncurated): 1 fail-to-pass, no regressions",
+  "video_run": {
+    "task_short_id": "9f248ba3",
+    "status": "pr_opened",
+    "outcome": "passed",
+    "stop_reason": "submitted",
+    "cost_usd": 0.8323,
+    "llm_call_count": 25,
+    "duration_seconds": 287.8,
+    "pr_url": "https://github.com/repolace/demo-config-parser/pull/3",
+    "pr_note": "closed after the recording, so the issue has one open pull request"
+  }
+}

@@ -1,0 +1,262 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "repolace demo run",
+  "description": "Written by docs/tools/export_demo.py from one real task (read-only selects). Holds counts, the diff and costs; never the full task id, a login, an email, a path, an error message, test names or a timestamp finer than a date.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "task_short_id",
+    "repo",
+    "issue",
+    "pr_url",
+    "status",
+    "outcome",
+    "stop_reason",
+    "model",
+    "cost_usd",
+    "duration_seconds",
+    "started_date",
+    "stages",
+    "llm_calls",
+    "test_runs",
+    "diff",
+    "score_reason_summary",
+    "video_run"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "task_short_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}$"
+    },
+    "repo": {
+      "type": "string",
+      "pattern": "^[\\w.-]+/[\\w.-]+$"
+    },
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "number",
+        "title",
+        "body",
+        "url"
+      ],
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "body": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://github\\.com/"
+        }
+      }
+    },
+    "pr_url": {
+      "type": "string",
+      "pattern": "^https://github\\.com/"
+    },
+    "status": {
+      "type": "string"
+    },
+    "outcome": {
+      "type": "string"
+    },
+    "stop_reason": {
+      "type": "string"
+    },
+    "model": {
+      "type": "string"
+    },
+    "cost_usd": {
+      "type": "number",
+      "minimum": 0
+    },
+    "duration_seconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "started_date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "stages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "stage",
+          "status",
+          "seconds"
+        ],
+        "properties": {
+          "stage": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "seconds": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "llm_calls": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "n",
+          "stage",
+          "model",
+          "input_tokens",
+          "cached_input_tokens",
+          "output_tokens",
+          "cost_usd"
+        ],
+        "properties": {
+          "n": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "stage": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cached_input_tokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "output_tokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cost_usd": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "test_runs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "attempt",
+          "passed_count",
+          "failed_count",
+          "errors_count",
+          "duration_seconds"
+        ],
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "passed_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failed_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "errors_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "duration_seconds": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "diff": {
+      "type": "string"
+    },
+    "score_reason_summary": {
+      "type": "string"
+    },
+    "video_run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task_short_id",
+        "status",
+        "outcome",
+        "stop_reason",
+        "cost_usd",
+        "llm_call_count",
+        "duration_seconds",
+        "pr_url",
+        "pr_note"
+      ],
+      "properties": {
+        "task_short_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}$"
+        },
+        "status": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stop_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cost_usd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "llm_call_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "duration_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "pr_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pr_note": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

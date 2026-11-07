@@ -223,6 +223,9 @@ def create_site_app(
     # The retrieval grid report: the same kind of static site. It borrows the benchmark site's stylesheet, fonts, D3 and core.js
     # by absolute path (see retrieval_site/README.md), so both directories must stay mounted together.
     app.mount("/retrieval-benchmark", StaticAssets(directory=HERE / "retrieval_site", html=True), name="retrieval-benchmark")
+    # The demo replay: one real run shown from recorded data (demo_site/data/demo.json, written by docs/tools/export_demo.py).
+    # Like the retrieval report it borrows the benchmark site's stylesheet, fonts and core.js by absolute path.
+    app.mount("/demo", StaticAssets(directory=HERE / "demo_site", html=True), name="demo")
     # The public documentation: static HTML built from docs/*.md by docs/tools/build_site.py. Not `/docs`, which must
     # stay a 404 (it is the proof that FastAPI's own docs are off).
     app.mount("/documentation", StaticAssets(directory=HERE / "docs_site", html=True), name="documentation")

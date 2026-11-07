@@ -24,7 +24,7 @@ def site_client(**kwargs) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=f"http://{HOST}")
 
 
-@pytest.mark.parametrize("path", ["/", "/pricing", "/benchmark/", "/retrieval-benchmark/", "/documentation/", "/privacy", "/terms", "/waitlist", "/waitlist/thanks"])
+@pytest.mark.parametrize("path", ["/", "/pricing", "/benchmark/", "/retrieval-benchmark/", "/demo/", "/documentation/", "/privacy", "/terms", "/waitlist", "/waitlist/thanks"])
 async def test_public_pages_render(path):
     async with site_client() as client:
         resp = await client.get(path)
@@ -92,7 +92,7 @@ def test_csp_adds_turnstile_origin_only_when_enabled():
 
 async def test_pages_have_no_inline_style_or_script():
     async with site_client() as client:
-        for path in ("/", "/pricing", "/benchmark/", "/retrieval-benchmark/"):
+        for path in ("/", "/pricing", "/benchmark/", "/retrieval-benchmark/", "/demo/"):
             html = (await client.get(path)).text
             assert " style=" not in html
             assert "<style" not in html

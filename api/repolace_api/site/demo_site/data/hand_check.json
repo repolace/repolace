@@ -1,0 +1,3 @@
+{
+  "text": "Checked by hand against the PR's code, not only the test suite. The issue's example now returns the expected value, and single quotes, a quoted value followed by a real comment, and a hash with no space before it all behave correctly; all 8 tests pass. One case the tests do not cover and the fix gets wrong: an apostrophe inside an unquoted value, as in \"msg = it's fine # comment\", is now read as an opening quote that never closes, so the trailing comment stays in the value. Before the change that line returned \"it's fine\". That is a small regression introduced by the agent's change, found only by checking beyond the suite, which is why the pull request says no person has reviewed it."
+}
