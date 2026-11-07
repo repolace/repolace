@@ -197,7 +197,7 @@
 <h3 id="gold-validation-comes-first">Gold validation comes first<a class="headerlink" href="#gold-validation-comes-first" title="Link to this section">#</a></h3>
 <p>Before any agent run, the reference fix of each instance goes through the real pipeline twice at no model cost. An instance that does not score <code>passed</code> both times is dropped, not fixed. This found the instrument faults (missing dependencies, <code>setuptools_scm</code> needing <code>.git</code>, truncated test ids) that would otherwise have counted against the agent.</p>
 <h2 id="reproduce-the-run">Reproduce the run<a class="headerlink" href="#reproduce-the-run" title="Link to this section">#</a></h2>
-<p>The order is also in PHASE1_TESTING.md, with a read-only preflight script. You need the rootless Docker daemon, Postgres, a GitHub App installed on the bench repositories, and a provider key. The recorded run cost about $44 in model calls.</p>
+<p>The order is also in the archived runbook PHASE1_TESTING.md, with a read-only preflight script. You need the rootless Docker daemon, Postgres, a GitHub App installed on the bench repositories, and a provider key. The recorded run cost about $44 in model calls.</p>
 <pre><code class="language-bash">export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock
 M=vertex-gemini-3-1-pro-preview
 

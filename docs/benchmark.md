@@ -87,7 +87,7 @@ Before any agent run, the reference fix of each instance goes through the real p
 
 ## Reproduce the run
 
-The order is also in [PHASE1_TESTING.md](PHASE1_TESTING.md), with a read-only preflight script. You need the rootless Docker daemon, Postgres, a GitHub App installed on the bench repositories, and a provider key. The recorded run cost about $44 in model calls.
+The order is also in the archived runbook [PHASE1_TESTING.md](PHASE1_TESTING.md), with a read-only preflight script. You need the rootless Docker daemon, Postgres, a GitHub App installed on the bench repositories, and a provider key. The recorded run cost about $44 in model calls.
 
 ```bash
 export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock

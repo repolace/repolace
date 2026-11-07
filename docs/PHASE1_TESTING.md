@@ -1,3 +1,5 @@
+> **Archived runbook.** This is how the Phase 1 numbers were produced (sweeps 4 and 4b are done). It may be out of date; the current setup is in [getting-started.md](getting-started.md) and [benchmark.md](benchmark.md).
+
 # Phase 1: running the benchmark locally
 
 This is the order of operations that produces the Phase 1 number. It runs **on the machine that has the
@@ -17,9 +19,9 @@ cd infra && docker compose up -d postgres && cd ..           # Phase 1 needs Pos
 scripts/phase1_preflight.sh                                  # read-only; must end "preflight passed"
 ```
 
-Do **not** start the compose `api` or `worker` services for this: the compose `worker` is written but has not
-been run end to end (see `CLAUDE.md` "Deployment requirements"), and the `api` container loads the whole `.env`. The benchmark runs `repolace-run-task`
-subprocesses on the host.
+Do **not** start the compose `api` or `worker` services for this: benchmark rows run as `repolace-run-task`
+subprocesses on the host, and the worker refuses rows that belong to an eval run. (The compose `worker` has since run one
+product task end to end; see `CLAUDE.md` "Deployment requirements". The `api` container loads its own `infra/api.env`.)
 
 The preflight checks git, `prlimit`, `uv`, the rootless socket and cgroup delegation, that `.env` has a
 `GOOGLE_API_KEY` and no bench token, that the database is at head and the 18 bench repos match the 18

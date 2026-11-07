@@ -212,8 +212,8 @@ def _assigned_dict(tree: ast.Module, name: str) -> dict[str, tuple[str, str]]:
 # --- routes -----------------------------------------------------------------------------------
 
 API = ROOT / "api/repolace_api"
-PRIVATE_FILES = [API / "main.py", API / "routes/github.py", API / "routes/repos.py", API / "routes/tasks.py",
-                 API / "ui/router.py", API / "ui/__init__.py"]
+# Globbed, not listed, so a new router module (sign-in, billing) is picked up without editing this file.
+PRIVATE_FILES = [API / "main.py", *sorted((API / "routes").glob("*.py")), *sorted((API / "ui").glob("*.py"))]
 SITE_FILES = [API / "site/app.py"]
 
 
