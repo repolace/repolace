@@ -3,7 +3,7 @@
 //
 //   node scripts/promo_video/render.mjs                    full render -> out/
 //   node scripts/promo_video/render.mjs --stills 1.5,5,14  PNG stills at those seconds
-//   --workers N (default 6), --fps N (default 60), --resume, --keep-frames
+//   --workers N (default 6), --fps N (default 60), --width/--height (default 1920x1080), --resume, --keep-frames
 //
 // Needs `chromium` and `ffmpeg` on PATH (CHROMIUM=/path overrides) and Node 22+
 // (global WebSocket). No npm packages: it speaks the DevTools protocol directly.
@@ -21,7 +21,7 @@ const FPS = Number(arg('fps', 60));
 const WORKERS = Number(arg('workers', 6));
 const OUT = resolve(arg('out', join(HERE, 'out')));
 const STILLS = arg('stills', null);
-const W = 1920, H = 1080;
+const W = Number(arg('width', 1920)), H = Number(arg('height', 1080));
 // --page picks the film (index.html: the typographic promo; demo.html: the real-UI demo video), --name the output stem.
 const PAGE = pathToFileURL(join(HERE, arg('page', 'index.html'))).href;
 const NAME = arg('name', 'repolace-promo');
@@ -74,9 +74,17 @@ async function openPage() {
     return r.result.value;
   };
   const shot = async (t, file) => {
-    await evaluate(`window.seek(${t})`);
-    const { data } = await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
-    writeFileSync(file, Buffer.from(data, 'base64'));
+    // A capture now and then never answers (seen about once per thousand frames). Seek again and
+    // retry rather than hang the whole render; the seek also repaints, which is what unsticks it.
+    for (let attempt = 1; ; attempt++) {
+      await evaluate(`window.seek(${t})`);
+      const shot = await Promise.race([
+        call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }),
+        sleep(15000).then(() => null),
+      ]);
+      if (shot) { writeFileSync(file, Buffer.from(shot.data, 'base64')); return; }
+      if (attempt === 4) throw new Error(`no screenshot for t=${t} after ${attempt} tries`);
+    }
   };
   return { evaluate, shot };
 }

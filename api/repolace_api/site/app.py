@@ -60,7 +60,7 @@ def _asset_version(directory: Path) -> str:
     new URL, so it is fetched at once, and an unchanged one stays cached.
     """
     digest = hashlib.sha256()
-    for name in ("site.css", "site.js", "theme-init.js", "favicon.svg", "favicon.png", "apple-touch-icon.png"):
+    for name in ("site.css", "site.js", "hero.js", "theme-init.js", "favicon.svg", "favicon.png", "apple-touch-icon.png"):
         digest.update((directory / name).read_bytes())
     return digest.hexdigest()[:10]
 
@@ -131,6 +131,7 @@ def create_site_app(
             "plans": content.PLANS,
             "overage": content.OVERAGE_USD,
             "facts": content.load_facts(),
+            "demo": content.load_demo_facts(),
             "path": request.url.path,
             "asset_v": asset_v,
         }

@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>repolace hero loop</title>
+<!--
+  The landing page's hero loop: 16 seconds, four beats, made to be read at 360 to 640 px wide, so
+  nothing on screen is smaller than 40 px in this 1440 x 900 frame. It starts and ends on the empty
+  stage, so the loop has no visible seam. Same timeline technique as index.html and demo.html.
+
+    node scripts/promo_video/render.mjs --page hero.html --name hero --width 1440 --height 900 --poster-at 13.6
+
+  Every value is the demo run's (api/repolace_api/site/demo_site/data/demo.json, run 1): the issue
+  title, the first lines of its diff, 7 passed and 1 failed before, 8 passed after, pull request 2,
+  $0.29, 15 model calls, 4 min 05 s. Re-render if that file changes.
+-->
+<style>
+@font-face { font-family: "Fraunces"; src: url("../../api/repolace_api/site/benchmark_site/fonts/fraunces-latin-opsz-normal.woff2") format("woff2"); font-weight: 100 900; }
+@font-face { font-family: "Geist"; src: url("../../api/repolace_api/site/benchmark_site/fonts/geist-latin-wght-normal.woff2") format("woff2"); font-weight: 100 900; }
+@font-face { font-family: "Geist Mono"; src: url("../../api/repolace_api/site/benchmark_site/fonts/geist-mono-latin-wght-normal.woff2") format("woff2"); font-weight: 100 900; }
+:root {
+  --stage: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --border: rgba(240, 239, 236, 0.16); --accent: #3987e5; --accent-ink: #86b6ef; --good: #4cc38a; --bad: #e8705f;
+  --serif: "Fraunces", Georgia, serif; --sans: "Geist", system-ui, sans-serif; --mono: "Geist Mono", ui-monospace, monospace;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1440px; height: 900px; overflow: hidden; background: var(--stage); }
+body { color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+#stage { position: relative; width: 1440px; height: 900px; overflow: hidden; }
+
+.beat { position: absolute; left: 96px; right: 96px; top: 70px; bottom: 130px; opacity: 0; display: flex; flex-direction: column; justify-content: center;
+  animation: b-in 0.55s var(--ease) calc(var(--in) * 1s) both, b-out 0.38s cubic-bezier(0.4, 0, 1, 1) calc((var(--out) - 0.38) * 1s) forwards; }
+@keyframes b-in { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
+@keyframes b-out { to { opacity: 0; transform: translateY(-18px); } }
+.label { font-family: var(--mono); font-size: 40px; color: var(--accent-ink); letter-spacing: 0.01em; }
+.r { animation: rise 0.8s var(--ease) calc(var(--d) * 1s) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+
+/* 1: the issue */
+.issue-title { margin-top: 56px; font-family: var(--serif); font-weight: 520; font-variation-settings: "opsz" 144; font-size: 112px; line-height: 1.04; letter-spacing: -0.022em; max-width: 1180px; }
+.issue-title code { font-family: var(--mono); font-size: 0.72em; letter-spacing: 0; background: rgba(240,239,236,0.08); border: 2px solid var(--border); border-radius: 16px; padding: 0 22px; }
+.issue-meta { margin-top: 44px; font-family: var(--mono); font-size: 40px; color: var(--ink-2); }
+
+/* 2: the edit */
+.diff { margin-top: 44px; font-family: var(--mono); font-size: 42px; line-height: 70px; white-space: pre; border: 2px solid var(--border); border-radius: 22px; overflow: hidden; background: var(--surface); }
+.dl { display: flex; padding-right: 30px; }
+.dl .g { width: 84px; text-align: center; flex: none; color: var(--muted); }
+.dl.ctx { color: var(--ink-2); }
+.dl.del { background: rgba(232,112,95,0.16); color: #f3b0a6; }
+.dl.del .g { color: var(--bad); }
+.dl.add { background: rgba(76,195,138,0.13); animation: add 0.5s var(--ease) calc(var(--d) * 1s) both; }
+.dl.add .g { color: var(--good); }
+@keyframes add { from { opacity: 0; clip-path: inset(0 100% 0 0); } to { opacity: 1; clip-path: inset(0 0 0 0); } }
+.diff-more { margin-top: 26px; font-family: var(--mono); font-size: 40px; color: var(--ink-2); }
+.diff-more b { color: var(--good); font-weight: 500; } .diff-more i { color: var(--bad); font-style: normal; }
+
+/* 3: verify */
+.runs { margin-top: 64px; display: grid; gap: 54px; }
+.run-h { font-size: 46px; color: var(--ink-2); display: flex; justify-content: space-between; align-items: baseline; }
+.run-h span { font-family: var(--mono); font-size: 42px; color: var(--ink); }
+.run-h em { font-style: normal; color: var(--bad); } .run-h strong { font-weight: 500; color: var(--good); }
+.dots { display: flex; gap: 28px; margin-top: 26px; }
+.dot { width: 128px; height: 92px; border-radius: 18px; background: var(--good); animation: pop 0.6s var(--ease) calc(var(--d) * 1s) both; }
+.dot.bad { background: var(--bad); }
+@keyframes pop { from { opacity: 0; transform: scale(0.7); } to { opacity: 1; transform: none; } }
+
+/* 4: the pull request */
+.pr-title { margin-top: 56px; font-family: var(--serif); font-weight: 520; font-variation-settings: "opsz" 144; font-size: 150px; line-height: 1; letter-spacing: -0.03em; }
+.pr-title span { color: var(--good); }
+.pr-facts { margin-top: 70px; display: flex; gap: 0; border-top: 2px solid var(--border); }
+.pr-facts div { flex: 1; padding: 34px 0 0; font-size: 40px; color: var(--ink-2); }
+.pr-facts b { display: block; font-family: var(--serif); font-weight: 500; font-variation-settings: "opsz" 144; font-size: 104px; line-height: 1.05; letter-spacing: -0.025em; color: var(--ink); }
+
+/* progress: four ticks, the current one filling */
+.ticks { position: absolute; left: 96px; right: 96px; bottom: 72px; display: flex; gap: 20px; opacity: 0;
+  animation: b-in 0.5s ease-out 0.2s both, b-out 0.4s ease-in 15.3s forwards; }
+.tick { flex: 1; height: 8px; border-radius: 8px; background: rgba(240,239,236,0.16); overflow: hidden; }
+.tick i { display: block; height: 100%; background: var(--accent); transform-origin: 0 50%; animation: fill calc((var(--z) - var(--a)) * 1s) linear calc(var(--a) * 1s) both; }
+@keyframes fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+</style>
+</head>
+<body>
+<div id="stage">
+  <section class="beat" style="--in:0.25; --out:3.75">
+    <div class="label">the issue</div>
+    <h1 class="issue-title r" style="--d:0.4">A <code>#</code> inside a quoted value cuts the value off</h1>
+    <p class="issue-meta r" style="--d:0.75">repolace/demo-config-parser #1</p>
+  </section>
+
+  <section class="beat" style="--in:3.85; --out:7.85">
+    <div class="label">the edit</div>
+    <div class="diff r" style="--d:4.0" id="diff"></div>
+    <p class="diff-more r" style="--d:6.3">and 11 more lines &middot; <b>+16</b> <i>&minus;1</i> in src/parser.py</p>
+  </section>
+
+  <section class="beat" style="--in:7.95; --out:11.75">
+    <div class="label">your tests, in a sandbox</div>
+    <div class="runs">
+      <div class="r" style="--d:8.1">
+        <div class="run-h">Before the edit <span>7 passed &middot; <em>1 failed</em></span></div>
+        <div class="dots" data-dots="7,1" data-d="8.3"></div>
+      </div>
+      <div class="r" style="--d:9.4">
+        <div class="run-h">After the edit <span><strong>8 passed</strong></span></div>
+        <div class="dots" data-dots="8,0" data-d="9.6"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="beat" style="--in:11.85; --out:15.45">
+    <div class="label">the result</div>
+    <h1 class="pr-title r" style="--d:12.0">Pull request <span>opened.</span></h1>
+    <div class="pr-facts">
+      <div class="r" style="--d:12.5"><b>$0.29</b>model cost</div>
+      <div class="r" style="--d:12.65"><b>15</b>model calls</div>
+      <div class="r" style="--d:12.8"><b>4:05</b>minutes</div>
+    </div>
+  </section>
+
+  <div class="ticks">
+    <span class="tick" style="--a:0.25; --z:3.85"><i></i></span>
+    <span class="tick" style="--a:3.85; --z:7.95"><i></i></span>
+    <span class="tick" style="--a:7.95; --z:11.85"><i></i></span>
+    <span class="tick" style="--a:11.85; --z:15.3"><i></i></span>
+  </div>
+</div>
+
+<script>
+const DURATION = 16;
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+
+// The first lines of the demo run's diff, verbatim (the caption under it says how many more follow).
+{
+  const lines = [
+    [' ', 'def _strip_inline_comment(value):'],
+    ['-', '    return value.split("#", 1)[0].strip()'],
+    ['+', '    in_quote = False'],
+    ['+', '    quote_char = None'],
+    ['+', '    '],
+    ['+', '    for i, char in enumerate(value):'],
+    ['+', '        if char in (\'"\', "\'"):'],
+  ];
+  const box = document.getElementById('diff'); let n = 0;
+  for (const [g, t] of lines) {
+    const row = el('div', 'dl ' + (g === '+' ? 'add' : g === '-' ? 'del' : 'ctx'));
+    if (g === '+') row.style.setProperty('--d', (4.7 + n++ * 0.22).toFixed(2));
+    row.append(el('span', 'g', g === ' ' ? '' : g === '-' ? '−' : '+'), el('span', 't', t || ' '));
+    box.append(row);
+  }
+}
+for (const d of $$('[data-dots]')) {
+  const [ok, bad] = d.dataset.dots.split(',').map(Number); const d0 = +d.dataset.d;
+  for (let i = 0; i < ok + bad; i++) {
+    const dot = el('span', 'dot' + (bad && i === 5 ? ' bad' : ''));
+    dot.style.setProperty('--d', (d0 + i * 0.07).toFixed(2)); d.append(dot);
+  }
+}
+
+const nudge = el('div'); nudge.style.cssText = 'position:absolute;right:0;bottom:0;width:1px;height:1px'; document.getElementById('stage').append(nudge);
+let anims = [], flip = 0;
+window.seek = (t) => { for (const a of anims) a.currentTime = t * 1000; nudge.style.background = (flip ^= 1) ? '#0d0d0d' : '#0d0d0e'; return t; };
+window.DURATION = DURATION;
+document.fonts.ready.then(() => {
+  anims = document.getAnimations();
+  if (new URLSearchParams(location.search).has('play')) setTimeout(() => location.reload(), DURATION * 1000);
+  else { for (const a of anims) a.pause(); window.seek(0); }
+  window.__ready = true;
+});
+</script>
+</body>
+</html>

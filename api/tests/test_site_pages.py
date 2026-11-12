@@ -203,3 +203,58 @@ async def test_the_two_reports_link_to_each_other():
         benchmark_js = (await client.get("/benchmark/js/main.js")).text
     assert 'href="/benchmark/"' in retrieval_js
     assert 'href="/retrieval-benchmark/"' in benchmark_js
+
+
+async def test_the_landing_hero_video_can_be_stopped_and_does_not_load_until_it_plays():
+    """Same contract as the demo page's video: moving content needs a way to stop it (WCAG 2.2.2)."""
+    async with site_client() as client:
+        html = (await client.get("/")).text
+        video = await client.get("/assets/hero-v1.mp4", headers={"Range": "bytes=0-15"})
+        poster = await client.get("/assets/hero-v1-poster.jpg")
+    tags = re.findall(r"<video\b[^>]*>", html)
+    assert len(tags) == 1
+    for needed in ("muted", "loop", "playsinline", 'preload="none"', 'poster="/assets/hero-v1-poster.jpg"'):
+        assert needed in tags[0], needed
+    assert "controls" not in tags[0] and "autoplay" not in tags[0]  # hero.js starts it, and only when on screen
+    assert re.search(r'\swidth="\d+"', tags[0]) and re.search(r'\sheight="\d+"', tags[0])
+    assert 'id="hero-toggle"' in html and "Pause video" in html
+    assert video.status_code == 206 and "video/mp4" in video.headers["content-type"]
+    assert poster.status_code == 200 and poster.content[:3] == b"\xff\xd8\xff"
+    static = ROOT / "api" / "repolace_api" / "site" / "static"
+    script = (static / "hero.js").read_text()
+    assert "prefers-reduced-motion" in script and "IntersectionObserver" in script and ".play()" in script
+    assert (static / "hero-v1.mp4").stat().st_size < 2 * 1024 * 1024
+    assert (static / "hero-v1-poster.jpg").stat().st_size < 200 * 1024
+
+
+async def test_the_landing_receipt_is_the_demo_run_and_states_nothing_the_replay_does_not():
+    demo = json.loads((ROOT / "api" / "repolace_api" / "site" / "demo_site" / "data" / "demo.json").read_text())
+    facts = content.load_demo_facts()
+    before, after = demo["test_runs"][0], demo["test_runs"][-1]
+    assert (facts.before_passed, facts.before_failed) == (before["passed_count"], before["failed_count"])
+    assert (facts.after_passed, facts.after_failed) == (after["passed_count"], after["failed_count"])
+    assert facts.model_calls == len(demo["llm_calls"]) and facts.pr_url == demo["pr_url"]
+    assert (facts.lines_added, facts.lines_removed, facts.files_changed) == (16, 1, 1)
+    async with site_client() as client:
+        html = (await client.get("/")).text
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html))
+    for phrase in (
+        f"{facts.before_passed} passed, {facts.before_failed} failed",
+        f"{facts.after_passed} passed, {facts.after_failed} failed",
+        f"${facts.cost_usd:.2f} over {facts.model_calls} calls",
+        f"{facts.duration_min} min {facts.duration_sec:02d} s",
+        f"Pull request #{facts.pr_number}",
+        "One run is not a rate",
+    ):
+        assert phrase in text, phrase
+    assert f'href="{demo["pr_url"]}"' in html and f'href="{demo["issue"]["url"]}"' in html
+
+
+async def test_the_landing_tally_draws_one_mark_per_planned_run():
+    facts = content.load_facts()
+    async with site_client() as client:
+        html = (await client.get("/")).text
+    marks = re.findall(r'<li class="(t-pass|t-fail|t-lost)"></li>', html)
+    assert len(marks) == facts.planned
+    assert marks.count("t-pass") == facts.passed and marks.count("t-lost") == facts.lost_rows
+    assert f"{facts.passed} of {facts.planned} runs passed" in html

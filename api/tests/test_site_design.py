@@ -101,10 +101,12 @@ async def test_site_assets_are_versioned_so_a_deploy_is_not_hidden_by_browser_ca
     async with client() as c:
         first = (await c.get("/")).text
         second = (await c.get("/pricing")).text
-    versions = set(re.findall(r"/assets/(?:site\.css|site\.js|theme-init\.js)\?v=([0-9a-f]{10})", first + second))
+    versions = set(re.findall(r"/assets/(?:site\.css|site\.js|hero\.js|theme-init\.js)\?v=([0-9a-f]{10})", first + second))
     assert len(versions) == 1, versions
-    # three styles/scripts plus three icon links, all carrying the same content-hash version
-    assert len(re.findall(r"\?v=", first)) == 6
+    # The landing page: three styles/scripts, the hero video's script and three icon links, all carrying the
+    # same content-hash version. The video and its poster are versioned by file name instead (hero-v1.*).
+    assert len(re.findall(r"\?v=", first)) == 7
+    assert len(re.findall(r"\?v=", second)) == 6
 
 
 async def test_every_page_and_the_report_carry_the_favicon_and_it_is_served():
