@@ -14,7 +14,7 @@ Agents that patch issues are common. What this project is for is the part most o
 | Agent (LangGraph, nine tools, feedback filter, conflict resolver) | Built and benchmarked. The role-split variant (planner, editor, reviewer) is unmerged and showed no benefit in its partial runs |
 | Benchmark harness (`repolace-eval`) | Built and used for one headline sweep and a retrieval grid |
 | Verify sandbox (rootless Docker) | Built. The 32 Docker containment tests have passed on a rootless daemon |
-| Celery worker | Ran one task end to end, which opened one pull request on a private smoke-test repository. No other real PR has been opened |
+| Celery worker | Ran three tasks end to end, each opening a pull request: one on a private smoke-test repository and two on the public demo repository. No other real PR has been opened |
 | Pull-request opening at scale | **Not measured.** Every benchmark sweep used `--no-pr` |
 | Task UI and JSON API | Built (server-rendered pages under `/ui`). **No general authentication**: only `/ui/account` and `/billing/*` use GitHub sign-in. Localhost or a private tunnel only |
 | Public site (landing, pricing preview, benchmark reports, waitlist) | Built as a separate process that mounts none of the API routes |
