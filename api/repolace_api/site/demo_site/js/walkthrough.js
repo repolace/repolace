@@ -1,4 +1,4 @@
-// The walkthrough video: plays muted and looped while it is on screen, with one Pause/Play button.
+// The demo video: plays muted and looped while it is on screen, with one Pause/Play button.
 // No native controls (the page wants a clean frame), so the button is the way to stop moving content.
 // Visitors who ask for reduced motion get the poster and a Play button instead of autoplay.
 

@@ -29,7 +29,7 @@
     <a href="#tests">Tests</a>
     <a href="#diff">Diff</a>
     <a href="#calls">Cost</a>
-    <a href="#clips">Walkthrough</a>
+    <a href="#clips">Video</a>
     <a href="/benchmark/">Benchmark</a>
   </nav>
   <details class="menu">
@@ -41,7 +41,7 @@
       <a href="#tests">The tests</a>
       <a href="#diff">The change</a>
       <a href="#calls">Model calls and cost</a>
-      <a href="#clips">Walkthrough</a>
+      <a href="#clips">Video</a>
       <a href="#scope">What this is and is not</a>
       <a href="#links">Links</a>
       <a href="/benchmark/">Benchmark report</a>
@@ -66,7 +66,7 @@
     <section class="disclosure" id="disclosure" aria-labelledby="disclosure-h">
       <h2 id="disclosure-h">Read this first</h2>
       <p>This is one run on a toy repository that was built to show the flow. It is not a success rate. The measured rate is on the <a href="/benchmark/">benchmark page</a>: 29 of 54 on 18 real SWE-bench Verified issues, with its caveats.</p>
-      <p>The replay on this page is the first attempt at this issue, and nothing was re-run or picked from several tries to make it. The walkthrough video is different: it is a second run of the same issue, made afterwards so it could be recorded as a smooth screen capture. It has its own pull request and its own cost, and it is shown as it came out; there was no third run.</p>
+      <p>The replay on this page is the first attempt at this issue, and nothing was re-run or picked from several tries to make it. The video further down is made of screenshots of the real app showing this same run, taken after it had finished; it is not a live screen recording. After that first attempt the issue was run a second time, for a screen recording this page used to show. That run has its own pull request and its own cost, listed beside the video, and there was no third run.</p>
       <p>The pull request text produced by repolace says &ldquo;the repository had no failing test for this issue&rdquo;. That sentence is wrong for this run: the repository did have a failing test, and it went from failing to passing, as the numbers below show. It is a fixed template line that ignores a baseline failure turning green, and it is recorded as a known defect.</p>
       <p>repolace&rsquo;s own scorer calls the result &ldquo;passed (uncurated)&rdquo;: it can see that a failing test turned green and nothing regressed, but it cannot know that test was written for this issue, so that is not proof the issue is fixed; here the issue&rsquo;s example output was also checked by hand (see below).</p>
       <div class="handcheck" id="hand-check" hidden>
@@ -110,27 +110,28 @@
     </section>
 
     <section class="story" id="clips" aria-labelledby="clips-h">
-      <h2 id="clips-h">A short walkthrough of the real app</h2>
-      <p class="measure">A screen recording of the local repolace app, in a clean browser at high resolution. It is a second run of the same issue, made for the video; the replay above is the first. The waiting part is sped up and says so on screen, and the app pages in it are not public.</p>
+      <h2 id="clips-h">The run in the real app</h2>
+      <p class="measure">A short video made of screenshots of the local repolace app, showing its own pages for this run. The screenshots were taken some days after the run finished, so the app's relative dates count from then, and nothing in them is redrawn: the moving camera, the highlight rings and the captions are added on top. It is not a live screen recording, the app pages in it are not public, and it ends with the benchmark figures and their caveats.</p>
       <p class="measure" id="video-run"></p>
       <figure class="walkthrough">
-        <video id="walkthrough-video" muted loop playsinline preload="none" poster="clips/demo-walkthrough-poster.jpg" width="1600" height="900" aria-describedby="walkthrough-note">
-          <source src="clips/demo-walkthrough.mp4" type="video/mp4">
-          <a href="clips/demo-walkthrough.mp4">Download the walkthrough video</a>
+        <video id="walkthrough-video" muted loop playsinline preload="none" poster="clips/demo-run-poster.jpg" width="1920" height="1080" aria-describedby="walkthrough-note">
+          <source src="clips/demo-run.mp4" type="video/mp4">
+          <a href="clips/demo-run.mp4">Download the video</a>
         </video>
         <figcaption id="walkthrough-note">
           <button type="button" class="vbtn" id="walkthrough-toggle" aria-controls="walkthrough-video">Pause video</button>
-          <span>The video has captions burned in and no sound. The same steps, as text:</span>
+          <span>The video has no sound and its captions are on screen. The same steps, as text:</span>
         </figcaption>
       </figure>
       <ol class="measure transcript">
-        <li>A title card says this is a second run of the same issue, recorded for the video.</li>
-        <li>The new-task page: the cursor picks the issue and moves to the Start button. The recording was started after the task had been queued, so Start is shown and not pressed.</li>
-        <li>The task page while the run is under way: retrieval and the baseline test run are done, with one failing test, and the agent is editing.</li>
-        <li>The rest of the run, sped up, with the speed written on screen. The app's own timer keeps counting real time.</li>
-        <li>The finished task: every stage is ok and a pull request is open.</li>
-        <li>The change the agent made in this second run.</li>
-        <li>The tests before and after, and an end card with both runs' pull requests and costs.</li>
+        <li>The repolace wordmark, and a line saying this is one real run in the real app.</li>
+        <li>The new-task page: the issue is selected, and the confirm panel shows the target branch and the hard spend cap. The page was captured after the run; Start was not pressed again.</li>
+        <li>The task page for the finished run: its title, status and outcome, then each stage with its time, from retrieve through edit, test and review to push and the pull request.</li>
+        <li>The diff the agent wrote, from top to bottom.</li>
+        <li>The test runs table: the baseline before any edit, with one test failing, then the run after the edit, all passing.</li>
+        <li>The result panel with the outcome and the pull request, then the summary column with the cost against its cap.</li>
+        <li>The benchmark: the measured pass rate with its interval, the average cost per task and the median time, with the caveat that runs lost to a rate limit count as failures and that it is a first measurement.</li>
+        <li>An end card with the site's address.</li>
       </ol>
     </section>
 

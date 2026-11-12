@@ -52,7 +52,7 @@ export function videoRun(d) {
   if (!v || !box) return;
   const n = (v.pr_url || "").match(/\/pull\/(\d+)$/);
   const parts = [
-    `The video's own run (task ${v.task_short_id}): ${v.outcome} (${v.status.replace("_", " ")}), ${plural(v.llm_call_count, "model call")}, ${usd(v.cost_usd)}, ${clock(v.duration_seconds)}. `,
+    `The second run of this issue, made for an earlier screen recording (task ${v.task_short_id}): ${v.outcome} (${v.status.replace("_", " ")}), ${plural(v.llm_call_count, "model call")}, ${usd(v.cost_usd)}, ${clock(v.duration_seconds)}. `,
   ];
   if (n && /^https:\/\/github\.com\//.test(v.pr_url)) {
     parts.push("Its pull request is ", el("a", { href: v.pr_url, rel: "noopener" }, `#${n[1]}`), `, ${v.pr_note}.`);

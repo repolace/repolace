@@ -5,7 +5,7 @@ A real example of repolace working end to end, small enough to read in a few min
 ## What you can look at
 
 - **A public pull request** that the agent opened: [demo-config-parser pull request 2](https://github.com/repolace/demo-config-parser/pull/2), for [issue 1](https://github.com/repolace/demo-config-parser/issues/1) in the same repository.
-- **A replay page**, [repolace.rounakkumarsingh.com/demo/](https://repolace.rounakkumarsingh.com/demo/): the stages with their timings, the tests before and after, the model calls with their cost, the diff, and and a screen recording of the real app from the second run. It is read-only and is built from the run's recorded data, so nothing on it runs anything.
+- **A replay page**, [repolace.rounakkumarsingh.com/demo/](https://repolace.rounakkumarsingh.com/demo/): the stages with their timings, the tests before and after, the model calls with their cost, the diff, and a short video made of screenshots of the real app for that run (taken after it finished; not a live screen recording). It is read-only and is built from the run's recorded data, so nothing on it runs anything.
 
 ## How it was made
 
@@ -14,7 +14,7 @@ A real example of repolace working end to end, small enough to read in a few min
 3. The repository was registered with the local app through the GitHub App installation, and a worker was started.
 4. One task was started from the task page. This first run is the one the replay and the pull request above come from: nothing was re-run or chosen from several tries.
 5. The run's database rows were exported with `docs/tools/export_demo.py` into the page's data file. The export keeps counts, the diff and timings, and leaves out host paths, container names, error text, logins and test names.
-6. For the screen recording the same issue was run a second time, in a fresh headless browser at twice the pixel density, with the waiting part sped up sixteen times (the speed is written on screen). That second run passed too, but cost $0.83 over 25 model calls against $0.29 over 15, so the model's behaviour varies between runs. Its pull request was closed with a comment afterwards so the issue has one open pull request, and there was no third run.
+6. The same issue was run a second time, for a screen recording of the app that the page showed at first and that the screenshot video has since replaced. That second run passed too, but cost $0.83 over 25 model calls against $0.29 over 15, so the model's behaviour varies between runs. Its pull request was closed with a comment afterwards so the issue has one open pull request, and there was no third run.
 
 ## What it shows, and what it does not
 
