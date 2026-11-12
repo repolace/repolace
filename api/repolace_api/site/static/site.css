@@ -25,6 +25,7 @@
   --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --gutter: max(16px, 4vw);
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --stage: #0d0d0d;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -118,8 +119,17 @@ h3 { font-family: var(--sans); font-weight: 600; font-size: 1.0625rem; letter-sp
 .fine { font-size: 0.875rem; color: var(--ink-2); max-width: 44rem; }
 
 /* ---------- hero ---------- */
-.hero { padding: clamp(3rem, 8vw, 6.5rem) 0 0; }
+.hero { padding: clamp(2.5rem, 6vw, 5.5rem) 0 0; display: grid; grid-template-columns: minmax(0, 1.04fr) minmax(0, 1fr); gap: clamp(2rem, 4.5vw, 4.5rem); align-items: center; }
 .hero h1, .pagehead h1 { font-family: var(--serif); font-weight: 540; font-size: clamp(2.35rem, 6.4vw, 5.4rem); line-height: 1.02; letter-spacing: -0.022em; max-width: 19ch; font-variation-settings: "opsz" 144; }
+.hero h1 { font-size: clamp(2.35rem, 4.1vw, 3.9rem); max-width: none; }
+@media (max-width: 1060px) { .hero { grid-template-columns: minmax(0, 1fr); } .hero h1 { font-size: clamp(2.35rem, 7.4vw, 4.6rem); max-width: 16ch; } }
+
+/* ---------- the stage: the one dark surface on the page, holding the hero loop ---------- */
+.stage { margin: 0; min-width: 0; }
+.stage video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 10; background: var(--stage); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow), 0 28px 60px -34px rgba(11, 11, 11, 0.55); cursor: pointer; }
+.stage figcaption { display: flex; align-items: flex-start; gap: 0.9rem; margin-top: 0.8rem; font-size: 0.875rem; line-height: 1.5; color: var(--ink-2); }
+.vbtn { flex: none; font: 500 0.8125rem/1 var(--sans); min-height: 32px; padding: 0 0.9rem; border-radius: 999px; border: 1px solid var(--axis); background: var(--surface); color: var(--ink); cursor: pointer; transition: border-color 160ms var(--ease); }
+.vbtn:hover { border-color: var(--ink-2); }
 .hero .sub { margin-top: 1.5rem; max-width: 40rem; font-size: 1.1875rem; color: var(--ink-2); }
 .cta { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 2rem; }
 .hero .fine { margin-top: 1.4rem; }
@@ -145,6 +155,27 @@ h3 { font-family: var(--sans); font-weight: 600; font-size: 1.0625rem; letter-sp
 .kv dd small { display: block; margin-top: 0.35rem; font-family: var(--sans); font-size: 0.875rem; line-height: 1.4; color: var(--ink-2); font-weight: 400; letter-spacing: 0; }
 .kv.four { grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); max-width: none; }
 
+/* ---------- the receipt of one run: label, value, what the value means ---------- */
+.ledger { margin: 0.4rem 0 0; max-width: 42rem; border-bottom: 1px solid var(--axis); }
+.ledger > div { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 0 1.2rem; border-top: 1px solid var(--axis); padding: 0.8rem 0 0.85rem; }
+.ledger dt { font: 500 0.8125rem/1.9 var(--mono); color: var(--ink-2); }
+.ledger dd { margin: 0; font-size: 1.125rem; font-weight: 500; line-height: 1.4; font-variant-numeric: lining-nums tabular-nums; }
+.ledger dd small { display: block; margin-top: 0.15rem; font-size: 0.875rem; font-weight: 400; color: var(--ink-2); }
+@media (max-width: 560px) { .ledger > div { grid-template-columns: 1fr; } .ledger dt { line-height: 1.4; margin-bottom: 0.2rem; } }
+
+/* ---------- the tally: one mark per benchmark run. Shape carries the meaning, not colour ---------- */
+.tally { margin: 1.8rem 0 0; max-width: 62rem; }
+.tally ol { display: grid; grid-template-columns: repeat(27, minmax(0, 1fr)); gap: 5px; max-width: 46rem; }
+.tally li, .tally i { aspect-ratio: 1; border-radius: 3px; border: 1.5px solid var(--ink); }
+.tally .t-pass { background: var(--ink); }
+.tally .t-fail { background: transparent; }
+.tally .t-lost { border-style: dashed; border-color: var(--ink-2); background: linear-gradient(135deg, transparent 44%, var(--ink-2) 44%, var(--ink-2) 56%, transparent 56%); }
+.tally figcaption { display: flex; flex-wrap: wrap; gap: 0.4rem 1.6rem; margin-top: 0.9rem; font-size: 0.875rem; color: var(--ink-2); }
+.tally figcaption span { display: inline-flex; align-items: center; gap: 0.5rem; }
+.tally i { display: inline-block; width: 0.8rem; flex: none; }
+@media (max-width: 560px) { .tally ol { grid-template-columns: repeat(18, minmax(0, 1fr)); gap: 4px; } }
+.tally + .kv { margin-top: 2.2rem; }
+
 /* ---------- callouts ---------- */
 .caveat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.1rem 1.25rem; margin-top: 1.8rem; max-width: 52rem; font-size: 0.9375rem; }
 .caveat p:last-child { margin-bottom: 0; }
@@ -152,7 +183,8 @@ h3 { font-family: var(--sans); font-weight: 600; font-size: 1.0625rem; letter-sp
 .tag.solid { background: var(--ink); color: var(--page); border-color: var(--ink); }
 
 /* ---------- numbered points ---------- */
-.points { counter-reset: p; max-width: 42rem; }
+.points { counter-reset: p; max-width: 62rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 3.5rem; }
+@media (max-width: 860px) { .points { grid-template-columns: minmax(0, 1fr); max-width: 42rem; } }
 .points li { counter-increment: p; display: grid; grid-template-columns: 2.4rem minmax(0, 1fr); gap: 0 0.6rem; border-top: 1px solid var(--axis); padding: 1rem 0 1.1rem; }
 .points li::before { content: counter(p, decimal-leading-zero); font: 500 0.8125rem/1.9 var(--mono); color: var(--ink-2); }
 .points p { margin: 0; font-size: 0.9375rem; color: var(--ink-2); }
@@ -192,6 +224,12 @@ h3 { font-family: var(--sans); font-weight: 600; font-size: 1.0625rem; letter-sp
 .wl .cf-turnstile { margin-top: 1rem; }
 .hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
 .formerr { color: var(--ink); background: var(--wash); border: 1px solid var(--axis); border-radius: 8px; padding: 0.6rem 0.8rem; font-weight: 500; margin-bottom: 1rem; }
+
+/* ---------- closing: the ask beside its form ---------- */
+.closing { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 40rem); gap: 2rem clamp(2rem, 5vw, 5rem); align-items: start; }
+.closing .signup { margin-top: 0.4rem; }
+.closing .fine { margin-top: 1.2rem; }
+@media (max-width: 1060px) { .closing { grid-template-columns: minmax(0, 1fr); } }
 
 /* ---------- prose pages ---------- */
 .prose h2 { font-size: 1.5rem; margin: 2.2rem 0 0.4rem; max-width: none; }

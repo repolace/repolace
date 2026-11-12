@@ -6,7 +6,7 @@ This page is for running repolace's services: what each compose service is, whic
 
 Be clear about this before relying on any of it.
 
-- The Celery worker has run one real task end to end, which opened one pull request on a private smoke-test repository. That is the extent of real worker use.
+- The Celery worker has run three real tasks end to end, each opening a pull request: one on a private smoke-test repository and the two runs of the [demo](demo.md) on the public demo repository. That is the extent of real worker use.
 - Every benchmark sweep used the `repolace-run-task` CLI path with `--no-pr`, not the worker.
 - The public site runs on the AWS deployment (CDK stack, deploy script, workflow). A push to `main` was built, deployed and verified by commit sha on `/healthz`. Not yet tested: recovery after an instance reboot, a restore from a backup.
 - Observability is structured JSON logs with a task id on every line. There is no tracing or metrics stack.
@@ -111,6 +111,27 @@ The public site is a separate process (`repolace_api.site.main:app`, port 8100) 
 A single VM is not highly available. Recovery is a reboot, the nightly backup and the CDK stack. Not yet tested: recovery after an instance reboot, a restore from a backup, and a rollback under a real failure.
 
 The tunnel stays locally managed, and the private API and UI are never routed through it.
+
+## Still to run
+
+Two things rest on reading the code and on a few single runs, not on a deliberate check. Neither has been done.
+
+### The worker deployment checklist
+
+On the host that runs the sandbox, with `DOCKER_HOST` pointing at the rootless daemon:
+
+1. `docker compose -f infra/docker-compose.yml up -d --build` and wait for every service to report healthy.
+2. In the task worker, confirm the docker client reaches the daemon (`docker compose -f infra/docker-compose.yml exec worker docker version`) and that it can create and delete a directory under `WORKSPACE_PARENT_DIR`. Both run as container root, which on the rootless daemon is the host user.
+3. Confirm the broker took the timeout file: `docker compose -f infra/docker-compose.yml exec rabbitmq rabbitmqctl eval 'application:get_env(rabbit, consumer_timeout).'` must print `{ok,14100000}`.
+4. Run one task end to end from the UI on a toy repository with Actions disabled: a clone, a Verify run in a sandbox container, a pull request. A further run on the demo repository has to be added to the demo page's disclosure, which says how many runs there were.
+5. Restart the broker (`docker compose -f infra/docker-compose.yml restart rabbitmq`), then enqueue a task. The API log should show `repos.task.publish_reconnecting` and the task should start at once, not five minutes later through the sweeper. This was checked once against a throwaway RabbitMQ container, not against the compose stack.
+6. Confirm `WORKSPACE_PARENT_DIR` sits on a size- and inode-limited filesystem.
+
+### Pull-request opening in the benchmark
+
+Every sweep so far passed `--no-pr`, so the benchmark says nothing about the path from a passing run to an open pull request. Three product-mode runs have opened one each; that shows the path works, not how often.
+
+A measuring sweep is the sweep command from [PHASE1_TESTING.md](PHASE1_TESTING.md) without `--no-pr` and with a spend cap: `repolace-eval run --eval-run-id <id> --agent llm --model <model> -k 1 --max-total-usd <cap>`, then `repolace-eval report`. A benchmark task opens a pull request on its private `repolace/bench-<instance>` repository only when it scores passed, so the number of pull requests should equal the pass count; a difference is the finding. Expect about $0.75 and 18 minutes per task at the measured medians, so roughly $14 for 18 issues run once. Check first that Actions are disabled on every bench repository: a pushed agent branch can carry an edited build file.
 
 ## Related
 

@@ -381,6 +381,41 @@ class TestProductBody:
         assert "No fail-to-pass evidence" in body
         assert "had no failing test for this issue" in body
 
+    def went_green_facts(self, *ids: str):
+        """A product run where baseline failures passed after the change (the first demo run's shape)."""
+        return pr_facts(
+            baseline=SuiteResult(passed=("t::a", "t::b"), failed=ids),
+            final=SuiteResult(passed=("t::a", "t::b", *ids), failed=()),
+            scored=Score(outcome=None, reason=f"{len(ids)} fail-to-pass, no regressions", fail_to_pass=ids),
+        )
+
+    def test_a_baseline_failure_that_went_green_is_not_called_no_failing_test(self):
+        body = render_pr_body(self.went_green_facts("t::red"))
+
+        assert "had no failing test for this issue" not in body
+        assert "No fail-to-pass evidence" not in body
+        assert "Fail-to-pass evidence is uncurated" in body
+        assert "1 test that failed before the change passes after it" in body
+        assert "not proof the issue is fixed" in body
+        assert "No person has reviewed this change." in body
+
+    def test_several_tests_that_went_green_are_counted(self):
+        body = render_pr_body(self.went_green_facts("t::red", "t::red2", "t::red3"))
+
+        assert "3 tests that failed before the change pass after it" in body
+
+    def test_the_verified_section_names_the_tests_that_went_green(self):
+        body = render_pr_body(self.went_green_facts("t::red"))
+        verified = body.split("## Verified")[1].split("## Not verified")[0]
+
+        assert "- Failing before the change, passing after: `t::red`." in verified
+        assert "Failing before the change, passing after" not in render_pr_body(pr_facts())
+
+    def test_a_went_green_body_still_never_claims_the_issue_is_fixed(self):
+        body = render_pr_body(self.went_green_facts("t::red"))
+
+        assert not re.search(r"(?i)\b(fixes|closes|resolves)\b", body.replace("Refs", ""))
+
     def test_it_never_claims_the_issue_is_fixed(self):
         body = render_pr_body(pr_facts())
 

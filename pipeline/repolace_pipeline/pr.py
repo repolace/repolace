@@ -296,6 +296,10 @@ def _verified_product(facts: PrFacts) -> list[str]:
     else:
         lines.append(f"- After the change: {_counts(facts.final)}.")
 
+    went_green = facts.scored.fail_to_pass
+    if went_green:
+        lines.append(f"- Failing before the change, passing after: {_ids(went_green)}.")
+
     verdict = facts.verdict
     lines.append(f"- Regressions: {_ids(verdict.regressions)}." if verdict.regressions else "- Regressions: none.")
     lines.append(
@@ -350,6 +354,20 @@ def _section_not_verified(facts: PrFacts) -> str:
         lines = [
             ("- Nothing beyond the curated tests and the repository's own suite was run; "
             "a pass is not a judgement of the change's quality."),
+        ]
+    elif facts.scored.fail_to_pass:
+        # A baseline failure went green. Saying "no failing test" here would contradict the Verified
+        # section (it did on the first demo run), but the opposite claim is too strong as well: with no
+        # curated list, nothing says the test that turned green was written for this issue.
+        n = len(facts.scored.fail_to_pass)
+        went = (
+            "1 test that failed before the change passes after it"
+            if n == 1
+            else f"{n} tests that failed before the change pass after it"
+        )
+        lines = [
+            (f"- **Fail-to-pass evidence is uncurated:** {went}, but repolace cannot tell whether "
+            "that was written for this issue, so it is not proof the issue is fixed."),
         ]
     else:
         lines = [

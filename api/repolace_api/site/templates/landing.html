@@ -3,14 +3,70 @@
 {% block content %}
 <div class="wrap">
   <section class="hero" aria-labelledby="headline">
-    <p class="eyebrow rise">Early access</p>
-    <h1 id="headline" class="rise rise-1"><span class="ln">Hand it a GitHub issue.</span> <span class="ln">Get back a tested pull request.</span></h1>
-    <p class="sub rise rise-2">repolace reads your repository, plans a fix, edits the code and runs your own test suite in a locked-down sandbox before it opens anything. You review the pull request like any other.</p>
-    <div class="cta rise rise-3">
-      <a class="btn btn-primary btn-lg" href="#waitlist">Join the waitlist</a>
-      <a class="btn btn-lg" href="/benchmark/">See the benchmark</a>
+    <div class="hero-copy">
+      <h1 id="headline" class="rise rise-1"><span class="ln">Hand it a GitHub issue.</span> <span class="ln">Get back a tested pull request.</span></h1>
+      <p class="sub rise rise-2">repolace reads your repository, plans a fix, edits the code and runs your own test suite in a locked-down sandbox before it opens anything. You review the pull request like any other.</p>
+      <div class="cta rise rise-3">
+        <a class="btn btn-primary btn-lg" href="#waitlist">Join the waitlist</a>
+        <a class="btn btn-lg" href="/demo/">Watch a real run</a>
+      </div>
+      <p class="fine rise rise-4">Early access, Python repositories only for now. Nothing is merged for you: approval stays with GitHub branch protection and your reviewers.</p>
     </div>
-    <p class="fine rise rise-4">Python repositories only for now. Nothing is merged for you: approval stays with GitHub branch protection and your reviewers.</p>
+    <figure class="stage rise rise-2">
+      <video id="hero-video" muted loop playsinline preload="none" poster="/assets/hero-v1-poster.jpg" width="1440" height="900" aria-describedby="hero-note">
+        <source src="/assets/hero-v1.mp4" type="video/mp4">
+      </video>
+      <figcaption id="hero-note">
+        <button type="button" class="vbtn" id="hero-toggle" aria-controls="hero-video">Pause video</button>
+        <span>One real run, cut to sixteen seconds: the issue, the edit, the tests, the pull request. No sound. The same run is written out below.</span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section class="story" aria-labelledby="run">
+    <h2 id="run">That run happened. Here is its receipt.</h2>
+    <div class="pair">
+      <dl class="ledger">
+        <div><dt>Issue</dt><dd><a href="{{ demo.issue_url }}">#{{ demo.issue_number }}</a> {% for text, is_code in demo.title_parts %}{% if is_code %}<code>{{ text }}</code>{% else %}{{ text }}{% endif %}{% endfor %}<small>{{ demo.repo }}, a small public repository built for this demo</small></dd></div>
+        <div><dt>Tests before</dt><dd>{{ demo.before_passed }} passed, {{ demo.before_failed }} failed<small>the repository's own suite, at the commit the task started from</small></dd></div>
+        <div><dt>The change</dt><dd>{{ demo.lines_added }} lines added, {{ demo.lines_removed }} removed<small>in {{ demo.files_changed }} source file{{ '' if demo.files_changed == 1 else 's' }}; no test was edited</small></dd></div>
+        <div><dt>Tests after</dt><dd>{{ demo.after_passed }} passed, {{ demo.after_failed }} failed<small>the same suite, in the same sandbox</small></dd></div>
+        <div><dt>Model spend</dt><dd>${{ '%.2f'|format(demo.cost_usd) }} over {{ demo.model_calls }} calls<small>against a hard cap of ${{ '%.2f'|format(facts.cap_usd) }} a task</small></dd></div>
+        <div><dt>Time</dt><dd>{{ demo.duration_min }} min {{ '%02d'|format(demo.duration_sec) }} s<small>from the start of the task to the open pull request</small></dd></div>
+        <div><dt>Result</dt><dd><a href="{{ demo.pr_url }}">Pull request #{{ demo.pr_number }}</a><small>waiting for a person to review it, like any other</small></dd></div>
+      </dl>
+      <aside class="note"><strong>One run is not a rate.</strong> The repository is tiny and the bug is a one-function change. The agent's fix also has a flaw that no test covers, which is why a person reviews it. <a href="/demo/">The replay</a> shows every stage, the diff and that flaw.</aside>
+    </div>
+  </section>
+
+  <section class="story" aria-labelledby="numbers">
+    <h2 id="numbers">How often it works, measured</h2>
+    <div class="pair">
+      <div class="measure">
+        <p class="lede">On {{ facts.planned // 3 }} real issues from public projects, run three times each with Gemini 3.1 Pro, {{ facts.passed }} of {{ facts.planned }} runs passed the project's own tests. It is a first measurement, not a score.</p>
+      </div>
+      <aside class="note"><strong>Why the interval is wide.</strong> {{ facts.planned // 3 }} issues is a small sample, and whole issues pass or fail together.</aside>
+    </div>
+    {% set not_passed = facts.planned - facts.passed - facts.lost_rows %}
+    <figure class="tally">
+      <ol role="img" aria-label="{{ facts.passed }} runs passed, {{ not_passed }} did not pass, and {{ facts.lost_rows }} were lost to a rate limit and are counted as failures.">
+        {% for _ in range(facts.passed) %}<li class="t-pass"></li>{% endfor %}{% for _ in range(not_passed) %}<li class="t-fail"></li>{% endfor %}{% for _ in range(facts.lost_rows) %}<li class="t-lost"></li>{% endfor %}
+      </ol>
+      <figcaption>
+        <span><i class="t-pass"></i>{{ facts.passed }} passed</span>
+        <span><i class="t-fail"></i>{{ not_passed }} did not pass</span>
+        <span><i class="t-lost"></i>{{ facts.lost_rows }} lost to a provider rate limit, counted as failures</span>
+      </figcaption>
+    </figure>
+    <dl class="kv">
+      <div><dt>Runs that passed the project's own tests</dt><dd>{{ '%.1f'|format(facts.rate) }}%<small>95% interval {{ '%.0f'|format(facts.ci_low) }} to {{ '%.0f'|format(facts.ci_high) }}%</small></dd></div>
+      <div><dt>Average model cost per task</dt><dd>${{ '%.2f'|format(facts.cost_mean) }}<small>about ${{ '%.2f'|format(facts.cost_per_pass_low) }} to ${{ '%.2f'|format(facts.cost_per_pass_high) }} per passing task</small></dd></div>
+      <div><dt>Median time from start to finish</dt><dd>{{ facts.latency_median_min }} min<small>{{ '%.0f'|format(facts.step_cap_share) }}% of tasks used every step they were allowed</small></dd></div>
+    </dl>
+    <div class="caveat">
+      <span class="tag">Read this first</span>
+      <p>The issues come from SWE-bench Verified, which is public, so a model may have seen some of them. Opening a pull request was switched off for the sweep, so PR creation in the benchmark is not yet measured; the run above is one of three that have opened one. <a href="/benchmark/">The full report</a> has every caveat and the method.</p>
+    </div>
   </section>
 
   <section class="story" aria-labelledby="how">
@@ -24,49 +80,26 @@
     </ol>
   </section>
 
-  <section class="story" aria-labelledby="numbers">
-    <h2 id="numbers">What we measured, and how much to trust it</h2>
-    <div class="pair">
-      <div class="measure">
-        <p class="lede">A first measurement on {{ facts.planned // 3 }} real issues from public projects, three runs each, with Gemini 3.1 Pro. It is a starting point, not a score.</p>
-      </div>
-      <aside class="note"><strong>Why the interval is wide.</strong> {{ facts.planned // 3 }} issues is a small sample, and whole issues pass or fail together.</aside>
-    </div>
-    <dl class="kv">
-      <div><dt>Runs that passed the project's own tests</dt><dd>{{ '%.1f'|format(facts.rate) }}%<small>{{ facts.passed }} of {{ facts.planned }} runs. 95% interval {{ '%.0f'|format(facts.ci_low) }} to {{ '%.0f'|format(facts.ci_high) }}%</small></dd></div>
-      <div><dt>Average model cost per task</dt><dd>${{ '%.2f'|format(facts.cost_mean) }}<small>about ${{ '%.2f'|format(facts.cost_per_pass_low) }} to ${{ '%.2f'|format(facts.cost_per_pass_high) }} per passing task</small></dd></div>
-      <div><dt>Median time from start to finish</dt><dd>{{ facts.latency_median_min }} min<small>{{ '%.0f'|format(facts.step_cap_share) }}% of tasks used every step they were allowed</small></dd></div>
-    </dl>
-    <div class="caveat">
-      <span class="tag">Read this first</span>
-      <p>The issues come from SWE-bench Verified, which is public, so a model may have seen some of them. {{ facts.planned // 3 }} issues is a small sample, which is why the interval is wide. {{ facts.lost_rows }} runs were lost to a model-provider rate limit and count as failures. Opening a pull request was switched off for the sweep, so PR creation on a real run is not yet measured. <a href="/benchmark/">The full report</a> has every caveat and the method.</p>
-    </div>
-  </section>
-
   <section class="story" aria-labelledby="trust">
     <h2 id="trust">Built so you can say no</h2>
-    <div class="pair">
-      <ol class="points">
-        <li><div><h3>Your tests are the judge</h3><p>A task counts as fixed only when failing tests turn green and nothing that passed before breaks. Edits to test files are flagged, not hidden.</p></div></li>
-        <li><div><h3>Generated code never runs on the host</h3><p>Verification runs in a rootless container with resource limits, against a copy of the source with no <code>.git</code> inside.</p></div></li>
-        <li><div><h3>A hard spend cap per task</h3><p>Every task has a fixed model budget, a call limit and a time limit. A runaway task stops; it does not bill you for hours.</p></div></li>
-        <li><div><h3>You decide what merges</h3><p>repolace opens a pull request. Reviews, required checks and merging are GitHub's, exactly as for a human contributor.</p></div></li>
-      </ol>
-      <aside class="note"><strong>Early access is Python only.</strong> Repositories are indexed with a Python parser, so other languages are not supported yet.</aside>
+    <ol class="points">
+      <li><div><h3>Your tests are the judge</h3><p>A task counts as fixed only when failing tests turn green and nothing that passed before breaks. Edits to test files are flagged, not hidden.</p></div></li>
+      <li><div><h3>Generated code never runs on the host</h3><p>Verification runs in a rootless container with resource limits, against a copy of the source with no <code>.git</code> inside.</p></div></li>
+      <li><div><h3>A hard spend cap per task</h3><p>Every task has a fixed model budget, a call limit and a time limit. A runaway task stops; it does not bill you for hours.</p></div></li>
+      <li><div><h3>You decide what merges</h3><p>repolace opens a pull request. Reviews, required checks and merging are GitHub's, exactly as for a human contributor.</p></div></li>
+    </ol>
+  </section>
+
+  <section class="story closing" id="waitlist" aria-labelledby="join">
+    <div class="closing-copy">
+      <h2 id="join">Join the waitlist</h2>
+      <p class="lede">We are letting people in gradually, starting with maintainers of Python projects. One email when your spot opens, nothing else.</p>
+      <p class="fine">Plans start at $0 and scale with the number of tasks you run. These are preview prices and billing is not open yet. <a href="/pricing">See the plans</a>.</p>
     </div>
-  </section>
-
-  <section class="story" aria-labelledby="price-teaser">
-    <h2 id="price-teaser">Pricing, in preview</h2>
-    <p class="lede">Plans start at $0 and scale with the number of tasks you run. These are preview prices and billing is not open yet. <a href="/pricing">See the plans</a>.</p>
-  </section>
-
-  <section class="story" id="waitlist" aria-labelledby="join">
-    <h2 id="join">Join the waitlist</h2>
-    <p class="lede">We are letting people in gradually, starting with maintainers of Python projects. One email when your spot opens, nothing else.</p>
     <div class="signup">
       {% with form_id = "landing" %}{% include "_waitlist_form.html" %}{% endwith %}
     </div>
   </section>
 </div>
 {% endblock %}
+{% block scripts %}<script src="/assets/hero.js?v={{ asset_v }}" defer></script>{% endblock %}

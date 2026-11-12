@@ -16,6 +16,7 @@ from functools import lru_cache
 from pathlib import Path
 
 DATA_FILE = Path(__file__).parent / "data" / "results.json"
+DEMO_FILE = Path(__file__).parent / "demo_site" / "data" / "demo.json"
 
 
 @dataclass(frozen=True)
@@ -77,6 +78,63 @@ def load_results() -> dict:
 
 def load_facts() -> BenchmarkFacts:
     return facts_from(load_results())
+
+
+@dataclass(frozen=True)
+class DemoFacts:
+    """The one real run the landing page describes: the same recorded run /demo/ replays.
+
+    Read from the demo page's own data file, so the landing page cannot state a number the replay
+    does not show. `title_parts` splits the issue title on its backticks into (text, is_code) pairs.
+    """
+
+    repo: str
+    issue_number: int
+    issue_url: str
+    title_parts: tuple[tuple[str, bool], ...]
+    pr_number: int
+    pr_url: str
+    before_passed: int
+    before_failed: int
+    after_passed: int
+    after_failed: int
+    lines_added: int
+    lines_removed: int
+    files_changed: int
+    cost_usd: float
+    model_calls: int
+    duration_min: int
+    duration_sec: int
+
+
+def demo_facts_from(demo: dict) -> DemoFacts:
+    lines = demo["diff"].splitlines()
+    before, after = demo["test_runs"][0], demo["test_runs"][-1]
+    seconds = round(demo["duration_seconds"])
+    return DemoFacts(
+        repo=demo["repo"],
+        issue_number=demo["issue"]["number"],
+        issue_url=demo["issue"]["url"],
+        title_parts=tuple((part, i % 2 == 1) for i, part in enumerate(demo["issue"]["title"].split("`")) if part),
+        pr_number=int(demo["pr_url"].rsplit("/", 1)[1]),
+        pr_url=demo["pr_url"],
+        before_passed=before["passed_count"],
+        before_failed=before["failed_count"],
+        after_passed=after["passed_count"],
+        after_failed=after["failed_count"],
+        lines_added=sum(1 for line in lines if line.startswith("+") and not line.startswith("+++")),
+        lines_removed=sum(1 for line in lines if line.startswith("-") and not line.startswith("---")),
+        files_changed=sum(1 for line in lines if line.startswith("diff --git ")),
+        cost_usd=demo["cost_usd"],
+        model_calls=len(demo["llm_calls"]),
+        duration_min=seconds // 60,
+        duration_sec=seconds % 60,
+    )
+
+
+@lru_cache
+def load_demo_facts() -> DemoFacts:
+    return demo_facts_from(json.loads(DEMO_FILE.read_text()))
 
 
 @dataclass(frozen=True)

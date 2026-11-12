@@ -33,8 +33,10 @@ PERM = 20_000
 
 # ----------------------------------------------------------------------------------------------- loading
 def load():
-    tasks = list(csv.DictReader(open(DATA / "tasks.csv", newline="")))
-    tools = {r["task_id"]: r for r in csv.DictReader(open(DATA / "tool_use.csv", newline=""))}
+    with open(DATA / "tasks.csv", newline="") as f:
+        tasks = list(csv.DictReader(f))
+    with open(DATA / "tool_use.csv", newline="") as f:
+        tools = {r["task_id"]: r for r in csv.DictReader(f)}
     for t in tasks:
         t["run_index"] = int(t["run_index"])
         t["calls"] = int(t["calls"])
@@ -199,7 +201,7 @@ def fig_instances(per_instance, path):
     w, left, bar_h, gap, top = 640, 210, 16, 6, 44
     h = top + len(rows) * (bar_h + gap) + 36
     body = []
-    for i in range(0, 4):
+    for i in range(4):
         x = left + i * 120
         body.append(f'<line class="grid" x1="{x}" y1="{top - 6}" x2="{x}" y2="{h - 28}"/>')
         body.append(f'<text class="mut" x="{x}" y="{h - 12}" font-size="11" text-anchor="middle">{i}</text>')
@@ -335,7 +337,6 @@ def main():
     }
 
     # ---- the lost rows: were they a random subset?
-    lost_keys = {(t["instance_id"], t["run_index"]) for t in s4_lost}
     p_f, odds_f = fisher_exact(s4b_pass, len(s4b) - s4b_pass, s4_pass, len(s4_completed) - s4_pass)
     out["lost_rows"] = {
         "count": len(s4_lost), "reason": "Vertex AI HTTP 429 RESOURCE_EXHAUSTED after the gateway's bounded retries (provider refusal, a harness error)",
@@ -358,7 +359,7 @@ def main():
         "per_instance": {i: p for i, (p, _) in per_instance_final.items()},
     }
     groups = [[int(t["passed"]) for t in sorted((r for r in rows if r["instance_id"] == i), key=lambda r: r["run_index"])] for i in instances]
-    icc, msb, msw = icc_oneway(groups)
+    icc, _msb, _msw = icc_oneway(groups)
     deff = 1 + 2 * icc
     out["clustering"] = {
         "icc_oneway": round(icc, 3), "design_effect_runs_3": round(deff, 2),
@@ -386,7 +387,7 @@ def main():
     out["by_repository"] = by_repo
 
     # ---- stop reason x outcome
-    sr = defaultdict(lambda: Counter())
+    sr = defaultdict(Counter)
     for t in rows:
         sr[t["stop_reason"] or "(none)"][t["outcome"]] += 1
     a, b = sr["submitted"]["passed"], sr["submitted"]["failed"]

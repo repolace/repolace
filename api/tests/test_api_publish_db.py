@@ -58,7 +58,7 @@ async def test_a_publish_failure_does_not_fail_the_request_and_the_row_stays_que
     def refuse(*args, **kwargs):
         raise ConnectionError("broker down")
 
-    monkeypatch.setattr(publisher._app, "send_task", refuse)
+    monkeypatch.setattr(publisher, "_send", refuse)  # both the first try and the one after reconnecting
 
     async with client_with(db_session_factory, publisher) as client:
         response = await client.post(f"/repos/{repo.id}/tasks", json={"issue_number": 7})
