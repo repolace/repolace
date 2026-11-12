@@ -27,7 +27,8 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "api" / "repolace_api" / "site" / "demo_site" / "data" / "demo.json"
 TASK_ID = "4f381d8e-ef4f-4ba4-be31-1c513f9d2e3b"
-# The second run of the same issue, made so the walkthrough video could be recorded as a real screen capture.
+# The second run of the same issue, made for a screen recording the page showed at first (since replaced by the
+# screenshot video from scripts/promo_video/demo.html). The page still lists the run, so "no third run" stays checkable.
 VIDEO_TASK_ID = "9f248ba3-2be4-4ebb-b68c-552871882a5d"
 VIDEO_PR_NOTE = "closed after the recording, so the issue has one open pull request"
 CONTAINER = os.environ.get("DEMO_PG_CONTAINER", "repolace-postgres-1")
@@ -118,7 +119,7 @@ select json_build_object(
 
 
 def build_video_run(task_id: str = VIDEO_TASK_ID) -> dict:
-    """Facts of the run the video shows (a second run of the same issue): counts and totals only, no diff."""
+    """Facts of the second run of the same issue (made for the earlier screen recording): counts and totals only, no diff."""
     raw = query(VIDEO_SQL.format(task_id=task_id))
     if not raw:
         raise Unreachable("video task not found")

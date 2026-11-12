@@ -62,7 +62,7 @@
 <h2 id="what-you-can-look-at">What you can look at<a class="headerlink" href="#what-you-can-look-at" title="Link to this section">#</a></h2>
 <ul>
 <li><strong>A public pull request</strong> that the agent opened: <a href="https://github.com/repolace/demo-config-parser/pull/2" rel="noopener noreferrer">demo-config-parser pull request 2</a>, for <a href="https://github.com/repolace/demo-config-parser/issues/1" rel="noopener noreferrer">issue 1</a> in the same repository.</li>
-<li><strong>A replay page</strong>, <a href="https://repolace.rounakkumarsingh.com/demo/" rel="noopener noreferrer">repolace.rounakkumarsingh.com/demo/</a>: the stages with their timings, the tests before and after, the model calls with their cost, the diff, and and a screen recording of the real app from the second run. It is read-only and is built from the run's recorded data, so nothing on it runs anything.</li>
+<li><strong>A replay page</strong>, <a href="https://repolace.rounakkumarsingh.com/demo/" rel="noopener noreferrer">repolace.rounakkumarsingh.com/demo/</a>: the stages with their timings, the tests before and after, the model calls with their cost, the diff, and a short video made of screenshots of the real app for that run (taken after it finished; not a live screen recording). It is read-only and is built from the run's recorded data, so nothing on it runs anything.</li>
 </ul>
 <h2 id="how-it-was-made">How it was made<a class="headerlink" href="#how-it-was-made" title="Link to this section">#</a></h2>
 <ol>
@@ -71,7 +71,7 @@
 <li>The repository was registered with the local app through the GitHub App installation, and a worker was started.</li>
 <li>One task was started from the task page. This first run is the one the replay and the pull request above come from: nothing was re-run or chosen from several tries.</li>
 <li>The run's database rows were exported with <code>docs/tools/export_demo.py</code> into the page's data file. The export keeps counts, the diff and timings, and leaves out host paths, container names, error text, logins and test names.</li>
-<li>For the screen recording the same issue was run a second time, in a fresh headless browser at twice the pixel density, with the waiting part sped up sixteen times (the speed is written on screen). That second run passed too, but cost $0.83 over 25 model calls against $0.29 over 15, so the model's behaviour varies between runs. Its pull request was closed with a comment afterwards so the issue has one open pull request, and there was no third run.</li>
+<li>The same issue was run a second time, for a screen recording of the app that the page showed at first and that the screenshot video has since replaced. That second run passed too, but cost $0.83 over 25 model calls against $0.29 over 15, so the model's behaviour varies between runs. Its pull request was closed with a comment afterwards so the issue has one open pull request, and there was no third run.</li>
 </ol>
 <h2 id="what-it-shows-and-what-it-does-not">What it shows, and what it does not<a class="headerlink" href="#what-it-shows-and-what-it-does-not" title="Link to this section">#</a></h2>
 <p>It shows the whole path working once: a baseline test run (7 passed, 1 failed), an edit, a scored run (8 passed), a pull request with the agent's account of the change, and a recorded cost of about thirty cents.</p>

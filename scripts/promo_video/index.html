@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>repolace promo</title>
+<!--
+  The promo video's source. Every animation is a CSS animation with an absolute
+  delay, so the whole film is a pure function of time: render.mjs pauses them all
+  and sets currentTime frame by frame. Open this file with ?play to watch it live.
+
+  Every number on screen comes from the site's own data:
+    demo run 1    api/repolace_api/site/demo_site/data/demo.json
+    benchmark     api/repolace_api/site/data/results.json (sweep-4)
+  If those change, change the text here and re-render.
+-->
+<style>
+@font-face { font-family: "Fraunces"; src: url("../../api/repolace_api/site/benchmark_site/fonts/fraunces-latin-opsz-normal.woff2") format("woff2"); font-weight: 100 900; }
+@font-face { font-family: "Geist"; src: url("../../api/repolace_api/site/benchmark_site/fonts/geist-latin-wght-normal.woff2") format("woff2"); font-weight: 100 900; }
+@font-face { font-family: "Geist Mono"; src: url("../../api/repolace_api/site/benchmark_site/fonts/geist-mono-latin-wght-normal.woff2") format("woff2"); font-weight: 100 900; }
+
+:root {
+  --page: #0d0d0d; --surface: #1a1a19; --surface-2: #222220;
+  --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --border: rgba(240, 239, 236, 0.12); --wash: rgba(240, 239, 236, 0.05);
+  --accent: #3987e5; --accent-ink: #86b6ef;
+  --good: #4cc38a; --bad: #e8705f;
+  --serif: "Fraunces", Georgia, serif;
+  --sans: "Geist", system-ui, sans-serif;
+  --mono: "Geist Mono", ui-monospace, monospace;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--page); }
+body { color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+#stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+
+/* ---------- backdrop ---------- */
+.grid { position: absolute; inset: 0;
+  background-image: radial-gradient(rgba(240,239,236,0.10) 1.2px, transparent 1.2px);
+  background-size: 48px 48px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 70% at 50% 45%, #000 0%, transparent 100%); }
+.glow { position: absolute; left: 0; top: 0; width: 1500px; height: 1500px; margin: -750px;
+  background: radial-gradient(circle, rgba(57,135,229,0.20) 0%, rgba(57,135,229,0.06) 38%, transparent 68%);
+  animation: glow 43.5s linear both; }
+@keyframes glow {
+  0%    { transform: translate(960px, 560px) scale(0.9); }
+  6%    { transform: translate(960px, 540px) scale(1.05); animation-timing-function: cubic-bezier(0.65,0,0.35,1); }
+  17%   { transform: translate(1380px, 420px) scale(1); animation-timing-function: cubic-bezier(0.65,0,0.35,1); }
+  40%   { transform: translate(1320px, 640px) scale(1.1); animation-timing-function: cubic-bezier(0.65,0,0.35,1); }
+  65%   { transform: translate(1400px, 480px) scale(1); animation-timing-function: cubic-bezier(0.65,0,0.35,1); }
+  79%   { transform: translate(960px, 760px) scale(1.25); animation-timing-function: cubic-bezier(0.65,0,0.35,1); }
+  89%   { transform: translate(960px, 520px) scale(1.1); }
+  100%  { transform: translate(960px, 500px) scale(1.2); }
+}
+
+/* ---------- timeline primitives ---------- */
+.scene { position: absolute; inset: 0; opacity: 0;
+  animation: s-in 0.6s var(--ease) calc(var(--in) * 1s) both,
+             s-out 0.4s cubic-bezier(0.4, 0, 1, 1) calc((var(--out) - 0.15) * 1s) forwards; }
+@keyframes s-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes s-out { to { opacity: 0; transform: translateY(-22px) scale(0.988); filter: blur(5px); } }
+.cam { position: absolute; inset: 0; transform-origin: 50% 50%;
+  animation: cam calc((var(--out) - var(--in) + 0.6) * 1s) linear calc(var(--in) * 1s) both; }
+@keyframes cam { from { transform: scale(1); } to { transform: scale(1.028); } }
+
+.r { animation: rise 0.9s var(--ease) calc(var(--d) * 1s) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: none; } }
+.pop { animation: pop 0.7s var(--ease) calc(var(--d) * 1s) both; }
+@keyframes pop { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: none; } }
+.fade { animation: s-in 0.7s ease-out calc(var(--d) * 1s) both; }
+
+.w { display: inline-block; overflow: hidden; vertical-align: bottom; padding-bottom: 0.16em; margin-bottom: -0.16em; }
+.w > span { display: inline-block; animation: word 0.95s var(--ease) calc(var(--d) * 1s) both; }
+@keyframes word { from { transform: translateY(112%); } to { transform: none; } }
+
+/* ---------- type ---------- */
+.kicker { font-family: var(--mono); font-size: 24px; letter-spacing: 0.04em; color: var(--accent-ink); }
+.kicker b { color: var(--muted); font-weight: 400; margin-right: 14px; }
+h1, h2 { font-family: var(--serif); font-weight: 520; font-variation-settings: "opsz" 144; letter-spacing: -0.02em; line-height: 1.04; }
+h2 { font-size: 86px; }
+.sub { font-size: 31px; line-height: 1.42; color: var(--ink-2); font-weight: 380; }
+.note { font-size: 23px; line-height: 1.45; color: var(--muted); }
+code, .mono { font-family: var(--mono); }
+
+/* ---------- two-column step scenes ---------- */
+.left { position: absolute; left: 120px; top: 236px; width: 690px; }
+.left .kicker { margin-bottom: 34px; }
+.left .sub { margin-top: 40px; }
+.right { position: absolute; left: 880px; top: 150px; width: 920px; }
+.card { background: linear-gradient(180deg, var(--surface-2), var(--surface)); border: 1px solid var(--border); border-radius: 22px;
+  box-shadow: 0 40px 90px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.05) inset; overflow: hidden; }
+.card-head { display: flex; align-items: center; gap: 16px; padding: 22px 30px; border-bottom: 1px solid var(--border);
+  font-family: var(--mono); font-size: 22px; color: var(--ink-2); }
+.card-head .sp { flex: 1; }
+.pill { font-family: var(--mono); font-size: 20px; padding: 6px 16px; border-radius: 999px; border: 1px solid var(--border); color: var(--ink-2); white-space: nowrap; }
+.pill.good { color: var(--good); border-color: rgba(76,195,138,0.45); background: rgba(76,195,138,0.10); }
+.pill.accent { color: var(--accent-ink); border-color: rgba(57,135,229,0.5); background: rgba(57,135,229,0.12); }
+
+/* stepper */
+.stepper { position: absolute; left: 120px; right: 120px; bottom: 76px; display: flex; gap: 22px; }
+.step { flex: 1; font-family: var(--mono); font-size: 20px; color: var(--muted);
+  animation: step-on 0.4s ease-out calc(var(--a) * 1s) both, step-off 0.5s ease-out calc(var(--z) * 1s) forwards; }
+@keyframes step-on { from { color: #6b6964; } to { color: var(--ink); } }
+@keyframes step-off { to { color: var(--muted); } }
+.step .bar { display: block; height: 3px; border-radius: 3px; background: rgba(240,239,236,0.13); margin-bottom: 16px; overflow: hidden; }
+.step .bar i { display: block; height: 100%; background: var(--accent); transform-origin: 0 50%;
+  animation: bar calc((var(--z) - var(--a)) * 1s) linear calc(var(--a) * 1s) both; }
+@keyframes bar { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* ---------- scene 0 / end: wordmark ---------- */
+.center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.mark { font-family: var(--serif); font-weight: 560; font-variation-settings: "opsz" 72; letter-spacing: -0.025em; font-size: 190px; line-height: 1; }
+.mark .ch { display: inline-block; animation: ch 1.2s var(--ease) calc(var(--d) * 1s) both; }
+@keyframes ch { from { opacity: 0; transform: translateY(46px); filter: blur(14px); } to { opacity: 1; transform: none; filter: blur(0); } }
+.rule { width: 420px; height: 3px; background: var(--accent); border-radius: 3px; margin-top: 44px; transform-origin: 50% 50%;
+  animation: rule 1.1s var(--ease) calc(var(--d) * 1s) both; }
+@keyframes rule { from { transform: scaleX(0); opacity: 0; } to { transform: scaleX(1); opacity: 1; } }
+
+/* ---------- scene 1: issue ---------- */
+.issue-body { padding: 34px 38px 40px; }
+.issue-title { font-size: 40px; font-weight: 560; line-height: 1.22; letter-spacing: -0.012em; }
+.issue-title code { font-size: 0.88em; background: var(--wash); border: 1px solid var(--border); border-radius: 8px; padding: 1px 10px; }
+.issue-p { font-size: 25px; line-height: 1.5; color: var(--ink-2); margin-top: 24px; }
+.issue-p code { color: var(--ink); font-size: 0.92em; }
+.codeblock { margin-top: 26px; background: #111110; border: 1px solid var(--border); border-radius: 14px; padding: 24px 28px;
+  font-family: var(--mono); font-size: 22px; line-height: 1.7; white-space: pre; color: var(--ink-2); }
+.codeblock .c { color: var(--muted); } .codeblock .bad { color: var(--bad); } .codeblock .good { color: var(--good); }
+
+/* ---------- scene 2: retrieve ---------- */
+.chunks { padding: 26px 30px 30px; position: relative; }
+.chunk { display: flex; align-items: center; gap: 18px; height: 52px; margin-bottom: 10px; padding: 0 18px; border-radius: 12px;
+  border: 1px solid transparent; font-family: var(--mono); font-size: 19px; color: var(--muted); }
+.chunk .kind { width: 104px; }
+.chunk .ln { height: 10px; border-radius: 6px; background: rgba(240,239,236,0.13); }
+.chunk .sp { flex: 1; }
+.chunk .tag { opacity: 0; color: var(--accent-ink); }
+.chunk.hit { animation: hit 0.7s var(--ease) calc(var(--d) * 1s) both; }
+.chunk.hit .ln { animation: hit-ln 0.7s var(--ease) calc(var(--d) * 1s) both; }
+.chunk.hit .tag { animation: s-in 0.5s ease-out calc(var(--d) * 1s + 0.15s) both; }
+.chunk.miss { animation: miss 0.9s ease-out calc(var(--d) * 1s) both; }
+@keyframes hit { from { border-color: transparent; background: transparent; } to { border-color: rgba(57,135,229,0.55); background: rgba(57,135,229,0.12); } }
+@keyframes hit-ln { from { background: rgba(240,239,236,0.13); } to { background: rgba(134,182,239,0.75); } }
+@keyframes miss { from { opacity: 1; } to { opacity: 0.38; } }
+.scan { position: absolute; left: 0; right: 0; top: 0; height: 130px; pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(57,135,229,0.20) 85%, rgba(134,182,239,0.9) 99%, transparent);
+  animation: scan 1.7s cubic-bezier(0.45, 0, 0.55, 1) calc(var(--d) * 1s) both; }
+@keyframes scan { 0% { transform: translateY(-130px); opacity: 0; } 8% { opacity: 1; } 92% { opacity: 1; } 100% { transform: translateY(600px); opacity: 0; } }
+
+/* ---------- scene 3: diff ---------- */
+.diff { padding: 16px 0 20px; font-family: var(--mono); font-size: 20.5px; line-height: 31px; }
+.dl { display: flex; white-space: pre; padding: 0 30px 0 0; }
+.dl .g { width: 62px; text-align: center; color: var(--muted); flex: none; }
+.dl.ctx { color: var(--muted); }
+.dl.del { background: rgba(232,112,95,0.13); color: #f0a79c; animation: del 0.7s ease-out calc(var(--d) * 1s) both; }
+.dl.del .g { color: var(--bad); }
+@keyframes del { from { background: transparent; color: var(--ink-2); } to { background: rgba(232,112,95,0.13); color: #f0a79c; } }
+.dl.del .t { background: linear-gradient(currentColor, currentColor) 0 54% / 0% 1.5px no-repeat; animation: strike 0.6s var(--ease) calc(var(--d) * 1s + 0.35s) both; }
+@keyframes strike { from { background-size: 0% 1.5px; } to { background-size: 100% 1.5px; } }
+.dl.add { background: rgba(76,195,138,0.11); color: var(--ink); animation: add 0.55s var(--ease) calc(var(--d) * 1s) both; }
+.dl.add .g { color: var(--good); }
+@keyframes add { from { opacity: 0; clip-path: inset(0 100% 0 0); transform: translateX(-10px); } to { opacity: 1; clip-path: inset(0 0 0 0); transform: none; } }
+.k { color: #b7a6f2; } .s { color: #e3c07a; }
+
+/* ---------- scene 4: verify ---------- */
+.sandbox { border: 2px dashed rgba(240,239,236,0.26); border-radius: 26px; padding: 40px 32px 34px; background: rgba(13,13,13,0.55); position: relative; }
+.sandbox-label { position: absolute; top: -18px; left: 34px; background: var(--page); padding: 0 16px; font-family: var(--mono); font-size: 22px; color: var(--ink-2); }
+.chips { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 34px; }
+.run { display: flex; align-items: center; gap: 24px; padding: 28px 24px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border); margin-bottom: 18px; }
+.run .lbl { width: 184px; flex: none; white-space: nowrap; font-size: 24px; color: var(--ink-2); }
+.dots { display: flex; gap: 10px; flex: 1; }
+.dot { width: 26px; height: 26px; border-radius: 50%; background: var(--good); }
+.dot.bad { background: var(--bad); box-shadow: 0 0 0 7px rgba(232,112,95,0.18); }
+.run .res { font-family: var(--mono); font-size: 21px; color: var(--ink); white-space: nowrap; }
+.run .res em { font-style: normal; color: var(--bad); }
+.run .res strong { font-weight: 500; color: var(--good); }
+.verdict { display: flex; align-items: center; gap: 20px; margin-top: 30px; font-size: 30px; }
+.tick { width: 46px; height: 46px; border-radius: 50%; background: var(--good); display: grid; place-items: center; flex: none; }
+.tick svg { width: 26px; height: 26px; }
+.tick path { fill: none; stroke: #0d0d0d; stroke-width: 3.4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 30; animation: draw 0.5s ease-out calc(var(--d) * 1s + 0.25s) both; }
+@keyframes draw { from { stroke-dashoffset: 30; } to { stroke-dashoffset: 0; } }
+.verdict .mono { color: var(--muted); font-size: 23px; }
+
+/* ---------- scene 5: pull request ---------- */
+.pr-body { padding: 36px 38px 38px; }
+.pr-title { font-size: 42px; font-weight: 560; letter-spacing: -0.012em; }
+.pr-for { font-size: 25px; color: var(--ink-2); margin-top: 14px; line-height: 1.45; }
+.pr-for code { font-size: 0.9em; color: var(--ink); }
+.stats3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 36px; }
+.stat { background: #121211; border: 1px solid var(--border); border-radius: 16px; padding: 26px 26px 24px; }
+.stat .v { font-family: var(--serif); font-variation-settings: "opsz" 144; font-weight: 500; font-size: 62px; letter-spacing: -0.02em; line-height: 1; font-feature-settings: "tnum"; }
+.stat .l { font-size: 22px; color: var(--muted); margin-top: 14px; }
+.right .note { margin-top: 28px; padding-left: 4px; }
+
+/* ---------- scene 6: benchmark ---------- */
+.wide { position: absolute; left: 120px; right: 120px; top: 196px; }
+.wide h2 { margin-top: 30px; font-size: 96px; }
+.big3 { display: grid; grid-template-columns: 1.25fr 1fr 1fr; gap: 26px; margin-top: 70px; }
+.big { border-top: 2px solid var(--border); padding-top: 34px; }
+.big .v { font-family: var(--serif); font-variation-settings: "opsz" 144; font-weight: 480; font-size: 150px; letter-spacing: -0.035em; line-height: 0.95; font-feature-settings: "tnum"; }
+.big .v small { font-size: 0.48em; letter-spacing: -0.01em; margin-left: 6px; color: var(--ink-2); }
+.big .l { font-size: 28px; color: var(--ink-2); margin-top: 26px; line-height: 1.35; }
+.big .m { font-family: var(--mono); font-size: 21px; color: var(--muted); margin-top: 12px; }
+.wide .note { margin-top: 56px; max-width: 1500px; font-size: 24px; }
+
+/* ---------- scene 7: say no ---------- */
+.four { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 70px; }
+.pt { display: flex; align-items: center; gap: 28px; padding: 48px 44px; border-radius: 22px; background: linear-gradient(180deg, var(--surface-2), var(--surface)); border: 1px solid var(--border);
+  font-size: 34px; font-weight: 480; letter-spacing: -0.01em; white-space: nowrap; }
+.pt .n { font-family: var(--mono); font-size: 22px; color: var(--accent-ink); width: 40px; flex: none; }
+
+/* ---------- scene 8: end ---------- */
+.end h1 { font-size: 104px; margin-top: 0; }
+.end h1 .l2 { color: var(--accent-ink); }
+.end .mark { font-size: 76px; display: flex; align-items: center; gap: 22px; margin-bottom: 70px; }
+.end .mark img { width: 76px; height: 76px; }
+.cta { margin-top: 76px; display: flex; align-items: center; gap: 26px; }
+.btn { background: var(--ink); color: #0d0d0d; font-size: 30px; font-weight: 560; padding: 22px 40px; border-radius: 999px; }
+.url { font-family: var(--mono); font-size: 28px; color: var(--ink-2); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="grid"></div>
+  <div class="glow"></div>
+
+  <!-- 0: wordmark -->
+  <section class="scene" style="--in:0; --out:2.5">
+    <div class="cam center">
+      <div class="mark" data-chars data-d="0.25">repolace</div>
+      <div class="rule" style="--d:0.95"></div>
+    </div>
+  </section>
+
+  <!-- 1: the issue -->
+  <section class="scene" style="--in:2.65; --out:7.4">
+    <div class="cam">
+      <div class="left">
+        <div class="kicker r" style="--d:2.75"><b>01</b>Pick an issue</div>
+        <h2 data-words data-d="2.9">Hand it a GitHub issue.</h2>
+        <p class="sub r" style="--d:3.5">Register a repository, choose an open issue and a target branch. That is the whole brief.</p>
+      </div>
+      <div class="right r" style="--d:3.25; top:206px">
+        <div class="card">
+          <div class="card-head"><span>repolace/demo-config-parser</span><span class="sp"></span><span class="pill good">Open</span><span>#1</span></div>
+          <div class="issue-body">
+            <div class="issue-title r" style="--d:3.6">A <code>#</code> inside a quoted value cuts the value off</div>
+            <p class="issue-p r" style="--d:3.85"><code>parse_line</code> treats everything after the first <code>#</code> as a comment, even inside quotes.</p>
+            <div class="codeblock r" style="--d:4.15">parse_line(<span class="s">'url = "http://example.com/docs#intro"'</span>)
+<span class="c"># got:      </span><span class="bad">('url', '"http://example.com/docs')</span>
+<span class="c"># expected: </span><span class="good">('url', 'http://example.com/docs#intro')</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2: retrieve -->
+  <section class="scene" style="--in:7.55; --out:11.5">
+    <div class="cam">
+      <div class="left">
+        <div class="kicker r" style="--d:7.65"><b>02</b>Retrieve</div>
+        <h2 data-words data-d="7.8">It reads your repository.</h2>
+        <p class="sub r" style="--d:8.4">The code is indexed as functions and classes. Only the pieces that matter for this issue reach the model.</p>
+      </div>
+      <div class="right r" style="--d:8.0; top:232px">
+        <div class="card">
+          <div class="card-head"><span>repository index</span><span class="sp"></span><span class="pill accent fade" style="--d:10.2">3 retrieved</span></div>
+          <div class="chunks" id="chunks"><div class="scan" style="--d:8.55"></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3: plan and edit -->
+  <section class="scene" style="--in:11.65; --out:17.6">
+    <div class="cam">
+      <div class="left">
+        <div class="kicker r" style="--d:11.75"><b>03</b>Plan and edit</div>
+        <h2 data-words data-d="11.9">It plans a fix and writes the diff.</h2>
+        <p class="sub r" style="--d:12.6">This is the patch the agent wrote for the issue, unedited.</p>
+      </div>
+      <div class="right r" style="--d:12.0; top:118px">
+        <div class="card">
+          <div class="card-head"><span>src/parser.py</span><span class="sp"></span><span style="color:var(--good)">+16</span><span style="color:var(--bad)">&minus;1</span></div>
+          <div class="diff" id="diff"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4: verify -->
+  <section class="scene" style="--in:17.75; --out:23.5">
+    <div class="cam">
+      <div class="left">
+        <div class="kicker r" style="--d:17.85"><b>04</b>Verify</div>
+        <h2 data-words data-d="18.0">Your own tests decide.</h2>
+        <p class="sub r" style="--d:18.6">The suite runs once before the edit and once after, inside a locked-down sandbox. Generated code never runs on the host.</p>
+      </div>
+      <div class="right r" style="--d:18.2; top:226px">
+        <div class="sandbox">
+          <div class="sandbox-label">sandbox</div>
+          <div class="chips">
+            <span class="pill r" style="--d:18.6">rootless container</span>
+            <span class="pill r" style="--d:18.72">cpu, memory and pid caps</span>
+            <span class="pill r" style="--d:18.84">source exported without .git</span>
+          </div>
+          <div class="run r" style="--d:19.0">
+            <div class="lbl">Before the edit</div>
+            <div class="dots" data-dots="7,1" data-d="19.3"></div>
+            <div class="res fade" style="--d:20.0">7 passed &middot; <em>1 failed</em></div>
+          </div>
+          <div class="run r" style="--d:20.4">
+            <div class="lbl">After the edit</div>
+            <div class="dots" data-dots="8,0" data-d="20.7"></div>
+            <div class="res fade" style="--d:21.4"><strong>8 passed</strong> &middot; 0 failed</div>
+          </div>
+          <div class="verdict r" style="--d:21.75">
+            <span class="tick" style="--d:21.75"><svg viewBox="0 0 26 26"><path d="M6 13.5l4.6 4.6L20 8.6"/></svg></span>
+            <span>The failing test now passes. Nothing else broke.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5: pull request -->
+  <section class="scene" style="--in:23.65; --out:28.9">
+    <div class="cam">
+      <div class="left">
+        <div class="kicker r" style="--d:23.75"><b>05</b>Open the PR</div>
+        <h2 data-words data-d="23.9">Get back a tested pull request.</h2>
+        <p class="sub r" style="--d:24.6">You review it like any other. You decide what merges.</p>
+      </div>
+      <div class="right r" style="--d:24.1; top:226px">
+        <div class="card">
+          <div class="card-head"><span>repolace/demo-config-parser</span><span class="sp"></span><span class="pill good">Open</span></div>
+          <div class="pr-body">
+            <div class="pr-title r" style="--d:24.4">Pull request #2</div>
+            <p class="pr-for r" style="--d:24.6">For issue #1: A <code>#</code> inside a quoted value cuts the value off</p>
+            <div class="stats3">
+              <div class="stat r" style="--d:24.9"><div class="v">$0.29</div><div class="l">model cost</div></div>
+              <div class="stat r" style="--d:25.05"><div class="v">15</div><div class="l">model calls</div></div>
+              <div class="stat r" style="--d:25.2"><div class="v">4:05</div><div class="l">minutes, start to PR</div></div>
+            </div>
+          </div>
+        </div>
+        <p class="note r" style="--d:26.0">One real run on a small demo repository. It is not a success rate.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- stepper, across scenes 1 to 5 -->
+  <div class="scene" style="--in:2.9; --out:28.9">
+    <div class="stepper">
+      <div class="step" style="--a:2.9; --z:7.55"><span class="bar"><i></i></span>Pick an issue</div>
+      <div class="step" style="--a:7.55; --z:11.65"><span class="bar"><i></i></span>Retrieve</div>
+      <div class="step" style="--a:11.65; --z:17.75"><span class="bar"><i></i></span>Plan and edit</div>
+      <div class="step" style="--a:17.75; --z:23.65"><span class="bar"><i></i></span>Verify</div>
+      <div class="step" style="--a:23.65; --z:28.9"><span class="bar"><i></i></span>Open the PR</div>
+    </div>
+  </div>
+
+  <!-- 6: benchmark -->
+  <section class="scene" style="--in:29.05; --out:35.2">
+    <div class="cam">
+      <div class="wide">
+        <div class="kicker r" style="--d:29.15">The benchmark</div>
+        <h2 data-words data-d="29.3">Measured, not promised.</h2>
+        <div class="big3">
+          <div class="big r" style="--d:30.0">
+            <div class="v"><span>53.7</span><small>%</small></div>
+            <div class="l">of runs passed the project's own tests</div>
+            <div class="m">29 of 54 runs &middot; 95% interval 35 to 72%</div>
+          </div>
+          <div class="big r" style="--d:30.2">
+            <div class="v">$0.75</div>
+            <div class="l">average model cost per task</div>
+          </div>
+          <div class="big r" style="--d:30.4">
+            <div class="v"><span>18</span><small>min</small></div>
+            <div class="l">median time, start to finish</div>
+          </div>
+        </div>
+        <p class="note r" style="--d:31.3">18 real issues from SWE-bench Verified, three runs each. 12 runs lost to a provider rate limit are counted as failures. A first measurement, not a score.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7: say no -->
+  <section class="scene" style="--in:35.35; --out:39.9">
+    <div class="cam">
+      <div class="wide" style="top:262px">
+        <h2 data-words data-d="35.5">Built so you can say no.</h2>
+        <div class="four">
+          <div class="pt r" style="--d:36.1"><span class="n">01</span>Your tests are the judge</div>
+          <div class="pt r" style="--d:36.3"><span class="n">02</span>Generated code never runs on the host</div>
+          <div class="pt r" style="--d:36.5"><span class="n">03</span>A hard spend cap per task</div>
+          <div class="pt r" style="--d:36.7"><span class="n">04</span>You decide what merges</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8: end card -->
+  <section class="scene end" style="--in:40.05; --out:43.1">
+    <div class="cam center">
+      <div class="mark r" style="--d:40.15"><img src="../../api/repolace_api/site/static/favicon.svg" alt="">repolace</div>
+      <h1><span data-words data-d="40.35">Hand it a GitHub issue.</span><br><span class="l2" data-words data-d="40.75">Get back a tested pull request.</span></h1>
+      <div class="cta r" style="--d:41.4"><span class="btn">Join the waitlist</span><span class="url">repolace.rounakkumarsingh.com</span></div>
+    </div>
+  </section>
+</div>
+
+<script>
+const DURATION = 43.5;
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+
+// Headlines: one masked span per word, staggered.
+for (const h of $$('[data-words]')) {
+  const d0 = +h.dataset.d; const words = h.textContent.trim().split(/\s+/); h.textContent = '';
+  words.forEach((w, i) => { const o = el('span', 'w'); const s = el('span', null, w); s.style.setProperty('--d', (d0 + i * 0.075).toFixed(3)); o.append(s); h.append(o, ' '); });
+}
+for (const h of $$('[data-chars]')) {
+  const d0 = +h.dataset.d; const t = h.textContent; h.textContent = '';
+  [...t].forEach((c, i) => { const s = el('span', 'ch', c); s.style.setProperty('--d', (d0 + i * 0.055).toFixed(3)); h.append(s); });
+}
+
+// Scene 2: a schematic index. Rows are anonymous on purpose; three get retrieved.
+{
+  const kinds = ['module', 'function', 'function', 'class', 'method', 'function', 'method', 'function'];
+  const widths = [[210, 120], [300, 90], [250, 170], [180, 140], [330, 80], [230, 150], [280, 110], [200, 190]];
+  const hits = new Map([[1, 9.75], [2, 9.9], [5, 10.05]]);
+  const box = document.getElementById('chunks');
+  kinds.forEach((k, i) => {
+    const row = el('div', 'chunk ' + (hits.has(i) ? 'hit' : 'miss'));
+    row.style.setProperty('--d', hits.has(i) ? hits.get(i) : 9.8);
+    row.append(el('span', 'kind', k));
+    for (const w of widths[i]) { const l = el('span', 'ln'); l.style.width = w + 'px'; row.append(l); }
+    row.append(el('span', 'sp'), el('span', 'tag', 'retrieved'));
+    box.append(row);
+  });
+}
+
+// Scene 3: the diff from demo.json, verbatim.
+{
+  const lines = [
+    [' ', ''],
+    [' ', 'def _strip_inline_comment(value):'],
+    ['-', '    return value.split("#", 1)[0].strip()'],
+    ['+', '    in_quote = False'],
+    ['+', '    quote_char = None'],
+    ['+', '    '],
+    ['+', '    for i, char in enumerate(value):'],
+    ['+', '        if char in (\'"\', "\'"):'],
+    ['+', '            if not in_quote:'],
+    ['+', '                in_quote = True'],
+    ['+', '                quote_char = char'],
+    ['+', '            elif quote_char == char:'],
+    ['+', '                in_quote = False'],
+    ['+', '                quote_char = None'],
+    ['+', '        elif char == \'#\':'],
+    ['+', '            if not in_quote:'],
+    ['+', '                if i == 0 or value[i-1].isspace():'],
+    ['+', '                    return value[:i].strip()'],
+    ['+', '    return value.strip()'],
+    [' ', ''],
+  ];
+  const kw = /\b(def|return|for|in|if|elif|not|or|None|True|False)\b/g;
+  const paint = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/("[^"]*"|'[^']*')/g, '\u0001$1\u0002')
+    .replace(kw, (m, _k, off, str) => (str.lastIndexOf('\u0001', off) > str.lastIndexOf('\u0002', off) ? m : `<span class="k">${m}</span>`))
+    .replace(/\u0001/g, '<span class="s">').replace(/\u0002/g, '</span>');
+  const box = document.getElementById('diff'); let n = 0;
+  for (const [g, t] of lines) {
+    const row = el('div', 'dl ' + (g === '+' ? 'add' : g === '-' ? 'del' : 'ctx'));
+    if (g === '-') row.style.setProperty('--d', 12.9);
+    if (g === '+') row.style.setProperty('--d', (13.75 + n++ * 0.17).toFixed(3));
+    const tx = el('span', 't'); tx.innerHTML = paint(t) || ' ';
+    row.append(el('span', 'g', g === ' ' ? '' : g === '-' ? '−' : '+'), tx);
+    box.append(row);
+  }
+}
+
+// Scene 4: one dot per test.
+for (const d of $$('[data-dots]')) {
+  const [ok, bad] = d.dataset.dots.split(',').map(Number); const d0 = +d.dataset.d;
+  for (let i = 0; i < ok + bad; i++) {
+    const failing = bad && i === 5;                     // which test failed is not the point; one did
+    const dot = el('span', 'dot pop' + (failing ? ' bad' : ''));
+    dot.style.setProperty('--d', (d0 + i * 0.075).toFixed(3)); d.append(dot);
+  }
+}
+
+let anims = [];
+// One corner pixel flips between two near-identical blacks on every seek: headless
+// Chromium only answers a screenshot when something was repainted, and a fully
+// faded-out frame repaints nothing.
+const nudge = el('div'); nudge.style.cssText = 'position:absolute;right:0;bottom:0;width:1px;height:1px'; document.getElementById('stage').append(nudge);
+let flip = 0;
+window.seek = (t) => { for (const a of anims) a.currentTime = t * 1000; nudge.style.background = (flip ^= 1) ? '#0d0d0d' : '#0d0d0e'; return t; };
+window.DURATION = DURATION;
+document.fonts.ready.then(async () => {
+  // Wait for load, not decode(): decode() never settles in a tab that is not in front, and the renderer opens several.
+  await Promise.all($$('img').map((i) => i.complete || new Promise((r) => { i.onload = i.onerror = r; })));
+  anims = document.getAnimations();
+  if (new URLSearchParams(location.search).has('play')) {
+    setTimeout(() => location.reload(), DURATION * 1000);
+  } else {
+    for (const a of anims) a.pause();
+    window.seek(0);
+  }
+  window.__ready = true;
+});
+</script>
+</body>
+</html>

@@ -18,8 +18,8 @@ SITE = ROOT / "api" / "repolace_api" / "site"
 DEMO = SITE / "demo_site"
 DATA = DEMO / "data" / "demo.json"
 SCHEMA = DEMO / "data" / "demo.schema.json"
-VIDEO = DEMO / "clips" / "demo-walkthrough.mp4"
-POSTER = DEMO / "clips" / "demo-walkthrough-poster.jpg"
+VIDEO = DEMO / "clips" / "demo-run.mp4"
+POSTER = DEMO / "clips" / "demo-run-poster.jpg"
 TASK_ID = "4f381d8e-ef4f-4ba4-be31-1c513f9d2e3b"
 
 pytestmark = pytest.mark.anyio
@@ -44,8 +44,8 @@ async def test_demo_page_data_and_clips_are_served():
         page = await c.get("/demo/")
         data = await c.get("/demo/data/demo.json")
         schema = await c.get("/demo/data/demo.schema.json")
-        video = await c.get("/demo/clips/demo-walkthrough.mp4")
-        poster = await c.get("/demo/clips/demo-walkthrough-poster.jpg")
+        video = await c.get("/demo/clips/demo-run.mp4")
+        poster = await c.get("/demo/clips/demo-run-poster.jpg")
         docs = await c.get("/docs")
     assert redirect.status_code in (301, 302, 307, 308) and redirect.headers["location"].endswith("/demo/")
     assert page.status_code == 200 and "text/html" in page.headers["content-type"]
@@ -67,7 +67,8 @@ def test_page_structure_and_disclosure():
         "29 of 54 on 18 real SWE-bench Verified issues",
         "the first attempt at this issue",
         "nothing was re-run or picked from several tries",
-        "it is a second run of the same issue",
+        "it is not a live screen recording",
+        "After that first attempt the issue was run a second time",
         "there was no third run",
         'the repository had no failing test for this issue',
         "That sentence is wrong for this run",
@@ -110,7 +111,7 @@ def test_clips_have_dimensions_lazy_loading_and_alt_text():
     videos = re.findall(r"<video\b[^>]*>", html)
     # Autoplay-on-view without native controls: muted and playsinline are what browsers require to play without a click,
     # preload="none" keeps the file from downloading until it scrolls into view (walkthrough.js starts it).
-    assert len(videos) == 1 and 'poster="clips/demo-walkthrough-poster.jpg"' in videos[0]
+    assert len(videos) == 1 and 'poster="clips/demo-run-poster.jpg"' in videos[0]
     for needed in ("muted", "loop", "playsinline", 'preload="none"'):
         assert needed in videos[0], needed
     assert "controls" not in videos[0]
@@ -118,14 +119,14 @@ def test_clips_have_dimensions_lazy_loading_and_alt_text():
     js_walk = (DEMO / "js" / "walkthrough.js").read_text()
     assert "prefers-reduced-motion" in js_walk and "IntersectionObserver" in js_walk and ".play()" in js_walk
     assert re.search(r'\swidth="\d+"', videos[0]) and re.search(r'\sheight="\d+"', videos[0])
-    assert 'src="clips/demo-walkthrough.mp4"' in html
+    assert 'src="clips/demo-run.mp4"' in html
     assert "<img" not in html
     assert html.count('<li>') >= 7  # the transcript: the video is not the only way to read the steps
 
 
 def test_walkthrough_sizes_are_capped():
     assert VIDEO.stat().st_size < 4 * 1024 * 1024 and POSTER.stat().st_size < 200 * 1024, (VIDEO.stat().st_size, POSTER.stat().st_size)
-    assert sorted(p.name for p in (DEMO / "clips").iterdir()) == ["demo-walkthrough-poster.jpg", "demo-walkthrough.mp4"]
+    assert sorted(p.name for p in (DEMO / "clips").iterdir()) == ["demo-run-poster.jpg", "demo-run.mp4"]
 
 
 def test_data_matches_its_schema():
