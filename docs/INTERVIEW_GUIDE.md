@@ -1007,7 +1007,7 @@ uv run --all-packages repolace-eval report  --run sweep-1 --gold-run gold-3 --go
   Uncommitted.
 - **Wait for Pro, then run:** `scripts/wait_for_pro_then_run.sh <run-id> <max-usd>` probes Vertex Pro, needs 3 successes
   in a row 60 s apart (sleeps 10 minutes after a failure), then `exec`s one runner with `-k 1 --no-pr`.
-  `scripts/wait_for_pro_then_run_roles.sh <checkout_dir> <run-id> <max-usd> [runners=3]` does the same from another checkout (the roles worktree) and starts that many runners. Both uncommitted.
+  `scripts/wait_for_pro_then_run_roles.sh <checkout_dir> <run-id> <max-usd> [runners=3]` does the same from another checkout (the roles worktree) and starts that many runners.
 - **Two or three runners on one run id are safe:** the claim is conditional, so a runner that loses a row exits 3 quietly.
 - **Settle dead rows:** `repolace-eval run --mark-abandoned` marks stale `running` rows `runner: abandoned`.
 - **Re-run lost rows:** `repolace-eval enqueue --eval-run-id <new> --rows 'inst#idx,...' ...` (new run id every time).

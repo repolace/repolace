@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sweep progress</title>
+<style>
+:root{--bg:#f6f6f4;--panel:#fff;--fg:#1c1d1f;--mut:#6b6f76;--line:#e1e2e0;--ok:#1a7f4b;--bad:#c0392b;--run:#b7791f}
+@media (prefers-color-scheme:dark){:root{--bg:#141517;--panel:#1c1e21;--fg:#e8e9ea;--mut:#9a9ea5;--line:#2c2f33;--ok:#4cc38a;--bad:#ef6f61;--run:#e3b04b}}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,sans-serif;padding:20px max(16px,env(safe-area-inset-left))}
+main{max-width:70rem;margin:0 auto;display:grid;gap:14px}
+h1{font-size:22px;margin:0;font-weight:500}
+.mut{color:var(--mut);font-size:12px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
+.tile,.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.tile b{display:block;font-size:24px;font-weight:500;font-variant-numeric:tabular-nums}
+.bar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--line)}
+.bar i{display:block;transition:width .4s}
+.wrap{overflow:auto;max-height:60vh}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:5px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{position:sticky;top:0;background:var(--panel);color:var(--mut);font-weight:500}
+.n{text-align:right}.running{color:var(--run)}.queued{color:var(--mut)}.passed{color:var(--ok)}.failed,.interrupted{color:var(--bad)}
+</style></head><body><main>
+<div><h1 id="title">Sweep</h1><div class="mut" id="sub">loading…</div></div>
+<div class="tiles">
+<div class="tile"><span class="mut">Passed</span><b id="t-pass">–</b></div>
+<div class="tile"><span class="mut">Finished</span><b id="t-done">–</b></div>
+<div class="tile"><span class="mut">Running</span><b id="t-run">–</b></div>
+<div class="tile"><span class="mut">Queued</span><b id="t-q">–</b></div>
+<div class="tile"><span class="mut">Spent</span><b id="t-cost">–</b></div>
+<div class="tile"><span class="mut">RAM free</span><b id="t-ram">–</b></div>
+</div>
+<div class="card"><div class="bar" id="bar"></div><div class="mut" id="eta" style="margin-top:6px"></div></div>
+<div class="card"><div class="wrap"><table><thead><tr>
+<th>Instance</th><th class="n">Run</th><th>Status</th><th>Stage</th><th>Outcome</th><th>Stop</th><th class="n">Calls</th><th class="n">Cost</th><th class="n">Elapsed</th>
+</tr></thead><tbody id="rows"></tbody></table></div></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const dur=s=>s>=3600?Math.floor(s/3600)+'h '+Math.floor(s%3600/60)+'m':s>=60?Math.floor(s/60)+'m '+(s%60)+'s':s+'s';
+async function tick(){
+  let d;
+  try{d=await (await fetch('api',{cache:'no-store'})).json();}catch(e){$('sub').textContent='server unreachable';return;}
+  if(d.error){$('sub').textContent='query failed: '+d.error;return;}
+  const T=d.tasks,now=Math.floor(Date.now()/1000);
+  const fin=T.filter(t=>t.status!=='queued'&&t.status!=='running'),run=T.filter(t=>t.status==='running'),q=T.filter(t=>t.status==='queued');
+  const pass=T.filter(t=>t.outcome==='passed').length,cost=T.reduce((s,t)=>s+t.cost,0);
+  $('title').textContent=d.run;document.title=d.run+' '+fin.length+'/'+T.length;
+  $('sub').textContent='data fetched '+new Date(d.fetched*1000).toLocaleTimeString()+' ('+(now-d.fetched)+' s ago) · server refreshes every 15 s'+(d.stale_error?' · LAST REFRESH FAILED: '+d.stale_error:'');
+  $('t-pass').textContent=pass;$('t-done').textContent=fin.length+' / '+T.length;$('t-run').textContent=run.length;$('t-q').textContent=q.length;
+  $('t-cost').textContent='$'+cost.toFixed(2);$('t-ram').textContent=d.mem.avail_gb+' GB';
+  const w=n=>(100*n/T.length)+'%';
+  $('bar').innerHTML='<i style="width:'+w(pass)+';background:var(--ok)"></i><i style="width:'+w(fin.length-pass)+';background:var(--bad)"></i><i style="width:'+w(run.length)+';background:var(--run)"></i>';
+  const dt=fin.filter(t=>t.started&&t.completed).map(t=>t.completed-t.started);
+  if(dt.length&&q.length+run.length){const avg=dt.reduce((a,b)=>a+b)/dt.length;$('eta').textContent='avg task '+dur(Math.round(avg))+' · rough time left '+dur(Math.round(avg*(q.length+run.length)/Math.max(1,run.length)));}
+  else $('eta').textContent=dt.length?'':'no task has finished yet';
+  const order={running:0,queued:2};
+  const rows=[...T].sort((a,b)=>(order[a.status]??1)-(order[b.status]??1));
+  $('rows').innerHTML=rows.map(t=>{
+    const el=t.started?dur((t.completed||now)-t.started):'';
+    const oc=t.outcome||'';
+    const st=t.stage?t.stage+(t.status==='running'&&t.stage_started?' ('+dur(now-t.stage_started)+')':''):'';
+    return '<tr><td>'+esc(t.instance)+'</td><td class="n">'+t.run+'</td><td class="'+esc(t.status)+'">'+esc(t.status)+'</td><td class="'+(t.stage_status==='failed'?'failed':'')+'">'+esc(st)+'</td><td class="'+(oc==='passed'?'passed':oc?'failed':'')+'">'+esc(oc)+'</td><td>'+esc(t.stop)+'</td><td class="n">'+t.calls+'</td><td class="n">'+(t.cost?'$'+t.cost.toFixed(2):'')+'</td><td class="n">'+el+'</td></tr>';
+  }).join('');
+}
+tick();setInterval(tick,5000);
+</script></body></html>
