@@ -1,0 +1,40 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>repolace benchmark: visual report</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1c2430;--mut:#5b6675;--line:#e4e8ee;--acc:#2f6fdb;--good:#1a9a6a;--bad:#c2415d}
+@media(prefers-color-scheme:dark){:root{--bg:#0d1218;--card:#151c25;--fg:#e6eaf0;--mut:#9aa5b4;--line:#2a3340;--acc:#6aa0ff;--good:#3cc590;--bad:#ef6b88}img{background:#fff;border-radius:6px}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif}
+main{max-width:1000px;margin:0 auto;padding:20px 16px 60px}h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 10px}
+.sub{color:var(--mut);margin:0 0 16px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}.big{font-size:30px;font-weight:650;line-height:1.1}.lab{color:var(--mut);font-size:13px}
+.bar{height:12px;background:var(--line);border-radius:6px;overflow:hidden;display:flex}.bar i{display:block;height:100%}
+table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}
+.scroll{overflow-x:auto}img.fig{width:100%;height:auto;border:1px solid var(--line);border-radius:8px;background:#fff}
+.note{color:var(--mut);font-size:13px}.row{display:flex;align-items:center;gap:8px;margin:3px 0}.row .n{width:150px;font-size:13px}.row .bar{flex:1}
+</style></head><body><main>
+<h1>repolace Phase 1 benchmark</h1><p class="sub">Single agent, Gemini 3.1 Pro, 18 instances x 3 runs. Sweep-4 plus its re-run sweep-4b.</p>
+<div id="cards" class="grid"></div>
+<h2>Live sweeps</h2><div id="live" class="card note">loading...</div>
+<h2>Pass rate by definition</h2><img class="fig" src="figures/pass_rate_intervals.svg" alt="Pass rate intervals">
+<p class="note">35/54 is a hand-stated substitution of 12 provider-lost rows by their re-run; 29/54 is the official headline.</p>
+<h2>Per instance (passes of 3 runs)</h2><div class="card" id="inst"></div>
+<h2>By repository</h2><div class="card scroll"><table id="repo"></table></div>
+<h2>How steps were spent</h2><div class="grid"><img class="fig" src="figures/first_edit_by_outcome.svg" alt="First edit"><img class="fig" src="figures/cost_by_outcome.svg" alt="Cost"></div>
+<h2>Sampling noise</h2><img class="fig" src="figures/bootstrap_distribution.svg" alt="Bootstrap">
+<h2>Retrieval grid (embedding strategy / query strategy)</h2><div class="card scroll"><table id="retr"></table></div>
+<p class="note" id="retrnote"></p>
+<script>
+const $=id=>document.getElementById(id), pc=x=>x.toFixed(1)+'%';
+fetch('api').then(r=>r.json()).then(({results:r,retrieval,live})=>{
+ const h=r.headlines;
+ $('cards').innerHTML=[['Official sweep-4',pc(h.sweep4_official.rate),'29 of 54 · lost rows count as fails'],['Combined (re-run lost rows)',pc(h.combined_final_outcomes.rate),'35 of 54 · 95% '+h.combined_final_outcomes.boot_ci_instances.join(' to ')+'%'],
+ ['Cost per pass','$'+r.cost.usd_per_pass_final_rows.toFixed(2),'$'+r.cost.final_rows.mean.toFixed(2)+' per task mean'],['Hit the step cap',pc(r.stop_reason.step_cap_share),'pass '+pc(r.stop_reason.step_cap_pass_rate)+' vs submitted '+pc(r.stop_reason.submitted_pass_rate)]]
+ .map(([a,b,c])=>`<div class="card"><div class="lab">${a}</div><div class="big">${b}</div><div class="lab">${c}</div></div>`).join('');
+ const lv=$('live'); if(live){lv.innerHTML=Object.entries(live).map(([k,v])=>{const t=Object.values(v).reduce((a,b)=>a+b,0),c=v.completed||0,f=(v.failed||0)+(v.interrupted||0),q=v.queued||0,ru=v.running||0;
+  return `<div class="row"><span class="n">${k} (${t})</span><span class="bar"><i style="width:${100*c/t}%;background:var(--good)"></i><i style="width:${100*f/t}%;background:var(--bad)"></i><i style="width:${100*ru/t}%;background:var(--acc)"></i></span><span class="lab">${Object.entries(v).map(e=>e.join(' ')).join(' · ')}</span></div>`}).join('')}else lv.textContent='database not reachable (set DOCKER_HOST to the rootless socket)';
+ $('inst').innerHTML=Object.entries(r.instances.per_instance).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).map(([k,v])=>`<div class="row"><span class="n">${k.split('__')[1]}</span><span class="bar"><i style="width:${v*100/3}%;background:var(--good)"></i></span><span class="lab">${v}/3</span></div>`).join('');
+ $('repo').innerHTML='<tr><th>Repository</th><th>Instances</th><th>Passed</th><th>Rate</th><th>95% Wilson</th></tr>'+Object.entries(r.by_repository).map(([k,v])=>`<tr><td>${k}</td><td>${v.instances}</td><td>${v.passed}/${v.rows}</td><td>${pc(v.rate)}</td><td>${v.wilson_ci_rows.join(' to ')}%</td></tr>`).join('');
+ if(retrieval&&retrieval.by_strategy.length){const rows=retrieval.by_strategy;const vals=rows.slice(1).map(x=>parseFloat(x[9]));const mx=Math.max(...vals);
+  $('retr').innerHTML='<tr>'+['Index / query','File R@5','File R@20','Chunk R@20','File MRR','Chunk MRR'].map(x=>`<th>${x}</th>`).join('')+'</tr>'+rows.slice(1).map(x=>{const v=parseFloat(x[9]);return `<tr><td>${x[0]}</td><td>${x[2]}</td><td>${x[4]}</td><td>${x[7]}</td><td>${x[8]}</td><td style="background:rgba(47,111,219,${(0.08+0.5*v/mx).toFixed(2)})">${x[9]}</td></tr>`}).join('');
+  $('retrnote').textContent='No cell meets the switch rule (paired chunk MRR gain of 10+ points with an interval excluding 0); the default stays truncate.'}else $('retr').innerHTML='<tr><td>no retrieval report yet</td></tr>';
+});
+</script></main></body></html>
