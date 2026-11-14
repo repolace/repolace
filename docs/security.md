@@ -133,5 +133,5 @@ Read this section before pointing repolace at anything that matters.
 - **The no-oracle filter is not a physical barrier.** A deliberately adversarial agent could still try to signal through it.
 - **`llm_calls` stores repository source verbatim**, and that source was sent to the model provider. Redaction strips credential-shaped strings, not code. Treat the database accordingly.
 - **Error text can contain host paths.** Secrets are scrubbed from stored errors, paths are not, and the failed-task page shows them.
-- **The public-site deployment on AWS and the worker deployment have each been exercised only partly.** The AWS path has deployed once; reboot recovery and a backup restore have not been tested.
+- **The public-site deployment on AWS and the worker deployment have each been exercised only partly.** The AWS path deploys on every push to `main`. A nightly backup was restored into a scratch database once, with an empty table; reboot recovery has not been tested.
 - **Indexing is per repository, not per commit**, so concurrent product tasks on one repository can see each other's index.

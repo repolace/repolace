@@ -9,7 +9,7 @@ Be clear about this before relying on any of it.
 - The Celery worker has run five real tasks end to end, each opening a pull request: three on a private smoke-test repository and the two runs of the [demo](demo.md) on the public demo repository. That is the extent of real worker use.
 - Every benchmark sweep used the `repolace-run-task` CLI path, not the worker. All but one passed `--no-pr`; the one that did not (`sweep-pr-1`) opened 11 pull requests for its 11 passes.
 - The [deployment checks](#deployment-checks) below were run once, on one machine, on 2026-11-14.
-- The public site runs on the AWS deployment (CDK stack, deploy script, workflow). A push to `main` was built, deployed and verified by commit sha on `/healthz`. Not yet tested: recovery after an instance reboot, a restore from a backup.
+- The public site runs on the AWS deployment (CDK stack, deploy script, workflow). A push to `main` was built, deployed and verified by commit sha on `/healthz`. A nightly backup was restored into a scratch database on 2026-11-14 (see below). Not yet tested: recovery after an instance reboot.
 - Observability is structured JSON logs with a task id on every line. There is no tracing or metrics stack.
 
 ## Compose services
@@ -109,7 +109,9 @@ The public site is a separate process (`repolace_api.site.main:app`, port 8100) 
 - **Backups.** A systemd timer streams `pg_dump` to the versioned, encrypted bucket nightly with a 30-day expiry, and uploads only a dump that `pg_restore -l` lists cleanly.
 - **Secrets** are created by hand in the cloud secret store and rendered to files on the VM at deploy. The repository references them by name in the infrastructure code and never holds a value.
 
-A single VM is not highly available. Recovery is a reboot, the nightly backup and the CDK stack. Not yet tested: recovery after an instance reboot, a restore from a backup, and a rollback under a real failure.
+A single VM is not highly available. Recovery is a reboot, the nightly backup and the CDK stack. Not yet tested: recovery after an instance reboot, and a rollback under a real failure.
+
+**Backup restore test (2026-11-14).** The backup bucket held ten nightly dumps, one per night since 2026-11-05. The newest was fetched on the host through a five-minute presigned URL (the instance role can write to the bucket and cannot read it, which a first attempt with the role confirmed with a 403), restored with `pg_restore` into a scratch database, compared and dropped. The scratch database had the one table, its two indexes and its five columns, the same as the live one. **Both held zero rows**, so this shows that the dump is fetched and restores to the right schema; it does not show rows surviving the round trip. Repeat it once the table has rows.
 
 The tunnel stays locally managed, and the private API and UI are never routed through it.
 
