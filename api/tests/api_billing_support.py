@@ -59,12 +59,12 @@ class FakeStripe:
         class CheckoutSessions:
             def create(self, params=None, options=None):
                 outer.checkout_calls.append(params)
-                return SimpleNamespace(url="https://checkout.stripe.test/c/pay_1")
+                return SimpleNamespace(url="https://checkout.stripe.com/c/pay_1")
 
         class PortalSessions:
             def create(self, params=None, options=None):
                 outer.portal_calls.append(params)
-                return SimpleNamespace(url="https://billing.stripe.test/p/session_1")
+                return SimpleNamespace(url="https://billing.stripe.com/p/session_1")
 
         class Charges:
             def retrieve(self, charge_id, params=None, options=None):

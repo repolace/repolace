@@ -31,10 +31,10 @@ Never paste a key into chat, a commit or a log.
 ## 2. Webhook (Stripe CLI)
 
 ```
-stripe listen --forward-to localhost:8000/billing/webhook
+stripe listen --forward-to localhost:8000/billing/webhook --events checkout.session.completed,customer.subscription.created,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed,charge.dispute.created,charge.refunded,radar.early_fraud_warning.created
 ```
 
-It prints a signing secret (`whsec_...`): put it in `STRIPE_WEBHOOK_SECRET` and restart the API. The endpoint verifies the signature over the raw body and skips event ids it has seen. Handled events: `checkout.session.completed`, `customer.subscription.created|updated|deleted`, `invoice.paid`, `invoice.payment_failed`, `charge.dispute.created`, `charge.refunded`, `radar.early_fraud_warning.created`. The plan only ever changes from a verified event, never from the success redirect.
+On Stripe CLI 1.55.8 the bare command (no `--events`) exited with "must specify events to forward", so the event list is given here. `stripe listen --print-secret` prints the signing secret without starting the listener. The listener prints a signing secret (`whsec_...`): put it in `STRIPE_WEBHOOK_SECRET` and restart the API. The endpoint verifies the signature over the raw body and skips event ids it has seen. Handled events: `checkout.session.completed`, `customer.subscription.created|updated|deleted`, `invoice.paid`, `invoice.payment_failed`, `charge.dispute.created`, `charge.refunded`, `radar.early_fraud_warning.created`. The plan only ever changes from a verified event, never from the success redirect.
 
 ## 3. GitHub sign-in
 
@@ -59,7 +59,9 @@ When sign-in is configured **and** someone is signed in, the enqueue path (JSON 
 - The **webhook must move to AWS** (a stable public HTTPS endpoint) before public use; `stripe listen` on a laptop is not reliable. Its path is exempt from the Host allowlist (`/billing/webhook`), the rest of the API and UI are not. Never add a public hostname to `UI_ALLOWED_HOSTS`.
 - The JSON API and the rest of `/ui` are still unauthenticated; sign-in covers only `/ui/account`, `/billing/*` and the allowance.
 - `/pricing` on the public site still says billing is not open; it is untouched.
-- The OAuth callback, cookie flags over HTTPS, and the Stripe flow were tested with mocks, not against real Stripe or GitHub (see the status in `CLAUDE.md`).
+- **Run against the real sandbox and GitHub on 2026-11-14, in part.** On the compose stack: GitHub sign-in (the code exchange and the session cookie), a Customer Portal session opening in Chrome, and one signed webhook (`stripe trigger charge.refunded`, answered 200 and logged `stripe.webhook.handled`). The `subscriptions` row from an earlier sandbox Checkout and portal cancellation (last updated 2026-11-07) rendered correctly on `/ui/account`; that earlier run is known only from the stored row. **Not run that day:** a new Checkout, and a subscription change arriving by webhook. Cookie flags over HTTPS are still tested only with mocks.
+- **The buttons did nothing in Chrome until 2026-11-14.** The UI's `form-action 'self'` blocked the 303 from `/billing/checkout` and `/billing/portal` to Stripe (Chrome applies `form-action` to a form's redirect; the mocked tests never follow it). The policy now names Stripe's two hosted pages; see `.claude/rules/api-and-ui.md`.
+- The key used locally on 2026-11-14 was a full test secret key (`sk_test_`), not the restricted key step 1 asks for. Replace it with the restricted one before relying on the permission list above.
 
 ## Sandbox objects created for development
 

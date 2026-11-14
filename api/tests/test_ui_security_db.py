@@ -52,7 +52,20 @@ class TestCsp:
         assert directives["frame-ancestors"] == "'none'"
         assert directives["object-src"] == "'none'"
         assert "unsafe-inline" not in CSP and "unsafe-eval" not in CSP
-        assert "http" not in CSP and "*" not in CSP
+        assert "*" not in CSP
+        for name, value in directives.items():
+            if name != "form-action":
+                assert set(value.split()) <= {"'self'", "'none'"}, name
+
+    def test_a_form_may_be_redirected_to_stripes_hosted_pages_and_nowhere_else(self):
+        """Chrome applies `form-action` to the 303 that `/billing/checkout` and `/billing/portal`
+        answer, so without these two origins the Upgrade and Manage billing buttons do nothing."""
+        directives = dict(part.strip().split(" ", 1) for part in CSP.split(";"))
+        assert directives["form-action"].split() == [
+            "'self'",
+            "https://checkout.stripe.com",
+            "https://billing.stripe.com",
+        ]
 
     async def test_the_json_api_is_not_given_the_ui_policy(self, db_session, db_session_factory):
         await seed_repo(db_session)

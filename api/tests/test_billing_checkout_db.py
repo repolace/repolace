@@ -1,6 +1,7 @@
 """`POST /billing/checkout` and `/billing/portal`: what is sent to Stripe, and who may call."""
 
 import re
+from types import SimpleNamespace
 
 import pytest
 from api_billing_support import (
@@ -55,7 +56,7 @@ class TestCheckout:
         app = build_app(db_session_factory, stripe_client=fake)
         async with client_for(app, cookies=session_cookie(user.id)) as client:
             response = await client.post("/billing/checkout", headers=SAME_ORIGIN)
-        assert response.status_code == 200 and response.json() == {"url": "https://checkout.stripe.test/c/pay_1"}
+        assert response.status_code == 200 and response.json() == {"url": "https://checkout.stripe.com/c/pay_1"}
 
         (params,) = fake.checkout_calls
         assert "payment_method_types" not in params
@@ -85,7 +86,21 @@ class TestCheckout:
         async with client_for(app, cookies=session_cookie(user.id)) as client:
             response = await client.post("/billing/checkout", headers={**SAME_ORIGIN, "Accept": "text/html,*/*"})
         assert response.status_code == 303
-        assert response.headers["location"] == "https://checkout.stripe.test/c/pay_1"
+        assert response.headers["location"] == "https://checkout.stripe.com/c/pay_1"
+
+    async def test_a_session_on_a_host_the_ui_policy_does_not_name_is_refused(self, db_session, db_session_factory):
+        """Chrome would block that redirect silently (`form-action`), so the route says so instead."""
+        user = await seed_user(db_session)
+        fake = FakeStripe()
+        fake.v1.checkout.sessions.create = lambda params=None, options=None: SimpleNamespace(
+            url="https://pay.example.com/c/pay_1"
+        )
+        app = build_app(db_session_factory, stripe_client=fake)
+        async with client_for(app, cookies=session_cookie(user.id)) as client:
+            for accept in ("text/html,*/*", "application/json"):
+                response = await client.post("/billing/checkout", headers={**SAME_ORIGIN, "Accept": accept})
+                assert response.status_code == 502, accept
+                assert "location" not in response.headers
 
     async def test_a_paid_user_is_sent_to_the_portal_instead(self, db_session, db_session_factory):
         user = await seed_user(db_session)
@@ -116,5 +131,5 @@ class TestPortal:
         app = build_app(db_session_factory, stripe_client=fake)
         async with client_for(app, cookies=session_cookie(user.id)) as client:
             response = await client.post("/billing/portal", headers=SAME_ORIGIN)
-        assert response.json() == {"url": "https://billing.stripe.test/p/session_1"}
+        assert response.json() == {"url": "https://billing.stripe.com/p/session_1"}
         assert fake.portal_calls == [{"customer": "cus_stored", "return_url": "http://test/ui/account"}]

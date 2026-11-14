@@ -28,6 +28,14 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 #: `style-src 'self'` with no `'unsafe-inline'`: the templates carry no `style=""`
 #: attribute (bar widths are SVG attributes). htmx is configured not to inject
 #: its indicator stylesheet. `img-src data:` is for nothing today and kept off.
+#:
+#: `form-action` names Stripe's two hosted pages, the only remote origins in the policy. The
+#: Upgrade and Manage billing forms POST to `/billing/checkout` and `/billing/portal`, which
+#: answer 303 to Stripe, and Chrome applies `form-action` to every hop of a form's redirect:
+#: with `'self'` alone the buttons did nothing there (Firefox does not check the redirect).
+#: Found by clicking it in Chrome on 2026-11-14; the mocked tests never follow the redirect.
+STRIPE_FORM_TARGETS = ("https://checkout.stripe.com", "https://billing.stripe.com")
+
 CSP = "; ".join(
     [
         "default-src 'self'",
@@ -38,7 +46,7 @@ CSP = "; ".join(
         "connect-src 'self'",
         "object-src 'none'",
         "base-uri 'none'",
-        "form-action 'self'",
+        "form-action 'self' " + " ".join(STRIPE_FORM_TARGETS),
         "frame-ancestors 'none'",
     ]
 )

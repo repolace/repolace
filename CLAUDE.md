@@ -169,9 +169,9 @@ See replacement order above.
 - **Run `alembic check` after touching models.** It is what caught the missing GIN and HNSW index declarations.
 - No `alembic upgrade` against the development database from a test run: the `-m db` fixtures migrate their own `<db>_test<suffix>` database.
 
-## Billing status (branch `feat/stripe-billing`, test mode, local only)
+## Billing status (on `main`, test mode, local only)
 
-GitHub sign-in, Stripe Checkout/Portal/webhook (sandbox, restricted key), a plan allowance on enqueue (`tasks.user_id`, migration 0019, only when sign-in is configured and a user is signed in) and `/ui/account` are written and covered by mocked tests; **not run against real Stripe or GitHub**, not public, Tax off, Stripe calls are synchronous in async handlers, webhook must move to AWS first. Auth covers only `/ui/account` and `/billing/*`; the JSON API and the rest of the UI stay unauthenticated. `/pricing` still says billing is not open. See `docs/BILLING_SETUP.md` and `.claude/rules/api-and-ui.md`.
+GitHub sign-in, Stripe Checkout/Portal/webhook (sandbox, restricted key), a plan allowance on enqueue (`tasks.user_id`, migration 0019, only when sign-in is configured and a user is signed in) and `/ui/account` are written and covered by mocked tests; **run against the real sandbox and GitHub only in part** (2026-11-14: sign-in, a portal session and one signed webhook; not a new Checkout or a live subscription change; in Chrome the Upgrade and Manage billing buttons did nothing until the UI's `form-action` named Stripe's two hosted pages), not public, Tax off, Stripe calls are synchronous in async handlers, webhook must move to AWS first. Auth covers only `/ui/account` and `/billing/*`; the JSON API and the rest of the UI stay unauthenticated. `/pricing` still says billing is not open. See `docs/BILLING_SETUP.md` and `.claude/rules/api-and-ui.md`.
 
 ## Phase 1 status
 
