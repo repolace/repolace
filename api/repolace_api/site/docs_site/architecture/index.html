@@ -307,7 +307,7 @@
 </tr>
 <tr>
 <td>Worker dies mid-task</td>
-<td>The pipeline heartbeats every 30 s. The reaper fails a <code>running</code> row whose heartbeat is older than 5 minutes with <code>runner: abandoned</code> and removes the task's containers</td>
+<td>The pipeline heartbeats every 30 s. The reaper fails a <code>running</code> product row (no <code>eval_run_id</code>) whose heartbeat is older than 5 minutes with <code>runner: abandoned</code> and removes the task's containers</td>
 </tr>
 <tr>
 <td>Task exceeds its bound</td>

@@ -6,8 +6,9 @@ This page is for running repolace's services: what each compose service is, whic
 
 Be clear about this before relying on any of it.
 
-- The Celery worker has run three real tasks end to end, each opening a pull request: one on a private smoke-test repository and the two runs of the [demo](demo.md) on the public demo repository. That is the extent of real worker use.
-- Every benchmark sweep used the `repolace-run-task` CLI path with `--no-pr`, not the worker.
+- The Celery worker has run five real tasks end to end, each opening a pull request: three on a private smoke-test repository and the two runs of the [demo](demo.md) on the public demo repository. That is the extent of real worker use.
+- Every benchmark sweep used the `repolace-run-task` CLI path, not the worker. All but one passed `--no-pr`; the one that did not (`sweep-pr-1`) opened 11 pull requests for its 11 passes.
+- The [deployment checks](#deployment-checks) below were run once, on one machine, on 2026-11-14.
 - The public site runs on the AWS deployment (CDK stack, deploy script, workflow). A push to `main` was built, deployed and verified by commit sha on `/healthz`. Not yet tested: recovery after an instance reboot, a restore from a backup.
 - Observability is structured JSON logs with a task id on every line. There is no tracing or metrics stack.
 
@@ -89,7 +90,7 @@ If you raise `WORKER_TASK_BOUND_SECONDS`, raise `consumer_timeout` in `infra/rab
 | Situation | Behavior |
 |---|---|
 | The API could not reach the broker | The row stays `queued`. The sweeper in `worker-maintenance` republishes `queued` product rows older than 5 minutes, at most once per 15 minutes per row and 50 rows per tick. It runs every 60 s |
-| A worker process dies mid-task | The pipeline writes a heartbeat every 30 s. The reaper fails a `running` row whose heartbeat is older than 5 minutes with `runner: abandoned` and removes the task's containers |
+| A worker process dies mid-task | The pipeline writes a heartbeat every 30 s. The reaper fails a `running` product row (no `eval_run_id`) whose heartbeat is older than 5 minutes with `runner: abandoned` and removes the task's containers. It leaves benchmark rows to the eval runner |
 | A task outlives its bound | The row reads `interrupted: WorkerTimeout`, or `worker: timeout` if the worker had to settle it itself |
 | A message is delivered twice | The conditional claim drops the second delivery |
 | A benchmark row is published by hand | The worker refuses it untouched; the eval runner owns those rows |
@@ -112,9 +113,9 @@ A single VM is not highly available. Recovery is a reboot, the nightly backup an
 
 The tunnel stays locally managed, and the private API and UI are never routed through it.
 
-## Still to run
+## Deployment checks
 
-Two things rest on reading the code and on a few single runs, not on a deliberate check. Neither has been done.
+Both of these were open until 2026-11-14, when each was run once. One run on one machine shows that the path works there; it is not a soak test.
 
 ### The worker deployment checklist
 
@@ -123,15 +124,44 @@ On the host that runs the sandbox, with `DOCKER_HOST` pointing at the rootless d
 1. `docker compose -f infra/docker-compose.yml up -d --build` and wait for every service to report healthy.
 2. In the task worker, confirm the docker client reaches the daemon (`docker compose -f infra/docker-compose.yml exec worker docker version`) and that it can create and delete a directory under `WORKSPACE_PARENT_DIR`. Both run as container root, which on the rootless daemon is the host user.
 3. Confirm the broker took the timeout file: `docker compose -f infra/docker-compose.yml exec rabbitmq rabbitmqctl eval 'application:get_env(rabbit, consumer_timeout).'` must print `{ok,14100000}`.
-4. Run one task end to end from the UI on a toy repository with Actions disabled: a clone, a Verify run in a sandbox container, a pull request. A further run on the demo repository has to be added to the demo page's disclosure, which says how many runs there were.
-5. Restart the broker (`docker compose -f infra/docker-compose.yml restart rabbitmq`), then enqueue a task. The API log should show `repos.task.publish_reconnecting` and the task should start at once, not five minutes later through the sweeper. This was checked once against a throwaway RabbitMQ container, not against the compose stack.
+4. Run one task end to end on a toy repository with Actions disabled: a clone, a Verify run in a sandbox container, a pull request. A further run on the demo repository has to be added to the demo page's disclosure, which says how many runs there were.
+5. Enqueue a task so the API holds a broker connection, restart the broker (`docker compose -f infra/docker-compose.yml restart rabbitmq`), then enqueue another. The API log should show `repos.task.publish_reconnecting` and the task should start at once, not five minutes later through the sweeper. An API that has not published since it started has no connection to lose, and the check then proves nothing.
 6. Confirm `WORKSPACE_PARENT_DIR` sits on a size- and inode-limited filesystem.
+
+What the run of 2026-11-14 found:
+
+| Step | Result |
+|---|---|
+| 1 | All seven services healthy. The images had to be built with `docker build --network host` first; see the DNS note below |
+| 2 | Client 28.5.2 reached daemon 29.9.2; the directory was created and removed |
+| 3 | `{ok,14100000}` |
+| 4 | A task on the private smoke-test repository, enqueued through the JSON API: every stage ok, 7 model calls, $0.05, a pull request. The repository has no failing test at the base commit, so the pull request is opened as not verified |
+| 5 | With a connection open, the broker was restarted; the next publish logged `repos.task.publish_reconnecting` and the worker claimed the task 3 s after it was queued. That task also ran to a pull request (8 calls, $0.07) |
+| 6 | The directory was a plain directory on a btrfs root, which has no inode limit. It is now a 20 GB ext4 image, loop-mounted from `/etc/fstab` with `nofail` |
+
+Two things the run needed that the steps do not mention:
+
+- **Container DNS on a rootless daemon.** Where the host's resolver listens on loopback (systemd-resolved), rootless Docker gives containers `8.8.8.8`. On a network that blocks port 53 to public resolvers, every image build, clone and model call from a container then fails with a name-resolution error. Setting `"dns": ["10.0.2.3"]` (the slirp4netns forwarder) in `~/.config/docker/daemon.json` and restarting the daemon fixes it.
+- **`infra/api.env` must exist.** Without the GitHub App settings the `api` service exits at startup and restarts in a loop.
+
+Not checked: a reboot of the host (the mount and the stack coming back), and a `compose up --build` from a clean cache after the DNS change.
+
+**Stop `worker-maintenance` during a benchmark run if the worker image was built before 2026-11-14.** Until then the reaper had no `eval_run_id` filter and could fail a stalled benchmark row and remove its containers.
 
 ### Pull-request opening in the benchmark
 
-Every sweep so far passed `--no-pr`, so the benchmark says nothing about the path from a passing run to an open pull request. Three product-mode runs have opened one each; that shows the path works, not how often.
+The headline sweep and every earlier sweep passed `--no-pr`. One sweep has since run without it:
 
-A measuring sweep is the sweep command from [PHASE1_TESTING.md](PHASE1_TESTING.md) without `--no-pr` and with a spend cap: `repolace-eval run --eval-run-id <id> --agent llm --model <model> -k 1 --max-total-usd <cap>`, then `repolace-eval report`. A benchmark task opens a pull request on its private `repolace/bench-<instance>` repository only when it scores passed, so the number of pull requests should equal the pass count; a difference is the finding. Expect about $0.75 and 18 minutes per task at the measured medians, so roughly $14 for 18 issues run once. Check first that Actions are disabled on every bench repository: a pushed agent branch can carry an edited build file.
+| | |
+|---|---|
+| Run | `sweep-pr-1`, 2026-11-14, 18 instances, one run each, Gemini 3.1 Pro, one task at a time |
+| Passed | 11 of 18 (61%), 95% interval over instances 39 to 83%, no harness errors |
+| Pull requests | 11, one for each pass and none for a non-pass, each on its private `repolace/bench-<instance>` repository |
+| Cost and time | $11.49 in total, $0.64 mean per task, $1.04 per pass, median 896 s per task |
+
+A benchmark task opens a pull request only when it scores passed, so the count of pull requests should equal the pass count, and it did. This is one run per instance: it is not the headline, it is not pooled with it, and its pass rate differs from the headline's by far less than either interval is wide.
+
+To repeat it: the sweep command from [PHASE1_TESTING.md](PHASE1_TESTING.md) without `--no-pr` and with a spend cap, `repolace-eval run --eval-run-id <id> --agent llm --model <model> -k 1 --max-total-usd <cap>`, then `repolace-eval report`. Check first that Actions are disabled on every bench repository: a pushed agent branch can carry an edited build file.
 
 ## Related
 
