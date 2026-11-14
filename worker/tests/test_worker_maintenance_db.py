@@ -161,6 +161,38 @@ class TestReaper:
         assert statuses[just_claimed.id][0] is TaskStatus.RUNNING
         assert statuses[queued.id][0] is TaskStatus.QUEUED
 
+    async def test_a_stale_benchmark_row_is_left_to_the_eval_runner(
+        self, db_session, db_session_factory
+    ):
+        product = await add_task(db_session, status=TaskStatus.RUNNING)
+        bench = await add_task(
+            db_session, status=TaskStatus.RUNNING, eval_run_id="r1", instance_id="i1", run_index=0
+        )
+        never_beat = await add_task(
+            db_session, status=TaskStatus.RUNNING, eval_run_id="r1", instance_id="i2", run_index=0
+        )
+        product_id, bench_ids = product.id, {bench.id, never_beat.id}  # read before expire_all
+        await backdate(db_session, product, started_at=OLD, heartbeat_at=OLD)
+        await backdate(db_session, bench, started_at=OLD, heartbeat_at=OLD)
+        await backdate(db_session, never_beat, started_at=OLD, heartbeat_at=None)
+        removed = []
+
+        async def remove(task_id):
+            removed.append(task_id)
+
+        reaped = await maintenance.reap_abandoned(db_session_factory, THREE_MIN, remove)
+
+        assert reaped == removed == [product_id]
+        db_session.expire_all()
+        rows = (await db_session.execute(select(Task).where(Task.id.in_(bench_ids)))).scalars().all()
+        assert [(row.status, row.error_message) for row in rows] == [(TaskStatus.RUNNING, None)] * 2
+
+    async def test_one_benchmark_run_and_product_only_cannot_be_asked_for_together(self, db_session_factory):
+        with pytest.raises(ValueError, match="disjoint"):
+            await maintenance.running_with_stale_heartbeat(
+                db_session_factory, THREE_MIN, eval_run_id="r1", product_only=True
+            )
+
     async def test_a_heartbeat_between_the_select_and_the_update_leaves_the_row_running(
         self, db_session, db_session_factory, monkeypatch
     ):
@@ -169,8 +201,8 @@ class TestReaper:
         await backdate(db_session, racing, started_at=OLD, heartbeat_at=OLD)
         real = maintenance.running_with_stale_heartbeat
 
-        async def select_then_beat(factory, older_than):
-            found = await real(factory, older_than)
+        async def select_then_beat(factory, older_than, **filters):
+            found = await real(factory, older_than, **filters)
             if older_than != THREE_MIN:
                 return found  # the reaper's separate long-stale look
             # The task beats after the reaper read it and before the reaper writes.

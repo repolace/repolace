@@ -145,8 +145,12 @@ async def reap_abandoned(
     heartbeat that lands between the SELECT and the write leaves the row running, and containers are
     removed only for rows that UPDATE actually failed. Reaches only containers on this process's own
     docker host.
+
+    Product rows only (`eval_run_id IS NULL`), like the sweeper: a benchmark row belongs to the eval
+    runner, which settles them itself when the operator runs `run --mark-abandoned`. A reaper that
+    failed one would also remove the sandbox containers of a host process it knows nothing about.
     """
-    long_stale = await running_with_stale_heartbeat(factory, stale_after * long_stale_factor)
+    long_stale = await running_with_stale_heartbeat(factory, stale_after * long_stale_factor, product_only=True)
     if long_stale:
         log.warning(
             "worker.reaper.long_stale",
@@ -154,7 +158,7 @@ async def reap_abandoned(
             hint="rows stale for several thresholds: the maintenance worker was probably down",
         )
     reaped: list[uuid.UUID] = []
-    for stale in await running_with_stale_heartbeat(factory, stale_after):
+    for stale in await running_with_stale_heartbeat(factory, stale_after, product_only=True):
         if await fail_if_heartbeat_stale(factory, stale.task_id, ABANDONED_MESSAGE, stale_after):
             reaped.append(stale.task_id)
             log.error("worker.reaper.abandoned", task_id=str(stale.task_id))
