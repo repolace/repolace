@@ -49,7 +49,7 @@ Full tables, tests and figures: [BENCHMARK/REPORT.md](../BENCHMARK/REPORT.md). E
 - **Contamination.** The instances are public SWE-bench Verified issues that models have probably seen, so a pass cannot be told apart from recall. This is not the published Verified score and does not predict performance on unseen issues.
 - **Subset.** The 18 are not the official set. Six are pytest and all pass.
 - **Provider loss.** Twelve rows ended as harness errors when Vertex AI answered `429 RESOURCE_EXHAUSTED` after the gateway's bounded retries. The headline counts them as non-passes.
-- **Pull-request opening was not measured.** Every sweep used `--no-pr`. A run that opens real PRs has not been done.
+- **Pull-request opening is not part of the headline.** The sweeps above used `--no-pr`. A separate sweep without it (`sweep-pr-1`, one run per instance) passed 11 of 18 and opened 11 pull requests on private benchmark repositories, one per pass and none for a non-pass, for $11.49 in total. It is not pooled with the headline.
 - **The feedback filter is not an absolute barrier.** Hidden tests are kept from the agent's feedback by a filter, and a deliberately adversarial agent could still try to signal through it.
 - **Variants are not measured.** The early-edit nudge, the role split and mixed models have their own run ids; none is merged, and none has been shown to beat the single agent.
 

@@ -558,7 +558,7 @@ deleted a passing test reads as a regression and withholds the PR (cautious dire
 - **Refuses benchmark rows** (`eval_run_id` set): the eval runner owns those.
 - **Sweeper:** republishes `queued` non-benchmark rows older than 5 min, ≤50/tick, at most once per 15 min per task
   (Redis `SET NX EX 900`), messages `expires` at the dedupe window, aborts the whole tick on the first broker/Redis error.
-- **Reaper:** fails a `running` row whose `heartbeat_at` is older than 5 min as `runner: abandoned`. The staleness test is
+- **Reaper:** fails a `running` product row (no `eval_run_id`) whose `heartbeat_at` is older than 5 min as `runner: abandoned`. The staleness test is
   in the `UPDATE`'s own `WHERE`, so a heartbeat landing mid-check wins. It removes the task's containers by name prefix.
 - Both run on a **separate `repolace.maintenance` queue** in a separate worker (exactly one replica), so a pool full of
   multi-hour tasks can't starve them.

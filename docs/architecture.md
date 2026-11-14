@@ -141,7 +141,7 @@ Three design points:
 | Situation | What happens |
 |---|---|
 | Broker down at enqueue | The row stays `queued`. The sweeper in `worker-maintenance` republishes `queued` product rows older than 5 minutes, at most once per 15 minutes per row, 50 per tick |
-| Worker dies mid-task | The pipeline heartbeats every 30 s. The reaper fails a `running` row whose heartbeat is older than 5 minutes with `runner: abandoned` and removes the task's containers |
+| Worker dies mid-task | The pipeline heartbeats every 30 s. The reaper fails a `running` product row (no `eval_run_id`) whose heartbeat is older than 5 minutes with `runner: abandoned` and removes the task's containers |
 | Task exceeds its bound | The row reads `interrupted: WorkerTimeout`; Celery's hard limit is the bound plus 600 s |
 | Duplicate delivery | The conditional claim drops it |
 | Container outlives a timeout | The backend removes it by name, since killing the client does not stop it |

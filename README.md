@@ -14,8 +14,8 @@ Agents that patch issues are common. What this project is for is the part most o
 | Agent (LangGraph, nine tools, feedback filter, conflict resolver) | Built and benchmarked. The role-split variant (planner, editor, reviewer) is unmerged and showed no benefit in its partial runs |
 | Benchmark harness (`repolace-eval`) | Built and used for one headline sweep and a retrieval grid |
 | Verify sandbox (rootless Docker) | Built. The 32 Docker containment tests have passed on a rootless daemon |
-| Celery worker | Ran three tasks end to end, each opening a pull request: one on a private smoke-test repository and two on the public demo repository. No other real PR has been opened |
-| Pull-request opening at scale | **Not measured.** Every benchmark sweep used `--no-pr` |
+| Celery worker | Ran five tasks end to end, each opening a pull request: three on a private smoke-test repository and two on the public demo repository. The deployment checklist in [operations](docs/operations.md#deployment-checks) was run once, on one machine |
+| Pull-request opening in the benchmark | Measured once: a single-run sweep of the 18 issues passed 11 and opened 11 pull requests on private benchmark repositories, one per pass. The headline sweep used `--no-pr` |
 | Task UI and JSON API | Built (server-rendered pages under `/ui`). **No general authentication**: only `/ui/account` and `/billing/*` use GitHub sign-in. Localhost or a private tunnel only |
 | Public site (landing, pricing preview, benchmark reports, waitlist) | Built as a separate process that mounts none of the API routes |
 | Public site on AWS | Deployed: the CDK stack, a push-to-deploy workflow with a reviewer approval, and a commit-sha check on `/healthz`. **Not yet tested:** reboot recovery, a backup restore |
@@ -52,7 +52,7 @@ Read it with these caveats:
 - The instances are public SWE-bench Verified issues that the model has probably seen. This is not the published Verified score and does not predict performance on unseen issues. Six of the 18 are pytest, and every pytest run passed.
 - Twelve of the 54 rows were lost to HTTP 429 errors. Re-running them in sweep-4b passed 6; substituting each lost row by its re-run is a hand-stated calculation (35 of 54, 64.8%), not an output of the report tool, and it is not the headline.
 - Across the 54 final rows (re-runs included), the mean task cost $0.75, about $1.16 per pass ($40.54 over the 35 passes of the final rows, not the 29 of the headline), with a median of 1,106 s per task. 52% of tasks ended on the step cap.
-- Pull-request opening was not part of the measurement.
+- Pull-request opening was not part of this measurement. A later single-run sweep with it switched on (`sweep-pr-1`) passed 11 of 18 and opened 11 pull requests; it is reported separately in [the benchmark page](docs/benchmark.md) and is not pooled with the headline.
 
 Method, statistics and reproduction: [docs/benchmark.md](docs/benchmark.md) and [BENCHMARK/REPORT.md](BENCHMARK/REPORT.md).
 
