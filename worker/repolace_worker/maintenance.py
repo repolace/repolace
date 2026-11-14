@@ -147,12 +147,10 @@ async def reap_abandoned(
     docker host.
 
     Product rows only (`eval_run_id IS NULL`), like the sweeper: a benchmark row belongs to the eval
-    runner, which settles its own stale rows (`run --mark-abandoned`). A reaper that failed one would
-    also remove the sandbox containers of a host process it knows nothing about.
+    runner, which settles them itself when the operator runs `run --mark-abandoned`. A reaper that
+    failed one would also remove the sandbox containers of a host process it knows nothing about.
     """
-    long_stale = await running_with_stale_heartbeat(
-        factory, stale_after * long_stale_factor, product_only=True
-    )
+    long_stale = await running_with_stale_heartbeat(factory, stale_after * long_stale_factor, product_only=True)
     if long_stale:
         log.warning(
             "worker.reaper.long_stale",

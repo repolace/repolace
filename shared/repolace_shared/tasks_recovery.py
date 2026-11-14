@@ -81,12 +81,15 @@ async def running_with_stale_heartbeat(
     """RUNNING tasks whose heartbeat is older than `older_than`, by the database's clock.
 
     `eval_run_id` narrows to one benchmark run (the eval runner's view); `product_only` narrows to
-    rows with no `eval_run_id` (the worker's reaper, which must never settle a benchmark row).
+    rows with no `eval_run_id` (the worker's reaper, which must never settle a benchmark row). The
+    two contradict each other, so passing both is refused.
 
     A row that has never beaten (`heartbeat_at` NULL) is judged by `started_at` instead, so a
     runner that died before its first beat is still found, and a row that has only just been
     claimed is not.
     """
+    if eval_run_id is not None and product_only:
+        raise ValueError("eval_run_id and product_only select disjoint rows; pass one")
     cutoff = func.now() - older_than
     query = select(Task.id, Task.instance_id, Task.run_index).where(
         Task.status == TaskStatus.RUNNING,

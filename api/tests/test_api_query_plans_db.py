@@ -165,7 +165,7 @@ class TestKeysetTaskList:
 class TestActiveTasks:
     async def test_the_reapers_stale_heartbeat_scan_reads_only_the_active_index(self, seeded, db_session_factory, db_engine):
         with capture_sql(db_engine) as seen:
-            await running_with_stale_heartbeat(db_session_factory, timedelta(minutes=10))
+            await running_with_stale_heartbeat(db_session_factory, timedelta(minutes=10), product_only=True)
 
         plan = await explain(db_engine, pick(seen, "FROM tasks", "tasks.heartbeat_at"))
 

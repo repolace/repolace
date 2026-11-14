@@ -168,9 +168,13 @@ class TestReaper:
         bench = await add_task(
             db_session, status=TaskStatus.RUNNING, eval_run_id="r1", instance_id="i1", run_index=0
         )
-        product_id, bench_id = product.id, bench.id  # read before expire_all: no lazy load later
+        never_beat = await add_task(
+            db_session, status=TaskStatus.RUNNING, eval_run_id="r1", instance_id="i2", run_index=0
+        )
+        product_id, bench_ids = product.id, {bench.id, never_beat.id}  # read before expire_all
         await backdate(db_session, product, started_at=OLD, heartbeat_at=OLD)
         await backdate(db_session, bench, started_at=OLD, heartbeat_at=OLD)
+        await backdate(db_session, never_beat, started_at=OLD, heartbeat_at=None)
         removed = []
 
         async def remove(task_id):
@@ -180,8 +184,14 @@ class TestReaper:
 
         assert reaped == removed == [product_id]
         db_session.expire_all()
-        row = (await db_session.execute(select(Task).where(Task.id == bench_id))).scalar_one()
-        assert (row.status, row.error_message) == (TaskStatus.RUNNING, None)
+        rows = (await db_session.execute(select(Task).where(Task.id.in_(bench_ids)))).scalars().all()
+        assert [(row.status, row.error_message) for row in rows] == [(TaskStatus.RUNNING, None)] * 2
+
+    async def test_one_benchmark_run_and_product_only_cannot_be_asked_for_together(self, db_session_factory):
+        with pytest.raises(ValueError, match="disjoint"):
+            await maintenance.running_with_stale_heartbeat(
+                db_session_factory, THREE_MIN, eval_run_id="r1", product_only=True
+            )
 
     async def test_a_heartbeat_between_the_select_and_the_update_leaves_the_row_running(
         self, db_session, db_session_factory, monkeypatch
