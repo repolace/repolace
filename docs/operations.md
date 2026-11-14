@@ -144,7 +144,13 @@ Two things the run needed that the steps do not mention:
 - **Container DNS on a rootless daemon.** Where the host's resolver listens on loopback (systemd-resolved), rootless Docker gives containers `8.8.8.8`. On a network that blocks port 53 to public resolvers, every image build, clone and model call from a container then fails with a name-resolution error. Setting `"dns": ["10.0.2.3"]` (the slirp4netns forwarder) in `~/.config/docker/daemon.json` and restarting the daemon fixes it.
 - **`infra/api.env` must exist.** Without the GitHub App settings the `api` service exits at startup and restarts in a loop.
 
-Not checked: a reboot of the host (the mount and the stack coming back), and a `compose up --build` from a clean cache after the DNS change.
+**After a reboot (checked 2026-11-14):** the workspace image was mounted from `/etc/fstab`, the rootless daemon started by itself (its user service is enabled and lingering is on) with the `dns` setting in place, and all seven services came back healthy under `restart: unless-stopped` with nobody starting them. The worker resolved names, reached the daemon and wrote to the workspace, and the broker still reported `{ok,14100000}`. No task was run after the reboot.
+
+**The image build after the DNS change (partly checked):** `docker compose build worker` works without `--network host`. Two attempts before it failed for other reasons: a timed-out download of one large wheel from PyPI, then a layer-extraction error when `worker` and `worker-maintenance` were built in one command. Both services use one image, so build one of them. That the joint build is what caused the second failure is a guess, not a finding.
+
+Not checked: a `compose up --build` of every service from a clean cache.
+
+**A benchmark run that wants the same quota'd filesystem takes a subdirectory.** On start the task worker deletes every `repolace-task-*` directory directly under its `WORKSPACE_PARENT_DIR` that is older than its hard time limit, with no check of who made it. It does not descend, so give the host runner `WORKSPACE_PARENT_DIR=/var/tmp/repolace-workspaces/bench` (create it first), never the directory itself.
 
 **Stop `worker-maintenance` during a benchmark run if the worker image was built before 2026-11-14.** Until then the reaper had no `eval_run_id` filter and could fail a stalled benchmark row and remove its containers.
 

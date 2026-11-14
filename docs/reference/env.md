@@ -38,6 +38,8 @@ Read by compose services: `worker`.
 | `OPENAI_API_KEY` |  |
 | `GEMINI_API_KEY` |  |
 | `MINIMAX_API_KEY` |  |
+| `OPENROUTER_API_KEY` | One OpenRouter key reaches many hosts; the model entry in models.toml pins which one. |
+| `NVIDIA_API_KEY` | NVIDIA's hosted API (integrate.api.nvidia.com), for the nvidia_nim/ models. |
 | `GOOGLE_API_KEY` | A Vertex AI API key (not an AI Studio key), for the vertex-gemini-* models. |
 
 ## `infra/site.env.example`

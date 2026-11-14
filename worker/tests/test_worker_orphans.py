@@ -21,5 +21,17 @@ def test_only_old_task_directories_are_removed(tmp_path):
     assert not old.exists() and fresh.exists() and other.exists()
 
 
+def test_a_task_directory_inside_a_subdirectory_is_someone_elses(tmp_path):
+    """The benchmark runner shares the filesystem by taking a subdirectory; the sweep must not descend."""
+    theirs = tmp_path / "bench" / "repolace-task-old"
+    (theirs / "sub").mkdir(parents=True)
+    long_ago = time.time() - 10_000
+    for d in (theirs, theirs.parent):
+        os.utime(d, (long_ago, long_ago))
+
+    assert remove_stale_workspaces(tmp_path, 3_600) == []
+    assert theirs.exists()
+
+
 def test_a_missing_parent_is_not_an_error(tmp_path):
     assert remove_stale_workspaces(tmp_path / "nope", 1) == []

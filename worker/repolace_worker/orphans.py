@@ -17,8 +17,13 @@ def remove_stale_workspaces(
 ) -> list[Path]:
     """Remove `repolace-task-*` directories under `parent_dir` not modified for `older_than_seconds`.
 
-    Older than the task time limit means no live task can own it. A failure to delete one (files
-    owned by a sandbox subuid) is logged and does not stop the sweep.
+    Older than the task time limit means no live task of this worker can own it. A failure to
+    delete one (files owned by a sandbox subuid) is logged and does not stop the sweep.
+
+    There is no owner check: any `repolace-task-*` directory directly under `parent_dir` is this
+    worker's to delete. The sweep does not descend, so another process that wants the same
+    filesystem (the benchmark runner on the host) takes a subdirectory of it, not the directory
+    itself. A test holds the not-descending.
     """
     parent = Path(parent_dir) if parent_dir is not None else Path(tempfile.gettempdir())
     cutoff = (time.time() if now is None else now) - older_than_seconds
