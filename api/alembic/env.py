@@ -12,7 +12,10 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # `disable_existing_loggers` defaults to True, which switches off every logger that already
+    # exists and is not named in alembic.ini (httpx, for one) for the
+    # rest of the process. A migration run inside a longer-lived process must not do that.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 
