@@ -115,7 +115,7 @@ class TestHardening:
             response = await c.post(
                 "/billing/checkout", headers={"Origin": "http://test", "Accept": "text/html,application/xhtml+xml"}
             )
-        assert response.status_code == 303 and response.headers["location"].startswith("https://checkout.stripe.test")
+        assert response.status_code == 303 and response.headers["location"].startswith("https://checkout.stripe.com")
         assert fake.checkout_calls[0]["success_url"] == "http://test/ui/account?checkout=success"
         assert fake.checkout_calls[0]["cancel_url"] == "http://test/ui/account?checkout=cancelled"
 

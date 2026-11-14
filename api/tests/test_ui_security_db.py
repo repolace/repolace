@@ -55,7 +55,7 @@ class TestCsp:
         assert "*" not in CSP
         for name, value in directives.items():
             if name != "form-action":
-                assert "http" not in value, name
+                assert set(value.split()) <= {"'self'", "'none'"}, name
 
     def test_a_form_may_be_redirected_to_stripes_hosted_pages_and_nowhere_else(self):
         """Chrome applies `form-action` to the 303 that `/billing/checkout` and `/billing/portal`

@@ -12,6 +12,7 @@ import uuid
 from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Any
+from urllib.parse import urlsplit
 
 import stripe
 import structlog
@@ -24,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from repolace_api.config import BillingSettings, get_billing_settings
 from repolace_api.deps import current_user, get_db, require_same_origin, wants_html
+from repolace_api.ui.security import STRIPE_FORM_TARGETS
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 log = structlog.get_logger()
@@ -56,6 +58,15 @@ def _integration_identifier() -> str:
 
 
 def _respond(request: Request, url: str) -> Response:
+    """Send the browser to the page Stripe made, if it is on a host the UI's `form-action` allows.
+
+    Chrome blocks a form's redirect to any other origin without a word, so a session URL on a
+    host the policy does not name (a Stripe custom domain, say) is refused here, loudly, instead.
+    """
+    parts = urlsplit(url)
+    if f"{parts.scheme}://{parts.netloc}" not in STRIPE_FORM_TARGETS:
+        log.error("billing.redirect.unexpected_host", host=parts.netloc)
+        raise HTTPException(status_code=502, detail="the payment provider returned an unexpected address")
     if wants_html(request):
         return RedirectResponse(url, status_code=303)
     return Response(content=json.dumps({"url": url}), media_type="application/json")
