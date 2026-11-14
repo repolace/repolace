@@ -98,7 +98,7 @@ The laptop connector must not be running (never two connectors for one tunnel: s
    ```
 3. Verify: `curl -I https://repolace.rounakkumarsingh.com/`, `curl https://repolace.rounakkumarsingh.com/healthz` (shows the deployed `sha`),
    `/benchmark/` loads, and a test signup lands (then delete that one row).
-4. Reboot the instance once and check the site returns without anyone logging in.
+4. Reboot the instance once and check the site returns without anyone logging in. (Done on 2026-11-14: back in under a minute; see "Reboot test" in `docs/operations.md`.)
 
 ## Day to day
 
