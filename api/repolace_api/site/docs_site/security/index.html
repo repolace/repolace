@@ -260,7 +260,7 @@
 <li><strong>The no-oracle filter is not a physical barrier.</strong> A deliberately adversarial agent could still try to signal through it.</li>
 <li><strong><code>llm_calls</code> stores repository source verbatim</strong>, and that source was sent to the model provider. Redaction strips credential-shaped strings, not code. Treat the database accordingly.</li>
 <li><strong>Error text can contain host paths.</strong> Secrets are scrubbed from stored errors, paths are not, and the failed-task page shows them.</li>
-<li><strong>The public-site deployment on AWS and the worker deployment have each been exercised only partly.</strong> The AWS path has deployed once; reboot recovery and a backup restore have not been tested.</li>
+<li><strong>The public-site deployment on AWS and the worker deployment have each been exercised only partly.</strong> The AWS path deploys on every push to <code>main</code>. A nightly backup was restored into a scratch database once, with an empty table; reboot recovery has not been tested.</li>
 <li><strong>Indexing is per repository, not per commit</strong>, so concurrent product tasks on one repository can see each other's index.</li>
 </ul>
 <nav class="doc-pager" aria-label="Pages"><a rel="prev" href="/documentation/benchmark/"><span>Previous</span>Benchmark</a></nav>

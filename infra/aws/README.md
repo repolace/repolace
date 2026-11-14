@@ -114,7 +114,8 @@ The laptop connector must not be running (never two connectors for one tunnel: s
 - **Restore from a backup dump**: generate a presigned URL for the object with your credentials (as in the cutover), then on the host
   `curl -fsS '<URL>' | docker exec -i repolace-site-db pg_restore -U postgres -d repolace --clean --if-exists --no-owner`,
   then re-run the workflow: `deploy.sh` re-applies the table, the grants and the role password. To test a backup, restore into a scratch database
-  (`createdb scratch`) and count rows.
+  (`createdb scratch`) and count rows. Done once, on 2026-11-14, with an empty table: see "Backup restore test" in `docs/operations.md`.
+  The instance role cannot read the bucket, so the presigned URL is required, not optional.
 
 ## Losing the instance
 
