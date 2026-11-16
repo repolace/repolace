@@ -1,0 +1,341 @@
+{
+ "runs": {
+  "git_sha": {
+   "sweep-4": "f02ccb3c57be22c4d487776c3fa259457154b1d1",
+   "sweep-6": "54cf18c777ccf8026ad0ca3efc00812afd8cd835"
+  },
+  "model": "vertex-gemini-3-1-pro-preview",
+  "retry_window_max_attempts": {
+   "sweep-4": 9,
+   "sweep-6": 21
+  },
+  "substituted_cells": {
+   "sweep-4": [
+    "mwaskom__seaborn-3069#1",
+    "mwaskom__seaborn-3187#1",
+    "pallets__flask-5014#1",
+    "pylint-dev__pylint-4551#1",
+    "pylint-dev__pylint-4604#1",
+    "pylint-dev__pylint-4970#1",
+    "sphinx-doc__sphinx-7590#2",
+    "sphinx-doc__sphinx-9230#2",
+    "sphinx-doc__sphinx-9320#2",
+    "sphinx-doc__sphinx-9367#2",
+    "sphinx-doc__sphinx-9602#0",
+    "sphinx-doc__sphinx-9602#2"
+   ],
+   "sweep-6": [
+    "pytest-dev__pytest-7432#1",
+    "pytest-dev__pytest-7571#1",
+    "pytest-dev__pytest-7982#1"
+   ]
+  }
+ },
+ "figures": [
+  {
+   "label": "sweep-6 official",
+   "passed": 28,
+   "planned": 54,
+   "rate": 0.5185185185185185,
+   "instances": 18,
+   "ci_bootstrap_instances": [
+    0.3148148148148148,
+    0.7222222222222222
+   ],
+   "note": "As `repolace-eval report` computes it: every planned row that did not pass is a non-pass."
+  },
+  {
+   "label": "sweep-6 substituted",
+   "passed": 31,
+   "planned": 54,
+   "rate": 0.5740740740740741,
+   "instances": 18,
+   "ci_bootstrap_instances": [
+    0.35185185185185186,
+    0.7962962962962963
+   ],
+   "note": "Hand-stated substitution: the rows sweep-6 lost to Vertex 429 replaced by their sweep-6b re-runs."
+  },
+  {
+   "label": "sweep-4 substituted (baseline)",
+   "passed": 35,
+   "planned": 54,
+   "rate": 0.6481481481481481,
+   "instances": 18,
+   "ci_bootstrap_instances": [
+    0.4444444444444444,
+    0.8333333333333334
+   ],
+   "note": "The published baseline, recomputed here as a check."
+  },
+  {
+   "label": "pooled 4+6 substituted",
+   "passed": 66,
+   "planned": 108,
+   "rate": 0.6111111111111112,
+   "instances": 18,
+   "ci_bootstrap_instances": [
+    0.4074074074074074,
+    0.8055555555555556
+   ],
+   "note": "Hand pool of the two substituted runs: 6 rows per instance. sweep-4 ran with a 9-try retry window for rate-limited calls and sweep-6 with 21; the waits count against the agent's hour, so this mixes two retry policies."
+  }
+ ],
+ "paired": {
+  "substituted": {
+   "basis": "the two hand-substituted grids",
+   "exploratory": true,
+   "same": 15,
+   "favour_sweep_4": 3,
+   "favour_sweep_6": 0,
+   "net_passes_sweep_6_minus_sweep_4": -4,
+   "pass_every_run_in_both": 10,
+   "pass_no_run_in_both": 4,
+   "sign_flip_exact_p_two_sided": 0.25,
+   "smallest_p_possible_with_these_discordant_instances": 0.25,
+   "mcnemar_run_index_0": {
+    "sweep_4_only": 2,
+    "sweep_6_only": 0,
+    "p_exact_two_sided": 0.5
+   },
+   "by_instance": {
+    "mwaskom__seaborn-3069": {
+     "sweep-4": 1,
+     "sweep-6": 0,
+     "runs": 3
+    },
+    "mwaskom__seaborn-3187": {
+     "sweep-4": 0,
+     "sweep-6": 0,
+     "runs": 3
+    },
+    "pallets__flask-5014": {
+     "sweep-4": 3,
+     "sweep-6": 3,
+     "runs": 3
+    },
+    "pylint-dev__pylint-4551": {
+     "sweep-4": 0,
+     "sweep-6": 0,
+     "runs": 3
+    },
+    "pylint-dev__pylint-4604": {
+     "sweep-4": 0,
+     "sweep-6": 0,
+     "runs": 3
+    },
+    "pylint-dev__pylint-4970": {
+     "sweep-4": 2,
+     "sweep-6": 0,
+     "runs": 3
+    },
+    "pytest-dev__pytest-5631": {
+     "sweep-4": 3,
+     "sweep-6": 3,
+     "runs": 3
+    },
+    "pytest-dev__pytest-6202": {
+     "sweep-4": 3,
+     "sweep-6": 3,
+     "runs": 3
+    },
+    "pytest-dev__pytest-7236": {
+     "sweep-4": 3,
+     "sweep-6": 3,
+     "runs": 3
+    },
+    "pytest-dev__pytest-7432": {
+     "sweep-4": 3,
+     "sweep-6": 3,
+     "runs": 3
+    },
+    "pytest-dev__pytest-7571": {
+     "sweep-4": 3,
+     "sweep-6": 3,
+     "runs": 3
+    },
+    "pytest-dev__pytest-7982": {
+     "sweep-4": 3,
+     "sweep-6": 3,
+     "runs": 3
+    },
+    "sphinx-doc__sphinx-7462": {
+     "sweep-4": 1,
+     "sweep-6": 1,
+     "runs": 3
+    },
+    "sphinx-doc__sphinx-7590": {
+     "sweep-4": 0,
+     "sweep-6": 0,
+     "runs": 3
+    },
+    "sphinx-doc__sphinx-9230": {
+     "sweep-4": 3,
+     "sweep-6": 3,
+     "runs": 3
+    },
+    "sphinx-doc__sphinx-9320": {
+     "sweep-4": 3,
+     "sweep-6": 3,
+     "runs": 3
+    },
+    "sphinx-doc__sphinx-9367": {
+     "sweep-4": 3,
+     "sweep-6": 3,
+     "runs": 3
+    },
+    "sphinx-doc__sphinx-9602": {
+     "sweep-4": 1,
+     "sweep-6": 0,
+     "runs": 3
+    }
+   },
+   "note": "sweep-4 ran with a 9-try retry window for rate-limited calls and sweep-6 with 21; the waits count against the agent's hour, so this mixes two retry policies."
+  },
+  "official": {
+   "basis": "the two official grids (lost rows count as non-passes)",
+   "exploratory": true,
+   "same": 10,
+   "favour_sweep_4": 4,
+   "favour_sweep_6": 4,
+   "net_passes_sweep_6_minus_sweep_4": -1,
+   "pass_every_run_in_both": 3,
+   "pass_no_run_in_both": 6,
+   "sign_flip_exact_p_two_sided": 1.0,
+   "smallest_p_possible_with_these_discordant_instances": 0.0078125,
+   "mcnemar_run_index_0": {
+    "sweep_4_only": 2,
+    "sweep_6_only": 0,
+    "p_exact_two_sided": 0.5
+   },
+   "by_instance": {
+    "mwaskom__seaborn-3069": {
+     "sweep-4": 0,
+     "sweep-6": 0,
+     "runs": 3
+    },
+    "mwaskom__seaborn-3187": {
+     "sweep-4": 0,
+     "sweep-6": 0,
+     "runs": 3
+    },
+    "pallets__flask-5014": {
+     "sweep-4": 2,
+     "sweep-6": 3,
+     "runs": 3
+    },
+    "pylint-dev__pylint-4551": {
+     "sweep-4": 0,
+     "sweep-6": 0,
+     "runs": 3
+    },
+    "pylint-dev__pylint-4604": {
+     "sweep-4": 0,
+     "sweep-6": 0,
+     "runs": 3
+    },
+    "pylint-dev__pylint-4970": {
+     "sweep-4": 2,
+     "sweep-6": 0,
+     "runs": 3
+    },
+    "pytest-dev__pytest-5631": {
+     "sweep-4": 3,
+     "sweep-6": 3,
+     "runs": 3
+    },
+    "pytest-dev__pytest-6202": {
+     "sweep-4": 3,
+     "sweep-6": 3,
+     "runs": 3
+    },
+    "pytest-dev__pytest-7236": {
+     "sweep-4": 3,
+     "sweep-6": 3,
+     "runs": 3
+    },
+    "pytest-dev__pytest-7432": {
+     "sweep-4": 3,
+     "sweep-6": 2,
+     "runs": 3
+    },
+    "pytest-dev__pytest-7571": {
+     "sweep-4": 3,
+     "sweep-6": 2,
+     "runs": 3
+    },
+    "pytest-dev__pytest-7982": {
+     "sweep-4": 3,
+     "sweep-6": 2,
+     "runs": 3
+    },
+    "sphinx-doc__sphinx-7462": {
+     "sweep-4": 1,
+     "sweep-6": 1,
+     "runs": 3
+    },
+    "sphinx-doc__sphinx-7590": {
+     "sweep-4": 0,
+     "sweep-6": 0,
+     "runs": 3
+    },
+    "sphinx-doc__sphinx-9230": {
+     "sweep-4": 2,
+     "sweep-6": 3,
+     "runs": 3
+    },
+    "sphinx-doc__sphinx-9320": {
+     "sweep-4": 2,
+     "sweep-6": 3,
+     "runs": 3
+    },
+    "sphinx-doc__sphinx-9367": {
+     "sweep-4": 2,
+     "sweep-6": 3,
+     "runs": 3
+    },
+    "sphinx-doc__sphinx-9602": {
+     "sweep-4": 0,
+     "sweep-6": 0,
+     "runs": 3
+    }
+   },
+   "note": "sweep-4 ran with a 9-try retry window for rate-limited calls and sweep-6 with 21; the waits count against the agent's hour, so this mixes two retry policies."
+  }
+ },
+ "cost": {
+  "definition": "sweep-4's published one: over the 54 final rows of the substituted grid, one row per cell",
+  "sweep-6 substituted": {
+   "rows": 54,
+   "mean_cost_usd": 0.9608180111111111,
+   "median_cost_usd": 0.7794084,
+   "total_cost_usd": 51.8841726,
+   "passes": 31,
+   "cost_per_pass_usd": 1.6736829870967742,
+   "median_latency_s": 985.8,
+   "stop_reasons": {
+    "no_change": 2,
+    "step_cap": 26,
+    "submitted": 26
+   }
+  },
+  "sweep-4 substituted (baseline)": {
+   "rows": 54,
+   "mean_cost_usd": 0.7507328777777778,
+   "median_cost_usd": 0.6452286,
+   "total_cost_usd": 40.5395754,
+   "passes": 35,
+   "cost_per_pass_usd": 1.1582735828571427,
+   "median_latency_s": 1105.6,
+   "stop_reasons": {
+    "step_cap": 28,
+    "submitted": 26
+   }
+  },
+  "spend_usd": {
+   "sweep-6": 48.7922356,
+   "sweep-6b": 3.5907896,
+   "total": 52.3830252
+  }
+ }
+}

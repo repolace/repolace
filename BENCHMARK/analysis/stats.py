@@ -3,7 +3,9 @@
 
 One function treats every run the same way. Nothing here pools runs: the one combined figure, the hand-stated
 substitution of sweep-4 and its sweep-4b re-run ("baseline"), is built row by row (a lost row is replaced by its
-re-run), labelled as a substitution everywhere, and is never produced by `repolace-eval report`.
+re-run), labelled as a substitution everywhere, and is never produced by `repolace-eval report`. The repeat run sweep-6
+and its combinations with sweep-4 are in `replication_stats.py`, not here, and stay out of META so the page does not
+draw them.
 
 Run:  uv run --all-packages python BENCHMARK/analysis/stats.py [--sample]
 (`--sample` writes a small report from sweep-4/4b only, for building the site before every run is analysed.)

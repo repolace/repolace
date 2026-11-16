@@ -1,0 +1,29 @@
+{
+  "agent": "llm",
+  "created_at": "2026-11-15T03:02:24+00:00",
+  "eval_run_id": "sweep-6b",
+  "git_sha": "54cf18c777ccf8026ad0ca3efc00812afd8cd835",
+  "instance_ids": [
+    "pytest-dev__pytest-7432",
+    "pytest-dev__pytest-7571",
+    "pytest-dev__pytest-7982"
+  ],
+  "limits": {
+    "budget_wall_clock_seconds": 3600.0,
+    "max_attempts": 3,
+    "max_steps_per_attempt": 40,
+    "runner_wall_clock_seconds": 11700.0,
+    "task_call_cap": 150,
+    "task_cost_cap_usd": 2.0
+  },
+  "model": "vertex-gemini-3-1-pro-preview",
+  "rows": [
+    "pytest-dev__pytest-7432#1",
+    "pytest-dev__pytest-7571#1",
+    "pytest-dev__pytest-7982#1"
+  ],
+  "runs_per_instance": 2,
+  "stage_models": {
+    "agent": "vertex-gemini-3-1-pro-preview"
+  }
+}

@@ -146,3 +146,15 @@ def test_committed_pages_are_current():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert module.main(["--check"]) == 0, "run `uv run --group docs python docs/tools/build_site.py`"
+
+
+def test_the_published_sweep_6_figures_are_labelled():
+    """docs/benchmark.md is public: sweep-6's substituted and pooled figures must say they are hand-built and not the
+    headline, and its comparison must not be called agreement (three discordant instances cannot reach a small p)."""
+    page = (DOCS_SITE / "benchmark" / "index.html").read_text()
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]*>", "", page))
+    start = text.index("A repeat run shows no detectable difference")
+    bullet = text[start:text.index("Neither figure replaces the headline", start)]
+    assert "hand-stated substitution" in bullet and "by hand" in bullet
+    assert "21 times instead of sweep-4's 9" in bullet
+    assert "agrees" not in bullet
