@@ -5,6 +5,7 @@ import time
 from datetime import UTC, datetime
 
 import pytest
+import stripe
 from api_billing_support import (
     FakeStripe,
     build_app,
@@ -295,3 +296,79 @@ class TestOrdering:
         await post_event(client, event("customer.subscription.created", sub_obj("active", sub_id="sub_2", period_end=LATER)))
         after = await reload(db_session, row)
         assert (after.stripe_subscription_id, after.status, after.plan) == ("sub_2", "active", "pro")
+
+
+class TestResubscriptionDeliveryOrder:
+    """After a cancellation, a new Checkout's two events can arrive in either order (the sandbox
+    delivered `checkout.session.completed` first on 2026-11-16, and the plan stayed free)."""
+
+    @staticmethod
+    def checkout(user, sub_id="sub_2"):
+        obj = {"mode": "subscription", "client_reference_id": str(user.id), "customer": "cus_1", "subscription": sub_id}
+        return event("checkout.session.completed", obj)
+
+    @staticmethod
+    async def canceled(client):
+        await post_event(client, event("customer.subscription.deleted", sub_obj("canceled")))
+
+    async def test_checkout_first_stores_the_new_subscription_state(self, world, db_session):
+        client, user, row, fake = world
+        await self.canceled(client)
+        fake.subscriptions["sub_2"] = sub_obj("active", sub_id="sub_2", period_end=LATER)
+        assert (await post_event(client, self.checkout(user))).status_code == 200
+        after = await reload(db_session, row)
+        assert (after.stripe_subscription_id, after.status, after.plan) == ("sub_2", "active", "pro")
+        assert after.current_period_end == datetime.fromtimestamp(LATER, UTC)
+        assert fake.subscription_calls == ["sub_2"]
+
+        # The `created` that follows agrees and changes nothing.
+        await post_event(client, event("customer.subscription.created", sub_obj("active", sub_id="sub_2", period_end=LATER)))
+        after = await reload(db_session, row)
+        assert (after.stripe_subscription_id, after.status, after.plan) == ("sub_2", "active", "pro")
+
+    async def test_created_first_then_checkout_asks_stripe_nothing(self, world, db_session):
+        client, user, row, fake = world
+        await self.canceled(client)
+        await post_event(client, event("customer.subscription.created", sub_obj("active", sub_id="sub_2", period_end=LATER)))
+        await post_event(client, self.checkout(user))
+        after = await reload(db_session, row)
+        assert (after.stripe_subscription_id, after.status, after.plan) == ("sub_2", "active", "pro")
+        assert fake.subscription_calls == []
+
+    async def test_a_late_event_for_the_old_subscription_is_ignored_after_the_relink(self, world, db_session):
+        client, user, row, fake = world
+        await self.canceled(client)
+        fake.subscriptions["sub_2"] = sub_obj("active", sub_id="sub_2", period_end=LATER)
+        await post_event(client, self.checkout(user))
+        await post_event(client, event("customer.subscription.updated", sub_obj("past_due")))
+        after = await reload(db_session, row)
+        assert (after.stripe_subscription_id, after.status) == ("sub_2", "active")
+
+    async def test_a_new_subscription_already_canceled_is_stored_canceled(self, world, db_session):
+        client, user, row, fake = world
+        await self.canceled(client)
+        fake.subscriptions["sub_2"] = sub_obj("canceled", sub_id="sub_2", period_end=LATER)
+        await post_event(client, self.checkout(user))
+        after = await reload(db_session, row)
+        assert (after.stripe_subscription_id, after.status, after.plan) == ("sub_2", "canceled", "free")
+
+    async def test_a_fetched_subscription_of_another_customer_is_not_stored(self, world, db_session):
+        client, user, row, fake = world
+        await self.canceled(client)
+        fake.subscriptions["sub_2"] = sub_obj("active", customer="cus_other", sub_id="sub_2", period_end=LATER)
+        assert (await post_event(client, self.checkout(user))).status_code == 200
+        after = await reload(db_session, row)
+        assert (after.stripe_subscription_id, after.status, after.plan) == ("sub_1", "canceled", "free")
+
+    async def test_a_stripe_error_on_the_lookup_leaves_the_event_for_a_retry(self, world, db_session):
+        client, user, row, _ = world
+        await self.canceled(client)
+        payload = self.checkout(user, sub_id="sub_unknown_to_the_fake")
+        with pytest.raises(stripe.APIConnectionError):
+            await post_event(client, payload)
+        after = await reload(db_session, row)
+        assert (after.stripe_subscription_id, after.status) == ("sub_1", "canceled")
+        marked = await db_session.scalar(
+            select(func.count()).select_from(ProcessedStripeEvent).where(ProcessedStripeEvent.event_id == payload["id"])
+        )
+        assert marked == 0
