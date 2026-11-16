@@ -79,6 +79,16 @@ class TestVisitors:
             text = (await c.get("/ui/account")).text
         assert "payment failed" in text and "Manage billing" in text
 
+    @pytest.mark.parametrize("status", ["unpaid", "paused"])
+    async def test_an_unsettled_subscription_offers_the_portal_not_upgrade(self, db_session, db_session_factory, status):
+        """Checkout refuses it (409): a second Checkout would make a second subscription."""
+        user = await seed_user(db_session)
+        await seed_subscription(db_session, user, plan="free", status=status, stripe_subscription_id="sub_1")
+        async with get(db_session_factory, cookies=session_cookie(user.id)) as c:
+            text = (await c.get("/ui/account")).text
+        assert f"Your subscription is {status}" in text and "Manage billing" in text
+        assert 'action="/billing/checkout"' not in text
+
     async def test_stripe_not_configured_hides_the_buttons(self, db_session, db_session_factory):
         user = await seed_user(db_session)
         async with get(db_session_factory, billing=settings(stripe_secret_key=None), cookies=session_cookie(user.id)) as c:

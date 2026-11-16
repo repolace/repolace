@@ -120,9 +120,9 @@ class TestIdempotency:
         class Boom(FakeStripe):
             def __init__(self):
                 super().__init__()
-                self.v1.charges.retrieve = self._boom
+                self.v1.charges.retrieve_async = self._boom
 
-            def _boom(self, charge_id, **_):
+            async def _boom(self, charge_id, **_):
                 raise RuntimeError("stripe is down")
 
         app = build_app(db_session_factory, stripe_client=Boom())
@@ -372,3 +372,79 @@ class TestResubscriptionDeliveryOrder:
             select(func.count()).select_from(ProcessedStripeEvent).where(ProcessedStripeEvent.event_id == payload["id"])
         )
         assert marked == 0
+
+
+class TestEndedAndIncompleteStatuses:
+    """`incomplete_expired` ends a subscription like `canceled` does, and Stripe never moves a
+    subscription back to `incomplete`."""
+
+    @staticmethod
+    def checkout(user, sub_id="sub_2"):
+        return TestResubscriptionDeliveryOrder.checkout(user, sub_id)
+
+    @staticmethod
+    async def expired(client):
+        """A subscription whose first payment never completed: Stripe ends it after 23 hours."""
+        await post_event(client, event("customer.subscription.updated", sub_obj("incomplete_expired")))
+
+    async def test_checkout_first_after_an_expired_attempt_stores_the_new_subscription(self, world, db_session):
+        client, user, row, fake = world
+        await self.expired(client)
+        fake.subscriptions["sub_2"] = sub_obj("active", sub_id="sub_2", period_end=LATER)
+        await post_event(client, self.checkout(user))
+        await post_event(client, event("customer.subscription.created", sub_obj("active", sub_id="sub_2", period_end=LATER)))
+        after = await reload(db_session, row)
+        assert (after.stripe_subscription_id, after.status, after.plan) == ("sub_2", "active", "pro")
+        assert fake.subscription_calls == ["sub_2"]
+
+    async def test_created_first_after_an_expired_attempt_is_accepted(self, world, db_session):
+        client, user, row, fake = world
+        await self.expired(client)
+        await post_event(client, event("customer.subscription.created", sub_obj("active", sub_id="sub_2", period_end=LATER)))
+        await post_event(client, self.checkout(user))
+        after = await reload(db_session, row)
+        assert (after.stripe_subscription_id, after.status, after.plan) == ("sub_2", "active", "pro")
+        assert fake.subscription_calls == []
+
+    async def test_a_deleted_after_expiry_still_lets_the_row_take_a_new_subscription(self, world, db_session):
+        client, user, row, fake = world
+        checkout = self.checkout(user)  # built now: `reload` expires `user`
+        await self.expired(client)
+        await post_event(client, event("customer.subscription.deleted", sub_obj("incomplete_expired")))
+        assert (await reload(db_session, row)).status == "canceled"
+        fake.subscriptions["sub_2"] = sub_obj("active", sub_id="sub_2", period_end=LATER)
+        await post_event(client, checkout)
+        after = await reload(db_session, row)
+        assert (after.stripe_subscription_id, after.status, after.plan) == ("sub_2", "active", "pro")
+
+    async def test_an_expired_subscription_is_not_revived_by_a_late_event(self, world, db_session):
+        client, _, row, _ = world
+        await self.expired(client)
+        await post_event(client, event("customer.subscription.updated", sub_obj("active")))
+        after = await reload(db_session, row)
+        assert (after.status, after.plan) == ("incomplete_expired", "free")
+
+    async def test_a_late_incomplete_created_does_not_undo_a_paid_status(self, world, db_session):
+        """3DS: `created` is sent as `incomplete`, `updated` as `active` once the card is confirmed."""
+        client, _, row, _ = world
+        await post_event(client, event("customer.subscription.updated", sub_obj("active")))
+        await post_event(client, event("customer.subscription.created", sub_obj("incomplete")))
+        after = await reload(db_session, row)
+        assert (after.status, after.plan) == ("active", "pro")
+
+    async def test_in_order_an_incomplete_subscription_becomes_paid(self, world, db_session):
+        client, _, row, _ = world
+        await post_event(client, event("customer.subscription.created", sub_obj("incomplete")))
+        assert (await reload(db_session, row)).status == "incomplete"
+        await post_event(client, event("customer.subscription.updated", sub_obj("active")))
+        after = await reload(db_session, row)
+        assert (after.status, after.plan) == ("active", "pro")
+
+    async def test_a_late_incomplete_created_does_not_undo_the_state_checkout_fetched(self, world, db_session):
+        client, user, row, fake = world
+        await post_event(client, event("customer.subscription.deleted", sub_obj("canceled")))
+        fake.subscriptions["sub_2"] = sub_obj("active", sub_id="sub_2", period_end=LATER)
+        await post_event(client, self.checkout(user))
+        await post_event(client, event("customer.subscription.created", sub_obj("incomplete", sub_id="sub_2", period_end=LATER)))
+        after = await reload(db_session, row)
+        assert (after.stripe_subscription_id, after.status, after.plan) == ("sub_2", "active", "pro")

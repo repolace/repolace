@@ -36,8 +36,11 @@
   {% if status == "past_due" %}
   <p class="panel notice" role="status">Your last payment failed. Update your card in Manage billing to keep Pro.</p>
   {% endif %}
+  {% if unsettled %}
+  <p class="panel notice" role="status">Your subscription is {{ status }}, so a new one cannot be started. Use Manage billing to see what it needs, or to cancel it and then upgrade again.</p>
+  {% endif %}
   <div class="body actions">
-    {% if stripe_ready and plan != "pro" %}
+    {% if stripe_ready and plan != "pro" and not unsettled %}
     <form method="post" action="/billing/checkout"><button class="btn btn-primary" type="submit">Upgrade</button></form>
     {% endif %}
     {% if stripe_ready and has_subscription %}

@@ -20,6 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from repolace_api.config import BillingSettings, get_billing_settings
 from repolace_api.deps import optional_user
 
+#: Stripe statuses a subscription never leaves. A row in one of them can take a new subscription id.
+ENDED_STATUSES = frozenset({"canceled", "incomplete_expired"})
+#: Statuses of a subscription that still exists and is not paid. Settled in the portal, not by a
+#: second Checkout, which would leave the customer with two subscriptions.
+UNSETTLED_STATUSES = frozenset({"unpaid", "paused"})
+
 FREE_TASKS_PER_MONTH = 2
 PRO_TASKS_PER_MONTH = 60
 

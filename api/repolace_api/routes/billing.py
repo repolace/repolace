@@ -23,6 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from repolace_api.billing_limits import ENDED_STATUSES, UNSETTLED_STATUSES
 from repolace_api.config import BillingSettings, get_billing_settings
 from repolace_api.deps import current_user, get_db, require_same_origin, wants_html
 from repolace_api.ui.security import STRIPE_FORM_TARGETS
@@ -39,6 +40,10 @@ MAX_WEBHOOK_BYTES = 1_000_000
 
 @lru_cache(maxsize=4)
 def _client_for(secret_key: str) -> stripe.StripeClient:
+    # One client per key for the life of the process. Its `*_async` calls go through an httpx
+    # AsyncClient whose pooled connections belong to the first event loop that uses them, so this
+    # assumes one event loop per process (uvicorn's). Anything that drives the real client from a
+    # second loop (a TestClient block, a second asyncio.run) needs a client of its own.
     return stripe.StripeClient(secret_key)
 
 
@@ -86,7 +91,7 @@ async def checkout(
 ) -> Response:
     require_same_origin(request)
     row = await _subscription_of(db, user.id)
-    if row is not None and row.plan == "pro":
+    if row is not None and (row.plan == "pro" or row.status in UNSETTLED_STATUSES):
         raise HTTPException(status_code=409, detail="already subscribed; manage the plan in the billing portal")
 
     # The customer id is stored before any event can mention it, so every later event resolves to
@@ -96,7 +101,7 @@ async def checkout(
         params: dict[str, Any] = {"metadata": {"user_id": str(user.id)}}
         if user.email:
             params["email"] = user.email
-        customer = client.v1.customers.create(params=params, options={"idempotency_key": f"repolace-customer-{user.id}"})
+        customer = await client.v1.customers.create_async(params=params, options={"idempotency_key": f"repolace-customer-{user.id}"})
         await db.execute(
             insert(Subscription).values(user_id=user.id, stripe_customer_id=customer.id).on_conflict_do_nothing()
         )
@@ -106,7 +111,7 @@ async def checkout(
             raise HTTPException(status_code=500, detail="could not record the billing customer")
 
     base = settings.api_base_url.rstrip("/")
-    session = client.v1.checkout.sessions.create(
+    session = await client.v1.checkout.sessions.create_async(
         params={
             "mode": "subscription",
             "line_items": [{"price": settings.stripe_price_id, "quantity": 1}],
@@ -133,7 +138,7 @@ async def portal(
     row = await _subscription_of(db, user.id)
     if row is None:
         raise HTTPException(status_code=404, detail="no subscription to manage")
-    session = client.v1.billing_portal.sessions.create(
+    session = await client.v1.billing_portal.sessions.create_async(
         params={"customer": row.stripe_customer_id, "return_url": f"{settings.api_base_url.rstrip('/')}/ui/account"}
     )
     return _respond(request, session.url)
@@ -241,13 +246,13 @@ async def _on_checkout_completed(db: AsyncSession, event: dict, client: stripe.S
         return
     if not isinstance(subscription, str):
         return
-    if row.status == "canceled":
-        # A re-subscription. Linking only the id would leave `canceled` on it, and `_on_subscription`
-        # treats `canceled` as terminal for an id, so a `created` delivered after this event would be
-        # dropped and the paid plan never stored (seen on the sandbox, 2026-11-16). Store the new
+    if row.status in ENDED_STATUSES:
+        # A re-subscription. Linking only the id would leave the ended status on it, and
+        # `_on_subscription` treats an ended status as terminal for an id, so a `created` delivered
+        # after this event would be dropped and the paid plan never stored (seen on the sandbox, 2026-11-16). Store the new
         # subscription's own state instead, read from Stripe (the key's read permission on
         # Subscriptions). A Stripe error propagates, so the event is retried.
-        fetched = client.v1.subscriptions.retrieve(subscription).to_dict()
+        fetched = (await client.v1.subscriptions.retrieve_async(subscription)).to_dict()
         if fetched.get("customer") != customer:
             log.warning("stripe.checkout.subscription_customer_mismatch", user_id=str(user_id))
             return
@@ -261,17 +266,21 @@ async def _on_subscription(db: AsyncSession, event: dict, client: stripe.StripeC
 
     Stripe does not guarantee delivery order, so a stale event must not overwrite newer state.
     Without storing the event time, the choice made here is state-based:
-      * `canceled` is terminal for a subscription id, so any later non-delete event for it is ignored;
+      * `canceled` and `incomplete_expired` are terminal for a subscription id, so any later non-delete
+        event for it is ignored;
+      * Stripe never moves a subscription back to `incomplete`, so an `incomplete` event for the stored
+        id is stale once the row holds any other status (a `created` sent during a 3DS confirmation and
+        delivered after the `updated` that followed it, or after Checkout stored the fetched state);
       * an event whose period end is older than the stored one (same subscription) is stale, because
         a renewal only moves the period forward;
       * an event for a different subscription id is ignored while the stored one is live, and accepted
-        once the stored one is canceled or absent (a re-subscription). Checkout refuses a second
+        once the stored one has ended or is absent (a re-subscription). Checkout refuses a second
         subscription while one is live, so this only matters for out-of-order delivery.
     Equal period ends cannot be ordered (active then past_due within one period); Stripe's retry
     and the next event converge those.
 
     `cancel_at` is stored from the same event, so it passes through the same guards: a stale event
-    (older period end, or any non-delete event after `canceled`) changes nothing, including
+    (older period end, or any non-delete event after an ended status) changes nothing, including
     `cancel_at`. Resuming does not move the period end, so it is not ordered by the period guard
     (an equal period end is accepted); a resume event therefore clears `cancel_at` when Stripe reports
     null. The plan still comes only from `status`, so a pending cancellation keeps `pro` until Stripe
@@ -285,9 +294,16 @@ async def _on_subscription(db: AsyncSession, event: dict, client: stripe.StripeC
     sub_id = sub.get("id")
     is_delete = event["type"] == "customer.subscription.deleted"
     same = row.stripe_subscription_id in (None, sub_id)
-    if not same and row.status not in ("canceled", "incomplete"):
+    if not same and row.status not in ENDED_STATUSES | {"incomplete"}:
         return
-    if same and row.status == "canceled" and not is_delete:
+    if same and row.status in ENDED_STATUSES and not is_delete:
+        return
+    if (
+        not is_delete
+        and sub.get("status") == "incomplete"
+        and row.stripe_subscription_id == sub_id
+        and row.status != "incomplete"
+    ):
         return
     period_end = _period_end(sub)
     if same and not is_delete and period_end and row.current_period_end and period_end < row.current_period_end:
@@ -343,7 +359,7 @@ async def _customer_of_charge(client: stripe.StripeClient, charge_id: Any) -> st
     read permission on Charges). A Stripe error propagates, so the event is retried."""
     if not isinstance(charge_id, str):
         return None
-    customer = getattr(client.v1.charges.retrieve(charge_id), "customer", None)
+    customer = getattr(await client.v1.charges.retrieve_async(charge_id), "customer", None)
     return customer if isinstance(customer, str) else None
 
 
