@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import httpx
+import stripe
 from fastapi import FastAPI
 from repolace_api.config import BillingSettings, get_billing_settings
 from repolace_api.deps import SESSION_COOKIE
@@ -49,6 +50,9 @@ class FakeStripe:
         self.checkout_calls: list[dict] = []
         self.portal_calls: list[dict] = []
         self.charge_calls: list[str] = []
+        self.subscription_calls: list[str] = []
+        #: What `subscriptions.retrieve` answers, by id; an id not here raises like a Stripe error.
+        self.subscriptions: dict[str, dict] = {}
         outer = self
 
         class Customers:
@@ -71,8 +75,16 @@ class FakeStripe:
                 outer.charge_calls.append(charge_id)
                 return SimpleNamespace(id=charge_id, customer=charge_customer)
 
+        class Subscriptions:
+            def retrieve(self, subscription_id, params=None, options=None):
+                outer.subscription_calls.append(subscription_id)
+                if subscription_id not in outer.subscriptions:
+                    raise stripe.APIConnectionError("no answer from the fake")
+                return SimpleNamespace(to_dict=lambda: dict(outer.subscriptions[subscription_id]))
+
         self.v1 = SimpleNamespace(
             customers=Customers(),
+            subscriptions=Subscriptions(),
             checkout=SimpleNamespace(sessions=CheckoutSessions()),
             billing_portal=SimpleNamespace(sessions=PortalSessions()),
             charges=Charges(),

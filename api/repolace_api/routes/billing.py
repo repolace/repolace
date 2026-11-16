@@ -229,7 +229,9 @@ async def _on_checkout_completed(db: AsyncSession, event: dict, client: stripe.S
     customer, subscription = obj.get("customer"), obj.get("subscription")
     if not isinstance(customer, str) or await db.get(User, user_id) is None:
         return
-    row = await _subscription_of(db, user_id)
+    # Row lock, as in `_by_customer`: this handler may now write the whole row, so a concurrent event
+    # for the customer (a `deleted` committing meanwhile) must apply before it, not be overwritten.
+    row = await db.scalar(select(Subscription).where(Subscription.user_id == user_id).with_for_update())
     if row is None:
         db.add(Subscription(user_id=user_id, stripe_customer_id=customer, stripe_subscription_id=subscription))
         return
@@ -237,7 +239,20 @@ async def _on_checkout_completed(db: AsyncSession, event: dict, client: stripe.S
         # Never re-link a user to a different customer on the strength of one event.
         log.warning("stripe.checkout.customer_mismatch", user_id=str(user_id))
         return
-    if isinstance(subscription, str) and (row.stripe_subscription_id is None or row.status == "canceled"):
+    if not isinstance(subscription, str):
+        return
+    if row.status == "canceled":
+        # A re-subscription. Linking only the id would leave `canceled` on it, and `_on_subscription`
+        # treats `canceled` as terminal for an id, so a `created` delivered after this event would be
+        # dropped and the paid plan never stored (seen on the sandbox, 2026-11-16). Store the new
+        # subscription's own state instead, read from Stripe (the key's read permission on
+        # Subscriptions). A Stripe error propagates, so the event is retried.
+        fetched = client.v1.subscriptions.retrieve(subscription).to_dict()
+        if fetched.get("customer") != customer:
+            log.warning("stripe.checkout.subscription_customer_mismatch", user_id=str(user_id))
+            return
+        _store(row, fetched)
+    elif row.stripe_subscription_id is None:
         row.stripe_subscription_id = subscription
 
 
@@ -278,8 +293,14 @@ async def _on_subscription(db: AsyncSession, event: dict, client: stripe.StripeC
     if same and not is_delete and period_end and row.current_period_end and period_end < row.current_period_end:
         return
 
-    status = "canceled" if is_delete else str(sub.get("status", "incomplete"))
-    row.stripe_subscription_id = sub_id
+    _store(row, sub, canceled=is_delete)
+
+
+def _store(row: Subscription, sub: dict, *, canceled: bool = False) -> None:
+    """Copy a Stripe subscription onto the row. The plan comes only from the status."""
+    status = "canceled" if canceled else str(sub.get("status", "incomplete"))
+    period_end = _period_end(sub)
+    row.stripe_subscription_id = sub.get("id")
     row.status = status
     row.plan = "pro" if status in PRO_STATUSES else "free"
     if period_end is not None:
