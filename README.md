@@ -116,3 +116,14 @@ Start at [docs/README.md](docs/README.md). The main pages:
 ## Contributing and license
 
 Issues and small pull requests are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) first. Report vulnerabilities as described in [SECURITY.md](SECURITY.md). repolace is released under the MIT license; see [LICENSE](LICENSE).
+
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=repolace%2Frepolace&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=repolace/repolace&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=repolace/repolace&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=repolace/repolace&type=date&legend=top-left" />
+ </picture>
+</a>
