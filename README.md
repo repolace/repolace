@@ -21,7 +21,7 @@ Agents that patch issues are common. What this project is for is the part most o
 | Public site on AWS | Deployed: the CDK stack, a push-to-deploy workflow with a reviewer approval, and a commit-sha check on `/healthz`. A nightly backup was restored into a scratch database once (2026-11-14; the table was empty, so it shows the schema restores, not rows). The host was rebooted once (2026-11-14) and the site came back by itself in under a minute. **Not yet tested:** a restore with rows in the table, a rollback under a real failure |
 | Observability | Structured JSON logs with a task id on every line. OpenTelemetry and Grafana are not started |
 | Languages | Python repositories with pytest only. Indexing and the sandbox assume it |
-| Accounts and billing | GitHub sign-in, Stripe Checkout, customer portal and webhook, a monthly task allowance (free 2, paid 60) and `/ui/account`. **Test mode only**: exercised once against a Stripe sandbox and a real GitHub sign-in, not public (the webhook must move off the laptop first), and `/pricing` still says billing is not open. See [docs/BILLING_SETUP.md](docs/BILLING_SETUP.md) |
+| Accounts and billing | GitHub sign-in, Stripe Checkout, customer portal and webhook, a monthly task allowance (free 2, paid 60) and `/ui/account`. **Test mode only**: run against a Stripe sandbox with a restricted key and a real GitHub sign-in (Checkout, the customer portal, a subscription change and a cancellation, each reaching the database by webhook; one delivery-order defect found and recorded in the billing setup), not public (the webhook must move off the laptop first), and `/pricing` still says billing is not open. See [docs/BILLING_SETUP.md](docs/BILLING_SETUP.md) |
 
 ## Architecture
 
