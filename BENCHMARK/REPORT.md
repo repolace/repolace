@@ -127,3 +127,25 @@ python3 -I BENCHMARK/analysis/analyze.py   # no dependencies beyond the standard
 ```
 
 This rewrites `analysis/results.json` and the SVGs in `figures/` byte for byte (seed 20261025, 20,000 bootstrap resamples, 20,000 permutations). The CSVs themselves were exported from the development database (`tasks`, `llm_calls`, and `task_test_runs`-derived outcomes); see `BENCHMARK/README.md`.
+
+## 11. A second run of the sweep-4 configuration: sweep-6
+
+`sweep-6` (2026-11-14 to 15, commit `54cf18c`) ran the sweep-4 grid again: the same 18 instances, 3 runs each, `--no-pr`, and the same model, limits and stage models (the manifests agree field for field). The agent (`agents/`) is unchanged since sweep-4's `f02ccb3`, but **one setting that can move outcomes is not**: the gateway retried a rate-limited call up to 9 times for sweep-4 (about 3 to 6 minutes) and up to 21 times for sweep-6 (about 15 to 30 minutes), and those waits count against the agent's one-hour budget. Under 9 tries a long rate-limit spell ends a task as a harness error, which is then re-run; under 21 the task carries on and is scored as an agent result. That probably explains why sweep-6 lost 3 rows to 429 where sweep-4 lost 12; no sweep-6 row ended on the agent's wall budget. The other changes between the two commits are off the agent's path: PR text, the Vertex priority model variant, an unset per-task budget variable, the reaper's benchmark filter, `enqueue --rows`, and a billing migration. The model is a preview endpoint and the runs are three weeks apart, so the provider may also have changed. The 3 lost rows were re-run as `sweep-6b` (3 of 3 passed).
+
+The figures come from `analysis/replication_stats.py` over `data/sweep-{4,4b,6,6b}/` and are in `data/replication.json`. As a check, the script rebuilds the published 35/54 interval to the last bit (the same data, bootstrap and random stream as `stats.py`), and its cost function gives sweep-4's published cost figures.
+
+| Definition | Passed | Rate | 95% interval over instances |
+|---|---|---|---|
+| **sweep-6, official** (as `repolace-eval report` computes it) | 28 / 54 | 51.9% | 31.5 to 72.2 |
+| sweep-6, the 3 lost rows replaced by their sweep-6b re-runs (hand-stated substitution) | 31 / 54 | 57.4% | 35.2 to 79.6 |
+| sweep-4 and sweep-6 pooled, both substituted (hand pool of two retry policies, 6 rows per instance) | 66 / 108 | 61.1% | 40.7 to 80.6 |
+
+**No detectable difference, and the test could not have detected one** (exploratory: the runs are meant as one configuration, so nothing was pre-registered). Comparing the two substituted runs, 15 of 18 instances score the same number of passes out of 3; 10 pass every run in both and 4 pass none. The other 3 all favour sweep-4 (`pylint-dev__pylint-4970` 2 against 0, `mwaskom__seaborn-3069` 1 against 0, `sphinx-doc__sphinx-9602` 1 against 0), 4 passes in all, and two of those three differences rest on sweep-4b re-run rows. The exact sign-flip test gives p = 0.25, which is the smallest p three discordant instances can give, so it is no evidence either way. On run index 0 the exact McNemar test is 2 against 0, p = 0.5. Comparing the official runs instead (lost rows as non-passes), 8 instances differ, 4 each way, net 1 pass in sweep-4's favour, and only 3 pass every run in both while 6 pass none: the substituted comparison looks tidier than the raw runs.
+
+**Pooling does not narrow the headline.** The pooled interval is 39.8 points wide, against 38.9 for sweep-4's substituted figure: runs of one instance are strongly correlated, so almost all of the uncertainty is in which 18 issues were sampled, and more runs of these barely tighten it. More issues would. The headline stays sweep-4's official 29/54.
+
+**Cost and time**, on sweep-4's published definitions (the 54 final rows of the substituted grid): mean $0.961 and median $0.779 per task, $1.67 per pass ($51.88 over 31 passes), median 986 s, against $0.751, $0.645, $1.16 and 1,106 s for sweep-4. 26 tasks ended on the step cap, 26 by submitting and 2 with no change. Spend: $48.79 for sweep-6 and $3.59 for sweep-6b, $52.38 in all. The dispatch took four invocations: the provider-refusal breaker stopped the first after the 429s, and the run's cost cap stopped two more.
+
+```bash
+uv run --all-packages python BENCHMARK/analysis/replication_stats.py   # rewrites data/replication.json
+```

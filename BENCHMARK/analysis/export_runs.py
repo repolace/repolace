@@ -39,6 +39,9 @@ RUNS = {
     "sweep-r2": {"label": "Role split, Gemini 3.1 Pro", "kind": "variant", "worktree": "repolace-roles"},
     "sweep-e1": {"label": "Early-edit nudge, Gemini 3.1 Pro", "kind": "variant", "worktree": "repolace-early"},
     "sweep-m1": {"label": "Role split, Flash editor with Pro plan/review/debug", "kind": "variant", "worktree": "repolace-mixed"},
+    # A second run of the sweep-4 configuration. Not in stats.py's META: replication_stats.py reads it.
+    "sweep-6": {"label": "Single agent, Gemini 3.1 Pro (replication of sweep-4)", "kind": "replication", "worktree": "repolace"},
+    "sweep-6b": {"label": "Re-run of the 3 rows sweep-6 lost to 429", "kind": "replication-rerun", "worktree": "repolace"},
 }
 ARCHIVE = MAIN / "eval" / "runs" / "archive-2026-10-28"
 EDIT_TOOLS = {"edit_file", "create_file"}

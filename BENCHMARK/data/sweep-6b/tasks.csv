@@ -1,0 +1,4 @@
+task_id,run,instance_id,run_index,status,outcome,stop_reason,score_reason,error_head,cost_usd,started_at,completed_at,latency_s,retry_count,changed_files_n,scored_attempts
+0875275f-0e4e-4b81-a29c-afb95dd48d4a,sweep-6b,pytest-dev__pytest-7432,1,completed,passed,submitted,"all 1 expected tests pass, no regressions",,1.6964,2026-11-15 12:52:58.518839+00,2026-11-15 13:09:24.716739+00,986.2,0,1,1
+82c1ef93-d3f2-47cf-91ee-a8bfc175a56b,sweep-6b,pytest-dev__pytest-7571,1,completed,passed,submitted,"all 1 expected tests pass, no regressions",,0.4302,2026-11-15 13:09:47.515947+00,2026-11-15 13:29:24.126795+00,1176.6,0,1,1
+b9b5227b-ebd9-4c05-96b5-fa0b25d3a8c0,sweep-6b,pytest-dev__pytest-7982,1,completed,passed,step_cap,"all 1 expected tests pass, no regressions",,1.4642,2026-11-15 13:29:46.642832+00,2026-11-15 13:44:58.797199+00,912.2,0,1,1
