@@ -43,7 +43,8 @@ def settings(**overrides: Any) -> BillingSettings:
 
 
 class FakeStripe:
-    """The few `StripeClient` calls the routes make, recording what they were given."""
+    """The few `StripeClient` calls the routes make, recording what they were given. Only the
+    `*_async` methods exist, so a route that goes back to a blocking call fails its tests."""
 
     def __init__(self, charge_customer: str | None = "cus_1"):
         self.customer_calls: list[dict] = []
@@ -51,32 +52,32 @@ class FakeStripe:
         self.portal_calls: list[dict] = []
         self.charge_calls: list[str] = []
         self.subscription_calls: list[str] = []
-        #: What `subscriptions.retrieve` answers, by id; an id not here raises like a Stripe error.
+        #: What `subscriptions.retrieve_async` answers, by id; an id not here raises like a Stripe error.
         self.subscriptions: dict[str, dict] = {}
         outer = self
 
         class Customers:
-            def create(self, params=None, options=None):
+            async def create_async(self, params=None, options=None):
                 outer.customer_calls.append({"params": params, "options": options})
                 return SimpleNamespace(id=f"cus_{len(outer.customer_calls)}")
 
         class CheckoutSessions:
-            def create(self, params=None, options=None):
+            async def create_async(self, params=None, options=None):
                 outer.checkout_calls.append(params)
                 return SimpleNamespace(url="https://checkout.stripe.com/c/pay_1")
 
         class PortalSessions:
-            def create(self, params=None, options=None):
+            async def create_async(self, params=None, options=None):
                 outer.portal_calls.append(params)
                 return SimpleNamespace(url="https://billing.stripe.com/p/session_1")
 
         class Charges:
-            def retrieve(self, charge_id, params=None, options=None):
+            async def retrieve_async(self, charge_id, params=None, options=None):
                 outer.charge_calls.append(charge_id)
                 return SimpleNamespace(id=charge_id, customer=charge_customer)
 
         class Subscriptions:
-            def retrieve(self, subscription_id, params=None, options=None):
+            async def retrieve_async(self, subscription_id, params=None, options=None):
                 outer.subscription_calls.append(subscription_id)
                 if subscription_id not in outer.subscriptions:
                     raise stripe.APIConnectionError("no answer from the fake")

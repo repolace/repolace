@@ -92,9 +92,11 @@ class TestCheckout:
         """Chrome would block that redirect silently (`form-action`), so the route says so instead."""
         user = await seed_user(db_session)
         fake = FakeStripe()
-        fake.v1.checkout.sessions.create = lambda params=None, options=None: SimpleNamespace(
-            url="https://pay.example.com/c/pay_1"
-        )
+
+        async def elsewhere(params=None, options=None):
+            return SimpleNamespace(url="https://pay.example.com/c/pay_1")
+
+        fake.v1.checkout.sessions.create_async = elsewhere
         app = build_app(db_session_factory, stripe_client=fake)
         async with client_for(app, cookies=session_cookie(user.id)) as client:
             for accept in ("text/html,*/*", "application/json"):
@@ -110,6 +112,27 @@ class TestCheckout:
         async with client_for(app, cookies=session_cookie(user.id)) as client:
             response = await client.post("/billing/checkout", headers=SAME_ORIGIN)
         assert response.status_code == 409 and fake.checkout_calls == []
+
+    @pytest.mark.parametrize("status", ["unpaid", "paused"])
+    async def test_an_unsettled_subscription_is_sent_to_the_portal(self, db_session, db_session_factory, status):
+        """It still exists in Stripe, so a second Checkout would make a second subscription."""
+        user = await seed_user(db_session)
+        await seed_subscription(db_session, user, plan="free", status=status, stripe_subscription_id="sub_1")
+        fake = FakeStripe()
+        app = build_app(db_session_factory, stripe_client=fake)
+        async with client_for(app, cookies=session_cookie(user.id)) as client:
+            response = await client.post("/billing/checkout", headers=SAME_ORIGIN)
+        assert response.status_code == 409 and fake.checkout_calls == []
+
+    @pytest.mark.parametrize("status", ["canceled", "incomplete_expired", "incomplete"])
+    async def test_an_ended_or_unfinished_subscription_can_check_out_again(self, db_session, db_session_factory, status):
+        user = await seed_user(db_session)
+        await seed_subscription(db_session, user, plan="free", status=status, stripe_subscription_id="sub_1")
+        fake = FakeStripe()
+        app = build_app(db_session_factory, stripe_client=fake)
+        async with client_for(app, cookies=session_cookie(user.id)) as client:
+            response = await client.post("/billing/checkout", headers=SAME_ORIGIN)
+        assert response.status_code == 200 and len(fake.checkout_calls) == 1
 
 
 class TestPortal:

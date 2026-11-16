@@ -24,7 +24,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
-from repolace_api.billing_limits import allowance_for, enqueue_owner, plan_for_user, tasks_started_this_month
+from repolace_api.billing_limits import (
+    UNSETTLED_STATUSES,
+    allowance_for,
+    enqueue_owner,
+    plan_for_user,
+    tasks_started_this_month,
+)
 from repolace_api.config import BillingSettings, get_billing_settings
 from repolace_api.deps import get_db, get_github_client, optional_user
 from repolace_api.publisher import TaskPublisher, get_publisher
@@ -167,6 +173,8 @@ async def account_page(
             "period_end": sub.current_period_end if sub else None,
             "cancel_at": sub.cancel_at if sub else None,
             "has_subscription": sub is not None,
+            # Checkout refuses these (409): the subscription still exists in Stripe.
+            "unsettled": sub is not None and sub.status in UNSETTLED_STATUSES,
             "used": await tasks_started_this_month(db, user.id),
             "limit": allowance_for(plan),
         }
