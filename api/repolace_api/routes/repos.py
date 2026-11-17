@@ -18,8 +18,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
 from repolace_api.billing_limits import enforce_allowance, enqueue_owner
-from repolace_api.deps import Viewer, get_db, get_github_client, require_same_origin, require_viewer
+from repolace_api.deps import (
+    GITHUB_READS,
+    TASK_STARTS,
+    Viewer,
+    enforce_user_limit,
+    get_db,
+    get_github_client,
+    require_same_origin,
+    require_viewer,
+)
 from repolace_api.publisher import TaskPublisher, get_publisher
+from repolace_api.redact import scrub_host_paths
 from repolace_api.schemas import (
     BranchOut,
     CostEstimate,
@@ -84,12 +94,16 @@ async def list_repos(db: AsyncSession = Depends(get_db), viewer: Viewer = Depend
     return await list_active_repos(db, viewer)
 
 
-async def list_active_repos(db: AsyncSession, viewer: Viewer) -> list[RepoOut]:
+async def visible_repos(db: AsyncSession, viewer: Viewer) -> list[RegisteredRepo]:
+    """The active repositories the viewer may see."""
     query = select(RegisteredRepo).where(RegisteredRepo.is_active.is_(True))
     if viewer.repo_ids is not None:
         query = query.where(RegisteredRepo.github_repo_id.in_(viewer.repo_ids))
-    rows = (await db.execute(query)).scalars().all()
-    return [RepoOut.model_validate(row, from_attributes=True) for row in rows]
+    return list((await db.execute(query)).scalars().all())
+
+
+async def list_active_repos(db: AsyncSession, viewer: Viewer) -> list[RepoOut]:
+    return [RepoOut.model_validate(row, from_attributes=True) for row in await visible_repos(db, viewer)]
 
 
 @router.get("/{repo_id}/issues", response_model=list[IssueOut])
@@ -104,6 +118,7 @@ async def list_repo_issues(
 
 async def fetch_issues(db: AsyncSession, github: GithubClient, repo_id: UUID, viewer: Viewer) -> list[IssueOut]:
     repo = await active_repo(db, repo_id, viewer)
+    enforce_user_limit(GITHUB_READS, viewer, "GitHub requests")
     with github_errors(repo_id):
         issues = await github.list_repo_open_issues(repo.installation_id, repo.owner, repo.name)
 
@@ -133,6 +148,7 @@ async def list_repo_branches(
 
 async def fetch_branches(db: AsyncSession, github: GithubClient, repo_id: UUID, viewer: Viewer) -> list[BranchOut]:
     repo = await active_repo(db, repo_id, viewer)
+    enforce_user_limit(GITHUB_READS, viewer, "GitHub requests")
     with github_errors(repo_id):
         branches = await github.list_branches(repo.installation_id, repo.owner, repo.name)
     return [BranchOut(name=b.name, default=b.name == repo.default_branch) for b in branches]
@@ -193,6 +209,7 @@ async def enqueue_task(
     """
     repo = await active_repo(db, repo_id, viewer)
     require_push(viewer, repo)
+    enforce_user_limit(TASK_STARTS, viewer, "task starts")
 
     target_branch = body.target_branch if body.target_branch is not None else repo.default_branch
     if not target_branch.strip():
@@ -458,11 +475,11 @@ async def query_task_page(
 
 
 def list_item(row: Task) -> TaskListItem:
-    """A list item from a (possibly `load_only`) task row, scrubbed if it is a benchmark task."""
+    """A list item from a (possibly `load_only`) task row: a benchmark task's error text withheld, a
+    product task's with host paths scrubbed (`repolace_api.redact`)."""
     values = {name: getattr(row, name) for name in TaskListItem.model_fields if name != "is_benchmark"}
     is_benchmark = row.eval_run_id is not None
-    if is_benchmark:
-        values["error_message"] = None
+    values["error_message"] = None if is_benchmark else scrub_host_paths(values["error_message"])
     return TaskListItem(**values, is_benchmark=is_benchmark)
 
 

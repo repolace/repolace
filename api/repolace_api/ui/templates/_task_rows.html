@@ -10,8 +10,12 @@
   <a class="btn" href="/ui/repos/{{ repo.id }}/tasks{{ '?benchmark=1' if filters.benchmark else '' }}">Clear filters</a>
   {% else %}
   <p>No tasks yet.</p>
+  {% if can_start %}
   <p class="muted">{% if not filters.benchmark %}Benchmark tasks are hidden. {% endif %}Pick an open issue to start one.</p>
   <a class="btn btn-primary" href="/ui/repos/{{ repo.id }}/tasks/new">{{ icon("plus") }}New task</a>
+  {% else %}
+  <p class="muted">{% if not filters.benchmark %}Benchmark tasks are hidden. {% endif %}Starting a task needs push access to this repository on GitHub.</p>
+  {% endif %}
   {% endif %}
 </td></tr>
 {% endif %}

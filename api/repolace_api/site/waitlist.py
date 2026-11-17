@@ -1,8 +1,7 @@
-"""Waitlist: input checks, the per-address store, the abuse limiter and the Turnstile check."""
+"""Waitlist: input checks, the per-address store and the Turnstile check. The limiter lives in
+`repolace_api.ratelimit`, shared with the API."""
 
 import re
-import time
-from collections import deque
 from typing import Protocol
 
 import httpx
@@ -41,35 +40,6 @@ class SqlWaitlistStore:
         async with self._session_factory() as session:
             await session.execute(stmt)
             await session.commit()
-
-
-class SlidingWindowLimiter:
-    """At most `limit` events per `window` seconds per key, in memory.
-
-    A site process is one worker, so a per-process limiter is the whole limiter; behind several
-    workers it would be per worker, which is still a bound. `max_keys` caps memory: when full, the
-    oldest keys are dropped, which only ever lets a long-quiet address through again.
-    """
-
-    def __init__(self, limit: int, window: float, max_keys: int = 10_000, clock=time.monotonic):
-        self.limit = limit
-        self.window = window
-        self.max_keys = max_keys
-        self._clock = clock
-        self._events: dict[str, deque[float]] = {}
-
-    def allow(self, key: str) -> bool:
-        now = self._clock()
-        events = self._events.setdefault(key, deque())
-        while events and now - events[0] > self.window:
-            events.popleft()
-        if len(events) >= self.limit:
-            return False
-        events.append(now)
-        if len(self._events) > self.max_keys:
-            for stale in list(self._events)[: len(self._events) - self.max_keys]:
-                self._events.pop(stale, None)
-        return True
 
 
 class TurnstileVerifier:

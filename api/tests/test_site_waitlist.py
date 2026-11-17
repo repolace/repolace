@@ -3,8 +3,9 @@
 import httpx
 import pytest
 from repolace_api.config import SiteSettings
+from repolace_api.ratelimit import SlidingWindowLimiter
 from repolace_api.site import create_site_app
-from repolace_api.site.waitlist import SlidingWindowLimiter, TurnstileVerifier, normalise_email
+from repolace_api.site.waitlist import TurnstileVerifier, normalise_email
 
 HOST = "repolace.example.test"
 ORIGIN = {"Origin": f"https://{HOST}"}

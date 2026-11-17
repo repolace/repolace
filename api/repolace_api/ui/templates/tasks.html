@@ -6,7 +6,7 @@
 <li>{{ repo.full_name }}</li>
 <li aria-current="page">Tasks</li>
 {% endblock %}
-{% block action %}<a class="btn btn-primary" href="/ui/repos/{{ repo.id }}/tasks/new">{{ icon("plus") }}New task</a>{% endblock %}
+{% block action %}{% if can_start %}<a class="btn btn-primary" href="/ui/repos/{{ repo.id }}/tasks/new">{{ icon("plus") }}New task</a>{% endif %}{% endblock %}
 {% block content %}
 <div class="pagehead"><h1>Tasks</h1><span class="mono">{{ repo.full_name }}</span><span class="muted">newest first</span></div>
 

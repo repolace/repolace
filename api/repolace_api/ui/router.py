@@ -51,13 +51,13 @@ from repolace_api.routes.repos import (
     enqueue_task,
     fetch_branches,
     fetch_issues,
-    list_active_repos,
     list_item,
     query_task_page,
     require_push,
+    visible_repos,
 )
 from repolace_api.routes.tasks import load_task_detail
-from repolace_api.schemas import IssueOut
+from repolace_api.schemas import IssueOut, RepoOut
 from repolace_api.ui import format as fmt
 from repolace_api.ui.security import same_origin
 from repolace_api.ui.views import (
@@ -192,7 +192,10 @@ async def account_page(
 
 @router.get("/repos", response_class=HTMLResponse)
 async def repos_page(db: AsyncSession = Depends(get_db), viewer: Viewer = Depends(require_viewer)) -> HTMLResponse:
-    return render("repos.html", repos=await list_active_repos(db, viewer))
+    rows = await visible_repos(db, viewer)
+    # "New task" only where the viewer can push: starting a task needs it (`require_push`).
+    startable = {row.id for row in rows if viewer.can_push(row.github_repo_id)}
+    return render("repos.html", repos=[RepoOut.model_validate(r, from_attributes=True) for r in rows], startable=startable)
 
 
 @router.get("/repos/{repo_id}/tasks", response_class=HTMLResponse)
@@ -211,6 +214,7 @@ async def tasks_page(
     return render(
         "tasks.html",
         repo=repo,
+        can_start=viewer.can_push(repo.github_repo_id),
         rows=rows,
         next_cursor=page.next_cursor,
         filters=filters,
@@ -232,7 +236,12 @@ async def tasks_more(
     repo = await active_repo(db, repo_id, viewer)
     page = await _page(db, repo_id, filters, cursor=cursor, viewer=viewer)
     return render(
-        "_task_rows.html", repo=repo, rows=await build_rows(db, page.items), next_cursor=page.next_cursor, filters=filters
+        "_task_rows.html",
+        repo=repo,
+        rows=await build_rows(db, page.items),
+        next_cursor=page.next_cursor,
+        filters=filters,
+        can_start=viewer.can_push(repo.github_repo_id),
     )
 
 

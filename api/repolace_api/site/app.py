@@ -22,6 +22,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.staticfiles import StaticFiles
 
 from repolace_api.config import SiteSettings
+from repolace_api.ratelimit import SlidingWindowLimiter
 from repolace_api.site import content
 from repolace_api.site.security import (
     SiteSecurityMiddleware,
@@ -33,7 +34,6 @@ from repolace_api.site.security import (
 )
 from repolace_api.site.waitlist import (
     MAX_BODY_BYTES,
-    SlidingWindowLimiter,
     SqlWaitlistStore,
     TurnstileVerifier,
     WaitlistStore,
