@@ -111,7 +111,7 @@ Start at [docs/README.md](docs/README.md). The main pages:
 - The sandbox receives a byte-exact export of the tracked tree with no `.git`, so it cannot plant hooks or rewrite remotes that the host later acts on. Only pass/fail data comes back out.
 - Hidden benchmark tests never reach the agent; a feedback filter is the only place a scored result becomes text a model reads.
 - Provider keys are handed to the gateway per call and never exported into the process environment, so git and Docker children cannot inherit them.
-- The private API and task UI require GitHub sign-in, with access per repository from GitHub's permissions, but have not been reviewed for public exposure (error pages can show host paths; there is no rate limiting). The public site is a separate process that mounts none of those routes. Keep the API and `/ui` on localhost or a private tunnel.
+- The private API and task UI require GitHub sign-in, with access per repository from GitHub's permissions, and task error text is shown without host paths, with per-user limits on starting tasks (20 an hour) and GitHub reads (300 an hour). It still has not had a review for public exposure. The public site is a separate process that mounts none of those routes. Keep the API and `/ui` on localhost or a private tunnel.
 
 ## Contributing and license
 

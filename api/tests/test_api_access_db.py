@@ -11,8 +11,8 @@ import pytest
 from api_billing_support import seed_user, session_cookie, settings
 from api_support import FakeGithub, raw_issue, seed_repo, seed_task
 from repolace_api.config import get_billing_settings
-from repolace_api.deps import require_viewer
-from repolace_shared.db.models import GithubInstallation, UserRepository
+from repolace_api.deps import GITHUB_READS, TASK_STARTS, require_viewer
+from repolace_shared.db.models import GithubInstallation, Task, TaskStatus, UserRepository
 from ui_support import SAME_ORIGIN, ui_app
 
 pytestmark = [pytest.mark.anyio, pytest.mark.db]
@@ -213,3 +213,77 @@ class TestDevNoAuth:
             listed = {r["id"] for r in (await c.get("/repos")).json()}
             detail = await c.get(f"/tasks/{ids['task_b']}")
         assert listed == {str(ids["repo_a"]), str(ids["repo_b"])} and detail.status_code == 200
+
+
+class TestShownText:
+    async def test_error_text_is_shown_without_host_paths(self, db_session, db_session_factory):
+        repo = await seed_repo(db_session)
+        user = await seed_user(db_session)
+        await grant(db_session, user, repo.github_repo_id)
+        stored = "clone: git clone https://github.com/acme/sample.git /tmp/repolace-task-abc/repo failed (128)"
+        task = await seed_task(db_session, repo, status=TaskStatus.FAILED, error_message=stored)
+        task_id = task.id
+        async with client(app_with_access(db_session_factory), user) as c:
+            detail = (await c.get(f"/tasks/{task_id}")).json()
+            listed = (await c.get(f"/repos/{repo.id}/tasks")).json()["items"][0]
+            page = (await c.get(f"/ui/tasks/{task_id}")).text
+        expected = "clone: git clone https://github.com/acme/sample.git <path>/repo failed (128)"
+        assert detail["error_message"] == expected and listed["error_message"] == expected
+        assert "/tmp/repolace-task-abc" not in page
+        db_session.expire_all()
+        assert (await db_session.get(Task, task_id)).error_message == stored  # the stored row is untouched
+
+
+class TestPerUserLimits:
+    @pytest.fixture
+    def tight(self, monkeypatch):
+        """One task start and two GitHub reads per hour, with clean counters."""
+        for limiter, limit in ((TASK_STARTS, 1), (GITHUB_READS, 2)):
+            monkeypatch.setattr(limiter, "limit", limit)
+            monkeypatch.setattr(limiter, "_events", {})
+
+    async def test_task_starts_are_limited_with_retry_after(self, tight, db_session, db_session_factory):
+        repo = await seed_repo(db_session)
+        user = await seed_user(db_session)
+        await grant(db_session, user, repo.github_repo_id)
+        async with client(app_with_access(db_session_factory), user) as c:
+            first = await c.post(f"/repos/{repo.id}/tasks", json={"issue_number": 7}, headers=SAME_ORIGIN)
+            second = await c.post(f"/repos/{repo.id}/tasks", json={"issue_number": 8}, headers=SAME_ORIGIN)
+        assert first.status_code == 201
+        assert second.status_code == 429 and int(second.headers["retry-after"]) > 0
+
+    async def test_github_reads_are_limited_per_user(self, tight, db_session, db_session_factory):
+        repo = await seed_repo(db_session)
+        alice = await seed_user(db_session)
+        bob = await seed_user(db_session, github_user_id=4004, login="bob")
+        await grant(db_session, alice, repo.github_repo_id)
+        await grant(db_session, bob, repo.github_repo_id)
+        app = app_with_access(db_session_factory)
+        async with client(app, alice) as c:
+            codes = [(await c.get(f"/repos/{repo.id}/branches")).status_code for _ in range(3)]
+        async with client(app, bob) as c:
+            bobs = (await c.get(f"/repos/{repo.id}/branches")).status_code
+        assert codes == [200, 200, 429] and bobs == 200
+
+    async def test_no_limit_without_a_user(self, tight, world, db_session_factory):
+        ids, _ = world
+        async with client(app_with_access(db_session_factory, dev_no_auth=True)) as c:
+            codes = [(await c.get(f"/repos/{ids['repo_a']}/branches")).status_code for _ in range(4)]
+        assert codes == [200] * 4
+
+
+class TestNewTaskButton:
+    async def test_read_only_repos_show_no_new_task_button(self, db_session, db_session_factory):
+        writable = await seed_repo(db_session)
+        readable = await seed_repo(db_session, github_repo_id=100, name="docs", full_name="acme/docs")
+        user = await seed_user(db_session)
+        await grant(db_session, user, writable.github_repo_id)
+        await grant(db_session, user, readable.github_repo_id, can_push=False)
+        async with client(app_with_access(db_session_factory), user) as c:
+            listing = (await c.get("/ui/repos")).text
+            tasks_page = (await c.get(f"/ui/repos/{readable.id}/tasks")).text
+            own_page = (await c.get(f"/ui/repos/{writable.id}/tasks")).text
+        assert f"/ui/repos/{writable.id}/tasks/new" in listing
+        assert f"/ui/repos/{readable.id}/tasks/new" not in listing and "read only" in listing
+        assert f"/ui/repos/{readable.id}/tasks/new" not in tasks_page and "needs push access" in tasks_page
+        assert f"/ui/repos/{writable.id}/tasks/new" in own_page

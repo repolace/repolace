@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
 from repolace_api.deps import Viewer, get_db, require_viewer
+from repolace_api.redact import scrub_host_paths
 from repolace_api.schemas import StageOut, TaskDetail, TestRunSummary
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -132,6 +133,11 @@ async def load_task_detail(db: AsyncSession, task_id: UUID, viewer: Viewer) -> T
             copied[name] = None
         for stage in stage_out:
             stage.error = None
+    else:
+        # Error text is stored as the pipeline wrote it and can name the worker's filesystem.
+        copied["error_message"] = scrub_host_paths(copied.get("error_message"))
+        for stage in stage_out:
+            stage.error = scrub_host_paths(stage.error)
     return TaskDetail(
         **copied,
         repo_full_name=repo.full_name,

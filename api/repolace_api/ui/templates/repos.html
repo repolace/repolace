@@ -13,7 +13,11 @@
     <span class="branch">{{ icon("branch") }}{{ r.default_branch }}</span>
     <span class="spacer"></span>
     <a class="btn" href="/ui/repos/{{ r.id }}/tasks">Tasks</a>
+    {% if r.id in startable %}
     <a class="btn btn-primary" href="/ui/repos/{{ r.id }}/tasks/new">{{ icon("plus") }}New task</a>
+    {% else %}
+    <span class="tag" title="Starting a task needs push access to this repository on GitHub">read only</span>
+    {% endif %}
   </li>
   {% endfor %}
 </ul>

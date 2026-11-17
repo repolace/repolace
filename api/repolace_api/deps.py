@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from repolace_api.config import BillingSettings, get_billing_settings
+from repolace_api.ratelimit import SlidingWindowLimiter
 from repolace_api.sessions import unsign
 
 
@@ -122,6 +123,29 @@ async def require_viewer(
         repo_ids=frozenset(r.github_repo_id for r in rows),
         push_repo_ids=frozenset(r.github_repo_id for r in rows if r.can_push),
     )
+
+
+# --- per-user limits ---------------------------------------------------------------------------
+
+#: Starting a task spends provider money and runs code: 20 an hour per user (the paid plan allows 60
+#: a month), across both enqueue routes. In memory, per process.
+TASK_STARTS = SlidingWindowLimiter(limit=20, window=3600)
+#: Calls to GitHub made for a user (issue and branch lists; the UI's issue cache absorbs repeats):
+#: 300 an hour, so one account cannot spend the App's GitHub rate limit for everyone.
+GITHUB_READS = SlidingWindowLimiter(limit=300, window=3600)
+
+
+def enforce_user_limit(limiter: SlidingWindowLimiter, viewer: "Viewer", what: str) -> None:
+    """429 once a signed-in user is over `limiter`. Not applied without a user (`DEV_NO_AUTH`)."""
+    if viewer.user is None:
+        return
+    key = str(viewer.user.id)
+    if not limiter.allow(key):
+        raise HTTPException(
+            status_code=429,
+            detail=f"too many {what} in the last hour; try again later",
+            headers={"Retry-After": str(limiter.retry_after(key))},
+        )
 
 
 def require_same_origin(request: Request) -> None:
