@@ -1,0 +1,203 @@
+# The app host's stack, copied to /opt/repolace/ and driven by deploy-app.sh, on the ROOTLESS Docker daemon of
+# the user `repolace` (never the rootful daemon: see bootstrap-app.sh). Nothing is published on a host port:
+# cloudflared reaches `api` over the compose network, and everything else talks over it too.
+#
+# Variables, all from deploy-app.sh (`--env-file /opt/repolace/stack.env`):
+#   API_IMAGE, WORKER_IMAGE        the two ECR images at one commit sha
+#   DOCKER_SOCKET                  /run/user/<uid>/docker.sock of the rootless daemon
+#   DATA_DIR                       the retained data volume's mount (postgres, redis, rabbitmq bind-mount from it)
+#   WORKSPACE_PARENT_DIR           the size- and inode-limited ext4 volume, mounted at the same path in and out
+#   POSTGRES_PASSWORD, REDIS_PASSWORD, RABBITMQ_PASSWORD   generated once on the host, never in GitHub
+# Secret env files rendered by deploy-app.sh from Secrets Manager: api.env (API only), worker.env (task worker
+# only: the one place provider keys and the GitHub App key exist), cloudflared/credentials.json.
+name: repolace-app
+
+x-worker-common: &worker-common
+  image: ${WORKER_IMAGE:?set by deploy-app.sh}
+  restart: unless-stopped
+  # Container root, on purpose: on the rootless daemon uid 0 is the unprivileged host user that owns the docker
+  # socket and the workspace. Any other uid maps to a subuid that can reach neither (docker-compose.yml, same note).
+  user: "0:0"
+  init: true
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+    redis:
+      condition: service_healthy
+    rabbitmq:
+      condition: service_healthy
+
+x-stack-urls: &stack-urls
+  DATABASE_URL: postgresql+asyncpg://repolace:${POSTGRES_PASSWORD:?}@postgres:5432/repolace
+  REDIS_URL: redis://:${REDIS_PASSWORD:?}@redis:6379/0
+  CELERY_BROKER_URL: amqp://repolace:${RABBITMQ_PASSWORD:?}@rabbitmq:5672//
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: repolace
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: repolace
+    volumes:
+      - ${DATA_DIR:?}/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U repolace -d repolace"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?}", "--appendonly", "yes"]
+    volumes:
+      - ${DATA_DIR:?}/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?}", "--no-auth-warning", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: repolace
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?}
+    volumes:
+      - ${DATA_DIR:?}/rabbitmq:/var/lib/rabbitmq
+      # consumer_timeout above the longest task (infra/rabbitmq.conf explains why); copied out of the image.
+      - ./rabbitmq.conf:/etc/rabbitmq/conf.d/20-repolace.conf:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # One-shot: brings the schema to head before any API or worker of the new version starts. A failed
+  # migration stops the deploy with the previous version still serving (deploy-app.sh runs it first, alone).
+  migrate:
+    image: ${API_IMAGE:?set by deploy-app.sh}
+    restart: "no"
+    working_dir: /repo/api
+    command: ["uv", "run", "--no-sync", "alembic", "upgrade", "head"]
+    environment:
+      <<: *stack-urls
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    image: ${API_IMAGE:?set by deploy-app.sh}
+    restart: unless-stopped
+    env_file:
+      - api.env
+    environment:
+      <<: *stack-urls
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  # Runs tasks. The only service with provider keys and the GitHub App key (worker.env).
+  worker:
+    <<: *worker-common
+    command:
+      - uv
+      - run
+      - --no-sync
+      - --project
+      - worker
+      - celery
+      - -A
+      - repolace_worker.celery_app
+      - worker
+      - --loglevel=info
+      - -n
+      - task@%h
+      - -Q
+      - celery
+    env_file:
+      - worker.env
+    environment:
+      <<: *stack-urls
+      DOCKER_HOST: unix:///run/repolace/docker.sock
+      WORKER_ROLE: task
+      # Mounted at the same path in the container and on the host: the daemon resolves a sandbox's
+      # `-v <path>:/repo` on the host (CLAUDE.md, "Deployment requirements for the sandbox host").
+      WORKSPACE_PARENT_DIR: ${WORKSPACE_PARENT_DIR:?}
+    volumes:
+      # The ROOTLESS daemon's socket only, never /var/run/docker.sock (root-equivalent).
+      - ${DOCKER_SOCKET:?}:/run/repolace/docker.sock
+      - ${WORKSPACE_PARENT_DIR:?}:${WORKSPACE_PARENT_DIR:?}
+    healthcheck:
+      test: ["CMD-SHELL", "uv run --no-sync --project worker celery -A repolace_worker.celery_app inspect ping -d task@$$HOSTNAME --timeout 10 || exit 1"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      start_period: 120s
+
+  # The sweeper and the reaper, on their own queue. No provider keys: no env_file. Exactly one replica.
+  worker-maintenance:
+    <<: *worker-common
+    command:
+      - uv
+      - run
+      - --no-sync
+      - --project
+      - worker
+      - celery
+      - -A
+      - repolace_worker.celery_app
+      - worker
+      - --loglevel=info
+      - -n
+      - maintenance@%h
+      - -Q
+      - repolace.maintenance
+      - --concurrency
+      - "1"
+      - -B
+      - -s
+      - /tmp/celerybeat-schedule
+    environment:
+      <<: *stack-urls
+      DOCKER_HOST: unix:///run/repolace/docker.sock
+      WORKER_ROLE: maintenance
+    volumes:
+      - ${DOCKER_SOCKET:?}:/run/repolace/docker.sock
+    healthcheck:
+      test: ["CMD-SHELL", "uv run --no-sync --project worker celery -A repolace_worker.celery_app inspect ping -d maintenance@$$HOSTNAME --timeout 10 || exit 1"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      start_period: 30s
+
+  # Outbound-only connector. The config and credentials are rendered by deploy-app.sh (the tunnel is new, so its
+  # id is not in the repository).
+  cloudflared:
+    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:2026.10.7}
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "--config", "/etc/cloudflared/config.yml", "run"]
+    # Container root is the unprivileged host user that owns credentials.json (0400); uid 65532 would be a subuid
+    # that cannot read it. On the rootless daemon this grants nothing.
+    user: "0:0"
+    volumes:
+      - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      - ./cloudflared/credentials.json:/etc/cloudflared/credentials.json:ro
+    depends_on:
+      api:
+        condition: service_healthy

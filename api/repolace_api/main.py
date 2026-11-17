@@ -1,4 +1,5 @@
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -66,4 +67,6 @@ mount_ui(app)
 
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
-    return {"status": "ok"}
+    # The commit this image was built from (Dockerfile ARG GIT_SHA): deploy-app.sh proves the new version is
+    # the one answering, not the old container, by reading it here.
+    return {"status": "ok", "sha": os.environ.get("REPOLACE_GIT_SHA", "unknown")}

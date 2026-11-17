@@ -1,0 +1,134 @@
+# Test, build and deploy the app (API and task worker) on every push to main that touches it.
+#
+# Gate: every job runs only when the repository variable APP_DEPLOY_ENABLED is 'true'. Merging this file does
+# nothing until that variable is set, after the app stack is deployed and its secrets exist (infra/aws/README.md).
+#
+# Two AWS roles (RepolaceAppStack), because GitHub presents a different OIDC subject with and without `environment:`:
+#   build  (no environment)                sub = repo:repolace/repolace:ref:refs/heads/main            -> ECR push only
+#   deploy (environment: production-app)   sub = repo:repolace/repolace:environment:production-app     -> SSM on one instance
+# The GitHub environment `production-app` must exist with required reviewers (the owner creates it): the deploy
+# role trusts that subject, so an environment without reviewers would let any push to main deploy unreviewed.
+#
+# Repository variables: APP_DEPLOY_ENABLED, AWS_REGION, APP_BUILD_ROLE_ARN, APP_DEPLOY_ROLE_ARN, APP_INSTANCE_ID,
+# API_ECR_REPOSITORY_URI, WORKER_ECR_REPOSITORY_URI. No secret is stored in GitHub.
+name: deploy-app
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - "worker/**"
+      - "agents/**"
+      - "gateway/**"
+      - "rag/**"
+      - "shared/**"
+      - "pipeline/**"
+      - "verify/**"
+      - "uv.lock"
+      - "pyproject.toml"
+      - "infra/aws/compose.app.yml"
+      - "infra/aws/deploy-app.sh"
+      - "infra/aws/bootstrap-app.sh"
+      - "infra/rabbitmq.conf"
+      - ".github/workflows/deploy-app.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-app
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    if: vars.APP_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+      - run: uv sync --frozen --package repolace-api
+      - run: uv run ruff check .
+      # Database and Docker tests need services this runner does not start; they run locally before a merge.
+      - run: uv run --frozen pytest api/tests -m "not db and not docker" -q
+      - run: uv run --frozen pytest infra/aws/tests/test_aws_app_host_files.py -q
+
+  build:
+    if: vars.APP_DEPLOY_ENABLED == 'true'
+    needs: test
+    # The host is x86_64 (m6i): a native amd64 runner, no QEMU.
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.APP_BUILD_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      # Both repositories are IMMUTABLE-tagged: a re-run of the same sha must not try to push again.
+      - name: Build and push the API and worker images when this sha is not in ECR
+        env:
+          API_URI: ${{ vars.API_ECR_REPOSITORY_URI }}
+          WORKER_URI: ${{ vars.WORKER_ECR_REPOSITORY_URI }}
+        run: |
+          set -euo pipefail
+          build_if_missing() {  # build_if_missing <repository uri> <dockerfile>
+            if aws ecr describe-images --repository-name "${1#*/}" --image-ids "imageTag=${GITHUB_SHA}" >/dev/null 2>&1; then
+              echo "${1}:${GITHUB_SHA} already exists"
+            else
+              docker buildx build --platform linux/amd64 --provenance=false --push \
+                --build-arg "GIT_SHA=${GITHUB_SHA}" -f "$2" -t "${1}:${GITHUB_SHA}" .
+            fi
+          }
+          build_if_missing "${API_URI}" api/Dockerfile
+          build_if_missing "${WORKER_URI}" worker/Dockerfile
+
+  deploy:
+    if: vars.APP_DEPLOY_ENABLED == 'true'
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: production-app
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ vars.APP_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Run deploy-app.sh on the host through SSM
+        env:
+          INSTANCE_ID: ${{ vars.APP_INSTANCE_ID }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # executionTimeout (1800 s) bounds the script (two image pulls, a migration, up to 6 minutes of health
+          # waiting, a possible rollback); the poll window (200 x 10 s) outlasts it, so the job always sees a
+          # terminal status.
+          command_id="$(aws ssm send-command \
+            --instance-ids "${INSTANCE_ID}" \
+            --document-name AWS-RunShellScript \
+            --comment "deploy-app ${SHA}" \
+            --timeout-seconds 300 \
+            --parameters "commands=[\"/opt/repolace/deploy-app.sh ${SHA}\"],executionTimeout=[\"1800\"]" \
+            --query Command.CommandId --output text)"
+          echo "SSM command: ${command_id}"
+          status=Pending
+          for _ in $(seq 1 200); do
+            sleep 10
+            status="$(aws ssm get-command-invocation --command-id "${command_id}" --instance-id "${INSTANCE_ID}" \
+              --query Status --output text 2>/dev/null || echo Pending)"
+            case "${status}" in
+              Success|Failed|Cancelled|TimedOut) break ;;
+            esac
+          done
+          echo "Status: ${status}"
+          # deploy-app.sh prints progress only, never a secret or an env file.
+          aws ssm get-command-invocation --command-id "${command_id}" --instance-id "${INSTANCE_ID}" \
+            --query '{stdout: StandardOutputContent, stderr: StandardErrorContent}' --output text || true
+          [ "${status}" = "Success" ]

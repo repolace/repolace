@@ -172,11 +172,39 @@ npx aws-cdk synth RepolaceAppStack -c ami_id=ami-... -c app_ami_id=ami-... -c pu
 python -m pytest --noconftest -c /dev/null --rootdir=. tests          # both stacks' tests
 ```
 
-**Not here yet** (the next changes): `bootstrap-app.sh` (rootless Docker, cgroup delegation of `cpu memory pids`, the three disks by id, the metadata-service firewall rule),
-`compose.app.yml`, `deploy-app.sh`, the `deploy-app.yml` workflow, and the admin command that registers the existing installation's
-repositories on a fresh database. Until those exist the stack cannot boot a working host; the user data fetches a script that is not on
-`main` yet. **Not run by the author: `cdk deploy`, anything on a real instance, and whether this account may launch EC2 at all** (it had
-an "account being verified" hold on Bedrock). The prices in the plan were from memory and are to be checked before an approval.
+**The host's files** (written and statically tested, **never run on a real instance**):
+
+| File | What it does |
+|---|---|
+| `bootstrap-app.sh` | First boot as root: Docker's apt repository, rootless Docker for the user `repolace`, the three volumes found by id (formatted only when empty), cgroup v2 delegation, the `nft` rule that drops `169.254.169.254` (and the IPv6 address) for that user, then **proof against a real container** (it cannot reach the metadata service; `--memory`/`--pids-limit` work) before it writes `bootstrap.ok`. |
+| `compose.app.yml` | postgres (pgvector), redis, rabbitmq (bind-mounted from the retained data volume), a one-shot `migrate`, `api`, `worker`, `worker-maintenance`, `cloudflared`. No host port. Provider keys reach `worker` only. |
+| `deploy-app.sh` | Run through SSM with a 40-hex sha. Pulls both images, refreshes its files from the new API image, renders the three secrets, starts the stores, runs `alembic upgrade head` **alone**, starts everything, proves the version (the API's `/healthz` carries the build sha, read locally and through the public URL; both workers must run the expected image and be healthy) and rolls back on failure. Refuses to run without `bootstrap.ok`, the metadata block and all three mounts. |
+| `../../.github/workflows/deploy-app.yml` | Test, build both images (amd64), deploy through SSM. Gated by the repository variable `APP_DEPLOY_ENABLED`; the deploy job uses the GitHub environment `production-app`, which **you create with required reviewers** (its OIDC subject is what the deploy role trusts). |
+
+Secret contents (JSON is not used: each is the text of an env file). `repolace-app-api-env`: the keys of `infra/api.env.example` except
+`DATABASE_URL`, `REDIS_URL` and `CELERY_BROKER_URL` (compose sets those, and `environment:` beats `env_file:`), with `API_BASE_URL` and
+`UI_ALLOWED_HOSTS` for the public hostname and `DEV_NO_AUTH` unset or `false`. `repolace-app-worker-env`: the keys of `infra/worker.env.example`.
+`deploy-app.sh` stops if the API secret holds a model provider key. `repolace-app-tunnel-credentials`: the new tunnel's credentials JSON; the
+tunnel id and hostname are rendered from it and `PUBLIC_URL`, so no tunnel id is in the repository.
+
+Known limits of what is written (each is a thing to watch on the first boot, not a verified fact):
+
+- Migrations must stay **backward compatible with the previous image** (add before you remove). The rollback restarts the previous image against the already migrated schema.
+- The store passwords are generated on the host and kept on the root disk (`/opt/repolace/secrets`). Losing the root disk makes the data volume's stores unreadable even though the volume survives; they are **not yet backed up**. The daily snapshot covers the data volume only.
+- Docker's apt key is trusted as Docker's documentation does (HTTPS and `signed-by`), with no pinned fingerprint.
+- The rootless daemon's data root is on its own 80 GiB ext4 volume; the AppArmor profile that lets `rootlesskit` create a user namespace on Ubuntu 24.04 comes with `docker-ce-rootless-extras` (Docker's troubleshooting page says so; not tested here).
+- The `nft` match is on the owning uid, which holds for rootless Docker's user-space networking (the connection is re-originated by a process of that user). The bootstrap tests it with a real container and stops if a container can still reach the service.
+- The AWS CLI comes from the `aws-cli` snap (linked into `/usr/local/bin`).
+- **Secret files are root-only** (`api.env`, `worker.env`, `stack.env`: root, 0600). `deploy-app.sh` runs docker as root against the rootless socket, because the task worker holds that socket as the user `repolace`: a takeover of that user could otherwise read every secret by bind-mounting `/opt/repolace`. The one exception is the tunnel credentials (owned by `repolace`, 0400), which `cloudflared` reads as that user. The tunnel credential is therefore reachable from the worker's socket; everything else is not.
+- The metadata block is checked three ways at bootstrap (a session-token request must fail, a positive control must succeed, the rule's own packet counter must be above zero), and again before every deploy. If the rule is missing the user manager, and so the rootless daemon, does not start. `IPAddressDeny` on the user manager is a second layer, unverified.
+- `env_file` values are interpolated by compose: a secret that contains `$` is mangled or rejected. Escape it as `$$` in the secret.
+- **A deploy while a task runs ends that task `interrupted`** (the worker is recreated). Deploy when the queue is empty.
+- The rollback runs the previous images with the **new** `compose.app.yml`; a compose change the old image cannot take breaks the rollback.
+- `app_bootstrap_ref` defaults to `main`, and root runs the script it points to. Pin a commit sha for a real deploy (the stack does not enforce it yet).
+
+**Still not here:** the admin command that registers the existing installation's repositories on a fresh database (PR 3), and the docs that reverse
+the "only the site is public" rule (PR 4). **Not run by the author: `cdk deploy`, anything on a real instance, and whether this account may launch
+EC2 at all** (it had an "account being verified" hold on Bedrock). The prices in the plan were from memory and are to be checked before an approval.
 
 ## Honest limits
 
