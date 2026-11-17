@@ -40,7 +40,10 @@ async def row_counts(session) -> tuple[int, int]:
     return installations, repos
 
 
-class TestCallbackOnlyAcknowledges:
+class TestCallbackChangesNothing:
+    """GitHub's post-install redirect: it sends the browser through sign-in (to re-read access) and
+    never reads or writes state on the strength of its query string."""
+
     @pytest.mark.parametrize("setup_action", ["install", "update", "request"])
     async def test_an_unknown_installation_creates_nothing(self, db_session, db_session_factory, setup_action):
         async with callback_client(db_session_factory) as client:
@@ -48,7 +51,8 @@ class TestCallbackOnlyAcknowledges:
                 "/github/callback", params={"installation_id": 777, "setup_action": setup_action}
             )
 
-        assert response.status_code == 200 and response.json() == {"status": "ok"}
+        assert response.status_code == 303
+        assert response.headers["location"] == "/auth/github/login?next=/ui/repos"
         assert await row_counts(db_session) == (0, 0)
 
     async def test_a_suspended_installation_stays_suspended_and_its_repos_inactive(
@@ -65,7 +69,7 @@ class TestCallbackOnlyAcknowledges:
                 "/github/callback", params={"installation_id": INSTALLATION_ID, "setup_action": "update"}
             )
 
-        assert response.status_code == 200
+        assert response.status_code == 303
         await db_session.refresh(repo)
         await db_session.refresh(installation)
         assert repo.is_active is False and installation.suspended_at == suspended_at
@@ -80,3 +84,8 @@ class TestCallbackOnlyAcknowledges:
 
         await db_session.refresh(repo)
         assert repo.is_active is False
+
+    async def test_without_a_query_it_still_only_redirects(self, db_session, db_session_factory):
+        async with callback_client(db_session_factory) as client:
+            response = await client.get("/github/callback")
+        assert response.status_code == 303 and await row_counts(db_session) == (0, 0)

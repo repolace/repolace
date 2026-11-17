@@ -171,7 +171,7 @@ cp infra/site.env.example infra/site.env
 <p>The settings require the four GitHub App values (<code>GITHUB_APP_ID</code>, <code>GITHUB_APP_SLUG</code>, <code>GITHUB_APP_PRIVATE_KEY_BASE64</code>, <code>GITHUB_APP_WEBHOOK_SECRET</code>) to exist in <code>.env</code>, so create the App (next section) first, or put placeholder values there to see the pages render.</p>
 <pre><code class="language-bash">uv run --project api uvicorn repolace_api.main:app --port 8000
 </code></pre>
-<p><code>http://localhost:8000/ui/repos</code> is the task UI and <code>http://localhost:8000/healthz</code> returns <code>{"status": "ok"}</code>. The API and UI have no general authentication (sign-in covers only <code>/ui/account</code>); bind them to localhost only. Billing setup is in BILLING_SETUP.md.</p>
+<p><code>http://localhost:8000/ui/repos</code> is the task UI and <code>http://localhost:8000/healthz</code> returns <code>{"status": "ok"}</code>. Every repo and task page and route needs GitHub sign-in (section 3 of BILLING_SETUP.md), and you see the repositories GitHub says you can access through the App (starting a task needs push access). The API refuses to start without sign-in configured; for a local-only install without it, set <code>DEV_NO_AUTH=1</code> in <code>infra/api.env</code> (refused unless every allowed host is loopback). Bind to localhost either way. Billing setup is in BILLING_SETUP.md.</p>
 <h2 id="create-the-github-app">Create the GitHub App<a class="headerlink" href="#create-the-github-app" title="Link to this section">#</a></h2>
 <p>repolace registers repositories only through the App's installation webhook. There is no manual register route.</p>
 <ol>
@@ -210,7 +210,7 @@ cp infra/site.env.example infra/site.env
   -d '{&quot;issue_number&quot;: 42, &quot;target_branch&quot;: &quot;main&quot;}'
 </code></pre>
 <p>The response carries the task id (HTTP 201). Omit <code>target_branch</code> for the default branch. Add <code>"open_pr_on_failure": true</code> to open a PR even when the checks flag the change. A second request for an issue that already has a <code>queued</code> or <code>running</code> task on that branch returns 409.</p>
-<p>List repository ids with <code>curl localhost:8000/repos</code>, and follow a task with <code>curl localhost:8000/tasks/&lt;task_id&gt;</code>.</p>
+<p>List repository ids with <code>curl localhost:8000/repos</code>, and follow a task with <code>curl localhost:8000/tasks/&lt;task_id&gt;</code>. These <code>curl</code> lines work as written only under <code>DEV_NO_AUTH=1</code>. With sign-in on, the JSON API takes the browser's session cookie, the enqueue POST also needs an <code>Origin</code> header naming an allowed host, and there are no API tokens yet.</p>
 <h3 id="from-the-command-line">From the command line<a class="headerlink" href="#from-the-command-line" title="Link to this section">#</a></h3>
 <p>The CLI runs the same <code>run_task</code> as one host process, without the queue. It claims a <code>queued</code> row, so enqueue one first (the worker would also claim it if it is running, so stop the worker or use a separate database for a pure CLI run).</p>
 <pre><code class="language-bash">uv run --all-packages repolace-run-task &lt;task_id&gt; [--agent llm|stub|gold] [--no-pr]

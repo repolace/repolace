@@ -8,6 +8,7 @@ import httpx
 import pytest
 from api_support import FakeGithub, raw_issue, seed_repo, seed_task
 from fastapi import FastAPI, Request
+from repolace_api.deps import ALL_ACCESS, require_viewer
 from repolace_api.ui import STATIC_DIR, mount_ui
 from repolace_api.ui.diffview import LEXERS, MAX_HIGHLIGHT_LINE, highlight_line, parse_diff
 from repolace_api.ui.security import CSP, normalise_host, parse_allowed_hosts, same_origin
@@ -20,6 +21,7 @@ pytestmark = [pytest.mark.anyio, pytest.mark.db]
 def bare_app(hosts) -> FastAPI:
     app = FastAPI()
     mount_ui(app, allowed_hosts=hosts)
+    app.dependency_overrides[require_viewer] = lambda: ALL_ACCESS
 
     @app.get("/ui/boom")
     def boom():

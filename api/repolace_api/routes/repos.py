@@ -9,7 +9,7 @@ from uuid import UUID
 
 import httpx
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, ValidationError
 from repolace_shared.db.models import LLMCall, RegisteredRepo, Task, TaskOutcome, TaskStatus
 from repolace_shared.github.client import GithubClient
@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
 from repolace_api.billing_limits import enforce_allowance, enqueue_owner
-from repolace_api.deps import get_db, get_github_client
+from repolace_api.deps import Viewer, get_db, get_github_client, require_same_origin, require_viewer
 from repolace_api.publisher import TaskPublisher, get_publisher
 from repolace_api.schemas import (
     BranchOut,
@@ -63,20 +63,32 @@ def github_errors(repo_id: UUID) -> Iterator[None]:
         raise HTTPException(status_code=502, detail="GitHub API returned an unexpected payload") from exc
 
 
-async def active_repo(db: AsyncSession, repo_id: UUID) -> RegisteredRepo:
+async def active_repo(db: AsyncSession, repo_id: UUID, viewer: Viewer) -> RegisteredRepo:
+    """The access check for everything repo-scoped. A repository the viewer may not see is the same
+    404 as one that does not exist, so its existence is not disclosed."""
     repo = await db.get(RegisteredRepo, repo_id)
-    if repo is None or not repo.is_active:
+    if repo is None or not repo.is_active or not viewer.can_see(repo.github_repo_id):
         raise HTTPException(status_code=404, detail="repo not found")
     return repo
 
 
+def require_push(viewer: Viewer, repo: RegisteredRepo) -> None:
+    """Starting a task pushes a branch and opens a pull request as the App, so it needs the viewer's own
+    push access on GitHub: read access must not become write access through repolace."""
+    if not viewer.can_push(repo.github_repo_id):
+        raise HTTPException(status_code=403, detail="starting a task needs push access to this repository on GitHub")
+
+
 @router.get("", response_model=list[RepoOut])
-async def list_repos(db: AsyncSession = Depends(get_db)) -> list[RepoOut]:
-    return await list_active_repos(db)
+async def list_repos(db: AsyncSession = Depends(get_db), viewer: Viewer = Depends(require_viewer)) -> list[RepoOut]:
+    return await list_active_repos(db, viewer)
 
 
-async def list_active_repos(db: AsyncSession) -> list[RepoOut]:
-    rows = (await db.execute(select(RegisteredRepo).where(RegisteredRepo.is_active.is_(True)))).scalars().all()
+async def list_active_repos(db: AsyncSession, viewer: Viewer) -> list[RepoOut]:
+    query = select(RegisteredRepo).where(RegisteredRepo.is_active.is_(True))
+    if viewer.repo_ids is not None:
+        query = query.where(RegisteredRepo.github_repo_id.in_(viewer.repo_ids))
+    rows = (await db.execute(query)).scalars().all()
     return [RepoOut.model_validate(row, from_attributes=True) for row in rows]
 
 
@@ -85,12 +97,13 @@ async def list_repo_issues(
     repo_id: UUID,
     db: AsyncSession = Depends(get_db),
     github: GithubClient = Depends(get_github_client),
+    viewer: Viewer = Depends(require_viewer),
 ) -> list[IssueOut]:
-    return await fetch_issues(db, github, repo_id)
+    return await fetch_issues(db, github, repo_id, viewer)
 
 
-async def fetch_issues(db: AsyncSession, github: GithubClient, repo_id: UUID) -> list[IssueOut]:
-    repo = await active_repo(db, repo_id)
+async def fetch_issues(db: AsyncSession, github: GithubClient, repo_id: UUID, viewer: Viewer) -> list[IssueOut]:
+    repo = await active_repo(db, repo_id, viewer)
     with github_errors(repo_id):
         issues = await github.list_repo_open_issues(repo.installation_id, repo.owner, repo.name)
 
@@ -113,12 +126,13 @@ async def list_repo_branches(
     repo_id: UUID,
     db: AsyncSession = Depends(get_db),
     github: GithubClient = Depends(get_github_client),
+    viewer: Viewer = Depends(require_viewer),
 ) -> list[BranchOut]:
-    return await fetch_branches(db, github, repo_id)
+    return await fetch_branches(db, github, repo_id, viewer)
 
 
-async def fetch_branches(db: AsyncSession, github: GithubClient, repo_id: UUID) -> list[BranchOut]:
-    repo = await active_repo(db, repo_id)
+async def fetch_branches(db: AsyncSession, github: GithubClient, repo_id: UUID, viewer: Viewer) -> list[BranchOut]:
+    repo = await active_repo(db, repo_id, viewer)
     with github_errors(repo_id):
         branches = await github.list_branches(repo.installation_id, repo.owner, repo.name)
     return [BranchOut(name=b.name, default=b.name == repo.default_branch) for b in branches]
@@ -140,14 +154,20 @@ class CreateTaskRequest(BaseModel):
 
 @router.post("/{repo_id}/tasks", status_code=201, response_model=TaskCreated)
 async def create_task(
+    request: Request,
     repo_id: UUID,
     body: CreateTaskRequest,
     db: AsyncSession = Depends(get_db),
     github: GithubClient = Depends(get_github_client),
     publisher: TaskPublisher = Depends(get_publisher),
     owner_id: UUID | None = Depends(enqueue_owner),
+    viewer: Viewer = Depends(require_viewer),
 ) -> TaskCreated:
-    return await enqueue_task(db, github, repo_id, body, publisher, owner_id)
+    if viewer.user is not None:
+        # Authenticated by the session cookie and it spends money: the same cross-site guard as the
+        # UI's enqueue form. Under DEV_NO_AUTH there is no cookie to ride on.
+        require_same_origin(request)
+    return await enqueue_task(db, github, repo_id, body, publisher, owner_id, viewer=viewer)
 
 
 async def enqueue_task(
@@ -157,6 +177,8 @@ async def enqueue_task(
     body: CreateTaskRequest,
     publisher: TaskPublisher,
     owner_id: UUID | None = None,
+    *,
+    viewer: Viewer,
 ) -> TaskCreated:
     """Queue a task. Does not run it.
 
@@ -169,7 +191,8 @@ async def enqueue_task(
     needing the retrieval stack and torch -- see CLAUDE.md, "Build phases"
     ("One host process per task").
     """
-    repo = await active_repo(db, repo_id)
+    repo = await active_repo(db, repo_id, viewer)
+    require_push(viewer, repo)
 
     target_branch = body.target_branch if body.target_branch is not None else repo.default_branch
     if not target_branch.strip():
@@ -279,23 +302,25 @@ def _usd(value: float | None) -> Decimal | None:
 
 
 @router.get("/{repo_id}/tasks/estimate", response_model=CostEstimate)
-async def estimate_task_cost(repo_id: UUID, db: AsyncSession = Depends(get_db)) -> CostEstimate:
-    return await compute_estimate(db, repo_id)
+async def estimate_task_cost(
+    repo_id: UUID, db: AsyncSession = Depends(get_db), viewer: Viewer = Depends(require_viewer)
+) -> CostEstimate:
+    return await compute_estimate(db, repo_id, viewer)
 
 
-async def compute_estimate(db: AsyncSession, repo_id: UUID) -> CostEstimate:
+async def compute_estimate(db: AsyncSession, repo_id: UUID, viewer: Viewer) -> CostEstimate:
     """p50 and p90 of what a task on this repo has cost, with the basis named.
 
     1. `repo`: the last 30 priced, non-benchmark tasks of this repo, if there
        are at least 5.
-    2. `model`: otherwise the last 30 priced, non-benchmark tasks, on any repo,
+    2. `model`: otherwise the last 30 priced, non-benchmark tasks, on any repo the viewer can see,
        whose most recent `llm_calls` row used the same model as this repo's most
        recent task that has one, if there are at least 5. The same window as
        `repo`: the pool grows with the whole system's history, and the figure
        should describe how tasks cost now, not the average of all time.
     3. `none`: otherwise no numbers, only the per-task cap as an upper bound.
     """
-    await active_repo(db, repo_id)
+    await active_repo(db, repo_id, viewer)
 
     async def percentiles(where: list) -> tuple[int, Decimal | None, Decimal | None]:
         # `id` breaks ties between tasks created in the same instant, so "the latest 30" is one set, and it
@@ -344,7 +369,13 @@ async def compute_estimate(db: AsyncSession, repo_id: UUID) -> CostEstimate:
     ).scalar_one_or_none()
     if model is not None:
         same_model = select(latest_call.c.task_id).where(latest_call.c.model == model)
-        n, p50, p90 = await percentiles([Task.id.in_(same_model)])
+        pool = [Task.id.in_(same_model)]
+        if viewer.repo_ids is not None:
+            # Only tasks on repositories this viewer can see: the pool spans repositories, and its
+            # count and percentiles describe them.
+            visible = select(RegisteredRepo.id).where(RegisteredRepo.github_repo_id.in_(viewer.repo_ids))
+            pool.append(Task.repo_id.in_(visible))
+        n, p50, p90 = await percentiles(pool)
         if n >= ESTIMATE_MIN_TASKS:
             return CostEstimate(basis="model", n=n, p50_usd=p50, p90_usd=p90, upper_bound_usd=TASK_COST_CAP_USD)
 
@@ -360,6 +391,7 @@ async def list_repo_tasks(
     cursor: Annotated[str | None, Query(description="Opaque token from a previous page's next_cursor.")] = None,
     include_benchmark: bool = False,
     db: AsyncSession = Depends(get_db),
+    viewer: Viewer = Depends(require_viewer),
 ) -> TaskPage:
     """Newest first. Shows status and outcome separately -- they answer different questions.
 
@@ -370,6 +402,7 @@ async def list_repo_tasks(
     return await query_task_page(
         db,
         repo_id,
+        viewer=viewer,
         status=status,
         outcome=outcome,
         limit=limit,
@@ -386,6 +419,7 @@ async def query_task_page(
     db: AsyncSession,
     repo_id: UUID,
     *,
+    viewer: Viewer,
     status: TaskStatus | None = None,
     outcome: TaskOutcome | None = None,
     unscored: bool = False,
@@ -399,7 +433,7 @@ async def query_task_page(
     not expose it). A benchmark row's `error_message` is nulled here, because it
     can carry sandbox output, and `include_benchmark=true` is the way to see it.
     """
-    await active_repo(db, repo_id)
+    await active_repo(db, repo_id, viewer)
     position = decode_cursor(cursor) if cursor is not None else None
 
     # Not the whole row: patch_diff and issue_body can be large and the list shows neither.

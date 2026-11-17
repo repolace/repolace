@@ -26,15 +26,16 @@ def install(settings: ApiSettings = Depends(get_settings)) -> RedirectResponse:
 
 
 @router.get("/callback")
-async def callback(installation_id: int, setup_action: str) -> dict[str, str]:
-    """Where GitHub sends the browser after an install. It only acknowledges.
+async def callback(installation_id: int | None = None, setup_action: str | None = None) -> RedirectResponse:
+    """Where GitHub sends the browser after an install (the App's Setup URL).
 
-    The query string carries no proof of who is calling, so nothing here may read or
-    write state or call GitHub. The signed `installation` and `installation_repositories`
-    webhooks do the sync, and they arrive on their own.
+    The query string carries no proof of who is calling, so nothing here may read or write state or
+    call GitHub. The signed `installation` and `installation_repositories` webhooks do the repository
+    sync. This only sends the browser through sign-in, so the user's own token re-reads which
+    repositories they can access and the new ones show up in `/ui/repos`.
     """
     log.info("github.callback", installation_id=installation_id, setup_action=setup_action)
-    return {"status": "ok"}
+    return RedirectResponse("/auth/github/login?next=/ui/repos", status_code=303)
 
 
 @router.post("/webhook")

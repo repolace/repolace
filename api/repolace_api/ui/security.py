@@ -1,7 +1,7 @@
 """Response headers and the same-origin check for the HTML UI.
 
-There is no authentication until Phase 4 (RBAC), so the UI is for localhost or
-a private tunnel and nothing more. What this module adds is narrow:
+Who may see or do what is `deps.require_viewer` (sign-in, per-repository access). The UI is still
+for localhost or a private tunnel. What this module adds is narrow:
 
 * a Content-Security-Policy that forbids inline script, inline style, remote
   assets and framing, so an escaping mistake in a template has less to work with;

@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI
-from repolace_api.deps import get_github_client
+from repolace_api.deps import ALL_ACCESS, get_github_client, require_viewer
 from repolace_api.routes.repos import router as repos_router
 from repolace_api.routes.tasks import router as tasks_router
 from repolace_shared.db.models import GithubInstallation, RegisteredRepo, Task, TaskStatus
@@ -126,6 +126,8 @@ def client_for(session_factory, github: FakeGithub) -> httpx.AsyncClient:
     app.include_router(tasks_router)
     app.state.session_factory = session_factory
     app.dependency_overrides[get_github_client] = lambda: github
+    # Access is tested in test_api_access_db.py; here every repository is visible.
+    app.dependency_overrides[require_viewer] = lambda: ALL_ACCESS
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
 
 

@@ -5,12 +5,13 @@ pages, the static files, the headers and the HTML error pages identically.
 """
 
 from pathlib import Path
+from urllib.parse import urlencode, urlsplit
 
 from fastapi import FastAPI, Request, Response
 from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.responses import PlainTextResponse
+from starlette.responses import PlainTextResponse, RedirectResponse
 from starlette.staticfiles import StaticFiles
 
 from repolace_api.config import UiSettings
@@ -31,6 +32,27 @@ class UiStaticFiles(StaticFiles):
         return response
 
 
+SIGN_IN = "/auth/github/login"
+
+
+def _to_sign_in(request: Request) -> Response:
+    """A signed-out (or stale) request for a `/ui` route: send the browser through sign-in and back.
+
+    A page GET gets a 303 carrying the page as `next`. An htmx request gets a 401 with `HX-Redirect`,
+    because a redirect inside an XHR would end at github.com and fail; htmx then navigates the whole
+    window. Anything else (the enqueue POST) gets the 303 with no `next`. `next` is checked again,
+    and narrowed to `/ui/` paths, by the sign-in route itself.
+    """
+    if request.headers.get("hx-request") == "true":
+        current = urlsplit(request.headers.get("hx-current-url", ""))
+        target = current.path + (f"?{current.query}" if current.query else "")
+        return Response(status_code=401, headers={"HX-Redirect": f"{SIGN_IN}?{urlencode({'next': target})}"})
+    if request.method == "GET":
+        target = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+        return RedirectResponse(f"{SIGN_IN}?{urlencode({'next': target})}", status_code=303)
+    return RedirectResponse(SIGN_IN, status_code=303)
+
+
 def mount_ui(app: FastAPI, allowed_hosts: str | list[str] | None = None) -> None:
     """Wire the pages, static files, host allowlist, headers and HTML error pages into `app`.
 
@@ -46,6 +68,8 @@ def mount_ui(app: FastAPI, allowed_hosts: str | list[str] | None = None) -> None
     @app.exception_handler(StarletteHTTPException)
     async def _http_error(request: Request, exc: StarletteHTTPException) -> Response:
         if is_ui_path(request.url.path):
+            if exc.status_code == 401:
+                return _to_sign_in(request)
             return error_page(exc.status_code, str(exc.detail))
         return await http_exception_handler(request, exc)
 

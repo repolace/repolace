@@ -6,7 +6,7 @@ import httpx
 import pytest
 from api_support import FakeGithub, raw_issue, seed_repo
 from fastapi import FastAPI
-from repolace_api.deps import get_github_client
+from repolace_api.deps import ALL_ACCESS, get_github_client, require_viewer
 from repolace_api.publisher import CeleryTaskPublisher, get_publisher
 from repolace_api.routes.repos import router as repos_router
 from repolace_shared.db.models import Task, TaskStatus
@@ -33,6 +33,7 @@ def client_with(session_factory, publisher) -> httpx.AsyncClient:
     app.state.session_factory = session_factory
     app.dependency_overrides[get_github_client] = lambda: FakeGithub(raw_issue(7))
     app.dependency_overrides[get_publisher] = lambda: publisher
+    app.dependency_overrides[require_viewer] = lambda: ALL_ACCESS
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
 
 

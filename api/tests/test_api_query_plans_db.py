@@ -20,6 +20,7 @@ from datetime import timedelta
 
 import pytest
 from api_support import capture_sql, seed_repo
+from repolace_api.deps import ALL_ACCESS
 from repolace_api.routes.repos import compute_estimate, encode_cursor, query_task_page
 from repolace_shared.db.models import Task, TaskStatus
 from repolace_shared.tasks_recovery import running_with_stale_heartbeat
@@ -141,7 +142,7 @@ class TestKeysetTaskList:
             ).one()
         async with db_session_factory() as session:
             with capture_sql(db_engine) as seen:
-                await query_task_page(session, repo_id, cursor=encode_cursor(*middle))
+                await query_task_page(session, repo_id, viewer=ALL_ACCESS, cursor=encode_cursor(*middle))
 
         plan = await explain(db_engine, pick(seen, "FROM tasks", "ORDER BY tasks.created_at DESC"))
 
@@ -155,7 +156,7 @@ class TestKeysetTaskList:
     async def test_the_first_page_with_filters_uses_the_same_index(self, seeded, db_session_factory, db_engine):
         async with db_session_factory() as session:
             with capture_sql(db_engine) as seen:
-                await query_task_page(session, seeded["busy"][1], status=TaskStatus.COMPLETED, limit=20)
+                await query_task_page(session, seeded["busy"][1], viewer=ALL_ACCESS, status=TaskStatus.COMPLETED, limit=20)
 
         plan = await explain(db_engine, pick(seen, "FROM tasks", "ORDER BY tasks.created_at DESC"))
 
@@ -215,7 +216,7 @@ class TestCostEstimate:
     async def test_the_repo_window_reads_the_task_index_in_order(self, seeded, db_session_factory, db_engine):
         async with db_session_factory() as session:
             with capture_sql(db_engine) as seen:
-                estimate = await compute_estimate(session, seeded["busy"][2])
+                estimate = await compute_estimate(session, seeded["busy"][2], ALL_ACCESS)
         assert estimate.basis == "repo"
 
         plan = await explain(db_engine, pick(seen, "percentile_cont", "tasks.repo_id"))
@@ -226,7 +227,7 @@ class TestCostEstimate:
     async def test_the_latest_call_per_task_reads_the_descending_call_index(self, seeded, db_session_factory, db_engine):
         async with db_session_factory() as session:
             with capture_sql(db_engine) as seen:
-                estimate = await compute_estimate(session, seeded["quiet"])
+                estimate = await compute_estimate(session, seeded["quiet"], ALL_ACCESS)
         assert estimate.basis == "model"
 
         for statement in (

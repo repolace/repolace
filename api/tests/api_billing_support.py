@@ -117,8 +117,10 @@ def override_github(app: FastAPI, handler) -> None:
     app.dependency_overrides[auth_routes.get_oauth_http] = fake
 
 
-def session_cookie(user_id: uuid.UUID) -> dict[str, str]:
-    return {SESSION_COOKIE: sign("session", {"uid": str(user_id)}, SESSION_SECRET, max_age=3600)}
+def session_cookie(user_id: uuid.UUID, *, iat: int | None = None) -> dict[str, str]:
+    """A session as sign-in issues it. `iat` (default now) dates its access snapshot."""
+    payload = {"uid": str(user_id), "iat": int(time.time()) if iat is None else iat}
+    return {SESSION_COOKIE: sign("session", payload, SESSION_SECRET, max_age=7 * 24 * 3600)}
 
 
 async def seed_user(session, github_user_id: int = 1001, login: str = "octo") -> User:

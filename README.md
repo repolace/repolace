@@ -16,7 +16,7 @@ Agents that patch issues are common. What this project is for is the part most o
 | Verify sandbox (rootless Docker) | Built. The 32 Docker containment tests have passed on a rootless daemon |
 | Celery worker | Ran five tasks end to end, each opening a pull request: three on a private smoke-test repository and two on the public demo repository. The deployment checklist in [operations](docs/operations.md#deployment-checks) was run once, on one machine |
 | Pull-request opening in the benchmark | Measured once: a single-run sweep of the 18 issues passed 11 and opened 11 pull requests on private benchmark repositories, one per pass. The headline sweep used `--no-pr` |
-| Task UI and JSON API | Built (server-rendered pages under `/ui`). **No general authentication**: only `/ui/account` and `/billing/*` use GitHub sign-in. Localhost or a private tunnel only |
+| Task UI and JSON API | Built (server-rendered pages under `/ui`). **Sign-in required everywhere**: GitHub sign-in on every repo and task route (JSON and `/ui`); a user sees only the repositories GitHub says they can access, and needs push access to start a task. The API will not start without sign-in unless `DEV_NO_AUTH` is set on a loopback-only install. Still run on localhost or a private tunnel: it has not been reviewed for public exposure |
 | Public site (landing, pricing preview, benchmark reports, waitlist) | Built as a separate process that mounts none of the API routes |
 | Public site on AWS | Deployed: the CDK stack, a push-to-deploy workflow with a reviewer approval, and a commit-sha check on `/healthz`. A nightly backup was restored into a scratch database once (2026-11-14; the table was empty, so it shows the schema restores, not rows). The host was rebooted once (2026-11-14) and the site came back by itself in under a minute. **Not yet tested:** a restore with rows in the table, a rollback under a real failure |
 | Observability | Structured JSON logs with a task id on every line. OpenTelemetry and Grafana are not started |
@@ -111,7 +111,7 @@ Start at [docs/README.md](docs/README.md). The main pages:
 - The sandbox receives a byte-exact export of the tracked tree with no `.git`, so it cannot plant hooks or rewrite remotes that the host later acts on. Only pass/fail data comes back out.
 - Hidden benchmark tests never reach the agent; a feedback filter is the only place a scored result becomes text a model reads.
 - Provider keys are handed to the gateway per call and never exported into the process environment, so git and Docker children cannot inherit them.
-- The private API and task UI have no general authentication (sign-in covers only `/ui/account` and `/billing/*`). The public site is a separate process that mounts none of those routes. Do not expose the API or `/ui` to the internet.
+- The private API and task UI require GitHub sign-in, with access per repository from GitHub's permissions, but have not been reviewed for public exposure (error pages can show host paths; there is no rate limiting). The public site is a separate process that mounts none of those routes. Keep the API and `/ui` on localhost or a private tunnel.
 
 ## Contributing and license
 

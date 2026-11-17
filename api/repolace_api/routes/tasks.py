@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
-from repolace_api.deps import get_db
+from repolace_api.deps import Viewer, get_db, require_viewer
 from repolace_api.schemas import StageOut, TaskDetail, TestRunSummary
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -31,17 +31,20 @@ BENCHMARK_SCRUBBED_FIELDS = (
 
 
 @router.get("/{task_id}", response_model=TaskDetail)
-async def get_task(task_id: UUID, db: AsyncSession = Depends(get_db)) -> TaskDetail:
-    detail = await load_task_detail(db, task_id)
+async def get_task(
+    task_id: UUID, db: AsyncSession = Depends(get_db), viewer: Viewer = Depends(require_viewer)
+) -> TaskDetail:
+    detail = await load_task_detail(db, task_id, viewer)
     if detail is None:
         raise HTTPException(status_code=404, detail="task not found")
     return detail
 
 
-async def load_task_detail(db: AsyncSession, task_id: UUID) -> TaskDetail | None:
+async def load_task_detail(db: AsyncSession, task_id: UUID, viewer: Viewer) -> TaskDetail | None:
     """The one place a task's detail is assembled: the JSON route and the HTML pages both call it.
 
-    Benchmark scrubbing happens here, so no caller can forget it.
+    Benchmark scrubbing happens here, so no caller can forget it, and so does the access check: a task
+    whose repository the viewer may not see is None, the same as a task that does not exist.
 
     The detail page polls this while a task runs, so the row is loaded **without** `patch_diff`,
     `score_reason` and `issue_body` (large, and the last is not in `TaskDetail` at all). The first two are
@@ -66,6 +69,8 @@ async def load_task_detail(db: AsyncSession, task_id: UUID) -> TaskDetail | None
         terminal_text = dict(zip(_TERMINAL_TEXT, row, strict=True))
     repo = await db.get(RegisteredRepo, task.repo_id)
     assert repo is not None  # the foreign key is NOT NULL with ON DELETE CASCADE
+    if not viewer.can_see(repo.github_repo_id):
+        return None
 
     stages = (
         (await db.execute(select(TaskStage).where(TaskStage.task_id == task_id).order_by(TaskStage.started_at)))

@@ -169,6 +169,15 @@ Tables and columns declared in `shared/repolace_shared/db/models.py`, read stati
 | `conflict_reason` | `Text` | yes |
 | `user_id` | `UUID(as_uuid=True)` | yes |
 
+## `user_repositories`
+
+| Column | Type | Nullable |
+| --- | --- | --- |
+| `user_id` | `UUID(as_uuid=True)` | no |
+| `github_repo_id` | `BigInteger` | no |
+| `can_push` | `Boolean` | no |
+| `synced_at` | `DateTime(timezone=True)` | no |
+
 ## `users`
 
 | Column | Type | Nullable |

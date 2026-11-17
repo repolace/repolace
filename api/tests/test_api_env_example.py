@@ -46,3 +46,13 @@ def test_no_example_under_infra_carries_a_secret_value():
             if _SECRET_NAME.search(name):
                 assert value == "", f"{example.name}: {name} must be an empty placeholder"
             assert not _SECRET_VALUE.search(value), f"{example.name}: {name} holds a credential-shaped value"
+
+
+def test_the_example_parses_as_is(monkeypatch):
+    """Copying the example unchanged must give settings that load: an empty boolean (`DEV_NO_AUTH=`)
+    is a validation error, and the API's start-up reads these settings."""
+    for name in read_env(API_ENV_EXAMPLE):
+        monkeypatch.delenv(name, raising=False)
+    billing = BillingSettings(_env_file=API_ENV_EXAMPLE)
+    assert billing.dev_no_auth is False and billing.signin_ready is False
+    UiSettings(_env_file=API_ENV_EXAMPLE)

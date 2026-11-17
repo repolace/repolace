@@ -577,8 +577,9 @@ deleted a passing test reads as a regression and withholds the PR (cautious dire
   stage errors → NULL for benchmark rows) because those can name hidden tests. One place, so no page can forget it.
 - UI: server-rendered Jinja2 + HTMX, no node build. Live rows poll every 3 s; the fragment answers **HTTP 286** when the
   task is terminal, which tells HTMX to stop polling. CSP `default-src 'self'`, no inline script/style, same-origin
-  check on the one POST, **Host allowlist** against DNS rebinding. **No authentication until Phase 4**, so it is
-  localhost/tunnel only.
+  check on the one POST, **Host allowlist** against DNS rebinding. GitHub sign-in on every repo and task route,
+  with access per repository (each installation's `GET /user/installations/{id}/repositories` read at sign-in;
+  per installation would open a whole org to anyone who can read one repo); push needed to start a task; still localhost/tunnel only.
 - Query indexes (migration 0015) are built `CONCURRENTLY` with `DROP INDEX CONCURRENTLY IF EXISTS` first, because a
   cancelled concurrent build leaves an INVALID index that still owns its name. A test replays the real statements under
   `EXPLAIN` to prove the indexes are usable.

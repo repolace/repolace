@@ -18,7 +18,15 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from pydantic import ValidationError
-from repolace_shared.db.models import AGENT_STOP_REASONS, Subscription, Task, TaskOutcome, TaskStatus, User
+from repolace_shared.db.models import (
+    AGENT_STOP_REASONS,
+    RegisteredRepo,
+    Subscription,
+    Task,
+    TaskOutcome,
+    TaskStatus,
+    User,
+)
 from repolace_shared.github.client import GithubClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,7 +40,7 @@ from repolace_api.billing_limits import (
     tasks_started_this_month,
 )
 from repolace_api.config import BillingSettings, get_billing_settings
-from repolace_api.deps import get_db, get_github_client, optional_user
+from repolace_api.deps import Viewer, get_db, get_github_client, optional_user, require_viewer
 from repolace_api.publisher import TaskPublisher, get_publisher
 from repolace_api.routes.repos import (
     _LIST_COLUMNS,
@@ -46,6 +54,7 @@ from repolace_api.routes.repos import (
     list_active_repos,
     list_item,
     query_task_page,
+    require_push,
 )
 from repolace_api.routes.tasks import load_task_detail
 from repolace_api.schemas import IssueOut
@@ -182,8 +191,8 @@ async def account_page(
 
 
 @router.get("/repos", response_class=HTMLResponse)
-async def repos_page(db: AsyncSession = Depends(get_db)) -> HTMLResponse:
-    return render("repos.html", repos=await list_active_repos(db))
+async def repos_page(db: AsyncSession = Depends(get_db), viewer: Viewer = Depends(require_viewer)) -> HTMLResponse:
+    return render("repos.html", repos=await list_active_repos(db, viewer))
 
 
 @router.get("/repos/{repo_id}/tasks", response_class=HTMLResponse)
@@ -193,10 +202,11 @@ async def tasks_page(
     outcome: str | None = None,
     benchmark: str | None = None,
     db: AsyncSession = Depends(get_db),
+    viewer: Viewer = Depends(require_viewer),
 ) -> HTMLResponse:
     filters = Filters(status, outcome, benchmark)
-    repo = await active_repo(db, repo_id)
-    page = await _page(db, repo_id, filters, cursor=None)
+    repo = await active_repo(db, repo_id, viewer)
+    page = await _page(db, repo_id, filters, cursor=None, viewer=viewer)
     rows = await build_rows(db, page.items)
     return render(
         "tasks.html",
@@ -216,19 +226,21 @@ async def tasks_more(
     outcome: str | None = None,
     benchmark: str | None = None,
     db: AsyncSession = Depends(get_db),
+    viewer: Viewer = Depends(require_viewer),
 ) -> HTMLResponse:
     filters = Filters(status, outcome, benchmark)
-    repo = await active_repo(db, repo_id)
-    page = await _page(db, repo_id, filters, cursor=cursor)
+    repo = await active_repo(db, repo_id, viewer)
+    page = await _page(db, repo_id, filters, cursor=cursor, viewer=viewer)
     return render(
         "_task_rows.html", repo=repo, rows=await build_rows(db, page.items), next_cursor=page.next_cursor, filters=filters
     )
 
 
-async def _page(db: AsyncSession, repo_id: UUID, filters: Filters, cursor: str | None):
+async def _page(db: AsyncSession, repo_id: UUID, filters: Filters, cursor: str | None, *, viewer: Viewer):
     return await query_task_page(
         db,
         repo_id,
+        viewer=viewer,
         status=filters.status,
         outcome=filters.outcome,
         unscored=filters.unscored,
@@ -238,9 +250,15 @@ async def _page(db: AsyncSession, repo_id: UUID, filters: Filters, cursor: str |
 
 
 @router.get("/tasks/{task_id}/row", response_class=HTMLResponse)
-async def task_row(task_id: UUID, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
+async def task_row(task_id: UUID, db: AsyncSession = Depends(get_db), viewer: Viewer = Depends(require_viewer)) -> HTMLResponse:
     columns = [getattr(Task, name) for name in _LIST_COLUMNS]
-    task = (await db.execute(select(Task).options(load_only(*columns)).where(Task.id == task_id))).scalar_one_or_none()
+    query = select(Task).options(load_only(*columns)).where(Task.id == task_id)
+    if viewer.repo_ids is not None:
+        # The access check `load_task_detail` makes, in the one query this fragment runs.
+        query = query.join(RegisteredRepo, RegisteredRepo.id == Task.repo_id).where(
+            RegisteredRepo.github_repo_id.in_(viewer.repo_ids)
+        )
+    task = (await db.execute(query)).scalar_one_or_none()
     if task is None:
         raise HTTPException(status_code=404, detail="task not found")
     (row,) = await build_rows(db, [list_item(task)])
@@ -248,8 +266,8 @@ async def task_row(task_id: UUID, db: AsyncSession = Depends(get_db)) -> HTMLRes
 
 
 @router.get("/tasks/{task_id}", response_class=HTMLResponse)
-async def task_page(task_id: UUID, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
-    detail = await load_task_detail(db, task_id)
+async def task_page(task_id: UUID, db: AsyncSession = Depends(get_db), viewer: Viewer = Depends(require_viewer)) -> HTMLResponse:
+    detail = await load_task_detail(db, task_id, viewer)
     if detail is None:
         raise HTTPException(status_code=404, detail="task not found")
     # Diff parsing and highlighting is CPU work on agent-written text: off the event loop.
@@ -257,9 +275,9 @@ async def task_page(task_id: UUID, db: AsyncSession = Depends(get_db)) -> HTMLRe
 
 
 @router.get("/tasks/{task_id}/live", response_class=HTMLResponse)
-async def task_live(task_id: UUID, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
+async def task_live(task_id: UUID, db: AsyncSession = Depends(get_db), viewer: Viewer = Depends(require_viewer)) -> HTMLResponse:
     """The polled part of the detail page. 286 tells htmx to stop polling once the task is terminal."""
-    detail = await load_task_detail(db, task_id)
+    detail = await load_task_detail(db, task_id, viewer)
     if detail is None:
         raise HTTPException(status_code=404, detail="task not found")
     view = await run_in_threadpool(build_detail, detail)
@@ -269,13 +287,18 @@ async def task_live(task_id: UUID, db: AsyncSession = Depends(get_db)) -> HTMLRe
 # --------------------------------------------------------------------------- new task
 
 
-async def _cached_issues(request: Request, db: AsyncSession, github: GithubClient, repo_id: UUID) -> list[IssueOut]:
+async def _cached_issues(
+    request: Request, db: AsyncSession, github: GithubClient, repo_id: UUID, *, viewer: Viewer
+) -> list[IssueOut]:
+    """Open issues, cached per repository for a minute. The access check runs before the cache is read,
+    because the cache is shared by every viewer."""
+    await active_repo(db, repo_id, viewer)
     cache: dict[UUID, tuple[float, list[IssueOut]]] = getattr(request.app.state, "ui_issue_cache", None) or {}
     request.app.state.ui_issue_cache = cache
     hit = cache.get(repo_id)
     if hit is not None and time.monotonic() - hit[0] < ISSUE_CACHE_SECONDS:
         return hit[1]
-    issues = await fetch_issues(db, github, repo_id)
+    issues = await fetch_issues(db, github, repo_id, viewer)
     cache[repo_id] = (time.monotonic(), issues)
     return issues
 
@@ -293,24 +316,26 @@ async def _new_task_context(
     github: GithubClient,
     repo_id: UUID,
     *,
+    viewer: Viewer,
     issue_number: int | None,
     target_branch: str | None,
     form_error: str | None = None,
     branch_error: str | None = None,
 ) -> dict[str, Any]:
-    repo = await active_repo(db, repo_id)
+    repo = await active_repo(db, repo_id, viewer)
+    require_push(viewer, repo)  # the new-task page is only for people who may start one
     problems: list[str] = []
     issues: list[IssueOut] = []
     branches = []
     try:
-        issues = await _cached_issues(request, db, github, repo_id)
+        issues = await _cached_issues(request, db, github, repo_id, viewer=viewer)
     except HTTPException as exc:
         problems.append(f"Could not load open issues: {exc.detail}")
     try:
-        branches = await fetch_branches(db, github, repo_id)
+        branches = await fetch_branches(db, github, repo_id, viewer)
     except HTTPException as exc:
         problems.append(f"Could not load branches: {exc.detail}")
-    estimate = estimate_view(await compute_estimate(db, repo_id))
+    estimate = estimate_view(await compute_estimate(db, repo_id, viewer))
     names = [b.name for b in branches]
     chosen = target_branch or repo.default_branch
     if chosen not in names and names:
@@ -343,8 +368,9 @@ async def new_task_page(
     repo_id: UUID,
     db: AsyncSession = Depends(get_db),
     github: GithubClient = Depends(get_github_client),
+    viewer: Viewer = Depends(require_viewer),
 ) -> HTMLResponse:
-    ctx = await _new_task_context(request, db, github, repo_id, issue_number=None, target_branch=None)
+    ctx = await _new_task_context(request, db, github, repo_id, viewer=viewer, issue_number=None, target_branch=None)
     return render("new_task.html", **ctx)
 
 
@@ -356,9 +382,9 @@ async def new_task_issues(
     issue_number: str | None = None,
     db: AsyncSession = Depends(get_db),
     github: GithubClient = Depends(get_github_client),
+    viewer: Viewer = Depends(require_viewer),
 ) -> HTMLResponse:
-    await active_repo(db, repo_id)
-    issues = await _cached_issues(request, db, github, repo_id)
+    issues = await _cached_issues(request, db, github, repo_id, viewer=viewer)
     matches = _filter_issues(issues, q)
     return render(
         "_issues.html",
@@ -378,12 +404,13 @@ async def new_task_confirm(
     target_branch: str | None = None,
     db: AsyncSession = Depends(get_db),
     github: GithubClient = Depends(get_github_client),
+    viewer: Viewer = Depends(require_viewer),
 ) -> HTMLResponse:
-    repo = await active_repo(db, repo_id)
+    repo = await active_repo(db, repo_id, viewer)
     number = _int_or_none(issue_number)
-    issues = await _cached_issues(request, db, github, repo_id) if number is not None else []
+    issues = await _cached_issues(request, db, github, repo_id, viewer=viewer) if number is not None else []
     picked = next((i for i in issues if i.number == number), None)
-    estimate = estimate_view(await compute_estimate(db, repo_id))
+    estimate = estimate_view(await compute_estimate(db, repo_id, viewer))
     return render(
         "_confirm.html",
         repo=repo,
@@ -409,6 +436,7 @@ async def create_task_form(
     github: GithubClient = Depends(get_github_client),
     publisher: TaskPublisher = Depends(get_publisher),
     owner_id: UUID | None = Depends(enqueue_owner),
+    viewer: Viewer = Depends(require_viewer),
 ):
     """Enqueue through the same function as `POST /repos/{id}/tasks`, then redirect to the task."""
     if not same_origin(request):
@@ -432,7 +460,7 @@ async def create_task_form(
 
     async def again(message: str, status_code: int, is_branch: bool = False) -> HTMLResponse:
         ctx = await _new_task_context(
-            request, db, github, repo_id, issue_number=number, target_branch=branch,
+            request, db, github, repo_id, viewer=viewer, issue_number=number, target_branch=branch,
             form_error=message, branch_error=message if is_branch else None,
         )
         return render("new_task.html", status_code=status_code, **ctx)
@@ -443,9 +471,9 @@ async def create_task_form(
         body = CreateTaskRequest(issue_number=number, target_branch=branch)
     except ValidationError:
         return await again("That issue number is not valid.", 422)
-    await active_repo(db, repo_id)  # 404 for an unknown repo, not a form error
+    await active_repo(db, repo_id, viewer)  # 404 for an unknown or hidden repo, not a form error
     try:
-        created = await enqueue_task(db, github, repo_id, body, publisher, owner_id)
+        created = await enqueue_task(db, github, repo_id, body, publisher, owner_id, viewer=viewer)
     except HTTPException as exc:
         return await again(str(exc.detail), exc.status_code, is_branch=exc.status_code in (400, 422))
     return RedirectResponse(f"/ui/tasks/{created.id}", status_code=303)

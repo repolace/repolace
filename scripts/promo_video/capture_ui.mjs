@@ -1,4 +1,6 @@
 // Read-only capture of the local app UI. Every non-GET request is blocked before it leaves the browser.
+// It sends no session cookie, so since sign-in became required (2026-11-17) the API it reads must run
+// with DEV_NO_AUTH=1 on a loopback-only install (see infra/api.env.example); otherwise every page redirects to sign-in.
 import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
