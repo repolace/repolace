@@ -131,6 +131,53 @@ The data volume is the state; the instance is disposable. In order of preference
 The stack has termination protection (turn it off deliberately to delete it); the ECR repository, backup bucket and data volume are
 retained when the stack is deleted.
 
+## The app host (`RepolaceAppStack`): written and tested, not deployed
+
+A second stack, for the real app: the API, the task worker, Postgres, Redis, RabbitMQ and their own Cloudflare Tunnel connector
+on **one VM that is not the site's**. The site host holds no model-provider keys and runs no model-written code; this one holds
+the provider keys and the GitHub App private key and runs sandboxed test suites, so they must not share a blast radius.
+It exists only when `public_url` is given, so everything above (the site's `cdk synth` and `cdk deploy`) is unchanged.
+
+| | Site stack | App stack |
+| --- | --- | --- |
+| Image | Amazon Linux 2023, arm64 | **Ubuntu 24.04 LTS, x86_64** (Docker's rootless install is documented for Ubuntu; AL2023's docker package ships no rootless setup tool) |
+| Size | `t4g.small` | `m6i.large` (2 vCPU, 8 GiB, not burstable) by default |
+| Volumes | root + one retained data volume | root 20 GiB, **data 30 GiB** (retained, daily snapshots, Postgres and the broker), **docker 80 GiB** (rootless daemon data root: images and containers, rebuildable), **workspace 30 GiB** (a small ext4 volume: the size and inode limit the sandbox needs). Docker and workspace are deleted with the stack and never snapshotted |
+| Secrets (by name, created by hand) | `repolace-site-env`, `repolace-tunnel-credentials` | `repolace-app-api-env`, `repolace-app-worker-env` (**provider keys only here**), `repolace-app-tunnel-credentials` |
+| Registries | `repolace-site` | `repolace-api`, `repolace-worker` (x86_64, tags immutable) |
+| GitHub roles | `repolace-site-build`, `repolace-site-deploy` (environment `production`) | `repolace-app-build`, `repolace-app-deploy` (environment **`production-app`** for the deploy), **both pinned to the workflow `deploy-app.yml`**. The build job has no environment, so its subject (`...:ref:refs/heads/main`) is the same as the site's build job's; only the pinned workflow file tells them apart. A test checks that no app role can be assumed by a job the site roles trust. Create the GitHub environment `production-app` with required reviewers before the first run: GitHub creates a missing one with no protection |
+| OIDC provider | created here | **imported**: the site stack owns it and an account has one |
+
+Context keys the app stack reads (the site stack's are `ami_id`, `architecture`, `instance_type`, `create_oidc_provider`, `existing_data_volume_id` and `bootstrap_ref`; the two stacks share only `github_repo` and `github_sub_prefix`, on purpose): `public_url` (**required**, `https://host`, no path), `app_ami_id` (**required**, a pinned
+Canonical Ubuntu 24.04 LTS amd64 AMI; find it read-only with
+`aws ssm get-parameter --name /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id --query Parameter.Value --output text`; the parameter path is from memory and has not been run, so check the id it returns is Canonical's, 24.04, amd64),
+`app_instance_type`, `data_volume_gib`, `docker_volume_gib`, `workspace_volume_gib`, `app_existing_data_volume_id` (must be in the instance's availability zone, which is the first public subnet's; a reused volume gets no snapshot policy, so tag it `repolace-app-snapshot=daily` by hand), `app_bootstrap_ref` (**use a commit sha for a real deploy**: `bootstrap-app.sh` is fetched by that ref and runs as root on a host holding the provider keys),
+`github_repo`, `github_sub_prefix`. Do not put `public_url` in `cdk.json`: with it set, a missing `app_ami_id` stops the site's synth too. Same safeguards as the site stack: no inbound rule, no key pair, IMDSv2 with a hop limit of one, termination protection, a pinned AMI,
+user data that only fetches `bootstrap-app.sh`. **The hop limit is not enough here.** It stops a rootful bridge container (the forwarded
+packet's TTL drops) and nothing else: rootless Docker's user-space networking re-originates connections from the host's own network
+namespace, so a rootless container (an image build with network on, the api or worker container, an SSRF in the API) can still reach
+`169.254.169.254` and fetch the instance role's credentials: the three secrets, ECR pull and backup writes. Test runs are safe, because
+the sandbox runs with `--network=none`. `bootstrap-app.sh` must therefore also drop that address for the Docker user with a host firewall
+rule (for example an nftables `meta skuid` match), and the deploy checks must prove it from inside a container.
+
+**Disks.** The docker and workspace volumes are NVMe devices on this instance family, so `/dev/sdg` and `/dev/sdh` are not stable names,
+and both default to the same size as the data volume's. `host.env` therefore carries all three volume ids (`DATA_`, `DOCKER_`, `WORKSPACE_VOLUME_ID`),
+and the bootstrap must find each by `/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_vol<id without the hyphen>`, waiting for the attachments, which
+start after the instance (the user data can run first). Replacing the instance while the retained data volume is still attached to the old
+one fails: follow "Losing the instance" above, with `app_existing_data_volume_id`.
+
+```
+cd infra/aws && . .venv/bin/activate
+npx aws-cdk synth RepolaceAppStack -c ami_id=ami-... -c app_ami_id=ami-... -c public_url=https://app.example.com
+python -m pytest --noconftest -c /dev/null --rootdir=. tests          # both stacks' tests
+```
+
+**Not here yet** (the next changes): `bootstrap-app.sh` (rootless Docker, cgroup delegation of `cpu memory pids`, the three disks by id, the metadata-service firewall rule),
+`compose.app.yml`, `deploy-app.sh`, the `deploy-app.yml` workflow, and the admin command that registers the existing installation's
+repositories on a fresh database. Until those exist the stack cannot boot a working host; the user data fetches a script that is not on
+`main` yet. **Not run by the author: `cdk deploy`, anything on a real instance, and whether this account may launch EC2 at all** (it had
+an "account being verified" hold on Bedrock). The prices in the plan were from memory and are to be checked before an approval.
+
 ## Honest limits
 
 A single VM is not highly available: recovery is a reboot (everything restarts at boot), a nightly backup and the
