@@ -7,7 +7,7 @@ from typing import Any
 import httpx
 from api_support import FakeGithub
 from fastapi import FastAPI
-from repolace_api.deps import get_github_client
+from repolace_api.deps import ALL_ACCESS, get_github_client, require_viewer
 from repolace_api.routes.repos import router as repos_router
 from repolace_api.routes.tasks import router as tasks_router
 from repolace_api.ui import mount_ui
@@ -30,6 +30,8 @@ def ui_app(session_factory, github: FakeGithub | None = None) -> FastAPI:
     app.state.session_factory = session_factory
     fake = github or FakeGithub()
     app.dependency_overrides[get_github_client] = lambda: fake
+    # Access is tested in test_api_access_db.py; here every repository is visible.
+    app.dependency_overrides[require_viewer] = lambda: ALL_ACCESS
     return app
 
 

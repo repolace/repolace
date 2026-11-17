@@ -1,20 +1,27 @@
 """Sign in with GitHub (the GitHub App's user-authorization flow) and a signed session cookie.
 
-What this is for: attaching a Stripe customer and a plan to a person. It does not protect the JSON
-API or the task UI, which still have no authentication (see `.claude/rules/api-and-ui.md`).
+Sign-in is what every repo and task route requires (`deps.require_viewer`), and it is where access
+is decided: the repositories the user can access through this App's installations, and whether they
+can push to each, are read here and stored in `user_repositories`. See "Access" in
+`.claude/rules/api-and-ui.md`.
 
-The GitHub token is used once, to read `/user`, and is never stored or logged. Neither is the code.
+The GitHub token is used for these reads (`/user`, `/user/installations`, and each installation's
+`/repositories`) inside one function, and is never stored or logged. Neither is the code: the
+access log line of the callback is redacted (`main.RedactOAuthCallback`).
 """
 
 import secrets
+import time
 from collections.abc import AsyncIterator
-from urllib.parse import urlencode
+from datetime import UTC, datetime
+from urllib.parse import unquote, urlencode, urlsplit
 
 import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
-from repolace_shared.db.models import User
+from repolace_shared.db.models import User, UserRepository
+from sqlalchemy import delete
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,7 +43,26 @@ STATE_MAX_AGE_SECONDS = 600
 AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
 TOKEN_URL = "https://github.com/login/oauth/access_token"
 USER_URL = "https://api.github.com/user"
-AFTER_LOGIN = "/ui/account"
+INSTALLATIONS_URL = "https://api.github.com/user/installations"
+#: 100 per page, for the installation list and for each installation's repositories. Past 1,000 of
+#: either the list is cut short (logged), which can only hide repositories, never show extra ones.
+MAX_PAGES = 10
+#: The GitHub repository permissions that allow starting a task (it pushes a branch and opens a PR).
+PUSH_PERMISSIONS = ("push", "maintain", "admin")
+AFTER_LOGIN = "/ui/repos"
+MAX_NEXT_LENGTH = 512
+
+
+def safe_next(value: str | None) -> str:
+    """Where to land after sign-in: a `/ui/` path on this site, or the default. Never another origin."""
+    if not value or len(value) > MAX_NEXT_LENGTH or "\\" in value or any(ord(c) < 32 for c in value):
+        return AFTER_LOGIN
+    parts = urlsplit(value)
+    # Checked decoded too: a browser resolves `%2e%2e` as a dot segment, so `/ui/%2e%2e/x` would leave `/ui/`.
+    paths = (parts.path, unquote(parts.path))
+    if parts.scheme or parts.netloc or any(not p.startswith("/ui/") or "//" in p or ".." in p or "\\" in p for p in paths):
+        return AFTER_LOGIN
+    return value
 
 
 async def get_oauth_http() -> AsyncIterator[httpx.AsyncClient]:
@@ -56,7 +82,7 @@ def _callback_url(settings: BillingSettings) -> str:
 
 
 @router.get("/github/login")
-def login(settings: BillingSettings = Depends(require_signin_ready)) -> RedirectResponse:
+def login(next: str | None = None, settings: BillingSettings = Depends(require_signin_ready)) -> RedirectResponse:
     state = secrets.token_urlsafe(32)
     query = urlencode(
         {"client_id": settings.github_oauth_client_id, "redirect_uri": _callback_url(settings), "state": state}
@@ -66,7 +92,7 @@ def login(settings: BillingSettings = Depends(require_signin_ready)) -> Redirect
     # Strict cookie would not be sent on it.
     response.set_cookie(
         STATE_COOKIE,
-        sign("oauth-state", {"s": state}, settings.session_secret, max_age=STATE_MAX_AGE_SECONDS),
+        sign("oauth-state", {"s": state, "n": safe_next(next)}, settings.session_secret, max_age=STATE_MAX_AGE_SECONDS),
         max_age=STATE_MAX_AGE_SECONDS,
         httponly=True,
         samesite="lax",
@@ -98,16 +124,18 @@ async def callback(
     if error or not code:
         raise HTTPException(status_code=400, detail="sign-in was not completed")
 
-    profile = await _fetch_profile(http, settings, code)
+    profile, repositories = await _fetch_profile(http, settings, code)
 
-    user_id = await _upsert_user(db, profile)
-    log.info("auth.signed_in", user_id=str(user_id))
+    user_id = await _upsert_user(db, profile, repositories)
+    log.info("auth.signed_in", user_id=str(user_id), repositories=len(repositories))
 
-    response = RedirectResponse(AFTER_LOGIN, status_code=303)
+    response = RedirectResponse(safe_next(expected.get("n")), status_code=303)
     response.delete_cookie(STATE_COOKIE, path="/auth")
     response.set_cookie(
         SESSION_COOKIE,
-        sign("session", {"uid": str(user_id)}, settings.session_secret, max_age=SESSION_MAX_AGE_SECONDS),
+        # `iat` dates this session's access snapshot: repo and task routes refuse it after
+        # `deps.ACCESS_MAX_AGE`, so an old copied cookie is not revived by a later sign-in elsewhere.
+        sign("session", {"uid": str(user_id), "iat": int(time.time())}, settings.session_secret, max_age=SESSION_MAX_AGE_SECONDS),
         max_age=SESSION_MAX_AGE_SECONDS,
         httponly=True,
         samesite="lax",
@@ -117,8 +145,9 @@ async def callback(
     return response
 
 
-async def _fetch_profile(http: httpx.AsyncClient, settings: BillingSettings, code: str) -> dict:
-    """Exchange the code for a token and read `/user`. The token lives in this function only."""
+async def _fetch_profile(http: httpx.AsyncClient, settings: BillingSettings, code: str) -> tuple[dict, dict[int, bool]]:
+    """Exchange the code for a token, read `/user` and the repositories the user can access (with
+    whether they can push). The token lives in this function only."""
     try:
         token_response = await http.post(
             TOKEN_URL,
@@ -154,21 +183,75 @@ async def _fetch_profile(http: httpx.AsyncClient, settings: BillingSettings, cod
         or not isinstance(profile.get("login"), str)
     ):
         raise HTTPException(status_code=502, detail="GitHub returned an unexpected profile")
-    return profile
+    return profile, await _fetch_repositories(http, settings, token)
 
 
-async def _upsert_user(db: AsyncSession, profile: dict):
+async def _pages(http: httpx.AsyncClient, url: str, key: str, headers: dict[str, str]) -> list[dict]:
+    """Every item of a paged GitHub list (`{key: [...]}`), up to `MAX_PAGES` pages. Fails closed: a
+    GitHub error or an unexpected shape is a 502, so no session is issued on a partial or guessed list."""
+    found: list[dict] = []
+    for page in range(1, MAX_PAGES + 1):
+        try:
+            response = await http.get(url, params={"per_page": 100, "page": page}, headers=headers)
+            body = response.json()
+        except (httpx.HTTPError, ValueError):
+            log.warning("auth.github_unreachable", step=key)
+            raise HTTPException(status_code=502, detail="GitHub could not be reached") from None
+        items = body.get(key) if isinstance(body, dict) else None
+        if response.status_code != 200 or not isinstance(items, list):
+            raise HTTPException(status_code=502, detail=f"GitHub returned an unexpected {key} list")
+        if not all(isinstance(item, dict) and isinstance(item.get("id"), int) for item in items):
+            raise HTTPException(status_code=502, detail=f"GitHub returned an unexpected {key} list")
+        found.extend(items)
+        if len(items) < 100:
+            return found
+    log.warning("auth.list_truncated", list=key, pages=MAX_PAGES)
+    return found
+
+
+async def _fetch_repositories(http: httpx.AsyncClient, settings: BillingSettings, token: str) -> dict[int, bool]:
+    """GitHub repository id -> can push, for every repository the user can access through this App.
+
+    Per repository, not per installation: `GET /user/installations` lists an installation for a user
+    who can read any one of its repositories, so each installation's own list
+    (`GET /user/installations/{id}/repositories`, the repositories this user can access, with their
+    permissions) is what decides.
+    """
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+    repositories: dict[int, bool] = {}
+    for installation in await _pages(http, INSTALLATIONS_URL, "installations", headers):
+        # The endpoint lists only this App's installations; the client id check is a second guard.
+        if installation.get("client_id") not in (None, settings.github_oauth_client_id):
+            continue
+        url = f"{INSTALLATIONS_URL}/{installation['id']}/repositories"
+        for repo in await _pages(http, url, "repositories", headers):
+            permissions = repo.get("permissions") if isinstance(repo.get("permissions"), dict) else {}
+            can_push = any(permissions.get(name) is True for name in PUSH_PERMISSIONS)
+            repositories[repo["id"]] = repositories.get(repo["id"], False) or can_push
+    return repositories
+
+
+async def _upsert_user(db: AsyncSession, profile: dict, repositories: dict[int, bool]):
+    """The user row and their repository snapshot, in one transaction: the old snapshot is replaced."""
+    now = datetime.now(UTC)
     email = profile.get("email") if isinstance(profile.get("email"), str) else None
     stmt = insert(User).values(github_user_id=profile["id"], github_login=profile["login"], email=email)
     stmt = stmt.on_conflict_do_update(
         index_elements=[User.github_user_id],
         # A login can be renamed; GitHub hides the email when it is private, so a null never
         # erases one we already have.
-        set_={"github_login": stmt.excluded.github_login, "email": stmt.excluded.email}
-        if email
-        else {"github_login": stmt.excluded.github_login},
+        set_={"github_login": stmt.excluded.github_login, **({"email": stmt.excluded.email} if email else {})},
     ).returning(User.id)
     user_id = (await db.execute(stmt)).scalar_one()
+    await db.execute(delete(UserRepository).where(UserRepository.user_id == user_id))
+    if repositories:
+        await db.execute(
+            insert(UserRepository),
+            [
+                {"user_id": user_id, "github_repo_id": repo_id, "can_push": can_push, "synced_at": now}
+                for repo_id, can_push in sorted(repositories.items())
+            ],
+        )
     await db.commit()
     return user_id
 

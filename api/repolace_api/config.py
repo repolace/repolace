@@ -63,8 +63,11 @@ class SiteSettings(BaseSettings):
 
 
 class BillingSettings(BaseSettings):
-    """Stripe billing and GitHub sign-in. Every field is optional: unset, the billing and sign-in
-    routes answer 503 and the rest of the API is unaffected. Listed in infra/api.env.example.
+    """Stripe billing and GitHub sign-in. Listed in infra/api.env.example.
+
+    The Stripe fields are optional: unset, the billing routes answer 503. Sign-in is not: every repo
+    and task route requires it, so the API refuses to start without it (`access_startup_error`)
+    unless `dev_no_auth` is set on a loopback-only install.
 
     Use a restricted key (`rk_`) with the minimum permissions: Checkout Sessions, Customers,
     Customer Portal sessions and Subscriptions (read). Never a live key from a laptop.
@@ -84,6 +87,9 @@ class BillingSettings(BaseSettings):
     github_oauth_client_secret: str | None = None
     #: Where Stripe and GitHub send the browser back to. Same variable as `ApiSettings.api_base_url`.
     api_base_url: str = "http://localhost:8000"
+    #: Local development only: no sign-in, every repository visible. Refused at start-up unless every
+    #: allowed host is loopback and the base URL is plain http (`access_startup_error`).
+    dev_no_auth: bool = False
 
     @property
     def cookie_secure(self) -> bool:
@@ -101,3 +107,27 @@ class BillingSettings(BaseSettings):
 @lru_cache
 def get_billing_settings() -> BillingSettings:
     return BillingSettings()
+
+
+LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})  # as `ui.security.normalise_host` writes them
+
+
+def access_startup_error(billing: BillingSettings, allowed_hosts: list[str]) -> str | None:
+    """Why the API must not start, or None. Checked in the app's lifespan.
+
+    Without sign-in every repo and task route would be open, so either sign-in is configured or the
+    install is explicitly local (`DEV_NO_AUTH`, reachable only on loopback, no https base URL).
+    """
+    if billing.dev_no_auth:
+        public = [h for h in allowed_hosts if h not in LOOPBACK_HOSTS]
+        if public:
+            return f"DEV_NO_AUTH is set but UI_ALLOWED_HOSTS names non-loopback hosts: {', '.join(public)}"
+        if billing.cookie_secure:
+            return "DEV_NO_AUTH is set but API_BASE_URL is https, which means a public deployment"
+        return None
+    if not billing.signin_ready:
+        return (
+            "sign-in is not configured (GITHUB_OAUTH_CLIENT_ID, GITHUB_OAUTH_CLIENT_SECRET and a SESSION_SECRET of "
+            "32+ characters); every repo and task route needs it. For a local-only install set DEV_NO_AUTH=1"
+        )
+    return None

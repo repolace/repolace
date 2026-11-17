@@ -596,6 +596,28 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class UserRepository(Base):
+    """A repository the user could access on GitHub at their last sign-in, with whether they can push.
+
+    Read from `GET /user/installations` and `GET /user/installations/{id}/repositories` with the user's
+    own token, and replaced on every sign-in. Keyed by GitHub's repository id (`RegisteredRepo.github_repo_id`)
+    with no foreign key: a user can sign in before the App's webhook has registered the repository.
+    Access is per repository, not per installation: GitHub lists an installation for a user who can read
+    any one of its repositories, which must not open the others.
+    """
+
+    __tablename__ = "user_repositories"
+    __table_args__ = (Index("ix_user_repositories_github_repo_id", "github_repo_id"),)
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    github_repo_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    #: GitHub's `push` (or `maintain`/`admin`) permission: required to start a task, which pushes a branch.
+    can_push: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
 class Subscription(Base):
     """One user's Stripe subscription, as last reported by a verified webhook.
 

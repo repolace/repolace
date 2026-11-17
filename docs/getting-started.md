@@ -90,7 +90,7 @@ The settings require the four GitHub App values (`GITHUB_APP_ID`, `GITHUB_APP_SL
 uv run --project api uvicorn repolace_api.main:app --port 8000
 ```
 
-`http://localhost:8000/ui/repos` is the task UI and `http://localhost:8000/healthz` returns `{"status": "ok"}`. The API and UI have no general authentication (sign-in covers only `/ui/account`); bind them to localhost only. Billing setup is in [BILLING_SETUP.md](BILLING_SETUP.md).
+`http://localhost:8000/ui/repos` is the task UI and `http://localhost:8000/healthz` returns `{"status": "ok"}`. Every repo and task page and route needs GitHub sign-in (section 3 of [BILLING_SETUP.md](BILLING_SETUP.md)), and you see the repositories GitHub says you can access through the App (starting a task needs push access). The API refuses to start without sign-in configured; for a local-only install without it, set `DEV_NO_AUTH=1` in `infra/api.env` (refused unless every allowed host is loopback). Bind to localhost either way. Billing setup is in [BILLING_SETUP.md](BILLING_SETUP.md).
 
 ## Create the GitHub App
 
@@ -146,7 +146,7 @@ curl -X POST localhost:8000/repos/<repo_id>/tasks \
 
 The response carries the task id (HTTP 201). Omit `target_branch` for the default branch. Add `"open_pr_on_failure": true` to open a PR even when the checks flag the change. A second request for an issue that already has a `queued` or `running` task on that branch returns 409.
 
-List repository ids with `curl localhost:8000/repos`, and follow a task with `curl localhost:8000/tasks/<task_id>`.
+List repository ids with `curl localhost:8000/repos`, and follow a task with `curl localhost:8000/tasks/<task_id>`. These `curl` lines work as written only under `DEV_NO_AUTH=1`. With sign-in on, the JSON API takes the browser's session cookie, the enqueue POST also needs an `Origin` header naming an allowed host, and there are no API tokens yet.
 
 ### From the command line
 

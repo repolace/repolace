@@ -19,12 +19,13 @@ Read by compose services: `api`.
 | `GITHUB_APP_WEBHOOK_SECRET` |  |
 | `API_BASE_URL` | Where GitHub sends the user back to, and the Host values the UI and API answer to (comma-separated; add a tunnel hostname here). |
 | `UI_ALLOWED_HOSTS` |  |
-| `STRIPE_SECRET_KEY` | Billing and sign-in (optional; unset, those routes answer 503). Use a Stripe sandbox and a restricted key (rk_) while developing; keep live keys out of this file. |
+| `STRIPE_SECRET_KEY` | Billing (optional; unset, its routes answer 503) and sign-in (required, see below). Use a Stripe sandbox and a restricted key (rk_) while developing; keep live keys out of this file. |
 | `STRIPE_WEBHOOK_SECRET` |  |
 | `STRIPE_PRICE_ID` |  |
 | `SESSION_SECRET` |  |
 | `GITHUB_OAUTH_CLIENT_ID` |  |
 | `GITHUB_OAUTH_CLIENT_SECRET` |  |
+| `DEV_NO_AUTH` | Sign-in above is required: every repo and task route needs it, and the API refuses to start without it. For a local-only install with no sign-in, set DEV_NO_AUTH=1 (refused unless every UI_ALLOWED_HOSTS entry is loopback and API_BASE_URL is plain http). Never on a shared host. |
 
 ## `infra/worker.env.example`
 

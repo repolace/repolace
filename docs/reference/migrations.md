@@ -4,7 +4,7 @@
 
 Every revision in `api/alembic/versions`, read statically.
 
-Head: `0020`
+Head: `0021`
 
 | Revision | Down revision | Summary | File |
 | --- | --- | --- | --- |
@@ -28,3 +28,4 @@ Head: `0020`
 | `0018` | `0017` | add users, subscriptions and processed_stripe_events | `0018_add_users_and_billing.py` |
 | `0019` | `0018` | add tasks.user_id | `0019_add_tasks_user_id.py` |
 | `0020` | `0019` | add subscriptions.cancel_at | `0020_add_subscriptions_cancel_at.py` |
+| `0021` | `0020` | add user_repositories | `0021_add_user_repositories.py` |
